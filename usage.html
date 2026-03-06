@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Usage</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            font-size: 11px;
+            width: 280px;
+        }
+
+        .usage-item {
+            margin-bottom: 10px;
+        }
+
+        .usage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .usage-label {
+            font-weight: 600;
+            font-size: 10px;
+            color: #b0b0b0;
+        }
+
+        .usage-reset {
+            font-size: 9px;
+            color: #888;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: #2d2d2d;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-sonnet {
+            background: linear-gradient(90deg, #4CAF50, #66BB6A);
+        }
+
+        .progress-opus {
+            background: linear-gradient(90deg, #2196F3, #42A5F5);
+        }
+
+        .usage-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2px;
+            font-size: 9px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="usage-item">
+        <div class="usage-header">
+            <span class="usage-label">Sonnet</span>
+            <span class="usage-reset" id="sonnet-reset">Resets in 4h 23m</span>
+        </div>
+        <div class="progress-container">
+            <div class="progress-bar progress-sonnet" id="sonnet-bar" style="width: 45%"></div>
+        </div>
+        <div class="usage-stats">
+            <span id="sonnet-count">45 / 100 messages</span>
+            <span id="sonnet-percent">45%</span>
+        </div>
+    </div>
+
+    <div class="usage-item">
+        <div class="usage-header">
+            <span class="usage-label">Opus</span>
+            <span class="usage-reset" id="opus-reset">Resets in 18h 15m</span>
+        </div>
+        <div class="progress-container">
+            <div class="progress-bar progress-opus" id="opus-bar" style="width: 12%"></div>
+        </div>
+        <div class="usage-stats">
+            <span id="opus-count">6 / 50 messages</span>
+            <span id="opus-percent">12%</span>
+        </div>
+    </div>
+
+    <script>
+        // This function will update the UI with real data
+        function updateUsage(sonnetUsed, sonnetLimit, sonnetResetTime, opusUsed, opusLimit, opusResetTime) {
+            // Sonnet
+            const sonnetPercent = (sonnetUsed / sonnetLimit) * 100;
+            document.getElementById('sonnet-bar').style.width = sonnetPercent + '%';
+            document.getElementById('sonnet-count').textContent = `${sonnetUsed} / ${sonnetLimit} messages`;
+            document.getElementById('sonnet-percent').textContent = Math.round(sonnetPercent) + '%';
+            document.getElementById('sonnet-reset').textContent = formatResetTime(sonnetResetTime);
+
+            // Opus
+            const opusPercent = (opusUsed / opusLimit) * 100;
+            document.getElementById('opus-bar').style.width = opusPercent + '%';
+            document.getElementById('opus-count').textContent = `${opusUsed} / ${opusLimit} messages`;
+            document.getElementById('opus-percent').textContent = Math.round(opusPercent) + '%';
+            document.getElementById('opus-reset').textContent = formatResetTime(opusResetTime);
+        }
+
+        function formatResetTime(resetTime) {
+            const now = new Date();
+            const reset = new Date(resetTime);
+            const diff = reset - now;
+
+            if (diff < 0) return 'Resetting soon';
+
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+            return `Resets in ${hours}h ${minutes}m`;
+        }
+
+        // Example: Update every minute
+        setInterval(() => {
+            // This is where you'd fetch real data
+            // For now, it just updates the reset time countdown
+            const sonnetResetTime = new Date(Date.now() + 4 * 60 * 60 * 1000 + 23 * 60 * 1000);
+            const opusResetTime = new Date(Date.now() + 18 * 60 * 60 * 1000 + 15 * 60 * 1000);
+            
+            document.getElementById('sonnet-reset').textContent = formatResetTime(sonnetResetTime);
+            document.getElementById('opus-reset').textContent = formatResetTime(opusResetTime);
+        }, 60000); // Update every minute
+    </script>
+</body>
+</html>
