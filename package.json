@@ -1,0 +1,13 @@
+{
+  "name": "ai-usage-toolbar",
+  "version": "1.0.0",
+  "description": "System tray app to monitor Claude AI usage",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging"
+  },
+  "devDependencies": {
+    "electron": ">=28.0.0"
+  }
+}
