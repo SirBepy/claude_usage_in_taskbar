@@ -83,6 +83,12 @@ JSON so the field names can be identified and the parser updated.
 Stored in Electron's `userData` directory (`app.getPath('userData')/config.json`).
 Currently only caches `orgId` to avoid an extra API round-trip on each startup.
 
+## Keeping README up to date
+
+**Whenever the authentication flow, tray behaviour, popup behaviour, or project
+structure changes, update `README.md` to match.** The README is the user-facing
+document; CLAUDE.md is the developer reference. Both must stay in sync.
+
 ## Key dependencies
 
 | Package | Why |
