@@ -1,12 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
   <title>Claude Usage</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -31,17 +36,20 @@
       flex-shrink: 0;
       -webkit-app-region: drag;
     }
+
     .title {
       font-size: 12px;
       font-weight: 600;
       color: #cba6f7;
       letter-spacing: 0.4px;
     }
+
     .header-btns {
       display: flex;
       gap: 4px;
       -webkit-app-region: no-drag;
     }
+
     .icon-btn {
       background: none;
       border: none;
@@ -56,10 +64,26 @@
       justify-content: center;
       transition: color 0.1s, background 0.1s;
     }
-    .icon-btn:hover    { color: #cdd6f4; background: #313244; }
-    .icon-btn:disabled { opacity: 0.4; cursor: default; }
-    .spinning          { animation: spin 0.8s linear infinite; }
-    @keyframes spin    { to { transform: rotate(360deg); } }
+
+    .icon-btn:hover {
+      color: #cdd6f4;
+      background: #313244;
+    }
+
+    .icon-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .spinning {
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
 
     /* ── Content ── */
     .content {
@@ -67,14 +91,30 @@
       overflow-y: auto;
       padding: 12px 14px;
     }
-    .content::-webkit-scrollbar       { width: 4px; }
-    .content::-webkit-scrollbar-track { background: transparent; }
-    .content::-webkit-scrollbar-thumb { background: #45475a; border-radius: 2px; }
+
+    .content::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .content::-webkit-scrollbar-thumb {
+      background: #45475a;
+      border-radius: 2px;
+    }
 
     /* ── Usage sections ── */
-    .section        { margin-bottom: 10px; }
-    .section:last-child { margin-bottom: 0; }
-    .section-label  {
+    .section {
+      margin-bottom: 10px;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    .section-label {
       font-size: 10px;
       font-weight: 600;
       text-transform: uppercase;
@@ -82,12 +122,14 @@
       color: #585b70;
       margin-bottom: 5px;
     }
+
     .progress-row {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 3px;
     }
+
     .bar-track {
       flex: 1;
       height: 7px;
@@ -95,21 +137,25 @@
       border-radius: 4px;
       overflow: hidden;
     }
+
     .bar-fill {
       height: 100%;
       border-radius: 4px;
       transition: width 0.4s ease;
     }
+
     .pct-label {
       font-size: 13px;
       font-weight: 700;
       min-width: 38px;
       text-align: right;
     }
+
     .reset-label {
       font-size: 11px;
       color: #585b70;
     }
+
     .divider {
       height: 1px;
       background: #313244;
@@ -123,6 +169,7 @@
       font-size: 12px;
       padding: 28px 0;
     }
+
     .raw-view {
       font-size: 10px;
       color: #a6adc8;
@@ -143,109 +190,110 @@
     }
   </style>
 </head>
+
 <body>
 
-<div class="header">
-  <span class="title">Claude Usage</span>
-  <div class="header-btns">
-    <button class="icon-btn" id="refreshBtn" title="Refresh">&#8635;</button>
-    <button class="icon-btn" id="closeBtn"   title="Close">&#xd7;</button>
+  <div class="header">
+    <span class="title">Claude Usage</span>
+    <div class="header-btns">
+      <button class="icon-btn" id="refreshBtn" title="Refresh">&#8635;</button>
+      <button class="icon-btn" id="closeBtn" title="Close">&#xd7;</button>
+    </div>
   </div>
-</div>
 
-<div class="content" id="content">
-  <div class="empty">Loading...</div>
-</div>
+  <div class="content" id="content">
+    <div class="empty">Loading...</div>
+  </div>
 
-<div class="footer" id="footer"></div>
+  <div class="footer" id="footer"></div>
 
-<script>
-  const content    = document.getElementById('content');
-  const footer     = document.getElementById('footer');
-  const refreshBtn = document.getElementById('refreshBtn');
-  const closeBtn   = document.getElementById('closeBtn');
+  <script>
+    const content = document.getElementById('content');
+    const footer = document.getElementById('footer');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const closeBtn = document.getElementById('closeBtn');
 
-  refreshBtn.addEventListener('click', async () => {
-    refreshBtn.classList.add('spinning');
-    refreshBtn.disabled = true;
-    try { await window.electronAPI.refresh(); } catch {}
-    refreshBtn.classList.remove('spinning');
-    refreshBtn.disabled = false;
-  });
-  closeBtn.addEventListener('click', () => window.electronAPI.close());
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.classList.add('spinning');
+      refreshBtn.disabled = true;
+      try { await window.electronAPI.refresh(); } catch { }
+      refreshBtn.classList.remove('spinning');
+      refreshBtn.disabled = false;
+    });
+    closeBtn.addEventListener('click', () => window.electronAPI.close());
 
-  // ── Flexible usage parser ─────────────────────────────────────────────────
-  // Deep-searches the response for known field names, handling any API shape.
-  function deepFind(obj, keys) {
-    if (!obj || typeof obj !== 'object') return undefined;
-    for (const k of keys) if (obj[k] !== undefined) return obj[k];
-    for (const v of Object.values(obj)) {
-      const f = deepFind(v, keys);
-      if (f !== undefined) return f;
-    }
-  }
-
-  function parseUsage(data) {
-    if (!data) return {};
-
-    // Session percentage
-    let sessionPct = deepFind(data, [
-      'current_session_percentage', 'sessionPercentage',
-      'session_percentage', 'session_pct',
-    ]);
-    if (sessionPct == null) {
-      const u = deepFind(data, ['messages_used', 'session_messages_used', 'current_messages_used']);
-      const l = deepFind(data, ['messages_allowed', 'session_messages_limit', 'session_limit', 'message_limit']);
-      if (u != null && l) sessionPct = u / l * 100;
+    // ── Flexible usage parser ─────────────────────────────────────────────────
+    // Deep-searches the response for known field names, handling any API shape.
+    function deepFind(obj, keys) {
+      if (!obj || typeof obj !== 'object') return undefined;
+      for (const k of keys) if (obj[k] !== undefined) return obj[k];
+      for (const v of Object.values(obj)) {
+        const f = deepFind(v, keys);
+        if (f !== undefined) return f;
+      }
     }
 
-    // Weekly percentage
-    let weeklyPct = deepFind(data, ['weekly_percentage', 'weeklyPercentage', 'weekly_pct']);
-    if (weeklyPct == null) {
-      const u = deepFind(data, ['weekly_messages_used', 'weekly_used']);
-      const l = deepFind(data, ['weekly_messages_limit', 'weekly_limit', 'weekly_allowed', 'weekly_message_limit']);
-      if (u != null && l) weeklyPct = u / l * 100;
+    function parseUsage(data) {
+      if (!data) return {};
+
+      // Session percentage
+      let sessionPct = deepFind(data, [
+        'current_session_percentage', 'sessionPercentage',
+        'session_percentage', 'session_pct',
+      ]);
+      if (sessionPct == null) {
+        const u = deepFind(data, ['messages_used', 'session_messages_used', 'current_messages_used']);
+        const l = deepFind(data, ['messages_allowed', 'session_messages_limit', 'session_limit', 'message_limit']);
+        if (u != null && l) sessionPct = u / l * 100;
+      }
+
+      // Weekly percentage
+      let weeklyPct = deepFind(data, ['weekly_percentage', 'weeklyPercentage', 'weekly_pct']);
+      if (weeklyPct == null) {
+        const u = deepFind(data, ['weekly_messages_used', 'weekly_used']);
+        const l = deepFind(data, ['weekly_messages_limit', 'weekly_limit', 'weekly_allowed', 'weekly_message_limit']);
+        if (u != null && l) weeklyPct = u / l * 100;
+      }
+
+      // Reset timestamps
+      const sessionReset = deepFind(data, [
+        'session_resets_at', 'session_reset_at', 'current_session_reset_at', 'resets_at',
+      ]);
+      const weeklyReset = deepFind(data, [
+        'weekly_resets_at', 'weekly_reset_at', 'next_weekly_reset', 'weekly_reset',
+      ]);
+
+      return {
+        sessionPct: sessionPct != null ? Math.round(sessionPct) : null,
+        weeklyPct: weeklyPct != null ? Math.round(weeklyPct) : null,
+        sessionReset,
+        weeklyReset,
+      };
     }
 
-    // Reset timestamps
-    const sessionReset = deepFind(data, [
-      'session_resets_at', 'session_reset_at', 'current_session_reset_at', 'resets_at',
-    ]);
-    const weeklyReset = deepFind(data, [
-      'weekly_resets_at', 'weekly_reset_at', 'next_weekly_reset', 'weekly_reset',
-    ]);
+    function timeUntil(iso) {
+      if (!iso) return null;
+      const diff = new Date(iso) - Date.now();
+      if (diff <= 0) return 'now';
+      const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+      if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    }
 
-    return {
-      sessionPct:  sessionPct != null ? Math.round(sessionPct) : null,
-      weeklyPct:   weeklyPct  != null ? Math.round(weeklyPct)  : null,
-      sessionReset,
-      weeklyReset,
-    };
-  }
+    function pctColor(pct) {
+      if (pct == null) return '#74c7ec';  // blue — unknown
+      if (pct < 50) return '#a6e3a1';  // green
+      if (pct < 80) return '#fab387';  // orange
+      return '#f38ba8';                   // red
+    }
 
-  function timeUntil(iso) {
-    if (!iso) return null;
-    const diff = new Date(iso) - Date.now();
-    if (diff <= 0) return 'now';
-    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-    if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
-    if (h > 0)   return `${h}h ${m}m`;
-    return `${m}m`;
-  }
-
-  function pctColor(pct) {
-    if (pct == null) return '#74c7ec';  // blue — unknown
-    if (pct  <  50)  return '#a6e3a1';  // green
-    if (pct  <  80)  return '#fab387';  // orange
-    return '#f38ba8';                   // red
-  }
-
-  function buildSection(label, pct, resetIso) {
-    const color  = pctColor(pct);
-    const width  = pct != null ? Math.min(100, pct) : 0;
-    const display = pct != null ? `${pct}%` : '—';
-    const reset  = resetIso ? timeUntil(resetIso) : null;
-    return `
+    function buildSection(label, pct, resetIso) {
+      const color = pctColor(pct);
+      const width = pct != null ? Math.min(100, pct) : 0;
+      const display = pct != null ? `${pct}%` : '—';
+      const reset = resetIso ? timeUntil(resetIso) : null;
+      return `
       <div class="section">
         <div class="section-label">${label}</div>
         <div class="progress-row">
@@ -256,35 +304,36 @@
         </div>
         ${reset ? `<div class="reset-label">Resets in ${reset}</div>` : ''}
       </div>`;
-  }
-
-  function render(data) {
-    if (!data) {
-      content.innerHTML = '<div class="empty">No data yet</div>';
-      return;
     }
 
-    const { sessionPct, weeklyPct, sessionReset, weeklyReset } = parseUsage(data);
-
-    if (sessionPct == null && weeklyPct == null) {
-      // Unknown API shape — show raw JSON so the user can see what came back
-      content.innerHTML = `<div class="raw-view">${JSON.stringify(data, null, 2)}</div>`;
-    } else {
-      let html = buildSection('Current Session', sessionPct, sessionReset);
-      if (weeklyPct != null || weeklyReset) {
-        html += '<div class="divider"></div>';
-        html += buildSection('Weekly Limits', weeklyPct, weeklyReset);
+    function render(data) {
+      if (!data) {
+        content.innerHTML = '<div class="empty">No data yet</div>';
+        return;
       }
-      content.innerHTML = html;
+
+      const { sessionPct, weeklyPct, sessionReset, weeklyReset } = parseUsage(data);
+
+      if (sessionPct == null && weeklyPct == null) {
+        // Unknown API shape — show raw JSON so the user can see what came back
+        content.innerHTML = `<div class="raw-view">${JSON.stringify(data, null, 2)}</div>`;
+      } else {
+        let html = buildSection('Current Session', sessionPct, sessionReset);
+        if (weeklyPct != null || weeklyReset) {
+          html += '<div class="divider"></div>';
+          html += buildSection('Weekly Limits', weeklyPct, weeklyReset);
+        }
+        content.innerHTML = html;
+      }
+
+      footer.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     }
 
-    footer.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-  }
-
-  // Bootstrap: fetch current data, then stay subscribed to live updates
-  window.electronAPI.getUsage().then(render);
-  window.electronAPI.onUsageUpdate(render);
-</script>
+    // Bootstrap: fetch current data, then stay subscribed to live updates
+    window.electronAPI.getUsage().then(render);
+    window.electronAPI.onUsageUpdate(render);
+  </script>
 
 </body>
+
 </html>
