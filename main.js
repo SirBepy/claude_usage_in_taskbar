@@ -259,7 +259,7 @@ function showSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 400,
-    height: 500,
+    height: 550,
     title: "Settings",
     icon: path.join(__dirname, "src/icon.svg"),
     resizable: false,
@@ -285,6 +285,9 @@ ipcMain.on("save-settings", (_, newSettings) => {
   saveSettings(settings);
   updateTray(); // in case icon style changed
 });
+ipcMain.handle("get-update-state", () => getUpdateState());
+ipcMain.on("install-update", () => quitAndInstall());
+ipcMain.handle("get-app-version", () => app.getVersion());
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 async function logout() {

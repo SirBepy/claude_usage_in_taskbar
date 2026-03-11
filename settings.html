@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +14,13 @@
             --text-dim: #999;
             --border: #333;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: 'Segoe UI', system-ui, sans-serif;
             background-color: var(--bg);
@@ -21,7 +28,13 @@
             padding: 20px;
             user-select: none;
         }
-        h2 { font-weight: 500; margin-bottom: 20px; font-size: 1.2rem; }
+
+        h2 {
+            font-weight: 500;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+        }
+
         .section {
             background: var(--surface);
             border-radius: 8px;
@@ -29,6 +42,7 @@
             margin-bottom: 16px;
             border: 1px solid var(--border);
         }
+
         .section-title {
             font-size: 0.9rem;
             color: var(--text-dim);
@@ -36,15 +50,22 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
+
         .option {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 12px;
         }
-        .option:last-child { margin-bottom: 0; }
-        .option-label { font-size: 0.95rem; }
-        
+
+        .option:last-child {
+            margin-bottom: 0;
+        }
+
+        .option-label {
+            font-size: 0.95rem;
+        }
+
         select {
             background: #2a2a2a;
             color: var(--text);
@@ -53,7 +74,10 @@
             border-radius: 4px;
             outline: none;
         }
-        select:focus { border-color: var(--primary); }
+
+        select:focus {
+            border-color: var(--primary);
+        }
 
         .footer {
             display: flex;
@@ -61,6 +85,7 @@
             gap: 10px;
             margin-top: 20px;
         }
+
         button {
             padding: 8px 16px;
             border-radius: 4px;
@@ -69,10 +94,25 @@
             font-size: 0.9rem;
             transition: background 0.2s;
         }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: #357abd; }
-        .btn-secondary { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
-        .btn-secondary:hover { background: #2a2a2a; }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #357abd;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: #2a2a2a;
+        }
 
         label.switch {
             position: relative;
@@ -80,31 +120,50 @@
             width: 34px;
             height: 20px;
         }
-        .switch input { opacity: 0; width: 0; height: 0; }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background-color: #333;
             transition: .4s;
             border-radius: 34px;
         }
+
         .slider:before {
             position: absolute;
             content: "";
-            height: 16px; width: 16px;
-            left: 2px; bottom: 2px;
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
             background-color: white;
             transition: .4s;
             border-radius: 50%;
         }
-        input:checked + .slider { background-color: var(--primary); }
-        input:checked + .slider:before { transform: translateX(14px); }
+
+        input:checked+.slider {
+            background-color: var(--primary);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(14px);
+        }
     </style>
 </head>
+
 <body>
     <h2>Settings</h2>
-    
+
     <div class="section">
         <div class="section-title">Visuals</div>
         <div class="option">
@@ -134,6 +193,18 @@
         </div>
     </div>
 
+    <div class="section">
+        <div class="section-title">Updates</div>
+        <div class="option" id="updateStatusOption">
+            <span class="option-label" id="appVersionLabel">Version: ...</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span id="updateStateLabel" style="font-size: 0.85em; color: var(--text-dim);"></span>
+                <button class="btn-primary" id="updateBtn"
+                    style="display: none; padding: 4px 8px; font-size: 0.8rem;">Update</button>
+            </div>
+        </div>
+    </div>
+
     <div class="footer">
         <button class="btn-secondary" id="cancelBtn">Cancel</button>
         <button class="btn-primary" id="saveBtn">Save Settings</button>
@@ -149,12 +220,34 @@
         const saveBtn = document.getElementById('saveBtn');
         const cancelBtn = document.getElementById('cancelBtn');
 
+        const appVersionLabel = document.getElementById('appVersionLabel');
+        const updateBtn = document.getElementById('updateBtn');
+        const updateStateLabel = document.getElementById('updateStateLabel');
+
         // Load settings
         window.onload = async () => {
             const settings = await ipcRenderer.invoke('get-settings');
             iconStyle.value = settings.iconStyle || 'rings';
             timeStyle.value = settings.timeStyle || 'absolute';
             launchAtLogin.checked = settings.launchAtLogin || false;
+
+            const version = await ipcRenderer.invoke('get-app-version');
+            appVersionLabel.innerText = `Version: ${version}`;
+
+            const updateState = await ipcRenderer.invoke('get-update-state');
+            if (updateState.state === 'downloaded') {
+                updateStateLabel.innerText = 'Update ready to install';
+                updateBtn.style.display = 'block';
+                updateBtn.innerText = `Install v${updateState.version}`;
+            } else if (updateState.state === 'available') {
+                updateStateLabel.innerText = `Downloading v${updateState.version}...`;
+            } else {
+                updateStateLabel.innerText = 'Up to date';
+            }
+        };
+
+        updateBtn.onclick = () => {
+            ipcRenderer.send('install-update');
         };
 
         // Save settings
@@ -174,4 +267,5 @@
         };
     </script>
 </body>
+
 </html>
