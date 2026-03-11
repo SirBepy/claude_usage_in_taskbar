@@ -24,7 +24,9 @@ function fetchUsageFromPage() {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try { win.destroy(); } catch {}
+      try {
+        win.destroy();
+      } catch {}
       fn();
     }
 
@@ -54,11 +56,18 @@ function fetchUsageFromPage() {
     // page consumes it — this guarantees Fetch.getResponseBody always succeeds.
     // .catch() is required: when settle() destroys the window, any in-flight
     // CDP commands reject with "target closed", which would be unhandled otherwise.
-    win.webContents.debugger.sendCommand("Fetch.enable", {
-      patterns: [{ urlPattern: "*/api/organizations/*/usage", requestStage: "Response" }],
-    }).catch(e => {
-      console.error("[scraper] Fetch.enable failed:", e.message);
-    });
+    win.webContents.debugger
+      .sendCommand("Fetch.enable", {
+        patterns: [
+          {
+            urlPattern: "*/api/organizations/*/usage",
+            requestStage: "Response",
+          },
+        ],
+      })
+      .catch((e) => {
+        console.error("[scraper] Fetch.enable failed:", e.message);
+      });
 
     win.webContents.debugger.on("message", async (_, method, params) => {
       if (settled) return;
@@ -70,9 +79,11 @@ function fetchUsageFromPage() {
 
       // Always continue the request so the page doesn't hang, regardless of outcome.
       const continueRequest = () =>
-        win.webContents.debugger.sendCommand("Fetch.continueRequest", {
-          requestId: params.requestId,
-        }).catch(() => {});
+        win.webContents.debugger
+          .sendCommand("Fetch.continueRequest", {
+            requestId: params.requestId,
+          })
+          .catch(() => {});
 
       if (status === 401 || status === 403) {
         await continueRequest();
@@ -82,12 +93,15 @@ function fetchUsageFromPage() {
 
       if (status === 200) {
         try {
-          const { body, base64Encoded } = await win.webContents.debugger.sendCommand(
-            "Fetch.getResponseBody",
-            { requestId: params.requestId },
-          );
+          const { body, base64Encoded } =
+            await win.webContents.debugger.sendCommand(
+              "Fetch.getResponseBody",
+              { requestId: params.requestId },
+            );
           await continueRequest();
-          const text = base64Encoded ? Buffer.from(body, "base64").toString() : body;
+          const text = base64Encoded
+            ? Buffer.from(body, "base64").toString()
+            : body;
           const parsed = JSON.parse(text);
           settle(() => resolve(parsed));
         } catch (e) {

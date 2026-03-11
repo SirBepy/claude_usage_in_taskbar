@@ -1,12 +1,6 @@
 "use strict";
 
-const {
-  app,
-  BrowserWindow,
-  Tray,
-  Menu,
-  ipcMain,
-} = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain } = require("electron");
 const path = require("path");
 const http = require("http");
 
@@ -23,10 +17,18 @@ const hookServer = http.createServer((req, res) => {
 hookServer.listen(HOOK_SERVER_PORT, "127.0.0.1");
 
 const { makeIcon, makeSpinFrame } = require("./src/icon");
-const { parseSessionPct, parseWeeklyPct, buildTooltip } = require("./src/usage-parser");
+const {
+  parseSessionPct,
+  parseWeeklyPct,
+  buildTooltip,
+} = require("./src/usage-parser");
 const { fetchUsageFromPage } = require("./src/scraper");
 const { clearClaudeCookies } = require("./src/session");
-const { setupAutoUpdater, getUpdateState, quitAndInstall } = require("./src/updater");
+const {
+  setupAutoUpdater,
+  getUpdateState,
+  quitAndInstall,
+} = require("./src/updater");
 
 // ── Single instance ───────────────────────────────────────────────────────────
 if (!app.requestSingleInstanceLock()) {
@@ -93,7 +95,9 @@ async function refresh() {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function updateTray() {
   if (!tray) return;
-  tray.setImage(makeIcon(parseSessionPct(usageData), parseWeeklyPct(usageData)));
+  tray.setImage(
+    makeIcon(parseSessionPct(usageData), parseWeeklyPct(usageData)),
+  );
   tray.setToolTip(buildTooltip(usageData));
 }
 
@@ -161,7 +165,9 @@ function createTray() {
   tray = new Tray(makeIcon(null, null));
   tray.setToolTip("Claude Usage — Initializing...");
 
-  tray.on("click", () => loggedIn ? refreshWithAnimation() : showLoginWindow());
+  tray.on("click", () =>
+    loggedIn ? refreshWithAnimation() : showLoginWindow(),
+  );
 
   tray.on("right-click", () => {
     tray.popUpContextMenu(buildContextMenu());
@@ -228,9 +234,13 @@ function showLoginWindow() {
   }
 
   loginWindow.webContents.on("did-navigate", (_, url) => onNavigate(url));
-  loginWindow.webContents.on("did-navigate-in-page", (_, url) => onNavigate(url));
+  loginWindow.webContents.on("did-navigate-in-page", (_, url) =>
+    onNavigate(url),
+  );
 
-  loginWindow.on("closed", () => { loginWindow = null; });
+  loginWindow.on("closed", () => {
+    loginWindow = null;
+  });
 }
 
 // ── Logout ────────────────────────────────────────────────────────────────────
@@ -249,7 +259,9 @@ app.whenReady().then(async () => {
   app.setAppUserModelId("com.aiusage.toolbar");
 
   createTray();
-  setupAutoUpdater(() => { /* menu is built fresh on each right-click */ });
+  setupAutoUpdater(() => {
+    /* menu is built fresh on each right-click */
+  });
 
   // Try to resume an existing session from a previous run.
   try {
@@ -266,7 +278,9 @@ app.whenReady().then(async () => {
   showLoginWindow();
 });
 
-app.on("window-all-closed", () => { /* keep running in tray */ });
+app.on("window-all-closed", () => {
+  /* keep running in tray */
+});
 app.on("before-quit", () => {
   stopPolling();
   tray?.destroy();

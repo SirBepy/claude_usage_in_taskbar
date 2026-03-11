@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -73,6 +74,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="usage-item">
         <div class="usage-header">
@@ -139,10 +141,11 @@
             // For now, it just updates the reset time countdown
             const sonnetResetTime = new Date(Date.now() + 4 * 60 * 60 * 1000 + 23 * 60 * 1000);
             const opusResetTime = new Date(Date.now() + 18 * 60 * 60 * 1000 + 15 * 60 * 1000);
-            
+
             document.getElementById('sonnet-reset').textContent = formatResetTime(sonnetResetTime);
             document.getElementById('opus-reset').textContent = formatResetTime(opusResetTime);
         }, 60000); // Update every minute
     </script>
 </body>
+
 </html>

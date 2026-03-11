@@ -38,7 +38,7 @@ function pixelsToPNG(size, pixels) {
     for (let x = 0; x < size; x++) {
       const src = (y * size + x) * 4;
       const dst = y * rowLen + 1 + x * 4;
-      raw[dst]     = pixels[src];
+      raw[dst] = pixels[src];
       raw[dst + 1] = pixels[src + 1];
       raw[dst + 2] = pixels[src + 2];
       raw[dst + 3] = pixels[src + 3];
@@ -61,10 +61,10 @@ const CY = SIZE / 2;
 
 // Colors keyed by urgency
 function urgencyRGB(pct) {
-  if (pct == null) return [74, 144, 226];  // blue  — loading / unknown
-  if (pct < 50)    return [39, 174, 96];   // green — healthy
-  if (pct < 80)    return [230, 126, 34];  // orange — moderate
-  return                  [231, 76, 60];   // red   — high
+  if (pct == null) return [74, 144, 226]; // blue  — loading / unknown
+  if (pct < 50) return [39, 174, 96]; // green — healthy
+  if (pct < 80) return [230, 126, 34]; // orange — moderate
+  return [231, 76, 60]; // red   — high
 }
 
 /**
@@ -81,7 +81,8 @@ function urgencyRGB(pct) {
 function drawRingArc(pixels, pct, outerR, innerR, fgRGB, bgRGB, bgAlpha) {
   const [fr, fg, fb] = fgRGB;
   const [br, bg, bb] = bgRGB;
-  const filledAngle = pct != null ? (Math.min(pct, 100) / 100) * 2 * Math.PI : 0;
+  const filledAngle =
+    pct != null ? (Math.min(pct, 100) / 100) * 2 * Math.PI : 0;
 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
@@ -93,8 +94,7 @@ function drawRingArc(pixels, pct, outerR, innerR, fgRGB, bgRGB, bgAlpha) {
 
       // Soft edge alpha so the ring has anti-aliased borders.
       const edgeAlpha =
-        Math.min(1, dist - (innerR - 1)) *
-        Math.min(1, (outerR + 1) - dist);
+        Math.min(1, dist - (innerR - 1)) * Math.min(1, outerR + 1 - dist);
 
       // Angle from top, clockwise: 0 = 12 o'clock.
       let angle = Math.atan2(dx, -dy);
@@ -104,10 +104,8 @@ function drawRingArc(pixels, pct, outerR, innerR, fgRGB, bgRGB, bgAlpha) {
       const inFilled = angle <= filledAngle;
 
       // Blend on top of whatever is already in the buffer (pre-multiplied alpha).
-      const srcA  = pixels[idx + 3] / 255;
-      const dstA  = inFilled
-        ? edgeAlpha
-        : (bgAlpha / 255) * edgeAlpha;
+      const srcA = pixels[idx + 3] / 255;
+      const dstA = inFilled ? edgeAlpha : (bgAlpha / 255) * edgeAlpha;
 
       const outA = dstA + srcA * (1 - dstA);
       if (outA < 0.004) continue;
@@ -115,7 +113,7 @@ function drawRingArc(pixels, pct, outerR, innerR, fgRGB, bgRGB, bgAlpha) {
       const blend = (dst, src) =>
         Math.round((src * dstA + dst * srcA * (1 - dstA)) / outA);
 
-      pixels[idx]     = blend(pixels[idx],     inFilled ? fr : br);
+      pixels[idx] = blend(pixels[idx], inFilled ? fr : br);
       pixels[idx + 1] = blend(pixels[idx + 1], inFilled ? fg : bg);
       pixels[idx + 2] = blend(pixels[idx + 2], inFilled ? fb : bb);
       pixels[idx + 3] = Math.round(outA * 255);
@@ -127,7 +125,16 @@ function drawRingArc(pixels, pct, outerR, innerR, fgRGB, bgRGB, bgAlpha) {
  * Draws a short spinning arc onto the pixel buffer — used for the refresh animation.
  * The arc spans `arcLen` radians starting at `startAngle` (clockwise from top).
  */
-function drawSpinningArc(pixels, startAngle, arcLen, outerR, innerR, color, bgRGB, bgAlpha) {
+function drawSpinningArc(
+  pixels,
+  startAngle,
+  arcLen,
+  outerR,
+  innerR,
+  color,
+  bgRGB,
+  bgAlpha,
+) {
   const [fr, fg, fb] = color;
   const [br, bg, bb] = bgRGB;
   const endAngle = startAngle + arcLen;
@@ -141,16 +148,16 @@ function drawSpinningArc(pixels, startAngle, arcLen, outerR, innerR, color, bgRG
       if (dist < innerR - 1 || dist > outerR + 1) continue;
 
       const edgeAlpha =
-        Math.min(1, dist - (innerR - 1)) *
-        Math.min(1, (outerR + 1) - dist);
+        Math.min(1, dist - (innerR - 1)) * Math.min(1, outerR + 1 - dist);
 
       let angle = Math.atan2(dx, -dy);
       if (angle < 0) angle += 2 * Math.PI;
 
       // Handle arc wrap-around past 2π.
-      const inArc = endAngle > 2 * Math.PI
-        ? angle >= startAngle || angle <= endAngle - 2 * Math.PI
-        : angle >= startAngle && angle <= endAngle;
+      const inArc =
+        endAngle > 2 * Math.PI
+          ? angle >= startAngle || angle <= endAngle - 2 * Math.PI
+          : angle >= startAngle && angle <= endAngle;
 
       const idx = (y * SIZE + x) * 4;
       const srcA = pixels[idx + 3] / 255;
@@ -161,7 +168,7 @@ function drawSpinningArc(pixels, startAngle, arcLen, outerR, innerR, color, bgRG
       const blend = (dst, src) =>
         Math.round((src * dstA + dst * srcA * (1 - dstA)) / outA);
 
-      pixels[idx]     = blend(pixels[idx],     inArc ? fr : br);
+      pixels[idx] = blend(pixels[idx], inArc ? fr : br);
       pixels[idx + 1] = blend(pixels[idx + 1], inArc ? fg : bg);
       pixels[idx + 2] = blend(pixels[idx + 2], inArc ? fb : bb);
       pixels[idx + 3] = Math.round(outA * 255);
@@ -187,7 +194,7 @@ function makeIcon(sessionPct, weeklyPct) {
   const track = [60, 60, 60];
 
   drawRingArc(pixels, sessionPct, 10.5, 7.5, urgencyRGB(sessionPct), track, 80);
-  drawRingArc(pixels, weeklyPct,   5.5,  3.5, urgencyRGB(weeklyPct),  track, 80);
+  drawRingArc(pixels, weeklyPct, 5.5, 3.5, urgencyRGB(weeklyPct), track, 80);
 
   return nativeImage.createFromBuffer(pixelsToPNG(SIZE, pixels));
 }
@@ -202,12 +209,21 @@ function makeIcon(sessionPct, weeklyPct) {
  */
 function makeSpinFrame(frame, weeklyPct) {
   const pixels = new Uint8Array(SIZE * SIZE * 4);
-  const track  = [60, 60, 60];
+  const track = [60, 60, 60];
 
-  const arcLen     = Math.PI * 0.6;          // ~108° spinning arc
+  const arcLen = Math.PI * 0.6; // ~108° spinning arc
   const startAngle = (frame * 0.28) % (2 * Math.PI); // ~18fps feels snappy
 
-  drawSpinningArc(pixels, startAngle, arcLen, 10.5, 7.5, [74, 144, 226], track, 40);
+  drawSpinningArc(
+    pixels,
+    startAngle,
+    arcLen,
+    10.5,
+    7.5,
+    [74, 144, 226],
+    track,
+    40,
+  );
   drawRingArc(pixels, weeklyPct, 5.5, 3.5, urgencyRGB(weeklyPct), track, 80);
 
   return nativeImage.createFromBuffer(pixelsToPNG(SIZE, pixels));
