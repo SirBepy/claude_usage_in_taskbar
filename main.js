@@ -171,6 +171,7 @@ function createTray() {
 // ── Login window ──────────────────────────────────────────────────────────────
 function showLoginWindow() {
   if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.show();
     loginWindow.focus();
     return;
   }
@@ -193,15 +194,41 @@ function showLoginWindow() {
     },
   }));
 
-  loginWindow.webContents.on("did-navigate", (_, url) => {
+  // Detect login via both full navigations (did-navigate) and SPA route changes
+  // (did-navigate-in-page / pushState). Claude.ai uses client-side routing, so
+  // after Google OAuth the page pushes to /new without a full reload.
+  let verifying = false;
+
+  function onNavigate(url) {
+    if (verifying) return;
     const isAuthPage = /\/(login|auth|sso|sign-?in)/i.test(url);
-    if (url.includes("claude.ai") && !isAuthPage) {
-      // Close immediately — no need to show Claude's UI, user already has the app.
-      // Fetch usage in the background; cookies are already set at this point.
-      loginWindow?.close();
-      setTimeout(() => refresh().then(startPolling).catch(console.error), 500);
-    }
-  });
+    if (!url.includes("claude.ai") || isAuthPage) return;
+
+    // Claude navigated to a real page — user is logged in.
+    // Hide immediately so they never see Claude's UI here.
+    verifying = true;
+    loginWindow?.hide();
+
+    setTimeout(async () => {
+      try {
+        usageData = await fetchUsageFromPage();
+        loggedIn = true;
+        updateTray();
+        loginWindow?.close();
+        startPolling();
+      } catch {
+        // Session not ready — show login again.
+        verifying = false;
+        if (loginWindow && !loginWindow.isDestroyed()) {
+          loginWindow.loadURL("https://claude.ai/login");
+          loginWindow.show();
+        }
+      }
+    }, 1500);
+  }
+
+  loginWindow.webContents.on("did-navigate", (_, url) => onNavigate(url));
+  loginWindow.webContents.on("did-navigate-in-page", (_, url) => onNavigate(url));
 
   loginWindow.on("closed", () => { loginWindow = null; });
 }
