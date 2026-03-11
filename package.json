@@ -45,8 +45,11 @@
     "files": [
       "main.js",
       "src/**",
+      "preload.js",
       "profile-preload.js",
       "profile-picker.html",
+      "settings.html",
+      "settings.js",
       "node_modules/**",
       "!node_modules/**/{CHANGELOG.md,README.md,readme.md,Readme.md}",
       "!node_modules/**/test{,s}/**",
