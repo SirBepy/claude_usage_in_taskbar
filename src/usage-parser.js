@@ -1,14 +1,23 @@
 "use strict";
 
-function formatTimeUntil(iso) {
+function formatResetAt(iso) {
   if (!iso) return null;
-  const diff = new Date(iso) - Date.now();
+  const resetDate = new Date(iso);
+  const diff = resetDate - Date.now();
   if (diff <= 0) return "soon";
-  const h = Math.floor(diff / 3600000),
-    m = Math.floor((diff % 3600000) / 60000);
-  if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+
+  const hh = resetDate.getHours().toString().padStart(2, "0");
+  const mm = resetDate.getMinutes().toString().padStart(2, "0");
+  const timeStr = `${hh}:${mm}`;
+
+  const hoursUntil = diff / 3600000;
+  if (hoursUntil > 20) {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const dayStr = days[resetDate.getDay()];
+    return `${dayStr} ${timeStr}`;
+  }
+
+  return timeStr;
 }
 
 /** 0–100 session (5-hour window) utilization, or null if unknown. */
@@ -29,13 +38,17 @@ function buildTooltip(data) {
 
   const session = data.five_hour;
   if (session?.utilization != null) {
-    const reset = session.resets_at ? ` — resets ${formatTimeUntil(session.resets_at)}` : "";
+    const reset = session.resets_at
+      ? ` - ${formatResetAt(session.resets_at)}`
+      : "";
     lines.push(`Session: ${session.utilization}%${reset}`);
   }
 
   const weekly = data.seven_day;
   if (weekly?.utilization != null) {
-    const reset = weekly.resets_at ? ` — resets ${formatTimeUntil(weekly.resets_at)}` : "";
+    const reset = weekly.resets_at
+      ? ` - ${formatResetAt(weekly.resets_at)}`
+      : "";
     lines.push(`Weekly:  ${weekly.utilization}%${reset}`);
   }
 
