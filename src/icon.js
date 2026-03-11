@@ -123,31 +123,94 @@ function drawRingArc(pixels, pct, outerR, innerR, fgRGB, bgRGB, bgAlpha) {
   }
 }
 
+/**
+ * Draws a short spinning arc onto the pixel buffer — used for the refresh animation.
+ * The arc spans `arcLen` radians starting at `startAngle` (clockwise from top).
+ */
+function drawSpinningArc(pixels, startAngle, arcLen, outerR, innerR, color, bgRGB, bgAlpha) {
+  const [fr, fg, fb] = color;
+  const [br, bg, bb] = bgRGB;
+  const endAngle = startAngle + arcLen;
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const dx = x - CX + 0.5;
+      const dy = y - CY + 0.5;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < innerR - 1 || dist > outerR + 1) continue;
+
+      const edgeAlpha =
+        Math.min(1, dist - (innerR - 1)) *
+        Math.min(1, (outerR + 1) - dist);
+
+      let angle = Math.atan2(dx, -dy);
+      if (angle < 0) angle += 2 * Math.PI;
+
+      // Handle arc wrap-around past 2π.
+      const inArc = endAngle > 2 * Math.PI
+        ? angle >= startAngle || angle <= endAngle - 2 * Math.PI
+        : angle >= startAngle && angle <= endAngle;
+
+      const idx = (y * SIZE + x) * 4;
+      const srcA = pixels[idx + 3] / 255;
+      const dstA = inArc ? edgeAlpha : (bgAlpha / 255) * edgeAlpha;
+      const outA = dstA + srcA * (1 - dstA);
+      if (outA < 0.004) continue;
+
+      const blend = (dst, src) =>
+        Math.round((src * dstA + dst * srcA * (1 - dstA)) / outA);
+
+      pixels[idx]     = blend(pixels[idx],     inArc ? fr : br);
+      pixels[idx + 1] = blend(pixels[idx + 1], inArc ? fg : bg);
+      pixels[idx + 2] = blend(pixels[idx + 2], inArc ? fb : bb);
+      pixels[idx + 3] = Math.round(outA * 255);
+    }
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * Builds the 22×22 tray icon as a nativeImage.
  *
- * Outer ring (r 7–10): session (5-hour) utilisation.
- * Inner ring (r 3–5):  weekly  (7-day)  utilisation.
- * Both are coloured independently by urgency (green / orange / red).
- * Passing null for both renders a solid blue loading indicator.
+ * Outer ring (r 7.5–10.5): session (5-hour) utilisation.
+ * Inner ring (r 3.5–5.5):  weekly  (7-day)  utilisation.
+ * Both rings are coloured independently by urgency (green / orange / red).
+ * Passing null for both renders a blue "loading" state.
  *
  * @param {number|null} sessionPct  0–100 or null
  * @param {number|null} weeklyPct   0–100 or null
  */
 function makeIcon(sessionPct, weeklyPct) {
-  const pixels = new Uint8Array(SIZE * SIZE * 4); // fully transparent
+  const pixels = new Uint8Array(SIZE * SIZE * 4);
+  const track = [60, 60, 60];
 
-  const track = [60, 60, 60]; // dim grey track for the unfilled portion
-
-  // Outer ring — session
   drawRingArc(pixels, sessionPct, 10.5, 7.5, urgencyRGB(sessionPct), track, 80);
+  drawRingArc(pixels, weeklyPct,   5.5,  3.5, urgencyRGB(weeklyPct),  track, 80);
 
-  // Inner ring — weekly
+  return nativeImage.createFromBuffer(pixelsToPNG(SIZE, pixels));
+}
+
+/**
+ * Builds a single frame of the refresh animation.
+ * The outer ring shows a bright blue spinning arc; the inner ring stays at
+ * the last known weekly value so it always shows real data.
+ *
+ * @param {number}      frame      Animation frame counter (increments each tick)
+ * @param {number|null} weeklyPct  Last known weekly utilisation (kept static)
+ */
+function makeSpinFrame(frame, weeklyPct) {
+  const pixels = new Uint8Array(SIZE * SIZE * 4);
+  const track  = [60, 60, 60];
+
+  const arcLen     = Math.PI * 0.6;          // ~108° spinning arc
+  const startAngle = (frame * 0.28) % (2 * Math.PI); // ~18fps feels snappy
+
+  drawSpinningArc(pixels, startAngle, arcLen, 10.5, 7.5, [74, 144, 226], track, 40);
   drawRingArc(pixels, weeklyPct, 5.5, 3.5, urgencyRGB(weeklyPct), track, 80);
 
   return nativeImage.createFromBuffer(pixelsToPNG(SIZE, pixels));
 }
 
-module.exports = { makeIcon };
+module.exports = { makeIcon, makeSpinFrame };

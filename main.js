@@ -6,11 +6,10 @@ const {
   Tray,
   Menu,
   ipcMain,
-  screen: electronScreen,
 } = require("electron");
 const path = require("path");
 
-const { makeIcon } = require("./src/icon");
+const { makeIcon, makeSpinFrame } = require("./src/icon");
 const { parseSessionPct, parseWeeklyPct, buildTooltip } = require("./src/usage-parser");
 const { fetchUsageFromPage } = require("./src/scraper");
 const { clearClaudeCookies } = require("./src/session");
@@ -27,9 +26,9 @@ app.on("second-instance", () => {
 // ── State ─────────────────────────────────────────────────────────────────────
 let tray = null;
 let loginWindow = null;
-let popupWindow = null;
 let pickerWindow = null;
 let pollTimer = null;
+let spinTimer = null;
 let usageData = null;
 
 const POLL_MS = 60 * 60 * 1000;
@@ -71,7 +70,6 @@ async function refresh() {
   try {
     usageData = await fetchUsage();
     updateTray();
-    broadcastUsage();
   } catch (e) {
     console.error("Refresh failed:", e.message);
   }
@@ -84,20 +82,40 @@ function updateTray() {
   tray.setToolTip(buildTooltip(usageData));
 }
 
+/**
+ * Animates the outer ring as a spinning blue arc while a refresh is in flight.
+ * The inner ring stays at the last known weekly value.
+ * Stops automatically once the refresh promise settles.
+ */
+async function refreshWithAnimation() {
+  if (spinTimer) return; // already refreshing
+
+  let frame = 0;
+  const weeklyPct = parseWeeklyPct(usageData);
+
+  spinTimer = setInterval(() => {
+    tray?.setImage(makeSpinFrame(frame++, weeklyPct));
+  }, 50);
+
+  try {
+    await refresh();
+  } finally {
+    clearInterval(spinTimer);
+    spinTimer = null;
+    updateTray(); // snap to real data
+  }
+}
+
 function createTray() {
   tray = new Tray(makeIcon(null, null));
   tray.setToolTip("Claude Usage — Initializing...");
 
-  tray.on("click", async () => {
-    await refresh();
-    openPopup();
-  });
+  tray.on("click", () => refreshWithAnimation());
 
   tray.on("right-click", () => {
     tray.popUpContextMenu(
       Menu.buildFromTemplate([
-        { label: "Show Usage", click: openPopup },
-        { label: "Refresh", click: () => refresh() },
+        { label: "Refresh", click: () => refreshWithAnimation() },
         { type: "separator" },
         { label: "Log Out", click: logout },
         { type: "separator" },
@@ -105,49 +123,6 @@ function createTray() {
       ]),
     );
   });
-}
-
-// ── Popup window ──────────────────────────────────────────────────────────────
-function getPopupPosition() {
-  const { x: tx, y: ty, width: tw } = tray.getBounds();
-  const W = 320, H = 240;
-  const display = electronScreen.getDisplayNearestPoint({ x: tx, y: ty });
-  const { x: wx, y: wy, width: ww, height: wh } = display.workArea;
-
-  let x = Math.round(tx + tw / 2 - W / 2);
-  let y = Math.round(ty - H - 8);
-  x = Math.max(wx, Math.min(x, wx + ww - W));
-  y = Math.max(wy, Math.min(y, wy + wh - H));
-  return { x, y, width: W, height: H };
-}
-
-function openPopup() {
-  if (popupWindow && !popupWindow.isDestroyed()) {
-    popupWindow.focus();
-    return;
-  }
-
-  popupWindow = new BrowserWindow({
-    ...getPopupPosition(),
-    frame: false,
-    resizable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  popupWindow.loadFile("popup.html");
-  popupWindow.on("blur", () => popupWindow?.close());
-  popupWindow.on("closed", () => { popupWindow = null; });
-}
-
-function broadcastUsage() {
-  if (popupWindow && !popupWindow.isDestroyed())
-    popupWindow.webContents.send("usage-update", usageData);
 }
 
 // ── Login window ──────────────────────────────────────────────────────────────
@@ -190,7 +165,6 @@ async function tryAutoDetectLogin() {
     usageData = await fetchUsageFromPage();
     updateTray();
     loginWindow?.close();
-    broadcastUsage();
     startPolling();
   } catch {
     // keep waiting — user may still be completing login
@@ -224,20 +198,12 @@ function showProfilePicker() {
 async function logout() {
   stopPolling();
   usageData = null;
-  popupWindow?.close();
   await clearClaudeCookies();
   updateTray();
   showLoginWindow();
 }
 
-// ── IPC ───────────────────────────────────────────────────────────────────────
-ipcMain.handle("get-usage", () => usageData);
-ipcMain.handle("refresh", async () => {
-  await refresh();
-  return usageData;
-});
-ipcMain.on("close-popup", () => popupWindow?.close());
-
+// ── IPC (profile picker only) ─────────────────────────────────────────────────
 ipcMain.handle("get-chrome-profiles", () => listChromeProfiles());
 
 ipcMain.handle("import-chrome-profile", async (_, dir) => {
