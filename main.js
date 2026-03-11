@@ -42,6 +42,7 @@ let loginWindow = null;
 let pollTimer = null;
 let spinTimer = null;
 let usageData = null;
+let loggedIn = false;
 
 const POLL_MS = 60 * 60 * 1000;
 
@@ -59,6 +60,7 @@ async function fetchUsage() {
 }
 
 async function handleAuthFailure() {
+  loggedIn = false;
   stopPolling();
   const loginInProgress = loginWindow && !loginWindow.isDestroyed();
   if (!loginInProgress) await clearClaudeCookies();
@@ -81,6 +83,7 @@ function stopPolling() {
 async function refresh() {
   try {
     usageData = await fetchUsage();
+    loggedIn = true;
     updateTray();
   } catch (e) {
     console.error("Refresh failed:", e.message);
@@ -132,7 +135,9 @@ function buildContextMenu() {
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
     { type: "separator" },
-    { label: "Log Out", click: logout },
+    loggedIn
+      ? { label: "Log Out", click: logout }
+      : { label: "Log In", click: showLoginWindow },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ];
@@ -156,7 +161,7 @@ function createTray() {
   tray = new Tray(makeIcon(null, null));
   tray.setToolTip("Claude Usage — Initializing...");
 
-  tray.on("click", () => refreshWithAnimation());
+  tray.on("click", () => loggedIn ? refreshWithAnimation() : showLoginWindow());
 
   tray.on("right-click", () => {
     tray.popUpContextMenu(buildContextMenu());
@@ -191,26 +196,19 @@ function showLoginWindow() {
   loginWindow.webContents.on("did-navigate", (_, url) => {
     const isAuthPage = /\/(login|auth|sso|sign-?in)/i.test(url);
     if (url.includes("claude.ai") && !isAuthPage) {
-      setTimeout(tryAutoDetectLogin, 1500);
+      // Close immediately — no need to show Claude's UI, user already has the app.
+      // Fetch usage in the background; cookies are already set at this point.
+      loginWindow?.close();
+      setTimeout(() => refresh().then(startPolling).catch(console.error), 500);
     }
   });
 
   loginWindow.on("closed", () => { loginWindow = null; });
 }
 
-async function tryAutoDetectLogin() {
-  try {
-    usageData = await fetchUsageFromPage();
-    updateTray();
-    loginWindow?.close();
-    startPolling();
-  } catch {
-    // keep waiting — user may still be completing login
-  }
-}
-
 // ── Logout ────────────────────────────────────────────────────────────────────
 async function logout() {
+  loggedIn = false;
   stopPolling();
   usageData = null;
   await clearClaudeCookies();
@@ -229,6 +227,7 @@ app.whenReady().then(async () => {
   // Try to resume an existing session from a previous run.
   try {
     usageData = await fetchUsageFromPage();
+    loggedIn = true;
     updateTray();
     startPolling();
     return;
