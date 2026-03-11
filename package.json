@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-taskbar-tool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "System tray app to monitor Claude AI usage",
   "main": "main.js",
   "author": "SirBepy",
