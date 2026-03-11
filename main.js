@@ -332,9 +332,3 @@ app.on("before-quit", () => {
   stopPolling();
   tray?.destroy();
 });
-
-// TODO: When we show the login window, hide the bar on top where it shows "File, Edit, View, Window, Help"
-// TODO: Add options to show time until or set time
-// TODO: Add option to show as 2 bars or rings
-
-// TODO: Add support for macos (IGNORE THIS, THIS IS A BIG CHANGE)
