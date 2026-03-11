@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\main.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\icon.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\usage-parser.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\scraper.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\session.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\chrome-import.js\" && echo \"All OK\")",
+      "Bash(taskkill /F /IM electron.exe /T 2>/dev/null\ntaskkill /F /FI \"WINDOWTITLE eq AI Usage*\" 2>/dev/null\nsleep 3\necho \"done\")"
+    ]
+  }
+}
