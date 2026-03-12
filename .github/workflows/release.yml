@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # required for SignPath trusted-build verification
 
 jobs:
   release:
@@ -24,16 +25,52 @@ jobs:
         run: npm ci
 
       - name: Bump version and push
+        id: version
+        shell: bash
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
           npm version patch -m "chore: bump version to %s [skip ci]"
           git push
           git push --tags
+          echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish
+      - name: Build (unsigned)
+        run: npm run dist
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist:publish
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"  # skip signing — SignPath handles it below
+
+      - name: Upload unsigned installer as artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: dist/Claude-Usage-Taskbar-Tool-Setup-${{ steps.version.outputs.version }}.exe
+
+      - name: Sign installer with SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIG_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          output-artifact-directory: dist
+          wait-for-completion: true
+
+      - name: Update latest.yml hash for signed installer
+        shell: bash
+        run: node scripts/update-release-hash.js
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          files: |
+            dist/Claude-Usage-Taskbar-Tool-Setup-${{ steps.version.outputs.version }}.exe
+            dist/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

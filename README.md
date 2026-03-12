@@ -62,3 +62,9 @@ Add this to your Claude Code settings (`~/.claude/settings.json` on Windows: `%A
 ```
 
 `curl` is included with Windows 10/11 — no extra software needed.
+
+## Code signing
+
+Windows releases are signed. See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) for details.
+
+> Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
