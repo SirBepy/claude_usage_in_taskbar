@@ -266,7 +266,7 @@ function showSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 400,
-    height: 550,
+    height: 650,
     title: "Settings",
     icon: path.join(__dirname, "src", "icon.png"),
     resizable: false,

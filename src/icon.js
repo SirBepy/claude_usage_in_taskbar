@@ -59,12 +59,34 @@ const SIZE = 22;
 const CX = SIZE / 2;
 const CY = SIZE / 2;
 
-// Colors keyed by urgency
-function urgencyRGB(pct) {
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return [r, g, b];
+}
+
+// Colors keyed by urgency from settings
+function urgencyRGB(pct, settings = {}) {
   if (pct == null) return [74, 144, 226]; // blue  — loading / unknown
-  if (pct < 50) return [39, 174, 96]; // green — healthy
-  if (pct < 80) return [230, 126, 34]; // orange — moderate
-  return [231, 76, 60]; // red   — high
+
+  const thresholds = settings.colorThresholds || [
+    { min: 0, color: "#27ae60" },
+    { min: 50, color: "#e67e22" },
+    { min: 80, color: "#e74c3c" },
+  ];
+
+  // Find the highest threshold that is <= pct
+  let activeColor = thresholds[0]?.color || "#4a90e2";
+  for (const t of thresholds) {
+    if (pct >= t.min) {
+      activeColor = t.color;
+    } else {
+      break;
+    }
+  }
+
+  return hexToRgb(activeColor);
 }
 
 /**
@@ -181,9 +203,9 @@ function drawSpinningArc(
 /**
  * Draws two vertical bars instead of rings.
  */
-function drawBars(pixels, sessionPct, weeklyPct, trackRGB) {
-  const sessionRGB = urgencyRGB(sessionPct);
-  const weeklyRGB = urgencyRGB(weeklyPct);
+function drawBars(pixels, sessionPct, weeklyPct, trackRGB, settings) {
+  const sessionRGB = urgencyRGB(sessionPct, settings);
+  const weeklyRGB = urgencyRGB(weeklyPct, settings);
 
   const sessionFill =
     sessionPct != null ? (Math.min(sessionPct, 100) / 100) * 18 : 0;
@@ -235,18 +257,26 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
   const track = [60, 60, 60];
 
   if (settings.iconStyle === "bars") {
-    drawBars(pixels, sessionPct, weeklyPct, track);
+    drawBars(pixels, sessionPct, weeklyPct, track, settings);
   } else {
     drawRingArc(
       pixels,
       sessionPct,
       10.5,
       7.5,
-      urgencyRGB(sessionPct),
+      urgencyRGB(sessionPct, settings),
       track,
       80,
     );
-    drawRingArc(pixels, weeklyPct, 5.5, 3.5, urgencyRGB(weeklyPct), track, 80);
+    drawRingArc(
+      pixels,
+      weeklyPct,
+      5.5,
+      3.5,
+      urgencyRGB(weeklyPct, settings),
+      track,
+      80,
+    );
   }
 
   return nativeImage.createFromBuffer(pixelsToPNG(SIZE, pixels));
@@ -266,7 +296,7 @@ function makeSpinFrame(frame, weeklyPct, settings = {}) {
   if (settings.iconStyle === "bars") {
     // For bars animation, we can just make them pulse or some simple effect
     // For now, let's just keep them static but blueish
-    drawBars(pixels, 100, weeklyPct, track);
+    drawBars(pixels, 100, weeklyPct, track, settings);
     // Overwrite session bar color with spinning blue
     const blue = [74, 144, 226];
     const pulse = Math.abs(Math.sin(frame * 0.2));
@@ -293,7 +323,15 @@ function makeSpinFrame(frame, weeklyPct, settings = {}) {
       track,
       40,
     );
-    drawRingArc(pixels, weeklyPct, 5.5, 3.5, urgencyRGB(weeklyPct), track, 80);
+    drawRingArc(
+      pixels,
+      weeklyPct,
+      5.5,
+      3.5,
+      urgencyRGB(weeklyPct, settings),
+      track,
+      80,
+    );
   }
 
   return nativeImage.createFromBuffer(pixelsToPNG(SIZE, pixels));

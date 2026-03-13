@@ -13,6 +13,11 @@ const DEFAULT_SETTINGS = {
   estimateTokens: false,
   sessionPlan: 44000,
   weeklyPlan: 200000,
+  colorThresholds: [
+    { min: 0, color: "#27ae60" },
+    { min: 50, color: "#e67e22" },
+    { min: 80, color: "#e74c3c" },
+  ],
 };
 
 function loadSettings() {
