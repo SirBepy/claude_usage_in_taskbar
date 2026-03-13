@@ -4,11 +4,22 @@ A Windows system tray app that shows your Claude AI usage at a glance — no bro
 
 ## Installation
 
-Download the latest `AI-Usage-Toolbar-Setup-x.x.x.exe` from the
+Download the latest `AI-Usage-Toolbar-Setup-x.x.x.exe` (Windows) or `.dmg` / `.zip` (macOS) from the
 [Releases page](https://github.com/SirBepy/ai_usage/releases) and run it.
 No admin rights required.
 
 The app updates itself automatically in the background.
+
+### macOS Installation (Unsigned App)
+
+Because this app is currently unsigned, macOS may flag it as "damaged" or from an "unidentified developer" when downloaded from the internet. To open it:
+
+1.  **Right-click** the application in your `Applications` folder and select **Open**.
+2.  If it still shows a "damaged" error, open **Terminal** and run:
+    ```bash
+    xattr -cr "/Applications/Claude Usage Taskbar Tool.app"
+    ```
+    This removes the internet download "quarantine" flag and allows the app to start normally.
 
 ## First launch
 
