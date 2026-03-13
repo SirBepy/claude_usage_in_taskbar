@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging",
-    "dist": "electron-builder",
+    "dist": "electron-builder --publish never",
     "dist:publish": "electron-builder --publish always"
   },
   "dependencies": {
@@ -50,6 +50,8 @@
       "profile-picker.html",
       "settings.html",
       "settings.js",
+      "README.md",
+      "CLAUDE.md",
       "node_modules/**",
       "!node_modules/**/{CHANGELOG.md,README.md,readme.md,Readme.md}",
       "!node_modules/**/test{,s}/**",
