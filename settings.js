@@ -1,6 +1,8 @@
 const iconStyle = document.getElementById('iconStyle');
 const timeStyle = document.getElementById('timeStyle');
 const overlayDisplay = document.getElementById('overlayDisplay');
+const overlayStyle = document.getElementById('overlayStyle');
+const cleanNumberMode = document.getElementById('cleanNumberMode');
 const launchAtLogin = document.getElementById('launchAtLogin');
 const saveBtn = document.getElementById('saveBtn');
 const cancelBtn = document.getElementById('cancelBtn');
@@ -40,6 +42,8 @@ window.onload = async () => {
     iconStyle.value = settings.iconStyle || 'rings';
     timeStyle.value = settings.timeStyle || 'absolute';
     overlayDisplay.value = settings.overlayDisplay || 'none';
+    overlayStyle.value = settings.overlayStyle || 'classic';
+    cleanNumberMode.checked = settings.cleanNumberMode || false;
     launchAtLogin.checked = settings.launchAtLogin || false;
 
     estimateTokens.checked = settings.estimateTokens || false;
@@ -94,6 +98,8 @@ saveBtn.onclick = () => {
         iconStyle: iconStyle.value,
         timeStyle: timeStyle.value,
         overlayDisplay: overlayDisplay.value,
+        overlayStyle: overlayStyle.value,
+        cleanNumberMode: cleanNumberMode.checked,
         launchAtLogin: launchAtLogin.checked,
         estimateTokens: estimateTokens.checked,
         sessionPlan: parseInt(sessionPlan.value, 10),
