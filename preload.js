@@ -24,4 +24,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("usage-update", handler);
     return () => ipcRenderer.removeListener("usage-update", handler);
   },
+  onUpdateStateChange: (cb) => {
+    const handler = (_, data) => cb(data);
+    ipcRenderer.on("update-state-changed", handler);
+    return () => ipcRenderer.removeListener("update-state-changed", handler);
+  },
 });

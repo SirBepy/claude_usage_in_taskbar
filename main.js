@@ -169,7 +169,6 @@ function buildContextMenu() {
     { type: "separator" },
     {
       label: "Settings",
-      accelerator: "CmdOrCtrl+,",
       click: showSettingsWindow,
     },
     { type: "separator" },
@@ -358,7 +357,9 @@ app.whenReady().then(async () => {
 
   createTray();
   setupAutoUpdater(() => {
-    /* menu is built fresh on each right-click */
+    const state = getUpdateState();
+    loginWindow?.webContents.send("update-state-changed", state);
+    settingsWindow?.webContents.send("update-state-changed", state);
   });
 
   // Try to resume an existing session from a previous run.

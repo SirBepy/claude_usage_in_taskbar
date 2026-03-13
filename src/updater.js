@@ -7,14 +7,21 @@ let updateState = "none"; // "none" | "available" | "downloading" | "downloaded"
 let updateVersion = null;
 let _onStateChange = null;
 
+let initialized = false;
+
 function setupAutoUpdater(onStateChange) {
   _onStateChange = onStateChange;
 
   if (!app.isPackaged) return; // skip in dev mode
+  if (initialized) {
+    autoUpdater.checkForUpdates().catch(() => {});
+    return;
+  }
+  initialized = true;
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.logger = null; // suppress verbose logs
+  autoUpdater.logger = console; // allow logging to the console
 
   autoUpdater.on("update-available", (info) => {
     updateState = "available";
@@ -36,7 +43,10 @@ function setupAutoUpdater(onStateChange) {
   });
 
   autoUpdater.on("error", (err) => {
-    console.error("Updater:", err.message);
+    console.error("Updater Error:", err.message);
+    updateState = "error";
+    updateVersion = err.message;
+    _onStateChange?.();
   });
 
   autoUpdater.checkForUpdates().catch(() => {});

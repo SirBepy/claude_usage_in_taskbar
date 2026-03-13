@@ -81,28 +81,50 @@ window.onload = async () => {
   const version = await electronAPI.getAppVersion();
   appVersionLabel.innerText = `Version: ${version}`;
 
-  const updateState = await electronAPI.getUpdateState();
-  if (updateState.state === "downloaded") {
-    updateStateLabel.innerText = "Update ready to install";
-    updateBtn.style.display = "block";
-    updateBtn.innerText = `Install v${updateState.version}`;
-    updateBtn.onclick = () => electronAPI.installUpdate();
-  } else if (updateState.state === "available") {
-    updateStateLabel.innerText = `New version available: v${updateState.version}`;
-    updateBtn.style.display = "block";
-    updateBtn.innerText = "Download & Update";
-    updateBtn.onclick = () => {
-      updateBtn.disabled = true;
-      updateBtn.innerText = "Downloading...";
-      electronAPI.downloadUpdate();
-    };
-  } else if (updateState.state === "downloading") {
-    updateStateLabel.innerText = "Downloading update...";
-    updateBtn.style.display = "none";
-  } else {
-    updateStateLabel.innerText = "Up to date";
-    updateBtn.style.display = "none";
+  function renderUpdateState(updateState) {
+    if (updateState.state === "downloaded") {
+      updateStateLabel.innerText = "Update ready to install";
+      updateStateLabel.style.color = "var(--primary)";
+      updateBtn.style.display = "block";
+      updateBtn.disabled = false;
+      updateBtn.innerText = `Install v${updateState.version}`;
+      updateBtn.onclick = () => electronAPI.installUpdate();
+    } else if (updateState.state === "available") {
+      updateStateLabel.innerText = `New version available: v${updateState.version}`;
+      updateStateLabel.style.color = "var(--text)";
+      updateBtn.style.display = "block";
+      updateBtn.disabled = false;
+      updateBtn.innerText = "Download & Update";
+      updateBtn.onclick = () => {
+        updateBtn.disabled = true;
+        updateBtn.innerText = "Downloading...";
+        electronAPI.downloadUpdate();
+      };
+    } else if (updateState.state === "downloading") {
+      updateStateLabel.innerText = "Downloading update...";
+      updateStateLabel.style.color = "var(--text-dim)";
+      updateBtn.style.display = "none";
+    } else if (updateState.state === "error") {
+      updateStateLabel.innerText = `Update error: ${updateState.version}`;
+      updateStateLabel.style.color = "#ff4444";
+      updateBtn.style.display = "block";
+      updateBtn.disabled = false;
+      updateBtn.innerText = "Retry Check";
+      updateBtn.onclick = () => electronAPI.checkForUpdates();
+    } else {
+      updateStateLabel.innerText = "Up to date";
+      updateStateLabel.style.color = "var(--text-dim)";
+      updateBtn.style.display = "none";
+    }
   }
+
+  const initialState = await electronAPI.getUpdateState();
+  renderUpdateState(initialState);
+
+  electronAPI.onUpdateStateChange((state) => {
+    console.log("Update state changed:", state);
+    renderUpdateState(state);
+  });
 };
 
 saveBtn.onclick = () => {
