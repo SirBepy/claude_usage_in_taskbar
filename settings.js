@@ -41,6 +41,7 @@ window.onload = async () => {
     launchAtLogin.checked = settings.launchAtLogin || false;
 
     estimateTokens.checked = settings.estimateTokens || false;
+    sessionPlan.value = settings.sessionPlan || 44000;
     weeklyPlan.value = settings.weeklyPlan || 200000;
 
     const thresholds = settings.colorThresholds || [];
@@ -63,15 +64,27 @@ window.onload = async () => {
         updateStateLabel.innerText = 'Update ready to install';
         updateBtn.style.display = 'block';
         updateBtn.innerText = `Install v${updateState.version}`;
+        updateBtn.onclick = () => electronAPI.installUpdate();
     } else if (updateState.state === 'available') {
-        updateStateLabel.innerText = `Downloading v${updateState.version}...`;
+        updateStateLabel.innerText = `New version available: v${updateState.version}`;
+        updateBtn.style.display = 'block';
+        updateBtn.innerText = 'Download & Update';
+        updateBtn.onclick = () => {
+            updateBtn.disabled = true;
+            updateBtn.innerText = 'Downloading...';
+            electronAPI.downloadUpdate();
+        };
+    } else if (updateState.state === 'downloading') {
+        updateStateLabel.innerText = 'Downloading update...';
+        updateBtn.style.display = 'none';
     } else {
         updateStateLabel.innerText = 'Up to date';
+        updateBtn.style.display = 'none';
     }
 };
 
 updateBtn.onclick = () => {
-    electronAPI.installUpdate();
+    // This is handled dynamically above
 };
 
 saveBtn.onclick = () => {

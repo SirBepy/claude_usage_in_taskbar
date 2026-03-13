@@ -34,6 +34,7 @@ const {
   setupAutoUpdater,
   getUpdateState,
   quitAndInstall,
+  downloadUpdate,
 } = require("./src/updater");
 
 // ── Single instance ───────────────────────────────────────────────────────────
@@ -296,6 +297,7 @@ ipcMain.on("save-settings", (_, newSettings) => {
 });
 ipcMain.handle("get-update-state", () => getUpdateState());
 ipcMain.on("install-update", () => quitAndInstall());
+ipcMain.on("download-update", () => downloadUpdate());
 ipcMain.handle("get-app-version", () => app.getVersion());
 
 // ── Logout ────────────────────────────────────────────────────────────────────
