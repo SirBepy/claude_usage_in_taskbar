@@ -37,30 +37,59 @@ function parseWeeklyPct(data) {
   return data?.seven_day?.utilization ?? null;
 }
 
+function formatTokens(num) {
+  if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return num.toString();
+}
+
 /** Builds the tray tooltip string from usage API data. */
 function buildTooltip(data, settings = {}) {
   if (!data) return "Claude Usage — Loading...";
 
-  const lines = [];
   const style = settings.timeStyle || "absolute";
 
   const session = data.five_hour;
-  if (session?.utilization != null) {
-    const reset = session.resets_at
-      ? ` - ${formatResetAt(session.resets_at, style)}`
-      : "";
-    lines.push(`Session: ${session.utilization}%${reset}`);
+  const w = data.seven_day;
+
+  const sNode = session?.utilization != null;
+  const wNode = w?.utilization != null;
+
+  if (!sNode && !wNode) return "Claude Usage";
+
+  const lines = [];
+
+  function row(s, wStr) {
+    if (sNode && wNode) return `${s}\t${wStr}`;
+    if (sNode) return s;
+    return wStr;
   }
 
-  const weekly = data.seven_day;
-  if (weekly?.utilization != null) {
-    const reset = weekly.resets_at
-      ? ` - ${formatResetAt(weekly.resets_at, style)}`
-      : "";
-    lines.push(`Weekly:  ${weekly.utilization}%${reset}`);
+  lines.push(row("Session:", "Weekly:"));
+  lines.push(row(`${session?.utilization ?? ""}%`, `${w?.utilization ?? ""}%`));
+
+  const sTime = sNode && session.resets_at ? formatResetAt(session.resets_at, style) : "";
+  const wTime = wNode && w.resets_at ? formatResetAt(w.resets_at, style) : "";
+  if (sTime || wTime) {
+    lines.push(row(sTime, wTime));
   }
 
-  return lines.length ? lines.join("\n") : "Claude Usage";
+  if (settings.estimateTokens) {
+    let sEst = "";
+    if (sNode && settings.sessionPlan) {
+      const left = Math.round(Math.max(0, 100 - session.utilization) / 100 * settings.sessionPlan);
+      sEst = `${formatTokens(left)} left`;
+    }
+    let wEst = "";
+    if (wNode && settings.weeklyPlan) {
+      const left = Math.round(Math.max(0, 100 - w.utilization) / 100 * settings.weeklyPlan);
+      wEst = `${formatTokens(left)} left`;
+    }
+    if (sEst || wEst) {
+      lines.push(row(sEst, wEst));
+    }
+  }
+
+  return lines.join("\n");
 }
 
 module.exports = { parseSessionPct, parseWeeklyPct, buildTooltip };

@@ -4,6 +4,10 @@ const launchAtLogin = document.getElementById('launchAtLogin');
 const saveBtn = document.getElementById('saveBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
+const estimateTokens = document.getElementById('estimateTokens');
+const sessionPlan = document.getElementById('sessionPlan');
+const weeklyPlan = document.getElementById('weeklyPlan');
+
 const appVersionLabel = document.getElementById('appVersionLabel');
 const updateBtn = document.getElementById('updateBtn');
 const updateStateLabel = document.getElementById('updateStateLabel');
@@ -13,6 +17,17 @@ window.onload = async () => {
     iconStyle.value = settings.iconStyle || 'rings';
     timeStyle.value = settings.timeStyle || 'absolute';
     launchAtLogin.checked = settings.launchAtLogin || false;
+
+    estimateTokens.checked = settings.estimateTokens || false;
+    sessionPlan.value = settings.sessionPlan || 44000;
+    weeklyPlan.value = settings.weeklyPlan || 200000;
+
+    const toggleInputs = () => {
+        sessionPlan.disabled = !estimateTokens.checked;
+        weeklyPlan.disabled = !estimateTokens.checked;
+    };
+    estimateTokens.addEventListener('change', toggleInputs);
+    toggleInputs();
 
     const version = await electronAPI.getAppVersion();
     appVersionLabel.innerText = `Version: ${version}`;
@@ -37,7 +52,10 @@ saveBtn.onclick = () => {
     const settings = {
         iconStyle: iconStyle.value,
         timeStyle: timeStyle.value,
-        launchAtLogin: launchAtLogin.checked
+        launchAtLogin: launchAtLogin.checked,
+        estimateTokens: estimateTokens.checked,
+        sessionPlan: parseInt(sessionPlan.value, 10),
+        weeklyPlan: parseInt(weeklyPlan.value, 10)
     };
     electronAPI.saveSettings(settings);
     window.close();

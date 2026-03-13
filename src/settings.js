@@ -10,6 +10,9 @@ const DEFAULT_SETTINGS = {
   iconStyle: "rings", // "rings" | "bars"
   timeStyle: "absolute", // "absolute" | "countdown"
   launchAtLogin: false,
+  estimateTokens: false,
+  sessionPlan: 44000,
+  weeklyPlan: 200000,
 };
 
 function loadSettings() {

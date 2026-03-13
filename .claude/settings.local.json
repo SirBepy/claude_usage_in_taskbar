@@ -5,7 +5,11 @@
       "Bash(taskkill /F /IM electron.exe /T 2>/dev/null\ntaskkill /F /FI \"WINDOWTITLE eq AI Usage*\" 2>/dev/null\nsleep 3\necho \"done\")",
       "Bash(node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\main.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\icon.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\usage-parser.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\scraper.js\" && echo \"OK\")",
       "Bash(node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\main.js\" && node --check \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\Toolbar\\\\AIUsage\\\\src\\\\icon.js\" && echo \"OK\")",
-      "Bash(ls -la | grep -E \"\\\\.\\(config|builder\\)\" && echo \"---\" && find . -maxdepth 2 -name \"*builder*\" -o -name \"electron*\" 2>/dev/null | head -20)"
+      "Bash(ls -la | grep -E \"\\\\.\\(config|builder\\)\" && echo \"---\" && find . -maxdepth 2 -name \"*builder*\" -o -name \"electron*\" 2>/dev/null | head -20)",
+      "WebFetch(domain:signpath.org)",
+      "Bash(git -C \"C:/Users/tecno/Desktop/Projects/Toolbar/AIUsage\" config user.name && git -C \"C:/Users/tecno/Desktop/Projects/Toolbar/AIUsage\" config user.email)",
+      "Bash(python -c \"\nimport zipfile, xml.etree.ElementTree as ET\nxlsx = 'C:/Users/tecno/Desktop/Projects/Toolbar/AIUsage/OSSRequestForm-v4.xlsx'\nwith zipfile.ZipFile\\(xlsx\\) as z:\n    print\\(z.namelist\\(\\)\\)\n\")",
+      "Bash(python -c \"\nimport zipfile, xml.etree.ElementTree as ET\nxlsx = 'C:/Users/tecno/Desktop/Projects/Toolbar/AIUsage/OSSRequestForm-v4.xlsx'\nwith zipfile.ZipFile\\(xlsx\\) as z:\n    with z.open\\('xl/worksheets/sheet1.xml'\\) as f:\n        content = f.read\\(\\).decode\\('utf-8'\\)\n        print\\(content[:8000]\\)\n\")"
     ]
   }
 }
