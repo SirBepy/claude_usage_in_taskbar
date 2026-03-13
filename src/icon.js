@@ -198,26 +198,27 @@ function drawSpinningArc(
   }
 }
 
-// ── Pixel Font (5x7) ───────────────────────────────────────────────────────────
+// ── Pixel Font (Giant 9x13) ────────────────────────────────────────────────────
+// Each number is roughly 9x13.
 const FONT = {
-  0: [0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
-  1: [0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E],
-  2: [0x0E, 0x11, 0x02, 0x04, 0x08, 0x10, 0x1F],
-  3: [0x1F, 0x02, 0x04, 0x0E, 0x01, 0x01, 0x1F],
-  4: [0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02],
-  5: [0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E],
-  6: [0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E],
-  7: [0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
-  8: [0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E],
-  9: [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C],
+  0: [0x1FE, 0x1FF, 0x1E1, 0x1E1, 0x1E1, 0x1E1, 0x1E1, 0x1E1, 0x1E1, 0x1E1, 0x1E1, 0x1FF, 0x1FE],
+  1: [0x018, 0x018, 0x1F8, 0x1F8, 0x018, 0x018, 0x018, 0x018, 0x018, 0x018, 0x018, 0x1FC, 0x1FC],
+  2: [0x1FE, 0x1FF, 0x007, 0x007, 0x00F, 0x01F, 0x07E, 0x0F0, 0x1E0, 0x1C0, 0x1C0, 0x1FF, 0x1FF],
+  3: [0x1FE, 0x1FF, 0x007, 0x007, 0x00F, 0x01E, 0x01E, 0x00F, 0x007, 0x007, 0x007, 0x1FF, 0x1FE],
+  4: [0x01E, 0x01E, 0x03E, 0x07E, 0x0DE, 0x19E, 0x13E, 0x1FF, 0x1FF, 0x01E, 0x01E, 0x01E, 0x01E],
+  5: [0x1FF, 0x1FF, 0x180, 0x180, 0x1FE, 0x1FF, 0x007, 0x00F, 0x01E, 0x01E, 0x007, 0x1FF, 0x1FE],
+  6: [0x0FE, 0x1FF, 0x180, 0x180, 0x1FE, 0x1FF, 0x181, 0x181, 0x181, 0x181, 0x181, 0x1FF, 0x0FE],
+  7: [0x1FF, 0x1FF, 0x007, 0x007, 0x00E, 0x01C, 0x038, 0x070, 0x0E0, 0x1C0, 0x1C0, 0x1C0, 0x1C0],
+  8: [0x0FE, 0x1FF, 0x181, 0x181, 0x1FF, 0x1FF, 0x181, 0x181, 0x181, 0x181, 0x181, 0x1FF, 0x0FE],
+  9: [0x0FE, 0x1FF, 0x181, 0x181, 0x181, 0x181, 0x1FF, 0x07F, 0x001, 0x001, 0x001, 0x1FF, 0x0FE],
 };
 
 function drawDigit(pixels, digit, x, y, color) {
   const glyph = FONT[digit];
   if (!glyph) return;
-  for (let row = 0; row < 7; row++) {
-    for (let col = 0; col < 5; col++) {
-      if ((glyph[row] >> (4 - col)) & 1) {
+  for (let row = 0; row < glyph.length; row++) {
+    for (let col = 0; col < 9; col++) {
+      if ((glyph[row] >> (8 - col)) & 1) {
         const px = x + col;
         const py = y + row;
         if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
@@ -236,7 +237,7 @@ function drawText(pixels, text, x, y, color) {
   let curX = x;
   for (const char of String(text)) {
     drawDigit(pixels, parseInt(char, 10), curX, y, color);
-    curX += 6; // 5 width + 1 spacing
+    curX += 10; // 9 width + 1 spacing
   }
 }
 
@@ -326,12 +327,31 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
     if (pct != null) {
       const val = Math.min(Math.round(pct), 99);
       const str = String(val);
-      // Center 1 or 2 digits (5x7 font, 22x22 icon)
-      const x = str.length === 1 ? 9 : 6;
-      const y = 8;
+      // Center digits (Giant 9x13 font, 22x22 icon)
+      // 1 digit: 9 wide -> x = (22-9)/2 = 6.5 -> 6
+      // 2 digits: 9+1+9 = 19 wide -> x = (22-19)/2 = 1.5 -> 1
+      const x = str.length === 1 ? 6 : 1;
+      const y = 4; // y = (22-13)/2 = 4.5 -> 4
 
-      // Draw shadow for legibility
-      drawText(pixels, str, x + 1, y + 1, [0, 0, 0]);
+      // Draw a darkened plate for maximum contrast
+      const plateX = x - 1;
+      const plateY = y - 1;
+      const plateW = (str.length * 10) - 1 + 2;
+      const plateH = 13 + 2;
+
+      for (let py = plateY; py < plateY + plateH; py++) {
+        for (let px = plateX; px < plateX + plateW; px++) {
+          if (px >= 0 && px < SIZE && py >= 0 && py < SIZE) {
+            const idx = (py * SIZE + px) * 4;
+            // Darken existing pixels for a "smoke glass" effect
+            pixels[idx] = Math.round(pixels[idx] * 0.2);
+            pixels[idx + 1] = Math.round(pixels[idx + 1] * 0.2);
+            pixels[idx + 2] = Math.round(pixels[idx + 2] * 0.2);
+            pixels[idx + 3] = Math.max(pixels[idx + 3], 200);
+          }
+        }
+      }
+
       drawText(pixels, str, x, y, [255, 255, 255]);
     }
   }
