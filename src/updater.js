@@ -10,7 +10,7 @@ let _onStateChange = null;
 let initialized = false;
 
 function setupAutoUpdater(onStateChange) {
-  _onStateChange = onStateChange;
+  if (onStateChange) _onStateChange = onStateChange;
 
   if (!app.isPackaged) return; // skip in dev mode
   if (initialized) {

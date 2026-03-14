@@ -333,7 +333,7 @@ ipcMain.handle("get-update-state", () => getUpdateState());
 ipcMain.on("install-update", () => quitAndInstall());
 ipcMain.on("download-update", () => downloadUpdate());
 ipcMain.on("check-for-updates", () => {
-  setupAutoUpdater();
+  setupAutoUpdater(); // Re-trigger check without overwriting existing callback
 });
 ipcMain.on("copy-logs", () => {
   clipboard.writeText(logBuffer.join("\n"));
@@ -358,7 +358,7 @@ app.whenReady().then(async () => {
   createTray();
   setupAutoUpdater(() => {
     const state = getUpdateState();
-    loginWindow?.webContents.send("update-state-changed", state);
+    console.log("Updater state changed via callback:", state);
     settingsWindow?.webContents.send("update-state-changed", state);
   });
 

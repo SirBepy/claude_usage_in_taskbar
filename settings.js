@@ -183,12 +183,17 @@ displayMode.addEventListener("change", updateVisibilities);
 refreshUpdateBtn.addEventListener("click", () => {
   console.log("Manual update check triggered");
   electronAPI.checkForUpdates();
+  
+  updateStateLabel.innerText = "Checking for updates...";
+  updateStateLabel.style.color = "var(--text-dim)";
+  updateBtn.style.display = "none";
+
   const updateStatus = document.getElementById("updateStatus");
   const updateInfo = document.getElementById("updateInfo");
   if (updateStatus) updateStatus.textContent = "Checking for updates...";
   if (updateInfo) updateInfo.style.display = "block";
 
-  // Hide info again after 5 seconds if no change
+  // Hide the "Checking..." info after 5 seconds
   setTimeout(() => {
     if (updateInfo) updateInfo.style.display = "none";
   }, 5000);
