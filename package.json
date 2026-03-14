@@ -23,7 +23,8 @@
     "appId": "com.aiusage.toolbar",
     "productName": "Claude Usage Taskbar Tool",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "Claude.Usage.Taskbar.Tool.Setup.${version}.${ext}"
     },
     "mac": {
       "target": [
