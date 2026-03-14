@@ -23,6 +23,12 @@ function setupAutoUpdater(onStateChange) {
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = console; // allow logging to the console
 
+  autoUpdater.setFeedURL({
+    provider: "github",
+    owner: "SirBepy",
+    repo: "ai_usage",
+  });
+
   autoUpdater.on("update-available", (info) => {
     updateState = "available";
     updateVersion = info.version;
