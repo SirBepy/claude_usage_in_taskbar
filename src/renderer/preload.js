@@ -36,6 +36,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openInExplorer: (folderPath) => ipcRenderer.send("open-in-explorer", folderPath),
   openInVSCode: (folderPath) => ipcRenderer.send("open-in-vscode", folderPath),
 
+  // Sync
+  syncRegister: (serverUrl, deviceName) => ipcRenderer.invoke("sync-register", serverUrl, deviceName),
+  syncLink: (serverUrl, linkCode, deviceName) => ipcRenderer.invoke("sync-link", serverUrl, linkCode, deviceName),
+  syncGenerateLinkCode: () => ipcRenderer.invoke("sync-generate-link-code"),
+  syncListDevices: () => ipcRenderer.invoke("sync-list-devices"),
+  syncPull: () => ipcRenderer.invoke("sync-pull"),
+  syncPush: () => ipcRenderer.invoke("sync-push"),
+
   // Token stats
   getTokenHistory: () => ipcRenderer.invoke("get-token-history"),
   getActiveSessions: () => ipcRenderer.invoke("get-active-sessions"),
