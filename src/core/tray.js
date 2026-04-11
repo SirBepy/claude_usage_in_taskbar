@@ -101,22 +101,29 @@ function updateTray(usageData) {
 }
 
 function buildContextMenu(callbacks) {
-  const { loggedIn, getUpdateState, showLoginWindow, showDashboardWindow, refreshWithAnimation, quitAndInstall, downloadUpdate, quit } = callbacks;
+  const { loggedIn, loggingIn, getUpdateState, showLoginWindow, showDashboardWindow, refreshWithAnimation, quitAndInstall, downloadUpdate, quit } = callbacks;
   const { state, version } = getUpdateState();
 
-  const template = [
-    ...(loggedIn
-      ? [
-          { label: "Refresh", click: () => refreshWithAnimation() },
-          { label: "Dashboard", click: showDashboardWindow },
-          { type: "separator" },
-        ]
-      : [
-          { label: "Log In", click: showLoginWindow },
-          { type: "separator" },
-        ]),
-    { label: "Quit", click: quit },
-  ];
+  let statusItems;
+  if (loggedIn) {
+    statusItems = [
+      { label: "Refresh", click: () => refreshWithAnimation() },
+      { label: "Dashboard", click: showDashboardWindow },
+      { type: "separator" },
+    ];
+  } else if (loggingIn) {
+    statusItems = [
+      { label: "Logging in...", enabled: false },
+      { type: "separator" },
+    ];
+  } else {
+    statusItems = [
+      { label: "Log In", click: showLoginWindow },
+      { type: "separator" },
+    ];
+  }
+
+  const template = [...statusItems, { label: "Quit", click: quit }];
 
   if (state === "downloaded") {
     template.unshift(
