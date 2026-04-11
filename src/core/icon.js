@@ -217,12 +217,12 @@ function drawBars(pixels, sessionPct, weeklyPct, trackRGB, settings) {
 function makeIcon(sessionPct, weeklyPct, settings = {}) {
   const pixels = new Uint8Array(SIZE * SIZE * 4);
   const track = [60, 60, 60];
-  const mode = settings.displayMode || "both"; // icon | number | both
+  const mode = settings.displayMode || "icon"; // icon | number
   const sessionSafe = settings._sessionSafe ?? null;
   const weeklySafe = settings._weeklySafe ?? null;
 
   // 1. Draw Background Visuals (Rings/Bars)
-  if (mode === "icon" || mode === "both") {
+  if (mode === "icon") {
     if (settings.iconStyle === "bars") {
       drawBars(pixels, sessionPct, weeklyPct, track, settings);
     } else {
@@ -248,7 +248,7 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
   }
 
   // 2. Draw Numeric Overlay
-  if (mode === "number" || mode === "both") {
+  if (mode === "number") {
     const overlayType = settings.overlayDisplay;
     if (overlayType === "session" || overlayType === "weekly") {
       const pct = overlayType === "session" ? sessionPct : weeklyPct;

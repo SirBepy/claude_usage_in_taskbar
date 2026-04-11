@@ -7,6 +7,7 @@ const path = require("path");
 const SETTINGS_PATH = path.join(app.getPath("userData"), "settings.json");
 
 const DEFAULT_SETTINGS = {
+  theme: "void", // "void" | "void-light" | "nebula" | "nebula-light" | "glacier" | "glacier-light" | "cosmo" | "cosmo-light"
   iconStyle: "rings", // "rings" | "bars"
   timeStyle: "absolute", // "absolute" | "countdown"
   launchAtLogin: false,
@@ -14,10 +15,10 @@ const DEFAULT_SETTINGS = {
   showSafePace: true,
   sessionPlan: 44000,
   weeklyPlan: 200000,
-  displayMode: "both", // "icon" | "number" | "both"
-  overlayDisplay: "none",
+  defaultDisplay: "icon", // "icon" | "session" | "weekly"
   overlayStyle: "classic",
   colorOverlayMode: "number", // "number" | "background" | "none"
+  colorApplyTo: { icon: true, number: true, dashboard: true, tooltip: true },
   colorMode: "threshold", // "threshold" | "pace"
   paceBand: 10,
   paceColors: {
@@ -36,13 +37,34 @@ const DEFAULT_SETTINGS = {
     questionAsked: { enabled: false, file: "sound3.mp3" },
     thresholdCrossed: { enabled: false, file: "sound6.mp3" },
   },
+  sync: {
+    enabled: false,
+    serverUrl: "",
+    apiKey: "",
+    deviceName: "",
+  },
 };
 
 function loadSettings() {
   try {
     if (fs.existsSync(SETTINGS_PATH)) {
       const data = fs.readFileSync(SETTINGS_PATH, "utf8");
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+      const saved = JSON.parse(data);
+
+      // Migrate old displayMode/overlayDisplay to defaultDisplay
+      if (saved.displayMode && !saved.defaultDisplay) {
+        if (saved.displayMode === "number" && saved.overlayDisplay === "weekly") {
+          saved.defaultDisplay = "weekly";
+        } else if (saved.displayMode === "number") {
+          saved.defaultDisplay = "session";
+        } else {
+          saved.defaultDisplay = "icon";
+        }
+        delete saved.displayMode;
+        delete saved.overlayDisplay;
+      }
+
+      return { ...DEFAULT_SETTINGS, ...saved };
     }
   } catch (e) {
     console.error("Failed to load settings:", e);

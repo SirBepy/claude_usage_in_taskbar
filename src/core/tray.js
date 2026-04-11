@@ -25,26 +25,33 @@ function hasThresholdCrossed(prevPct, newPct, thresholds) {
   return thresholds.some((t) => prevPct < t.min && newPct >= t.min);
 }
 
+function defaultDisplayToMode(def) {
+  if (def === "session") return { displayMode: "number", overlayDisplay: "session" };
+  if (def === "weekly") return { displayMode: "number", overlayDisplay: "weekly" };
+  return { displayMode: "icon" };
+}
+
 function getActiveSettings() {
   const s = _getSettings();
-  return tempDisplay ? { ...s, ...tempDisplay } : s;
+  if (tempDisplay) return { ...s, ...tempDisplay };
+  return { ...s, ...defaultDisplayToMode(s.defaultDisplay) };
 }
 
 function buildDisplayCycle(settings) {
-  const { displayMode, overlayDisplay } = settings;
-  if (displayMode === "number") {
-    const other = overlayDisplay === "session" ? "weekly" : "session";
-    return [
-      { displayMode: "number", overlayDisplay },
-      { displayMode: "number", overlayDisplay: other },
-      { displayMode: "icon" },
-    ];
-  }
-  return [
-    { displayMode, overlayDisplay },
+  const def = settings.defaultDisplay || "icon";
+  const allStates = [
+    { displayMode: "icon" },
     { displayMode: "number", overlayDisplay: "session" },
     { displayMode: "number", overlayDisplay: "weekly" },
   ];
+  // Map default setting to the matching state index
+  const defaultIndex = def === "session" ? 1 : def === "weekly" ? 2 : 0;
+  // Cycle: default first, then remaining two in fixed order
+  const cycle = [allStates[defaultIndex]];
+  for (let i = 0; i < allStates.length; i++) {
+    if (i !== defaultIndex) cycle.push(allStates[i]);
+  }
+  return cycle;
 }
 
 function cycleDisplayMode() {

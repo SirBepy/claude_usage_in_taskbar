@@ -86,7 +86,7 @@ function buildTooltip(data, settings = {}) {
   const timeStyle = settings.timeStyle || "absolute";
   const layout = settings.tooltipLayout || "rows";
   const showSafePace = settings.tooltipShowSafePace !== false;
-  const useColors = settings.tooltipUseColors !== false;
+  const useColors = settings.colorApplyTo?.tooltip !== false;
   // support old key name for backward compat
   const estimateTokens = settings.tooltipEstimateTokens ?? settings.estimateTokens ?? false;
 

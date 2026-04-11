@@ -38,7 +38,7 @@ function getPaceColor(pct, safePace, settings) {
 }
 
 function valueColor(pct, safePace) {
-  if (currentSettings.dashboardUseColors === false) return "var(--text)";
+  if (currentSettings.colorApplyTo?.dashboard === false) return "var(--text)";
   if (currentSettings.colorMode === "pace" && safePace != null) {
     return getPaceColor(pct, safePace, currentSettings);
   }
