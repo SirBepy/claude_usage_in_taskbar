@@ -36,7 +36,7 @@ const {
   setSpinImage,
 } = require("./src/core/tray");
 const { showLoginWindow: showLoginWindowImpl, showDashboardWindow: showDashboardWindowImpl } = require("./src/core/windows");
-const { startNativeAuth } = require("./src/core/native-auth");
+
 const { SyncClient } = require("./src/core/sync");
 const { clipboard } = require("electron");
 
@@ -81,7 +81,7 @@ let spinTimer = null;
 let usageData = null;
 let loggedIn = false;
 let dashboardWindow = null;
-let nativeAuthHandle = null;
+
 let settings = loadSettings();
 const syncClient = new SyncClient({
   getSettings: () => settings,
@@ -156,8 +156,7 @@ async function handleAuthFailure() {
   loggedIn = false;
   stopPolling();
   const loginInProgress = loginWindow && !loginWindow.isDestroyed();
-  const nativeAuthInProgress = nativeAuthHandle != null;
-  if (!loginInProgress && !nativeAuthInProgress) await clearClaudeCookies();
+  if (!loginInProgress) await clearClaudeCookies();
   showLoginWindow();
 }
 
@@ -231,42 +230,6 @@ async function refreshWithAnimation(fromHook = false) {
 
 // ── Windows ──────────────────────────────────────────────────────────────────
 function showLoginWindow() {
-  // Use native browser auth by default
-  if (nativeAuthHandle) return; // Already in progress
-
-  nativeAuthHandle = startNativeAuth({
-    onSuccess: async (initialUsage) => {
-      nativeAuthHandle = null;
-      // The bookmarklet sends usage data directly from the browser (same-origin
-      // fetch includes httpOnly cookies). Use it if available, otherwise try
-      // the scraper with whatever cookies we imported.
-      if (initialUsage) {
-        usageData = initialUsage;
-        loggedIn = true;
-        updateTray(usageData);
-        recordSnapshot(usageData);
-        startPolling();
-        return;
-      }
-      try {
-        usageData = await fetchUsageFromPage();
-        loggedIn = true;
-        updateTray(usageData);
-        recordSnapshot(usageData);
-        startPolling();
-      } catch (e) {
-        console.error("[auth] Native auth cookies failed verification:", e.message);
-        showLoginWindowFallback();
-      }
-    },
-    onCancel: () => {
-      nativeAuthHandle = null;
-    },
-  });
-}
-
-/** @deprecated Fallback - Electron window login. Kept for reliability. */
-function showLoginWindowFallback() {
   showLoginWindowImpl({
     getLoginWindow: () => loginWindow,
     setLoginWindow: (w) => { loginWindow = w; },
@@ -274,6 +237,7 @@ function showLoginWindowFallback() {
       usageData = data;
       loggedIn = true;
       updateTray(usageData);
+      recordSnapshot(usageData);
       startPolling();
     },
     onClosed: () => {},
@@ -348,6 +312,9 @@ async function logout() {
   stopPolling();
   usageData = null;
   await clearClaudeCookies();
+  if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+    dashboardWindow.close();
+  }
   updateTray(usageData);
   showLoginWindow();
 }
@@ -368,6 +335,7 @@ app.whenReady().then(async () => {
     onRightClick: () => {
       tray.popUpContextMenu(buildContextMenu({
         loggedIn,
+        loggingIn: nativeAuthHandle != null,
         getUpdateState,
         showLoginWindow,
         showDashboardWindow,
@@ -416,7 +384,6 @@ app.on("window-all-closed", () => {
 });
 app.on("before-quit", () => {
   stopPolling();
-  if (nativeAuthHandle) { nativeAuthHandle.cancel(); nativeAuthHandle = null; }
   tray?.destroy();
   hookServer.close();
   audioWindow?.destroy();
