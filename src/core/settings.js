@@ -36,6 +36,10 @@ const DEFAULT_SETTINGS = {
     questionAsked: { enabled: false, file: "sound3.mp3" },
     thresholdCrossed: { enabled: false, file: "sound6.mp3" },
   },
+  voice: {
+    enabled: false,
+    includeProjectName: true,
+  },
   sync: {
     enabled: false,
     serverUrl: "",

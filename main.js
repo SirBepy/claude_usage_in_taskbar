@@ -3,6 +3,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, shell } = require("electron");
 const path = require("path");
 const { execFile } = require("child_process");
+const say = require("say");
 
 app.name = "Claude Usage Taskbar Tool";
 if (process.platform === "win32") app.setAppUserModelId("Claude Usage Taskbar Tool");
@@ -124,6 +125,13 @@ function playSound(soundFile) {
   }
 }
 
+function speakText(text) {
+  if (!text) return;
+  say.speak(text, null, null, (err) => {
+    if (err) console.error("TTS error:", err.message);
+  });
+}
+
 const POLL_MS = 10 * 60 * 1000;
 
 // ── Hook server ──────────────────────────────────────────────────────────────
@@ -137,6 +145,7 @@ const hookServer = createHookServer({
   loadTokenHistory,
   dashboardSend: (channel, data) => dashboardWindow?.webContents.send(channel, data),
   playSound,
+  speakText,
 });
 
 // ── Usage fetching ────────────────────────────────────────────────────────────
@@ -184,7 +193,8 @@ async function refresh(fromHook = false) {
     const newWeekly = parseWeeklyPct(usageData);
     const sfx = settings.sounds || {};
 
-    if (fromHook && sfx.workFinished?.enabled) {
+    const voice = settings.voice || {};
+    if (fromHook && !voice.enabled && sfx.workFinished?.enabled) {
       playSound(sfx.workFinished.file);
     }
     if (sfx.thresholdCrossed?.enabled) {
@@ -335,7 +345,6 @@ app.whenReady().then(async () => {
     onRightClick: () => {
       tray.popUpContextMenu(buildContextMenu({
         loggedIn,
-        loggingIn: nativeAuthHandle != null,
         getUpdateState,
         showLoginWindow,
         showDashboardWindow,

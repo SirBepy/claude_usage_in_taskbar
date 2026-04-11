@@ -35,8 +35,14 @@ function showNotification(title, body, cwd) {
   } catch { /* app not ready */ }
 }
 
+function getProjectName(cwd, settings) {
+  const base = path.basename(cwd);
+  const aliases = settings.projectAliases || {};
+  return aliases[cwd] || aliases[base] || base;
+}
+
 function createHookServer(callbacks) {
-  const { onRefresh, onNotify, onQuit, getSettings, parseTranscript, appendSession, loadTokenHistory, dashboardSend, playSound } = callbacks;
+  const { onRefresh, onNotify, onQuit, getSettings, parseTranscript, appendSession, loadTokenHistory, dashboardSend, playSound, speakText } = callbacks;
 
   async function recordTokenStats(payload) {
     if (!payload?.session_id || !payload?.transcript_path) return;
@@ -53,6 +59,15 @@ function createHookServer(callbacks) {
         if (payload && payload.cwd) {
           showNotification("Claude finished", path.basename(payload.cwd), payload.cwd);
         }
+        const s = getSettings();
+        const voice = s.voice || {};
+        if (voice.enabled && payload?.cwd) {
+          const name = getProjectName(payload.cwd, s);
+          const msg = voice.includeProjectName && name
+            ? `An AI in ${name} is done`
+            : "An AI is done";
+          speakText(msg);
+        }
         recordTokenStats(payload).catch(console.error);
       });
       onRefresh();
@@ -62,9 +77,19 @@ function createHookServer(callbacks) {
         if (payload && payload.cwd) {
           showNotification("Claude is waiting for your input", path.basename(payload.cwd), payload.cwd);
         }
-        const sfx = getSettings().sounds || {};
-        if (sfx.questionAsked?.enabled) {
-          playSound(sfx.questionAsked.file);
+        const s = getSettings();
+        const voice = s.voice || {};
+        if (voice.enabled) {
+          const name = payload?.cwd ? getProjectName(payload.cwd, s) : "";
+          const msg = voice.includeProjectName && name
+            ? `An AI in ${name} is asking a question`
+            : "An AI is asking a question";
+          speakText(msg);
+        } else {
+          const sfx = s.sounds || {};
+          if (sfx.questionAsked?.enabled) {
+            playSound(sfx.questionAsked.file);
+          }
         }
       });
     } else if (req.method === "POST" && req.url === "/quit") {

@@ -321,6 +321,24 @@
         </div>
         <div class="view-body">
             <div class="section">
+                <div class="section-title">Voice</div>
+                <div class="option">
+                    <span class="option-label"><span class="info-wrap">Voice Notifications<span class="info-icon">?</span><span class="info-tooltip">When enabled, voice announcements replace sound effects for work finished and question events</span></span></span>
+                    <label class="switch">
+                        <input type="checkbox" id="voiceEnabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="option" id="voiceIncludeProjectNameOption" style="display:none">
+                    <span class="option-label">Include Project Name</span>
+                    <label class="switch">
+                        <input type="checkbox" id="voiceIncludeProjectName">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div id="soundSections">
+            <div class="section">
                 <div class="section-title">Work Finished</div>
                 <div class="option">
                     <span class="option-label">Enabled</span>
@@ -391,6 +409,7 @@
                         <button class="btn-secondary" id="previewThreshold" style="padding:3px 10px;font-size:0.8rem">▶</button>
                     </div>
                 </div>
+            </div>
             </div>
         </div>
     </div>

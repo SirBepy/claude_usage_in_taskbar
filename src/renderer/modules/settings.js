@@ -104,6 +104,10 @@ const paceColorNearOver = document.getElementById("paceColorNearOver");
 const paceColorOver = document.getElementById("paceColorOver");
 const tokenEstimateFields = document.getElementById("tokenEstimateFields");
 const addColorBtn = document.getElementById("addColorBtn");
+const voiceEnabled = document.getElementById("voiceEnabled");
+const voiceIncludeProjectName = document.getElementById("voiceIncludeProjectName");
+const voiceIncludeProjectNameOption = document.getElementById("voiceIncludeProjectNameOption");
+const soundSections = document.getElementById("soundSections");
 const soundWorkFinishedEnabled = document.getElementById("soundWorkFinishedEnabled");
 const soundWorkFinishedFile = document.getElementById("soundWorkFinishedFile");
 const soundWorkFinishedPicker = document.getElementById("soundWorkFinishedPicker");
@@ -162,6 +166,10 @@ function saveSettings() {
       workFinished: { enabled: soundWorkFinishedEnabled.checked, file: soundWorkFinishedFile.value },
       questionAsked: { enabled: soundQuestionAskedEnabled.checked, file: soundQuestionAskedFile.value },
       thresholdCrossed: { enabled: soundThresholdEnabled.checked, file: soundThresholdFile.value },
+    },
+    voice: {
+      enabled: voiceEnabled.checked,
+      includeProjectName: voiceIncludeProjectName.checked,
     },
     projectAliases: currentSettings.projectAliases || {},
     sync: currentSettings.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
@@ -325,6 +333,12 @@ window.onload = async () => {
     soundThresholdPicker.style.display = soundThresholdEnabled.checked ? "flex" : "none";
     tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
 
+    const voice = settings.voice || {};
+    voiceEnabled.checked = voice.enabled || false;
+    voiceIncludeProjectName.checked = voice.includeProjectName !== false;
+    voiceIncludeProjectNameOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    soundSections.style.display = voiceEnabled.checked ? "none" : "block";
+
     // Initialize sync settings (defined in sync-settings.js)
     if (typeof initSyncSettings === "function") initSyncSettings(settings);
   }
@@ -344,6 +358,12 @@ window.onload = async () => {
     saveSettings();
   };
 
+  voiceEnabled.addEventListener("change", () => {
+    voiceIncludeProjectNameOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    soundSections.style.display = voiceEnabled.checked ? "none" : "block";
+    saveSettings();
+  });
+  voiceIncludeProjectName.addEventListener("change", saveSettings);
   tooltipEstimateTokens.addEventListener("change", () => {
     tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
     saveSettings();
