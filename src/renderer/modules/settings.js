@@ -1,12 +1,44 @@
 "use strict";
 
+// ── Theme definitions ─────────────────────────────────────────────────────────
+const THEMES = [
+  { id: "void",          label: "Void",    mode: "dark",  colors: ["#16151f", "#1e1d2b", "#9d7dfc", "#6e8fff", "#e2e0f0"] },
+  { id: "nebula",        label: "Nebula",  mode: "dark",  colors: ["#0f1629", "#172040", "#c084fc", "#a78bfa", "#e2dff0"] },
+  { id: "glacier",       label: "Glacier", mode: "dark",  colors: ["#0c1a24", "#112430", "#38bdf8", "#22d3ee", "#e0f0f8"] },
+  { id: "cosmo",         label: "Cosmo",   mode: "dark",  colors: ["#1a0a1e", "#241430", "#f472b6", "#fb923c", "#f0e4f5"] },
+  { id: "void-light",    label: "Void",    mode: "light", colors: ["#f0eff5", "#ffffff", "#7c5cdb", "#4a6bdf", "#1e1d2b"] },
+  { id: "nebula-light",  label: "Nebula",  mode: "light", colors: ["#f2f0fa", "#ffffff", "#9333ea", "#7c3aed", "#1a1040"] },
+  { id: "glacier-light", label: "Glacier", mode: "light", colors: ["#eef6fa", "#ffffff", "#0284c7", "#0891b2", "#0c2430"] },
+  { id: "cosmo-light",   label: "Cosmo",   mode: "light", colors: ["#faf0f4", "#ffffff", "#db2777", "#ea580c", "#2a1030"] },
+];
+
+const themeGridDark = document.getElementById("themeGridDark");
+const themeGridLight = document.getElementById("themeGridLight");
+
+function renderThemeCards(activeTheme) {
+  [themeGridDark, themeGridLight].forEach(g => g.innerHTML = "");
+  for (const t of THEMES) {
+    const card = document.createElement("div");
+    card.className = "theme-card" + (t.id === activeTheme ? " active" : "");
+    card.innerHTML = `
+      <div class="theme-swatch">${t.colors.map(c => `<span style="background:${c}"></span>`).join("")}</div>
+      <span class="theme-card-label">${t.label}</span>
+    `;
+    card.onclick = () => {
+      document.documentElement.dataset.theme = t.id;
+      currentSettings.theme = t.id;
+      saveSettings();
+      renderThemeCards(t.id);
+    };
+    (t.mode === "dark" ? themeGridDark : themeGridLight).appendChild(card);
+  }
+}
+
 // ── Settings ───────────────────────────────────────────────────────────────────
-const displayMode = document.getElementById("displayMode");
+const defaultDisplay = document.getElementById("defaultDisplay");
 const iconStyle = document.getElementById("iconStyle");
 const timeStyle = document.getElementById("timeStyle");
 const iconStyleSection = document.getElementById("iconStyleSection");
-const overlayDisplay = document.getElementById("overlayDisplay");
-const overlayDisplaySection = document.getElementById("overlayDisplaySection");
 const overlayStyle = document.getElementById("overlayStyle");
 const overlayStyleSection = document.getElementById("overlayStyleSection");
 const colorOverlayMode = document.getElementById("colorOverlayMode");
@@ -15,11 +47,13 @@ const launchAtLogin = document.getElementById("launchAtLogin");
 const tooltipLayout = document.getElementById("tooltipLayout");
 const tooltipShowSafePace = document.getElementById("tooltipShowSafePace");
 const tooltipEstimateTokens = document.getElementById("tooltipEstimateTokens");
-const tooltipUseColors = document.getElementById("tooltipUseColors");
+const colorApplyIcon = document.getElementById("colorApplyIcon");
+const colorApplyNumber = document.getElementById("colorApplyNumber");
+const colorApplyDashboard = document.getElementById("colorApplyDashboard");
+const colorApplyTooltip = document.getElementById("colorApplyTooltip");
 const dashboardShowSession = document.getElementById("dashboardShowSession");
 const dashboardShowWeekly = document.getElementById("dashboardShowWeekly");
 const dashboardShowSafePace = document.getElementById("dashboardShowSafePace");
-const dashboardUseColors = document.getElementById("dashboardUseColors");
 const sessionPlan = document.getElementById("sessionPlan");
 const weeklyPlan = document.getElementById("weeklyPlan");
 const colorContainer = document.getElementById("colorContainer");
@@ -31,6 +65,7 @@ const paceColorUnder = document.getElementById("paceColorUnder");
 const paceColorNearSafe = document.getElementById("paceColorNearSafe");
 const paceColorNearOver = document.getElementById("paceColorNearOver");
 const paceColorOver = document.getElementById("paceColorOver");
+const tokenEstimateFields = document.getElementById("tokenEstimateFields");
 const addColorBtn = document.getElementById("addColorBtn");
 const soundWorkFinishedEnabled = document.getElementById("soundWorkFinishedEnabled");
 const soundWorkFinishedFile = document.getElementById("soundWorkFinishedFile");
@@ -52,21 +87,25 @@ let isMac = false;
 
 function saveSettings() {
   const settings = {
-    displayMode: displayMode.value,
+    theme: document.documentElement.dataset.theme || "void",
+    defaultDisplay: defaultDisplay.value,
     iconStyle: iconStyle.value,
-    overlayDisplay: overlayDisplay.value,
     overlayStyle: overlayStyle.value,
     colorOverlayMode: colorOverlayMode.value,
     timeStyle: timeStyle.value,
     tooltipLayout: tooltipLayout.value,
     tooltipShowSafePace: tooltipShowSafePace.checked,
     tooltipEstimateTokens: tooltipEstimateTokens.checked,
-    tooltipUseColors: tooltipUseColors.checked,
     launchAtLogin: launchAtLogin.checked,
     dashboardShowSession: dashboardShowSession.checked,
     dashboardShowWeekly: dashboardShowWeekly.checked,
     dashboardShowSafePace: dashboardShowSafePace.checked,
-    dashboardUseColors: dashboardUseColors.checked,
+    colorApplyTo: {
+      icon: colorApplyIcon.checked,
+      number: colorApplyNumber.checked,
+      dashboard: colorApplyDashboard.checked,
+      tooltip: colorApplyTooltip.checked,
+    },
     sessionPlan: parseInt(sessionPlan.value, 10) || 44000,
     weeklyPlan: parseInt(weeklyPlan.value, 10) || 200000,
     colorMode: colorMode.value,
@@ -89,6 +128,7 @@ function saveSettings() {
       thresholdCrossed: { enabled: soundThresholdEnabled.checked, file: soundThresholdFile.value },
     },
     projectAliases: currentSettings.projectAliases || {},
+    sync: currentSettings.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
   };
   currentSettings = settings;
   window.electronAPI?.saveSettings(settings);
@@ -100,8 +140,7 @@ function createColorRow(min = 0, color = "#ffffff") {
   row.className = "option color-row";
   row.innerHTML = `
     <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-      <input type="number" class="color-min" value="${min}" min="0" max="100"
-        style="width: 50px; background:var(--surface-alt); color:var(--text); border:1px solid var(--border); padding:4px 6px; border-radius:6px; font-family:'DM Sans',system-ui,sans-serif;">
+      <input type="number" class="color-min" value="${min}" min="0" max="100" style="width:50px">
       <span style="font-size: 0.8rem; color: var(--text-dim);">%</span>
       <input type="color" class="color-val" value="${color}"
         style="width: 30px; height: 24px; border: none; background: none; cursor: pointer;">
@@ -115,11 +154,12 @@ function createColorRow(min = 0, color = "#ffffff") {
 }
 
 function updateVisibilities() {
-  const mode = displayMode.value;
-  iconStyleSection.style.display = mode === "number" ? "none" : "flex";
-  overlayDisplaySection.style.display = mode === "icon" ? "none" : "flex";
-  overlayStyleSection.style.display = mode === "icon" ? "none" : "flex";
-  colorOverlayModeSection.style.display = mode === "icon" ? "none" : "flex";
+  const def = defaultDisplay.value;
+  // Icon style always visible (icon is always one of the 3 cycle states)
+  iconStyleSection.style.display = "flex";
+  // Number font/color always visible (number states are always in cycle)
+  overlayStyleSection.style.display = "flex";
+  colorOverlayModeSection.style.display = "flex";
 }
 
 function updateColorModeVisibility() {
@@ -128,7 +168,7 @@ function updateColorModeVisibility() {
   paceSection.style.display = isPace ? "block" : "none";
 }
 
-displayMode.addEventListener("change", () => { updateVisibilities(); saveSettings(); });
+defaultDisplay.addEventListener("change", () => { updateVisibilities(); saveSettings(); });
 colorMode.addEventListener("change", () => { updateColorModeVisibility(); saveSettings(); });
 paceBand.addEventListener("change", saveSettings);
 paceColorUnder.addEventListener("change", saveSettings);
@@ -199,21 +239,27 @@ window.onload = async () => {
 
   const settings = await window.electronAPI?.getSettings();
   if (settings) {
-    displayMode.value = settings.displayMode || "both";
+    const savedTheme = settings.theme || "void";
+    document.documentElement.dataset.theme = savedTheme;
+    renderThemeCards(savedTheme);
+
+    defaultDisplay.value = settings.defaultDisplay || "icon";
     iconStyle.value = settings.iconStyle || "rings";
-    overlayDisplay.value = settings.overlayDisplay || "none";
     overlayStyle.value = settings.overlayStyle || "classic";
     colorOverlayMode.value = settings.colorOverlayMode || "number";
     timeStyle.value = settings.timeStyle || "absolute";
     tooltipLayout.value = settings.tooltipLayout || "rows";
     tooltipShowSafePace.checked = settings.tooltipShowSafePace !== false;
     tooltipEstimateTokens.checked = settings.tooltipEstimateTokens ?? settings.estimateTokens ?? false;
-    tooltipUseColors.checked = settings.tooltipUseColors !== false;
     launchAtLogin.checked = settings.launchAtLogin || false;
     dashboardShowSession.checked = settings.dashboardShowSession !== false;
     dashboardShowWeekly.checked = settings.dashboardShowWeekly !== false;
     dashboardShowSafePace.checked = settings.dashboardShowSafePace ?? settings.showSafePace ?? true;
-    dashboardUseColors.checked = settings.dashboardUseColors !== false;
+    const cat = settings.colorApplyTo || {};
+    colorApplyIcon.checked = cat.icon !== false;
+    colorApplyNumber.checked = cat.number !== false;
+    colorApplyDashboard.checked = cat.dashboard !== false;
+    colorApplyTooltip.checked = cat.tooltip !== false;
     sessionPlan.value = settings.sessionPlan || 44000;
     weeklyPlan.value = settings.weeklyPlan || 200000;
     colorMode.value = settings.colorMode || "threshold";
@@ -243,15 +289,19 @@ window.onload = async () => {
     soundWorkFinishedPicker.style.display = soundWorkFinishedEnabled.checked ? "flex" : "none";
     soundQuestionAskedPicker.style.display = soundQuestionAskedEnabled.checked ? "flex" : "none";
     soundThresholdPicker.style.display = soundThresholdEnabled.checked ? "flex" : "none";
+    tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
+
+    // Initialize sync settings (defined in sync-settings.js)
+    if (typeof initSyncSettings === "function") initSyncSettings(settings);
   }
 
   updateVisibilities();
 
   // Auto-save on any input change
-  for (const el of [iconStyle, overlayDisplay, overlayStyle, colorOverlayMode, timeStyle, tooltipLayout, sessionPlan, weeklyPlan]) {
+  for (const el of [iconStyle, overlayStyle, colorOverlayMode, timeStyle, tooltipLayout, sessionPlan, weeklyPlan]) {
     el.addEventListener("change", saveSettings);
   }
-  for (const el of [launchAtLogin, tooltipShowSafePace, tooltipEstimateTokens, tooltipUseColors, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, dashboardUseColors]) {
+  for (const el of [launchAtLogin, tooltipShowSafePace, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
     el.addEventListener("change", saveSettings);
   }
 
@@ -260,6 +310,10 @@ window.onload = async () => {
     saveSettings();
   };
 
+  tooltipEstimateTokens.addEventListener("change", () => {
+    tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
+    saveSettings();
+  });
   soundWorkFinishedEnabled.addEventListener("change", () => {
     soundWorkFinishedPicker.style.display = soundWorkFinishedEnabled.checked ? "flex" : "none";
     saveSettings();

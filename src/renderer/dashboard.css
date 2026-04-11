@@ -1,4 +1,5 @@
-:root {
+/* ── Themes ── */
+[data-theme="void"] {
     --bg: #16151f;
     --surface: #1e1d2b;
     --surface-alt: #242334;
@@ -9,6 +10,97 @@
     --border: #2d2c44;
     --danger: #e05252;
     --success: #7af0c0;
+}
+
+[data-theme="void-light"] {
+    --bg: #f0eff5;
+    --surface: #ffffff;
+    --surface-alt: #e8e6f0;
+    --primary: #7c5cdb;
+    --secondary: #4a6bdf;
+    --text: #1e1d2b;
+    --text-dim: #8b87a8;
+    --border: #d4d2e0;
+    --danger: #d43f3f;
+    --success: #2ea66e;
+}
+
+[data-theme="nebula"] {
+    --bg: #0f1629;
+    --surface: #172040;
+    --surface-alt: #1d2850;
+    --primary: #c084fc;
+    --secondary: #a78bfa;
+    --text: #e2dff0;
+    --text-dim: #6e6b99;
+    --border: #2a3060;
+    --danger: #f06060;
+    --success: #6ee7b7;
+}
+
+[data-theme="nebula-light"] {
+    --bg: #f2f0fa;
+    --surface: #ffffff;
+    --surface-alt: #ece8f8;
+    --primary: #9333ea;
+    --secondary: #7c3aed;
+    --text: #1a1040;
+    --text-dim: #8b7fba;
+    --border: #d8d0f0;
+    --danger: #dc2626;
+    --success: #16a34a;
+}
+
+[data-theme="glacier"] {
+    --bg: #0c1a24;
+    --surface: #112430;
+    --surface-alt: #162e3c;
+    --primary: #38bdf8;
+    --secondary: #22d3ee;
+    --text: #e0f0f8;
+    --text-dim: #5e8fa0;
+    --border: #1e3a4c;
+    --danger: #f87171;
+    --success: #34d399;
+}
+
+[data-theme="glacier-light"] {
+    --bg: #eef6fa;
+    --surface: #ffffff;
+    --surface-alt: #e0f0f6;
+    --primary: #0284c7;
+    --secondary: #0891b2;
+    --text: #0c2430;
+    --text-dim: #6a9aac;
+    --border: #c4dce8;
+    --danger: #dc2626;
+    --success: #059669;
+}
+
+[data-theme="cosmo"] {
+    --bg: #1a0a1e;
+    --surface: #241430;
+    --surface-alt: #2e1a3c;
+    --primary: #f472b6;
+    --secondary: #fb923c;
+    --text: #f0e4f5;
+    --text-dim: #8a6898;
+    --border: #3a2248;
+    --danger: #fb7185;
+    --success: #4ade80;
+}
+
+[data-theme="cosmo-light"] {
+    --bg: #faf0f4;
+    --surface: #ffffff;
+    --surface-alt: #f5e8f0;
+    --primary: #db2777;
+    --secondary: #ea580c;
+    --text: #2a1030;
+    --text-dim: #a07090;
+    --border: #e8d0dc;
+    --danger: #e11d48;
+    --success: #16a34a;
 }
 
 *, *::before, *::after {
@@ -247,6 +339,87 @@ body {
     color: var(--text);
 }
 
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+/* ── Info tooltips ── */
+.info-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid var(--text-dim);
+    font-size: 0.55rem;
+    font-weight: 700;
+    font-style: italic;
+    color: var(--text-dim);
+    cursor: help;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.info-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface-alt);
+    color: var(--text);
+    font-size: 0.72rem;
+    font-weight: 400;
+    font-style: normal;
+    line-height: 1.45;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    white-space: normal;
+    width: 200px;
+    z-index: 100;
+    pointer-events: none;
+}
+
+.info-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--border);
+}
+
+.info-wrap:hover .info-tooltip {
+    display: block;
+}
+
 /* ── Nav rows (settings subpage links) ── */
 .nav-row {
     display: flex;
@@ -286,21 +459,80 @@ body {
     color: var(--primary);
 }
 
+/* ── Input fields ── */
+input[type="number"],
+input[type="text"] {
+    background: var(--surface-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-top-color: rgba(0,0,0,0.5);
+    border-bottom-color: rgba(255,255,255,0.1);
+    padding: 0.65rem 1rem;
+    border-radius: 10px;
+    outline: none;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 0.88rem;
+    box-shadow:
+        inset 0 3px 10px rgba(0,0,0,0.5),
+        inset 0 1px 2px 0 rgba(0,0,0,0.3),
+        inset 0 -1px 1px 0 rgba(255,255,255,0.07),
+        0 1px 0 0 rgba(255,255,255,0.06);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+}
+
+input[type="number"]:focus,
+input[type="text"]:focus {
+    border-color: var(--primary);
+    box-shadow:
+        inset 0 3px 10px rgba(0,0,0,0.5),
+        inset 0 1px 2px 0 rgba(0,0,0,0.3),
+        inset 0 -1px 1px 0 rgba(255,255,255,0.07),
+        0 0 0 3px rgba(157,125,252,0.15),
+        0 0 16px rgba(157,125,252,0.08);
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+#projectDetailTitleInput {
+    font-family: 'Manrope', system-ui, sans-serif;
+    border-color: var(--primary);
+}
+
 select {
     background: var(--surface-alt);
     color: var(--text);
     border: 1px solid var(--border);
-    padding: 5px 10px;
-    border-radius: 6px;
+    border-top-color: rgba(0,0,0,0.5);
+    border-bottom-color: rgba(255,255,255,0.1);
+    padding: 0.65rem 1rem;
+    border-radius: 10px;
     outline: none;
     font-family: 'DM Sans', system-ui, sans-serif;
     font-size: 0.88rem;
-    transition: border-color 0.2s;
+    box-shadow:
+        inset 0 3px 10px rgba(0,0,0,0.5),
+        inset 0 1px 2px 0 rgba(0,0,0,0.3),
+        inset 0 -1px 1px 0 rgba(255,255,255,0.07),
+        0 1px 0 0 rgba(255,255,255,0.06);
+    transition: border-color 0.2s, box-shadow 0.2s;
     cursor: pointer;
 }
 
 select:focus {
     border-color: var(--primary);
+    box-shadow:
+        inset 0 3px 10px rgba(0,0,0,0.5),
+        inset 0 1px 2px 0 rgba(0,0,0,0.3),
+        inset 0 -1px 1px 0 rgba(255,255,255,0.07),
+        0 0 0 3px rgba(157,125,252,0.15),
+        0 0 16px rgba(157,125,252,0.08);
 }
 
 button {
@@ -529,3 +761,53 @@ input:checked+.slider:before {
     margin-top: 4px;
 }
 .project-bars-more:hover { text-decoration: underline; }
+
+/* ── Theme cards ── */
+.theme-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.theme-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.theme-card:hover {
+    border-color: var(--text-dim);
+}
+
+.theme-card.active {
+    border-color: var(--primary);
+}
+
+.theme-swatch {
+    display: flex;
+    gap: 3px;
+    width: 100%;
+    height: 24px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.theme-swatch span {
+    flex: 1;
+}
+
+.theme-card-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+
+.theme-card.active .theme-card-label {
+    color: var(--primary);
+}

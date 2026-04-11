@@ -1,7 +1,7 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
-const VIEWS = ["dashboard", "settings", "settings-icon", "settings-tooltip", "settings-dashboard", "settings-colors", "settings-sounds", "stats", "stats-project", "graph-detail"];
+const VIEWS = ["dashboard", "settings", "settings-visuals", "settings-themes", "settings-notifications", "settings-sync", "stats", "stats-project", "graph-detail"];
 
 let activeView = "dashboard";
 let previousView = "dashboard";
@@ -19,11 +19,10 @@ document.getElementById("backBtn").onclick = () => showView("dashboard");
 document.getElementById("logoutBtn").onclick = () => window.electronAPI?.logout();
 
 // Settings subpage nav
-document.getElementById("nav-icon").onclick = () => showView("settings-icon");
-document.getElementById("nav-tooltip").onclick = () => showView("settings-tooltip");
-document.getElementById("nav-dashboard-page").onclick = () => showView("settings-dashboard");
-document.getElementById("nav-colors").onclick = () => showView("settings-colors");
-document.getElementById("nav-sounds").onclick = () => showView("settings-sounds");
+document.getElementById("nav-visuals").onclick = () => showView("settings-visuals");
+document.getElementById("nav-themes").onclick = () => showView("settings-themes");
+document.getElementById("nav-notifications").onclick = () => showView("settings-notifications");
+document.getElementById("nav-sync").onclick = () => showView("settings-sync");
 
 // Back buttons on all subpages
 document.querySelectorAll(".back-to-settings").forEach((btn) => {
