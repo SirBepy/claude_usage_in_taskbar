@@ -15,6 +15,7 @@ let tempDisplay = null;
 let tempDisplayCycle = null;
 let tempDisplayIndex = 0;
 let tempDisplayTimer = null;
+let lastUsageData = null;
 
 // Callbacks set during createTray
 let _settings = null;
@@ -63,17 +64,9 @@ function cycleDisplayMode() {
 
   tempDisplayIndex = (tempDisplayIndex + 1) % tempDisplayCycle.length;
   tempDisplay = tempDisplayCycle[tempDisplayIndex];
-  updateTray(null);
+  updateTray();
 
   if (tempDisplayTimer) clearTimeout(tempDisplayTimer);
-
-  if (tempDisplayIndex === 0) {
-    tempDisplay = null;
-    tempDisplayCycle = null;
-    tempDisplayTimer = null;
-    return;
-  }
-
   tempDisplayTimer = setTimeout(resetDisplayMode, 60 * 1000);
 }
 
@@ -82,7 +75,7 @@ function resetDisplayMode() {
   tempDisplayCycle = null;
   tempDisplayIndex = 0;
   tempDisplayTimer = null;
-  updateTray(null);
+  updateTray();
 }
 
 function clearTempDisplay() {
@@ -95,14 +88,16 @@ function clearTempDisplay() {
 
 function updateTray(usageData) {
   if (!tray) return;
+  if (usageData !== undefined) lastUsageData = usageData;
+  const data = lastUsageData;
   const s = getActiveSettings();
   const iconSettings = {
     ...s,
-    _sessionSafe: calcSafePct(usageData?.five_hour?.resets_at, 5 * 3600000),
-    _weeklySafe: calcSafePct(usageData?.seven_day?.resets_at, 7 * 24 * 3600000),
+    _sessionSafe: calcSafePct(data?.five_hour?.resets_at, 5 * 3600000),
+    _weeklySafe: calcSafePct(data?.seven_day?.resets_at, 7 * 24 * 3600000),
   };
-  tray.setImage(makeIcon(parseSessionPct(usageData), parseWeeklyPct(usageData), iconSettings));
-  tray.setToolTip(buildTooltip(usageData, s));
+  tray.setImage(makeIcon(parseSessionPct(data), parseWeeklyPct(data), iconSettings));
+  tray.setToolTip(buildTooltip(data, s));
 }
 
 function buildContextMenu(callbacks) {
@@ -110,12 +105,16 @@ function buildContextMenu(callbacks) {
   const { state, version } = getUpdateState();
 
   const template = [
-    { label: "Refresh", click: () => refreshWithAnimation() },
-    { label: "Dashboard", click: showDashboardWindow },
-    { type: "separator" },
-    ...(!loggedIn
-      ? [{ label: "Log In", click: showLoginWindow }, { type: "separator" }]
-      : []),
+    ...(loggedIn
+      ? [
+          { label: "Refresh", click: () => refreshWithAnimation() },
+          { label: "Dashboard", click: showDashboardWindow },
+          { type: "separator" },
+        ]
+      : [
+          { label: "Log In", click: showLoginWindow },
+          { type: "separator" },
+        ]),
     { label: "Quit", click: quit },
   ];
 
