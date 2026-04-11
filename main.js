@@ -36,6 +36,8 @@ const {
   setSpinImage,
 } = require("./src/core/tray");
 const { showLoginWindow: showLoginWindowImpl, showDashboardWindow: showDashboardWindowImpl } = require("./src/core/windows");
+const { startNativeAuth } = require("./src/core/native-auth");
+const { SyncClient } = require("./src/core/sync");
 const { clipboard } = require("electron");
 
 // ── Log Buffer ────────────────────────────────────────────────────────────────
@@ -79,7 +81,13 @@ let spinTimer = null;
 let usageData = null;
 let loggedIn = false;
 let dashboardWindow = null;
+let nativeAuthHandle = null;
 let settings = loadSettings();
+const syncClient = new SyncClient({
+  getSettings: () => settings,
+  loadHistory,
+  loadTokenHistory,
+});
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
 let audioWindow = null;
@@ -148,7 +156,8 @@ async function handleAuthFailure() {
   loggedIn = false;
   stopPolling();
   const loginInProgress = loginWindow && !loginWindow.isDestroyed();
-  if (!loginInProgress) await clearClaudeCookies();
+  const nativeAuthInProgress = nativeAuthHandle != null;
+  if (!loginInProgress && !nativeAuthInProgress) await clearClaudeCookies();
   showLoginWindow();
 }
 
@@ -192,6 +201,9 @@ async function refresh(fromHook = false) {
     updateTray(usageData);
     recordSnapshot(usageData);
     dashboardWindow?.webContents.send("history-updated", loadHistory());
+
+    // Push to sync server in background (non-blocking)
+    syncClient.push().catch((e) => console.error("[sync] Background push failed:", e.message));
   } catch (e) {
     console.error("Refresh failed:", e.message);
   }
@@ -219,6 +231,42 @@ async function refreshWithAnimation(fromHook = false) {
 
 // ── Windows ──────────────────────────────────────────────────────────────────
 function showLoginWindow() {
+  // Use native browser auth by default
+  if (nativeAuthHandle) return; // Already in progress
+
+  nativeAuthHandle = startNativeAuth({
+    onSuccess: async (initialUsage) => {
+      nativeAuthHandle = null;
+      // The bookmarklet sends usage data directly from the browser (same-origin
+      // fetch includes httpOnly cookies). Use it if available, otherwise try
+      // the scraper with whatever cookies we imported.
+      if (initialUsage) {
+        usageData = initialUsage;
+        loggedIn = true;
+        updateTray(usageData);
+        recordSnapshot(usageData);
+        startPolling();
+        return;
+      }
+      try {
+        usageData = await fetchUsageFromPage();
+        loggedIn = true;
+        updateTray(usageData);
+        recordSnapshot(usageData);
+        startPolling();
+      } catch (e) {
+        console.error("[auth] Native auth cookies failed verification:", e.message);
+        showLoginWindowFallback();
+      }
+    },
+    onCancel: () => {
+      nativeAuthHandle = null;
+    },
+  });
+}
+
+/** @deprecated Fallback - Electron window login. Kept for reliability. */
+function showLoginWindowFallback() {
   showLoginWindowImpl({
     getLoginWindow: () => loginWindow,
     setLoginWindow: (w) => { loginWindow = w; },
@@ -273,7 +321,28 @@ ipcMain.on("open-in-vscode", (_, folderPath) => {
   execFile(cmd, [folderPath], { windowsHide: true }, () => {});
 });
 
-// ── Logout ────────────────────────────────────────────────────────────────────
+// ── Sync IPC ─────────────────────────────────────────────────────────────────
+ipcMain.handle("sync-register", async (_, serverUrl, deviceName) => {
+  return syncClient.register(serverUrl, deviceName);
+});
+ipcMain.handle("sync-link", async (_, serverUrl, linkCode, deviceName) => {
+  return syncClient.link(serverUrl, linkCode, deviceName);
+});
+ipcMain.handle("sync-generate-link-code", async () => {
+  return syncClient.generateLinkCode();
+});
+ipcMain.handle("sync-list-devices", async () => {
+  return syncClient.listDevices();
+});
+ipcMain.handle("sync-pull", async () => {
+  return syncClient.pull();
+});
+ipcMain.handle("sync-push", async () => {
+  await syncClient.push();
+  return { ok: true };
+});
+
+// ── Logout ─────────────────────────────────────────────────���──────────────────
 async function logout() {
   loggedIn = false;
   stopPolling();
@@ -282,6 +351,9 @@ async function logout() {
   updateTray(usageData);
   showLoginWindow();
 }
+
+// ── Protocol handler ─────────────────────────────────────────────────────────
+app.setAsDefaultProtocolClient("aiusage");
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
@@ -344,6 +416,7 @@ app.on("window-all-closed", () => {
 });
 app.on("before-quit", () => {
   stopPolling();
+  if (nativeAuthHandle) { nativeAuthHandle.cancel(); nativeAuthHandle = null; }
   tray?.destroy();
   hookServer.close();
   audioWindow?.destroy();
