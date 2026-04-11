@@ -17,7 +17,7 @@ function fetchUsageFromPage() {
     const win = new BrowserWindow({
       show: false,
       title: "Claude Usage Scraper",
-      icon: require("path").join(__dirname, "..", "src", "icon.png"),
+      icon: require("path").join(__dirname, "..", "assets", "icon.png"),
       skipTaskbar: true,
       webPreferences: {
         nodeIntegration: false,
