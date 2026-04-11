@@ -39,7 +39,10 @@ npm start
 | `src/renderer/preload.js` | Electron contextBridge — exposes IPC to renderer |
 | `src/assets/icon.png` | App icon (512×512, for window chrome and installer) |
 | `src/assets/icon.svg` | Source SVG for icon generation |
+| `src/core/sync.js` | Cross-device sync client - push/pull usage data to/from backend |
 | `scripts/generate-icons.js` | Dev utility — regenerates icon.png from icon.svg via sharp |
+| `server/` | Sync backend - Express API with SQLite for cross-device data sync |
+| `mcp-server/` | Standalone MCP server - pushes local usage to sync backend |
 
 ## Authentication flow
 
@@ -102,6 +105,29 @@ No image files on disk. Rendered in `src/core/icon.js`.
 - Outer ring replaced by a rotating bright-blue arc (~108°, 20 fps)
 - Inner ring stays at last known weekly value
 - Implemented in `makeSpinFrame(frame, weeklyPct)`
+
+## Cross-device sync
+
+Optional sync system for sharing usage data across machines. Three components:
+
+**Backend** (`server/`): Express API with SQLite (better-sqlite3). Endpoints:
+- `POST /api/register` - create user + first device, returns API key
+- `POST /api/link` - link new device via short-lived link code
+- `POST /api/link-code` - generate link code (authenticated)
+- `POST /api/usage/push` - push usage snapshots + token sessions
+- `GET /api/usage/pull?since=` - pull merged data from all devices
+- `GET /api/devices` - list linked devices
+- Deploy to Render/Railway/Fly.io free tier.
+
+**App integration** (`src/core/sync.js`): SyncClient class that pushes after
+each poll cycle and supports pull for merged cross-device view. Settings UI
+in the Sync subpage: enable/disable, server URL, API key, device name,
+register/link flows, device list.
+
+**MCP server** (`mcp-server/`): Standalone stdio MCP server for non-app
+machines. Reads local usage data from the app's data directory and exposes
+tools: `get_usage`, `get_token_stats`, `sync_push`, `sync_pull`. Configured
+via env vars `SYNC_SERVER_URL` and `SYNC_API_KEY`.
 
 ## Keeping README up to date
 
