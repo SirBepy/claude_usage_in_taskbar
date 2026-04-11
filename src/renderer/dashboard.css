@@ -762,6 +762,18 @@ input:checked+.slider:before {
 }
 .project-bars-more:hover { text-decoration: underline; }
 
+/* ── Theme mode toggle ── */
+.mode-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mode-toggle-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
 /* ── Theme cards ── */
 .theme-grid {
     display: grid;

@@ -2,37 +2,76 @@
 
 // ── Theme definitions ─────────────────────────────────────────────────────────
 const THEMES = [
-  { id: "void",          label: "Void",    mode: "dark",  colors: ["#16151f", "#1e1d2b", "#9d7dfc", "#6e8fff", "#e2e0f0"] },
-  { id: "nebula",        label: "Nebula",  mode: "dark",  colors: ["#0f1629", "#172040", "#c084fc", "#a78bfa", "#e2dff0"] },
-  { id: "glacier",       label: "Glacier", mode: "dark",  colors: ["#0c1a24", "#112430", "#38bdf8", "#22d3ee", "#e0f0f8"] },
-  { id: "cosmo",         label: "Cosmo",   mode: "dark",  colors: ["#1a0a1e", "#241430", "#f472b6", "#fb923c", "#f0e4f5"] },
-  { id: "void-light",    label: "Void",    mode: "light", colors: ["#f0eff5", "#ffffff", "#7c5cdb", "#4a6bdf", "#1e1d2b"] },
-  { id: "nebula-light",  label: "Nebula",  mode: "light", colors: ["#f2f0fa", "#ffffff", "#9333ea", "#7c3aed", "#1a1040"] },
-  { id: "glacier-light", label: "Glacier", mode: "light", colors: ["#eef6fa", "#ffffff", "#0284c7", "#0891b2", "#0c2430"] },
-  { id: "cosmo-light",   label: "Cosmo",   mode: "light", colors: ["#faf0f4", "#ffffff", "#db2777", "#ea580c", "#2a1030"] },
+  { id: "void",    label: "Void",    darkColors: ["#16151f", "#1e1d2b", "#9d7dfc", "#6e8fff", "#e2e0f0"], lightColors: ["#f0eff5", "#ffffff", "#7c5cdb", "#4a6bdf", "#1e1d2b"] },
+  { id: "nebula",  label: "Nebula",  darkColors: ["#0f1629", "#172040", "#c084fc", "#a78bfa", "#e2dff0"], lightColors: ["#f2f0fa", "#ffffff", "#9333ea", "#7c3aed", "#1a1040"] },
+  { id: "glacier", label: "Glacier", darkColors: ["#0c1a24", "#112430", "#38bdf8", "#22d3ee", "#e0f0f8"], lightColors: ["#eef6fa", "#ffffff", "#0284c7", "#0891b2", "#0c2430"] },
+  { id: "cosmo",   label: "Cosmo",   darkColors: ["#1a0a1e", "#241430", "#f472b6", "#fb923c", "#f0e4f5"], lightColors: ["#faf0f4", "#ffffff", "#db2777", "#ea580c", "#2a1030"] },
 ];
 
-const themeGridDark = document.getElementById("themeGridDark");
-const themeGridLight = document.getElementById("themeGridLight");
+const themeGrid = document.getElementById("themeGrid");
+const themeModToggle = document.getElementById("themeModToggle");
+const modeLabelDark = document.getElementById("modeLabelDark");
+const modeLabelLight = document.getElementById("modeLabelLight");
+
+function resolveThemeId(baseId, isLight) {
+  return isLight ? baseId + "-light" : baseId;
+}
+
+function parseThemeId(fullId) {
+  const isLight = fullId.endsWith("-light");
+  return { baseId: isLight ? fullId.replace("-light", "") : fullId, isLight };
+}
+
+function applyTheme(baseId) {
+  const isLight = themeModToggle.checked;
+  const fullId = resolveThemeId(baseId, isLight);
+  document.documentElement.dataset.theme = fullId;
+  currentSettings.theme = fullId;
+  saveSettings();
+
+  // Update active card highlight (no DOM rebuild)
+  for (const card of themeGrid.querySelectorAll(".theme-card")) {
+    card.classList.toggle("active", card.dataset.themeId === baseId);
+  }
+
+  // Update mode label colors (they use --primary which just changed)
+  modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
+  modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
+}
 
 function renderThemeCards(activeTheme) {
-  [themeGridDark, themeGridLight].forEach(g => g.innerHTML = "");
+  const { baseId: activeBase, isLight } = parseThemeId(activeTheme);
+  const colorKey = isLight ? "lightColors" : "darkColors";
+  themeGrid.innerHTML = "";
   for (const t of THEMES) {
     const card = document.createElement("div");
-    card.className = "theme-card" + (t.id === activeTheme ? " active" : "");
+    card.className = "theme-card" + (t.id === activeBase ? " active" : "");
+    card.dataset.themeId = t.id;
     card.innerHTML = `
-      <div class="theme-swatch">${t.colors.map(c => `<span style="background:${c}"></span>`).join("")}</div>
+      <div class="theme-swatch">${t[colorKey].map(c => `<span style="background:${c}"></span>`).join("")}</div>
       <span class="theme-card-label">${t.label}</span>
     `;
-    card.onclick = () => {
-      document.documentElement.dataset.theme = t.id;
-      currentSettings.theme = t.id;
-      saveSettings();
-      renderThemeCards(t.id);
-    };
-    (t.mode === "dark" ? themeGridDark : themeGridLight).appendChild(card);
+    card.onclick = () => applyTheme(t.id);
+    themeGrid.appendChild(card);
   }
+
+  modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
+  modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
 }
+
+themeModToggle.addEventListener("change", () => {
+  const { baseId } = parseThemeId(currentSettings.theme || "void");
+  const isLight = themeModToggle.checked;
+  const fullId = resolveThemeId(baseId, isLight);
+
+  // Apply theme + save
+  document.documentElement.dataset.theme = fullId;
+  currentSettings.theme = fullId;
+  saveSettings();
+
+  // Rebuild cards to show correct color swatches for the new mode
+  renderThemeCards(fullId);
+});
 
 // ── Settings ───────────────────────────────────────────────────────────────────
 const defaultDisplay = document.getElementById("defaultDisplay");
@@ -236,6 +275,7 @@ window.onload = async () => {
   if (settings) {
     const savedTheme = settings.theme || "void";
     document.documentElement.dataset.theme = savedTheme;
+    themeModToggle.checked = savedTheme.endsWith("-light");
     renderThemeCards(savedTheme);
 
     defaultDisplay.value = settings.defaultDisplay || "icon";

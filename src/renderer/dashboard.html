@@ -289,12 +289,23 @@
         </div>
         <div class="view-body">
             <div class="section">
-                <div class="section-title">DARK</div>
-                <div class="theme-grid" id="themeGridDark"></div>
+                <div class="option" style="justify-content: space-between;">
+                    <div class="option-label-row">
+                        <i class="ph ph-moon"></i>
+                        <span>Dark Mode</span>
+                    </div>
+                    <div class="mode-toggle-row">
+                        <span class="mode-toggle-label" id="modeLabelDark">Dark</span>
+                        <label class="switch">
+                            <input type="checkbox" id="themeModToggle">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="mode-toggle-label" id="modeLabelLight">Light</span>
+                    </div>
+                </div>
             </div>
             <div class="section">
-                <div class="section-title">LIGHT</div>
-                <div class="theme-grid" id="themeGridLight"></div>
+                <div class="theme-grid" id="themeGrid"></div>
             </div>
         </div>
     </div>
