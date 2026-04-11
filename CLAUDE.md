@@ -20,7 +20,8 @@ npm start
 | `main.js` | App lifecycle, polling, IPC, state coordination |
 | `src/core/hook-server.js` | HTTP hook server - receives Claude Code stop/notify hooks |
 | `src/core/tray.js` | Tray icon, context menu, display cycling, threshold checking |
-| `src/core/windows.js` | Login window (OAuth flow) and dashboard window management |
+| `src/core/native-auth.js` | Native browser sign-in - localhost callback server + bookmarklet |
+| `src/core/windows.js` | Login window (deprecated fallback) and dashboard window management |
 | `src/core/png-utils.js` | Low-level PNG encoding (crc32, pixelsToPNG, drawRoundedRect) |
 | `src/core/fonts.js` | Pixel font definitions (classic, digital, bold) + drawText |
 | `src/core/icon.js` | Tray icon rendering - rings, bars, spin animation |
@@ -43,9 +44,20 @@ npm start
 ## Authentication flow
 
 1. On startup, try to resume from a saved session (Electron persists cookies across runs).
-2. If no session, clear stale cookies and show `https://claude.ai/login` in a full `BrowserWindow`.
-   Google OAuth popups are allowed via `setWindowOpenHandler`. Navigation away
-   from auth pages triggers `tryAutoDetectLogin` which re-runs the scraper.
+2. If no session, clear stale cookies and start the **native browser sign-in flow**:
+   a. A localhost HTTP server starts on a random port.
+   b. `claude.ai/login` opens in the user's default browser via `shell.openExternal`.
+   c. A status window shows instructions: the user drags a bookmarklet to their
+      bookmarks bar, then clicks it while on claude.ai after logging in.
+   d. The bookmarklet (running on claude.ai's origin) fetches the usage API
+      directly (same-origin, httpOnly cookies included) and POSTs the response
+      plus `document.cookie` to the localhost callback server.
+   e. The app imports non-httpOnly cookies into Electron's session and uses
+      the usage data directly. Subsequent polls use the Electron scraper.
+   f. If cookies fail verification on the next poll, falls back to the
+      deprecated Electron `BrowserWindow` login (code kept in `windows.js`).
+3. The `aiusage://` protocol is registered via `app.setAsDefaultProtocolClient`
+   for potential future deep-link flows.
 
 ## Usage scraping
 

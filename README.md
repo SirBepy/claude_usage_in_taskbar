@@ -23,9 +23,10 @@ Because this app is currently unsigned, macOS may flag it as "damaged" or from a
 
 ## First launch
 
-A login window opens — sign in to your Claude account (Google OAuth works).
-Once detected, the window closes and the tray icon appears. Your session is saved,
-so future launches skip this step.
+Your default browser opens to claude.ai/login - sign in with your Claude account
+(Google OAuth works). After logging in, use the bookmarklet shown in the status
+window to transfer your session to the app. The tray icon appears once connected.
+Your session is saved, so future launches skip this step.
 
 ## Tray icon
 
