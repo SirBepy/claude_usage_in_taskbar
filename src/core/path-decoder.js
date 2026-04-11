@@ -4,11 +4,11 @@ const fs = require("fs");
 
 /**
  * Best-effort decode of a Claude project dir name back to a filesystem path.
- * Claude encodes path separators, spaces, and colons (Windows) all as "-".
+ * Claude encodes path separators, spaces, underscores, and colons (Windows) all as "-".
  * Example: "c--Users-tecno-My-Project" → "c:\Users\tecno\My Project"
  *
  * We greedily walk the segments and check the filesystem. At each step we try
- * merging the next segment with "-" (hyphen in name) or " " (space in name)
+ * merging the next segment with "-", " ", or "_" (all encoded as "-" by Claude)
  * before falling back to treating it as a path separator.
  */
 function decodeCwd(encoded) {
@@ -49,7 +49,7 @@ function decodeCwd(encoded) {
     const last = resolved[resolved.length - 1];
     let merged = null;
 
-    for (const joiner of ["-", " "]) {
+    for (const joiner of ["-", " ", "_"]) {
       const candidate = last + joiner + collapsed[i];
       const candidatePath = root + prefix.concat(candidate).join(sep);
       try {

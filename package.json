@@ -1,17 +1,18 @@
 {
   "name": "claude-usage-taskbar-tool",
-  "version": "1.0.56",
+  "version": "1.0.57",
   "description": "Claude Usage Taskbar Tool",
   "main": "main.js",
   "author": "SirBepy",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging",
+    "dev": "electron .",
     "dist": "electron-builder",
     "dist:publish": "electron-builder --publish always"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
+    "say": "^0.16.0",
     "sql.js": "^1.10.0"
   },
   "devDependencies": {
