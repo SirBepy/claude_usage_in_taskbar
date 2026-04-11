@@ -1,7 +1,7 @@
 "use strict";
 
 const { nativeImage } = require("electron");
-const { pixelsToPNG, drawRoundedRect } = require("./png-utils");
+const { pixelsToPNG } = require("./png-utils");
 const { FONTS, drawText } = require("./fonts");
 
 // ── Ring drawing ──────────────────────────────────────────────────────────────
@@ -163,11 +163,13 @@ function drawSpinningArc(
 /**
  * Draws two vertical bars instead of rings.
  */
-function drawBars(pixels, sessionPct, weeklyPct, trackRGB, settings) {
+function drawBars(pixels, sessionPct, weeklyPct, trackRGB, settings, applyColor = true) {
   if (settings.cleanNumberMode) return; // Skip if in clean mode
 
-  const sessionRGB = urgencyRGB(sessionPct, settings);
-  const weeklyRGB = urgencyRGB(weeklyPct, settings);
+  const sessionSafe = settings._sessionSafe ?? null;
+  const weeklySafe = settings._weeklySafe ?? null;
+  const sessionRGB = applyColor ? urgencyRGB(sessionPct, settings, sessionSafe) : [200, 200, 200];
+  const weeklyRGB = applyColor ? urgencyRGB(weeklyPct, settings, weeklySafe) : [200, 200, 200];
 
   const sessionFill =
     sessionPct != null ? (Math.min(sessionPct, 100) / 100) * 18 : 0;
@@ -222,16 +224,19 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
   const weeklySafe = settings._weeklySafe ?? null;
 
   // 1. Draw Background Visuals (Rings/Bars)
+  const applyIconColor = settings.colorApplyTo?.icon !== false;
   if (mode === "icon") {
     if (settings.iconStyle === "bars") {
-      drawBars(pixels, sessionPct, weeklyPct, track, settings);
+      drawBars(pixels, sessionPct, weeklyPct, track, settings, applyIconColor);
     } else {
+      const sessionColor = applyIconColor ? urgencyRGB(sessionPct, settings, sessionSafe) : [200, 200, 200];
+      const weeklyColor = applyIconColor ? urgencyRGB(weeklyPct, settings, weeklySafe) : [200, 200, 200];
       drawRingArc(
         pixels,
         sessionPct,
         10.5,
         7.5,
-        urgencyRGB(sessionPct, settings, sessionSafe),
+        sessionColor,
         track,
         80,
       );
@@ -240,7 +245,7 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
         weeklyPct,
         5.5,
         3.5,
-        urgencyRGB(weeklyPct, settings, weeklySafe),
+        weeklyColor,
         track,
         80,
       );
@@ -264,40 +269,12 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
         const x = Math.max(0, Math.floor((SIZE - totalWidth) / 2));
         const y = Math.max(0, Math.floor((SIZE - font.height) / 2));
 
-        // Determine coloring mode
-        const colorMode =
-          settings.colorOverlayMode ??
-          (settings.colorOverlayNumber ? "number" : "none");
-        let textColor = [255, 255, 255];
-        let textX = x;
-        let textY = y;
+        const applyNumberColor = settings.colorApplyTo?.number !== false;
+        const textColor = applyNumberColor
+          ? urgencyRGB(pct, settings, pctSafe)
+          : [255, 255, 255];
 
-        if (colorMode === "background") {
-          // Fixed square badge centered in the 22x22 canvas
-          const sq = SIZE; // 22x22
-          const sqX1 = Math.floor((SIZE - sq) / 2);
-          const sqY1 = Math.floor((SIZE - sq) / 2);
-          const sqX2 = sqX1 + sq - 1;
-          const sqY2 = sqY1 + sq - 1;
-          drawRoundedRect(
-            pixels,
-            SIZE,
-            sqX1,
-            sqY1,
-            sqX2,
-            sqY2,
-            3,
-            urgencyRGB(pct, settings, pctSafe),
-            230,
-          );
-          textX = sqX1 + Math.max(0, Math.floor((sq - totalWidth) / 2));
-          textY = sqY1 + Math.max(0, Math.floor((sq - font.height) / 2));
-        } else if (colorMode === "number") {
-          textColor = urgencyRGB(pct, settings, pctSafe);
-        }
-        // "none" → white text, no background
-
-        drawText(pixels, SIZE, str, textX, textY, textColor, style);
+        drawText(pixels, SIZE, str, x, y, textColor, style);
       }
     }
   }

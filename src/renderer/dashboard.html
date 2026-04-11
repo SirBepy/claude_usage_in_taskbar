@@ -132,14 +132,6 @@
                         <option value="bold">Ultra-Bold</option>
                     </select>
                 </div>
-                <div class="option" id="colorOverlayModeSection">
-                    <span class="option-label">Color</span>
-                    <select id="colorOverlayMode">
-                        <option value="number">Number</option>
-                        <option value="background">Background</option>
-                        <option value="none">None</option>
-                    </select>
-                </div>
             </div>
 
             <!-- TOOLTIP -->
@@ -222,13 +214,32 @@
                     </select>
                 </div>
                 <div class="option">
-                    <span class="option-label">Apply Colors To</span>
-                    <div class="checkbox-row">
-                        <label class="checkbox-label"><input type="checkbox" id="colorApplyIcon" checked> Icon</label>
-                        <label class="checkbox-label"><input type="checkbox" id="colorApplyNumber" checked> Number</label>
-                        <label class="checkbox-label"><input type="checkbox" id="colorApplyDashboard" checked> Dashboard</label>
-                        <label class="checkbox-label"><input type="checkbox" id="colorApplyTooltip" checked> Tooltip</label>
-                    </div>
+                    <span class="option-label"><span class="info-wrap">Icon<span class="info-icon">i</span><span class="info-tooltip">Colors the icon (rings or bars) in the system tray</span></span></span>
+                    <label class="switch">
+                        <input type="checkbox" id="colorApplyIcon" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="option">
+                    <span class="option-label"><span class="info-wrap">Number<span class="info-icon">i</span><span class="info-tooltip">Colors the percentage number shown in the system tray when cycling away from the icon</span></span></span>
+                    <label class="switch">
+                        <input type="checkbox" id="colorApplyNumber" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="option">
+                    <span class="option-label"><span class="info-wrap">Dashboard<span class="info-icon">i</span><span class="info-tooltip">Colors the percentage numbers shown in the dashboard</span></span></span>
+                    <label class="switch">
+                        <input type="checkbox" id="colorApplyDashboard" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="option">
+                    <span class="option-label"><span class="info-wrap">Tooltip<span class="info-icon">i</span><span class="info-tooltip">Colors the icon shown in the system tray tooltip</span></span></span>
+                    <label class="switch">
+                        <input type="checkbox" id="colorApplyTooltip" checked>
+                        <span class="slider"></span>
+                    </label>
                 </div>
             </div>
             <div class="section" id="thresholdSection">

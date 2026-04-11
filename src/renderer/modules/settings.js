@@ -41,8 +41,6 @@ const timeStyle = document.getElementById("timeStyle");
 const iconStyleSection = document.getElementById("iconStyleSection");
 const overlayStyle = document.getElementById("overlayStyle");
 const overlayStyleSection = document.getElementById("overlayStyleSection");
-const colorOverlayMode = document.getElementById("colorOverlayMode");
-const colorOverlayModeSection = document.getElementById("colorOverlayModeSection");
 const launchAtLogin = document.getElementById("launchAtLogin");
 const tooltipLayout = document.getElementById("tooltipLayout");
 const tooltipShowSafePace = document.getElementById("tooltipShowSafePace");
@@ -91,7 +89,6 @@ function saveSettings() {
     defaultDisplay: defaultDisplay.value,
     iconStyle: iconStyle.value,
     overlayStyle: overlayStyle.value,
-    colorOverlayMode: colorOverlayMode.value,
     timeStyle: timeStyle.value,
     tooltipLayout: tooltipLayout.value,
     tooltipShowSafePace: tooltipShowSafePace.checked,
@@ -154,12 +151,10 @@ function createColorRow(min = 0, color = "#ffffff") {
 }
 
 function updateVisibilities() {
-  const def = defaultDisplay.value;
   // Icon style always visible (icon is always one of the 3 cycle states)
   iconStyleSection.style.display = "flex";
-  // Number font/color always visible (number states are always in cycle)
+  // Number font always visible (number states are always in cycle)
   overlayStyleSection.style.display = "flex";
-  colorOverlayModeSection.style.display = "flex";
 }
 
 function updateColorModeVisibility() {
@@ -246,7 +241,6 @@ window.onload = async () => {
     defaultDisplay.value = settings.defaultDisplay || "icon";
     iconStyle.value = settings.iconStyle || "rings";
     overlayStyle.value = settings.overlayStyle || "classic";
-    colorOverlayMode.value = settings.colorOverlayMode || "number";
     timeStyle.value = settings.timeStyle || "absolute";
     tooltipLayout.value = settings.tooltipLayout || "rows";
     tooltipShowSafePace.checked = settings.tooltipShowSafePace !== false;
@@ -298,7 +292,7 @@ window.onload = async () => {
   updateVisibilities();
 
   // Auto-save on any input change
-  for (const el of [iconStyle, overlayStyle, colorOverlayMode, timeStyle, tooltipLayout, sessionPlan, weeklyPlan]) {
+  for (const el of [iconStyle, overlayStyle, timeStyle, tooltipLayout, sessionPlan, weeklyPlan]) {
     el.addEventListener("change", saveSettings);
   }
   for (const el of [launchAtLogin, tooltipShowSafePace, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {

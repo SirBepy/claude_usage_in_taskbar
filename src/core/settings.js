@@ -17,7 +17,6 @@ const DEFAULT_SETTINGS = {
   weeklyPlan: 200000,
   defaultDisplay: "icon", // "icon" | "session" | "weekly"
   overlayStyle: "classic",
-  colorOverlayMode: "number", // "number" | "background" | "none"
   colorApplyTo: { icon: true, number: true, dashboard: true, tooltip: true },
   colorMode: "threshold", // "threshold" | "pace"
   paceBand: 10,
