@@ -374,22 +374,25 @@ body {
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    border: 1px solid var(--text-dim);
+    background: var(--text-dim);
     font-size: 0.55rem;
     font-weight: 700;
-    font-style: italic;
-    color: var(--text-dim);
+    font-style: normal;
+    color: var(--bg);
     cursor: help;
     flex-shrink: 0;
     line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+
+.info-icon:hover {
+    opacity: 1;
 }
 
 .info-tooltip {
     display: none;
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
     background: var(--surface-alt);
     color: var(--text);
     font-size: 0.72rem;
@@ -404,20 +407,6 @@ body {
     width: 200px;
     z-index: 100;
     pointer-events: none;
-}
-
-.info-tooltip::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-top-color: var(--border);
-}
-
-.info-wrap:hover .info-tooltip {
-    display: block;
 }
 
 /* ── Nav rows (settings subpage links) ── */

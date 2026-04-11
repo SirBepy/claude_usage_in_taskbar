@@ -400,3 +400,34 @@ copyLogsBtn.addEventListener("click", () => {
     copyLogsBtn.classList.replace("btn-primary", "btn-secondary");
   }, 2000);
 });
+
+// ── Info tooltip positioning (fixed, viewport-clamped) ───────────────────────
+for (const wrap of document.querySelectorAll(".info-wrap")) {
+  const icon = wrap.querySelector(".info-icon");
+  const tip = wrap.querySelector(".info-tooltip");
+  if (!icon || !tip) continue;
+
+  icon.addEventListener("mouseenter", () => {
+    tip.style.display = "block";
+    const iconRect = icon.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const pad = 8;
+
+    let top = iconRect.top - tipRect.height - pad;
+    let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+
+    // clamp horizontal
+    if (left < pad) left = pad;
+    if (left + tipRect.width > window.innerWidth - pad) left = window.innerWidth - pad - tipRect.width;
+
+    // flip below if no room above
+    if (top < pad) top = iconRect.bottom + pad;
+
+    tip.style.top = top + "px";
+    tip.style.left = left + "px";
+  });
+
+  icon.addEventListener("mouseleave", () => {
+    tip.style.display = "none";
+  });
+}

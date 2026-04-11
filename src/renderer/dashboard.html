@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Usage</title>
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Manrope:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -138,7 +138,7 @@
             <div class="section">
                 <div class="section-title">TOOLTIP</div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Time Display<span class="info-icon">i</span><span class="info-tooltip">Absolute shows clock time (e.g. 3:45 PM), Countdown shows time remaining (e.g. 2h 15m)</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Time Display<span class="info-icon">?</span><span class="info-tooltip">Absolute shows clock time (e.g. 3:45 PM), Countdown shows time remaining (e.g. 2h 15m)</span></span></span>
                     <select id="timeStyle">
                         <option value="absolute">Absolute Time</option>
                         <option value="countdown">Time Until</option>
@@ -152,14 +152,14 @@
                     </select>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">i</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">?</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="tooltipShowSafePace">
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Remaining Tokens Estimate<span class="info-icon">i</span><span class="info-tooltip">Estimates how many tokens you have left based on your plan limits and current usage</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Remaining Tokens Estimate<span class="info-icon">?</span><span class="info-tooltip">Estimates how many tokens you have left based on your plan limits and current usage</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="tooltipEstimateTokens">
                         <span class="slider"></span>
@@ -195,7 +195,7 @@
                     </label>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">i</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">?</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="dashboardShowSafePace">
                         <span class="slider"></span>
@@ -207,35 +207,35 @@
             <div class="section">
                 <div class="section-title">COLORS</div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Color Mode<span class="info-icon">i</span><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Color Mode<span class="info-icon">?</span><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
                     <select id="colorMode">
                         <option value="threshold">Threshold</option>
                         <option value="pace">Safe Pace</option>
                     </select>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Icon<span class="info-icon">i</span><span class="info-tooltip">Colors the icon (rings or bars) in the system tray</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Icon<span class="info-icon">?</span><span class="info-tooltip">Colors the icon (rings or bars) in the system tray</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="colorApplyIcon" checked>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Number<span class="info-icon">i</span><span class="info-tooltip">Colors the percentage number shown in the system tray when cycling away from the icon</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Number<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage number shown in the system tray when cycling away from the icon</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="colorApplyNumber" checked>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Dashboard<span class="info-icon">i</span><span class="info-tooltip">Colors the percentage numbers shown in the dashboard</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Dashboard<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage numbers shown in the dashboard</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="colorApplyDashboard" checked>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Tooltip<span class="info-icon">i</span><span class="info-tooltip">Colors the icon shown in the system tray tooltip</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Tooltip<span class="info-icon">?</span><span class="info-tooltip">Colors the icon shown in the system tray tooltip</span></span></span>
                     <label class="switch">
                         <input type="checkbox" id="colorApplyTooltip" checked>
                         <span class="slider"></span>
@@ -249,7 +249,7 @@
             </div>
             <div class="section" id="paceSection" style="display:none">
                 <div class="option">
-                    <span class="option-label"><span class="info-wrap">Band %<span class="info-icon">i</span><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
+                    <span class="option-label"><span class="info-wrap">Band %<span class="info-icon">?</span><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
                     <input type="number" id="paceBand" value="10" min="0" max="50" style="width:60px">
                 </div>
                 <div class="section-title" style="margin-top:10px">Colors</div>
