@@ -239,18 +239,40 @@ async function refreshWithAnimation(fromHook = false) {
 }
 
 // ── Windows ──────────────────────────────────────────────────────────────────
+let loginSpinTimer = null;
+
+function startLoginSpin() {
+  if (loginSpinTimer) return;
+  let frame = 0;
+  loginSpinTimer = setInterval(() => {
+    setSpinImage(frame++, null);
+  }, 80);
+}
+
+function stopLoginSpin() {
+  if (loginSpinTimer) {
+    clearInterval(loginSpinTimer);
+    loginSpinTimer = null;
+  }
+  updateTray(usageData);
+}
+
 function showLoginWindow() {
+  startLoginSpin();
   showLoginWindowImpl({
     getLoginWindow: () => loginWindow,
     setLoginWindow: (w) => { loginWindow = w; },
     onLoginSuccess: (data) => {
+      stopLoginSpin();
       usageData = data;
       loggedIn = true;
       updateTray(usageData);
       recordSnapshot(usageData);
       startPolling();
     },
-    onClosed: () => {},
+    onClosed: () => {
+      stopLoginSpin();
+    },
   });
 }
 

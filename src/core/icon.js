@@ -225,8 +225,14 @@ function makeIcon(sessionPct, weeklyPct, settings = {}) {
 
   // 1. Draw Background Visuals (Rings/Bars)
   const applyIconColor = settings.colorApplyTo?.icon !== false;
+  const isIdle = sessionPct == null && weeklyPct == null;
   if (mode === "icon") {
-    if (settings.iconStyle === "bars") {
+    if (isIdle) {
+      // No data - draw full rings in dim grey as a recognizable idle icon
+      const idleColor = [120, 120, 120];
+      drawRingArc(pixels, 100, 10.5, 7.5, idleColor, track, 80);
+      drawRingArc(pixels, 100, 5.5, 3.5, idleColor, track, 80);
+    } else if (settings.iconStyle === "bars") {
       drawBars(pixels, sessionPct, weeklyPct, track, settings, applyIconColor);
     } else {
       const sessionColor = applyIconColor ? urgencyRGB(sessionPct, settings, sessionSafe) : [200, 200, 200];
