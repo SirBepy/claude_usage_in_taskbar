@@ -125,10 +125,14 @@ async function installBinary() {
 async function installVoice(voice) {
   const onnxPath = getVoicePath(voice.id);
   const jsonPath = onnxPath + ".json";
-  if (fs.existsSync(onnxPath) && fs.existsSync(jsonPath)) {
+  const onnxOk = fs.existsSync(onnxPath) && fs.statSync(onnxPath).size > 0;
+  const jsonOk = fs.existsSync(jsonPath) && fs.statSync(jsonPath).size > 0;
+  if (onnxOk && jsonOk) {
     console.log(`[piper] voice ${voice.id} already present`);
     return;
   }
+  try { if (fs.existsSync(onnxPath)) fs.unlinkSync(onnxPath); } catch {}
+  try { if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath); } catch {}
   console.log(`[piper] downloading voice ${voice.id}...`);
   await downloadFile(`${VOICE_BASE}/${voice.path}/${voice.id}.onnx`, onnxPath);
   await downloadFile(`${VOICE_BASE}/${voice.path}/${voice.id}.onnx.json`, jsonPath);

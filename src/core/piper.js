@@ -81,7 +81,12 @@ function isPiperInstalled() {
 }
 
 function isVoiceInstalled(voiceId) {
-  try { return fs.existsSync(getVoicePath(voiceId)) && fs.existsSync(getVoiceJsonPath(voiceId)); } catch { return false; }
+  try {
+    const onnx = getVoicePath(voiceId);
+    const json = getVoiceJsonPath(voiceId);
+    if (!fs.existsSync(onnx) || !fs.existsSync(json)) return false;
+    return fs.statSync(onnx).size > 0 && fs.statSync(json).size > 0;
+  } catch { return false; }
 }
 
 function downloadFile(url, dest, onProgress) {
