@@ -1,8 +1,8 @@
 # Claude AI Usage Toolbar
 
-Windows (future: macOS) system tray app that monitors Claude AI usage by loading
-the Claude settings/usage page in a hidden window and intercepting the API response
-via CDP, once per hour.
+Cross-platform (Windows + macOS) system tray app that monitors Claude AI usage
+by loading the Claude settings/usage page in a hidden window and intercepting
+the API response via CDP, once per hour.
 
 ## Running
 

@@ -67,16 +67,18 @@ The app listens on `http://127.0.0.1:27182/refresh` and `/notify` for Claude Cod
 
 **Recommended setup** (click notification → focus the exact terminal/VSCode window that fired the hook):
 
+> Windows only for now. macOS users: use the minimal setup above, a bash wrapper equivalent to `aiusage-hook.ps1` is not yet shipped.
+
 Copy [scripts/aiusage-hook.ps1](scripts/aiusage-hook.ps1) to `%USERPROFILE%\.claude\aiusage-hook.ps1`, then:
 
 ```json
 {
   "hooks": {
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.claude\\aiusage-hook.ps1\" refresh" }] }
+      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '$env:USERPROFILE\\.claude\\aiusage-hook.ps1' refresh\"" }] }
     ],
     "Notification": [
-      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.claude\\aiusage-hook.ps1\" notify" }] }
+      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& '$env:USERPROFILE\\.claude\\aiusage-hook.ps1' notify\"" }] }
     ]
   }
 }
