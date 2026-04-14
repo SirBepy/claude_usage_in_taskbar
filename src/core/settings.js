@@ -33,21 +33,21 @@ const DEFAULT_SETTINGS = {
   ],
   notifications: {
     workFinished: {
-      enabled: false,
+      enabled: true,
       mode: "sound", // "sound" | "voice"
       soundFile: "sound1.mp3",
       voiceName: null,
       template: "{name} is done",
     },
     questionAsked: {
-      enabled: false,
+      enabled: true,
       mode: "sound",
       soundFile: "sound3.mp3",
       voiceName: null,
       template: "{name} is waiting",
     },
     thresholdCrossed: {
-      enabled: false,
+      enabled: true,
       mode: "sound",
       soundFile: "sound6.mp3",
       voiceName: null,

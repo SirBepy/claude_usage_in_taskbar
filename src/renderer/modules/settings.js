@@ -111,7 +111,6 @@ const NOTIF_TYPES = [
 ];
 const notifCardsRoot = document.getElementById("notifCards");
 const notifCardTemplate = document.getElementById("notifCardTemplate");
-const piperVoicesList = document.getElementById("piperVoicesList");
 const voicePreviewProject = document.getElementById("voicePreviewProject");
 const voicePreviewProjectRow = document.getElementById("voicePreviewProjectRow");
 const notifCards = {};
@@ -392,7 +391,7 @@ window.onload = async () => {
     const mode = cfg.mode === "voice" ? "voice" : "sound";
     c.modes.forEach(r => { r.checked = r.value === mode; });
     c.soundFile.value = cfg.soundFile || def.defaultSound;
-    c.template.value = cfg.template != null ? cfg.template : def.defaultTemplate;
+    c.template.value = cfg.template || def.defaultTemplate;
     if (cfg.voiceName) c.voiceSelect.dataset.desired = cfg.voiceName;
     populateVoiceSelect(c.voiceSelect, cfg.voiceName || null);
     applyNotifCardVisibility(type);
@@ -453,99 +452,24 @@ window.onload = async () => {
   };
 
   let piperStatusCache = null;
-  let piperClickBound = false;
   async function populatePiperVoices() {
     try {
       piperStatusCache = await window.electronAPI.piperStatus();
-      console.log("[piper] status:", piperStatusCache);
-      renderPiperVoices();
       refreshAllVoiceSelects();
-      if (!piperClickBound) {
-        piperClickBound = true;
-        piperVoicesList.addEventListener("click", onPiperVoicesClick);
-      }
     } catch (e) {
       console.error("[piper] populate failed:", e);
     }
   }
 
-  function onPiperVoicesClick(e) {
-    const btn = e.target.closest("button[data-voice]");
-    if (!btn) return;
-    const voiceId = btn.dataset.voice;
-    if (btn.classList.contains("piper-install")) {
-      installPiperVoice(voiceId);
-    }
+  // Electron quirk: speechSynthesis.getVoices() often returns [] on first call
+  // and onvoiceschanged may not fire. Poll a few times until voices arrive.
+  let voicePollTries = 0;
+  function pollWebVoices() {
+    const list = speechSynthesis.getVoices() || [];
+    if (list.length > 0) { refreshAllVoiceSelects(); return; }
+    if (voicePollTries++ < 20) setTimeout(pollWebVoices, 150);
   }
-
-  function renderPiperVoices() {
-    if (!piperStatusCache) return;
-    const binaryReady = piperStatusCache.piperInstalled;
-    const rows = piperStatusCache.voices.map(v => {
-      const status = v.installed ? "✓" : "⬇";
-      const action = v.installed
-        ? `<span style="font-size:0.75rem;color:var(--text-dim)">Installed</span>`
-        : `<button class="piper-install btn-secondary" data-voice="${v.id}" style="padding:3px 10px;font-size:0.75rem">Download</button>`;
-      return `
-        <div class="piper-row" data-voice="${v.id}" style="display:flex;align-items:center;gap:8px;padding:4px 0">
-          <span style="flex:1;font-size:0.8rem">${status} ${v.label}</span>
-          ${action}
-        </div>
-        <div class="piper-progress" data-voice="${v.id}" style="display:none;height:3px;background:var(--border);border-radius:2px;overflow:hidden">
-          <div class="piper-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width 0.2s"></div>
-        </div>
-      `;
-    });
-    const header = binaryReady
-      ? ""
-      : `<div style="font-size:0.75rem;color:var(--text-dim);padding:4px 0">Piper engine not installed. Downloads the ~15MB engine on first voice.</div>`;
-    piperVoicesList.innerHTML = header + rows.join("");
-  }
-
-  async function installPiperVoice(voiceId) {
-    console.log("[piper] installPiperVoice:", voiceId);
-    const progEl = piperVoicesList.querySelector(`.piper-progress[data-voice="${voiceId}"]`);
-    const progBar = progEl?.querySelector(".piper-progress-bar");
-    if (progEl) progEl.style.display = "block";
-    if (progBar) progBar.style.width = "1%";
-
-    if (!piperStatusCache?.piperInstalled) {
-      console.log("[piper] installing binary...");
-      const r = await window.electronAPI.piperInstallBinary();
-      console.log("[piper] binary result:", r);
-      if (!r.ok) {
-        alert("Piper engine install failed: " + r.error);
-        if (progEl) progEl.style.display = "none";
-        return;
-      }
-      piperStatusCache.piperInstalled = true;
-    }
-    console.log("[piper] installing voice:", voiceId);
-    const r = await window.electronAPI.piperInstallVoice(voiceId);
-    console.log("[piper] voice result:", r);
-    if (!r.ok) {
-      alert("Voice install failed: " + r.error);
-      if (progEl) progEl.style.display = "none";
-      return;
-    }
-    if (progBar) progBar.style.width = "100%";
-    await populatePiperVoices();
-    refreshAllVoiceSelects();
-  }
-
-  window.electronAPI.onPiperProgress(({ kind, voiceId, progress }) => {
-    if (kind === "binary") {
-      document.querySelectorAll(".piper-progress").forEach(el => {
-        el.style.display = "block";
-        const bar = el.querySelector(".piper-progress-bar");
-        if (bar) bar.style.width = `${Math.round(progress * 50)}%`;
-      });
-    } else if (kind === "voice" && voiceId) {
-      const el = piperVoicesList.querySelector(`.piper-progress[data-voice="${voiceId}"]`);
-      const bar = el?.querySelector(".piper-progress-bar");
-      if (bar) bar.style.width = `${50 + Math.round(progress * 50)}%`;
-    }
-  });
+  pollWebVoices();
 
   async function populateVoicePreview() {
     const history = await window.electronAPI.getTokenHistory();
