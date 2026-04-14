@@ -73,11 +73,22 @@ async function runDeadPathCheck() {
   // Collect all unique primary cwds (skip ones already merged into something)
   const cwds = [...new Set(lastTokenHistory.map((r) => r.cwd).filter(Boolean))].filter((c) => !aliases[c]?.mergedInto);
   if (!cwds.length) return;
-  const existsMap = await window.electronAPI?.checkPathsExist(cwds);
+  // Include merged paths in existence check - a project is alive if ANY of its paths exist
+  const allPathsToCheck = new Set(cwds);
+  for (const c of cwds) {
+    const merged = aliases[c]?.mergedPaths || [];
+    for (const m of merged) allPathsToCheck.add(m);
+  }
+  const existsMap = await window.electronAPI?.checkPathsExist([...allPathsToCheck]);
   if (!existsMap) return;
-  const dead = cwds.filter((c) => !existsMap[c]);
+  const isProjectAlive = (c) => {
+    if (existsMap[c]) return true;
+    const merged = aliases[c]?.mergedPaths || [];
+    return merged.some((m) => existsMap[m]);
+  };
+  const dead = cwds.filter((c) => !isProjectAlive(c));
   if (!dead.length) return;
-  const live = cwds.filter((c) => existsMap[c]);
+  const live = cwds.filter(isProjectAlive);
   let anyMerged = false;
   for (const deadCwd of dead) {
     const deadName = deadCwd.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase() || "";
