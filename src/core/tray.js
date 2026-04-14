@@ -101,7 +101,7 @@ function updateTray(usageData) {
 }
 
 function buildContextMenu(callbacks) {
-  const { loggedIn, loggingIn, getUpdateState, showLoginWindow, showDashboardWindow, refreshWithAnimation, quitAndInstall, downloadUpdate, quit } = callbacks;
+  const { loggedIn, loggingIn, getUpdateState, showLoginWindow, showDashboardWindow, refreshWithAnimation, quitAndInstall, downloadUpdate, downloadAndInstall, quit } = callbacks;
   const { state, version } = getUpdateState();
 
   let statusItems;
@@ -137,7 +137,7 @@ function buildContextMenu(callbacks) {
     );
   } else if (state === "available") {
     template.unshift(
-      { label: `Update available: v${version}`, click: downloadUpdate },
+      { label: `Download & install v${version}`, click: downloadAndInstall },
       { type: "separator" },
     );
   }

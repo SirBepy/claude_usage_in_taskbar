@@ -26,6 +26,7 @@ const {
   getUpdateState,
   quitAndInstall,
   downloadUpdate,
+  downloadAndInstall,
 } = require("./src/core/updater");
 const { createHookServer } = require("./src/core/hook-server");
 const {
@@ -358,6 +359,7 @@ ipcMain.on("logout", async () => {
 ipcMain.handle("get-update-state", () => getUpdateState());
 ipcMain.on("install-update", () => quitAndInstall());
 ipcMain.on("download-update", () => downloadUpdate());
+ipcMain.on("download-and-install", () => downloadAndInstall());
 ipcMain.on("check-for-updates", () => {
   setupAutoUpdater();
 });
@@ -465,6 +467,7 @@ app.whenReady().then(async () => {
         refreshWithAnimation,
         quitAndInstall,
         downloadUpdate,
+        downloadAndInstall,
         quit: () => app.quit(),
       }));
     },

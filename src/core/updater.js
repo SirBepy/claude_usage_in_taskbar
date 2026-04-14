@@ -6,6 +6,7 @@ const { autoUpdater } = require("electron-updater");
 let updateState = "none"; // "none" | "available" | "downloading" | "downloaded"
 let updateVersion = null;
 let _onStateChange = null;
+let autoInstallAfterDownload = false;
 
 let initialized = false;
 
@@ -46,6 +47,10 @@ function setupAutoUpdater(onStateChange) {
     updateState = "downloaded";
     updateVersion = info.version;
     _onStateChange?.();
+    if (autoInstallAfterDownload) {
+      autoInstallAfterDownload = false;
+      autoUpdater.quitAndInstall();
+    }
   });
 
   autoUpdater.on("error", (err) => {
@@ -62,6 +67,11 @@ function downloadUpdate() {
   autoUpdater.downloadUpdate();
 }
 
+function downloadAndInstall() {
+  autoInstallAfterDownload = true;
+  autoUpdater.downloadUpdate();
+}
+
 function getUpdateState() {
   return { state: updateState, version: updateVersion };
 }
@@ -75,4 +85,5 @@ module.exports = {
   getUpdateState,
   quitAndInstall,
   downloadUpdate,
+  downloadAndInstall,
 };

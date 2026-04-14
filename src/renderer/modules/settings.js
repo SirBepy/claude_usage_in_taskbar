@@ -400,16 +400,18 @@ function renderUpdateState(updateState) {
     updateStateLabel.style.color = "var(--text)";
     updateBtn.style.display = "block";
     updateBtn.disabled = false;
-    updateBtn.innerText = "Download";
+    updateBtn.innerText = `Download & Install v${updateState.version}`;
     updateBtn.onclick = () => {
       updateBtn.disabled = true;
       updateBtn.innerText = "Downloading...";
-      window.electronAPI?.downloadUpdate();
+      window.electronAPI?.downloadAndInstall();
     };
   } else if (updateState.state === "downloading") {
     updateStateLabel.innerText = "Downloading...";
     updateStateLabel.style.color = "var(--text-dim)";
-    updateBtn.style.display = "none";
+    updateBtn.style.display = "block";
+    updateBtn.disabled = true;
+    updateBtn.innerText = "Downloading...";
   } else if (updateState.state === "error") {
     updateStateLabel.innerText = `Error`;
     updateStateLabel.style.color = "#ff4444";
