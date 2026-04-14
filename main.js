@@ -174,7 +174,7 @@ async function speakText(text, voiceName) {
       console.error("[piper] speak failed, falling back:", e.message);
     }
   }
-  enqueueAudio({ kind: "speech", text, voiceName: null });
+  enqueueAudio({ kind: "speech", text, voiceName: voiceName || null });
 }
 
 function sanitizeForSpeech(s) {
