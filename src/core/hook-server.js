@@ -38,7 +38,10 @@ function showNotification(title, body, cwd) {
 function getProjectName(cwd, settings) {
   const base = path.basename(cwd);
   const aliases = settings.projectAliases || {};
-  return aliases[cwd] || aliases[base] || base;
+  const alias = aliases[cwd];
+  if (alias && typeof alias === "object") return alias.name || base;
+  if (alias) return alias;
+  return base;
 }
 
 function createHookServer(callbacks) {
@@ -61,12 +64,15 @@ function createHookServer(callbacks) {
         }
         const s = getSettings();
         const voice = s.voice || {};
+        console.log("[voice] /refresh cwd=", payload?.cwd, "enabled=", voice.enabled, "includeName=", voice.includeProjectName);
         if (voice.enabled && payload?.cwd) {
           const name = getProjectName(payload.cwd, s);
+          console.log("[voice] /refresh resolved name=", JSON.stringify(name));
           const msg = voice.includeProjectName && name
-            ? `An AI in ${name} is done`
-            : "An AI is done";
-          speakText(msg);
+            ? `${name} finished`
+            : "Claude finished";
+          console.log("[voice] /refresh speaking:", msg);
+          speakText(msg, voice.voiceName || null);
         }
         recordTokenStats(payload).catch(console.error);
       });
@@ -79,12 +85,15 @@ function createHookServer(callbacks) {
         }
         const s = getSettings();
         const voice = s.voice || {};
+        console.log("[voice] /notify cwd=", payload?.cwd, "enabled=", voice.enabled, "includeName=", voice.includeProjectName, "aliases=", s.projectAliases);
         if (voice.enabled) {
           const name = payload?.cwd ? getProjectName(payload.cwd, s) : "";
+          console.log("[voice] /notify resolved name=", JSON.stringify(name));
           const msg = voice.includeProjectName && name
-            ? `An AI in ${name} is asking a question`
-            : "An AI is asking a question";
-          speakText(msg);
+            ? `${name} is waiting`
+            : "Claude is waiting";
+          console.log("[voice] /notify speaking:", msg);
+          speakText(msg, voice.voiceName || null);
         } else {
           const sfx = s.sounds || {};
           if (sfx.questionAsked?.enabled) {

@@ -107,6 +107,17 @@ const addColorBtn = document.getElementById("addColorBtn");
 const voiceEnabled = document.getElementById("voiceEnabled");
 const voiceIncludeProjectName = document.getElementById("voiceIncludeProjectName");
 const voiceIncludeProjectNameOption = document.getElementById("voiceIncludeProjectNameOption");
+const voiceSelectOption = document.getElementById("voiceSelectOption");
+const voiceSelect = document.getElementById("voiceSelect");
+const piperVoicesOption = document.getElementById("piperVoicesOption");
+const piperVoicesList = document.getElementById("piperVoicesList");
+const voicePreviewOption = document.getElementById("voicePreviewOption");
+const voicePreviewType = document.getElementById("voicePreviewType");
+const voicePreviewProject = document.getElementById("voicePreviewProject");
+const voicePreviewProjectRow = document.getElementById("voicePreviewProjectRow");
+const voicePreviewPlay = document.getElementById("voicePreviewPlay");
+const voicePreviewThresholdRow = document.getElementById("voicePreviewThresholdRow");
+const voicePreviewPlayThreshold = document.getElementById("voicePreviewPlayThreshold");
 const soundSections = document.getElementById("soundSections");
 const soundWorkFinishedEnabled = document.getElementById("soundWorkFinishedEnabled");
 const soundWorkFinishedFile = document.getElementById("soundWorkFinishedFile");
@@ -170,6 +181,11 @@ function saveSettings() {
     voice: {
       enabled: voiceEnabled.checked,
       includeProjectName: voiceIncludeProjectName.checked,
+      voiceName: (() => {
+        const current = currentSettings.voice?.voiceName;
+        const isPiper = current && /^[a-z]{2}_[A-Z]{2}-/.test(current);
+        return isPiper ? current : (voiceSelect.value || null);
+      })(),
     },
     projectAliases: currentSettings.projectAliases || {},
     sync: currentSettings.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
@@ -337,7 +353,16 @@ window.onload = async () => {
     voiceEnabled.checked = voice.enabled || false;
     voiceIncludeProjectName.checked = voice.includeProjectName !== false;
     voiceIncludeProjectNameOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    voiceSelectOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    piperVoicesOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    voicePreviewOption.style.display = voiceEnabled.checked ? "flex" : "none";
     soundSections.style.display = voiceEnabled.checked ? "none" : "block";
+    if (voiceEnabled.checked) {
+      populateVoiceList(voice.voiceName);
+      populateVoicePreview();
+      updateVoicePreviewRows();
+      populatePiperVoices();
+    }
 
     // Initialize sync settings (defined in sync-settings.js)
     if (typeof initSyncSettings === "function") initSyncSettings(settings);
@@ -358,12 +383,156 @@ window.onload = async () => {
     saveSettings();
   };
 
+  function populateVoiceList(selectedName) {
+    const voices = speechSynthesis.getVoices().filter(v => v.name && v.name !== "Matej");
+    const current = selectedName || (voices[0]?.name ?? "");
+    voiceSelect.innerHTML = voices.map(v => `<option value="${v.name}"${v.name === current ? " selected" : ""}>${v.name}</option>`).join("");
+  }
+  speechSynthesis.onvoiceschanged = () => populateVoiceList(currentSettings.voice?.voiceName);
+
+  let piperStatusCache = null;
+  async function populatePiperVoices() {
+    piperStatusCache = await window.electronAPI.piperStatus();
+    renderPiperVoices();
+  }
+
+  function renderPiperVoices() {
+    if (!piperStatusCache) return;
+    const selected = currentSettings.voice?.voiceName || "";
+    const binaryReady = piperStatusCache.piperInstalled;
+    const rows = piperStatusCache.voices.map(v => {
+      const isSelected = selected === v.id;
+      const status = v.installed ? "✓" : "⬇";
+      const action = v.installed
+        ? `<button class="piper-select btn-secondary" data-voice="${v.id}" style="padding:3px 10px;font-size:0.75rem">${isSelected ? "Selected" : "Use"}</button>`
+        : `<button class="piper-install btn-secondary" data-voice="${v.id}" style="padding:3px 10px;font-size:0.75rem">Download</button>`;
+      return `
+        <div class="piper-row" data-voice="${v.id}" style="display:flex;align-items:center;gap:8px;padding:4px 0">
+          <span style="flex:1;font-size:0.8rem;color:${isSelected ? 'var(--accent)' : 'var(--text)'}">${status} ${v.label}</span>
+          ${action}
+        </div>
+        <div class="piper-progress" data-voice="${v.id}" style="display:none;height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+          <div class="piper-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width 0.2s"></div>
+        </div>
+      `;
+    });
+    const header = binaryReady
+      ? ""
+      : `<div style="font-size:0.75rem;color:var(--text-dim);padding:4px 0">Piper engine not installed. Downloads the ~15MB engine on first voice.</div>`;
+    piperVoicesList.innerHTML = header + rows.join("");
+
+    piperVoicesList.querySelectorAll(".piper-install").forEach(btn => {
+      btn.addEventListener("click", () => installPiperVoice(btn.dataset.voice));
+    });
+    piperVoicesList.querySelectorAll(".piper-select").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentSettings.voice = currentSettings.voice || {};
+        currentSettings.voice.voiceName = btn.dataset.voice;
+        saveSettings();
+        renderPiperVoices();
+      });
+    });
+  }
+
+  async function installPiperVoice(voiceId) {
+    const progEl = piperVoicesList.querySelector(`.piper-progress[data-voice="${voiceId}"]`);
+    const progBar = progEl?.querySelector(".piper-progress-bar");
+    if (progEl) progEl.style.display = "block";
+
+    if (!piperStatusCache?.piperInstalled) {
+      const r = await window.electronAPI.piperInstallBinary();
+      if (!r.ok) {
+        alert("Piper engine install failed: " + r.error);
+        if (progEl) progEl.style.display = "none";
+        return;
+      }
+    }
+    const r = await window.electronAPI.piperInstallVoice(voiceId);
+    if (!r.ok) {
+      alert("Voice install failed: " + r.error);
+      if (progEl) progEl.style.display = "none";
+      return;
+    }
+    if (progBar) progBar.style.width = "100%";
+    await populatePiperVoices();
+  }
+
+  window.electronAPI.onPiperProgress(({ kind, voiceId, progress }) => {
+    if (kind === "binary") {
+      document.querySelectorAll(".piper-progress").forEach(el => {
+        el.style.display = "block";
+        const bar = el.querySelector(".piper-progress-bar");
+        if (bar) bar.style.width = `${Math.round(progress * 50)}%`;
+      });
+    } else if (kind === "voice" && voiceId) {
+      const el = piperVoicesList.querySelector(`.piper-progress[data-voice="${voiceId}"]`);
+      const bar = el?.querySelector(".piper-progress-bar");
+      if (bar) bar.style.width = `${50 + Math.round(progress * 50)}%`;
+    }
+  });
+
+  async function populateVoicePreview() {
+    const history = await window.electronAPI.getTokenHistory();
+    const seen = new Set();
+    const projects = [];
+    for (let i = history.length - 1; i >= 0 && projects.length < 5; i--) {
+      const cwd = history[i].cwd;
+      if (!cwd || seen.has(cwd)) continue;
+      seen.add(cwd);
+      projects.push(cwd);
+    }
+    voicePreviewProject.innerHTML = projects.length
+      ? projects.map(p => `<option value="${p}">${p.split(/[\\/]/).pop()}</option>`).join("")
+      : `<option value="">No projects yet</option>`;
+  }
+
   voiceEnabled.addEventListener("change", () => {
     voiceIncludeProjectNameOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    voiceSelectOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    piperVoicesOption.style.display = voiceEnabled.checked ? "flex" : "none";
+    voicePreviewOption.style.display = voiceEnabled.checked ? "flex" : "none";
     soundSections.style.display = voiceEnabled.checked ? "none" : "block";
+    if (voiceEnabled.checked) {
+      populateVoiceList(currentSettings.voice?.voiceName);
+      populateVoicePreview();
+      updateVoicePreviewRows();
+      populatePiperVoices();
+    }
     saveSettings();
   });
   voiceIncludeProjectName.addEventListener("change", saveSettings);
+  voiceSelect.addEventListener("change", () => {
+    if (currentSettings.voice) currentSettings.voice.voiceName = voiceSelect.value || null;
+    saveSettings();
+    renderPiperVoices();
+  });
+
+  function updateVoicePreviewRows() {
+    const isThreshold = voicePreviewType.value === "threshold";
+    voicePreviewProjectRow.style.display = isThreshold ? "none" : "flex";
+    voicePreviewThresholdRow.style.display = isThreshold ? "flex" : "none";
+  }
+
+  voicePreviewType.addEventListener("change", updateVoicePreviewRows);
+
+  voicePreviewPlay.addEventListener("click", () => {
+    const cwd = voicePreviewProject.value;
+    if (!cwd) return;
+    const name = cwd.split(/[\\/]/).pop();
+    const includeProject = voiceIncludeProjectName.checked;
+    const type = voicePreviewType.value;
+    let msg;
+    if (type === "finished") {
+      msg = includeProject ? `${name} finished` : "Claude finished";
+    } else {
+      msg = includeProject ? `${name} is waiting` : "Claude is waiting";
+    }
+    window.electronAPI.speakPreview(msg);
+  });
+
+  voicePreviewPlayThreshold.addEventListener("click", () => {
+    window.electronAPI.speakPreview("80% threshold reached");
+  });
   tooltipEstimateTokens.addEventListener("change", () => {
     tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
     saveSettings();

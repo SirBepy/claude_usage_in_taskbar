@@ -3,7 +3,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, shell } = require("electron");
 const path = require("path");
 const { execFile } = require("child_process");
-const say = require("say");
+const piper = require("./src/core/piper");
 
 app.name = "Claude Usage Taskbar Tool";
 if (process.platform === "win32") app.setAppUserModelId("Claude Usage Taskbar Tool");
@@ -93,6 +93,7 @@ const syncClient = new SyncClient({
 // ── Audio ─────────────────────────────────────────────────────────────────────
 let audioWindow = null;
 let audioQueue = [];
+let speechQueue = [];
 
 function createAudioWindow() {
   audioWindow = new BrowserWindow({
@@ -108,13 +109,13 @@ function createAudioWindow() {
   audioWindow.webContents.once("did-finish-load", () => {
     for (const f of audioQueue) audioWindow.webContents.send("play-sound", f);
     audioQueue = [];
+    for (const t of speechQueue) audioWindow.webContents.send("speak-text", t);
+    speechQueue = [];
   });
   audioWindow.on("closed", () => { audioWindow = null; });
 }
 
-function playSound(soundFile) {
-  if (!soundFile) return;
-  const soundPath = "file:///" + path.join(__dirname, "src", "assets", "sounds", soundFile).replace(/\\/g, "/");
+function enqueueSound(soundPath) {
   if (!audioWindow || audioWindow.isDestroyed()) {
     createAudioWindow();
     audioQueue.push(soundPath);
@@ -125,11 +126,38 @@ function playSound(soundFile) {
   }
 }
 
-function speakText(text) {
+function playSound(soundFile) {
+  if (!soundFile) return;
+  const soundPath = "file:///" + path.join(__dirname, "src", "assets", "sounds", soundFile).replace(/\\/g, "/");
+  enqueueSound(soundPath);
+}
+
+function playWavAbsolute(absPath) {
+  if (!absPath) return;
+  const soundPath = "file:///" + absPath.replace(/\\/g, "/");
+  enqueueSound(soundPath);
+}
+
+async function speakText(text, voiceName) {
   if (!text) return;
-  say.speak(text, null, null, (err) => {
-    if (err) console.error("TTS error:", err.message);
-  });
+  if (voiceName && piper.isPiperInstalled() && piper.isVoiceInstalled(voiceName)) {
+    try {
+      const wav = await piper.speak(text, voiceName);
+      playWavAbsolute(wav);
+      return;
+    } catch (e) {
+      console.error("[piper] speak failed, falling back:", e.message);
+    }
+  }
+  const payload = { text, voiceName: null };
+  if (!audioWindow || audioWindow.isDestroyed()) {
+    createAudioWindow();
+    speechQueue.push(payload);
+  } else if (audioWindow.webContents.isLoading()) {
+    speechQueue.push(payload);
+  } else {
+    audioWindow.webContents.send("speak-text", payload);
+  }
 }
 
 const POLL_MS = 10 * 60 * 1000;
@@ -197,12 +225,16 @@ async function refresh(fromHook = false) {
     if (fromHook && !voice.enabled && sfx.workFinished?.enabled) {
       playSound(sfx.workFinished.file);
     }
-    if (sfx.thresholdCrossed?.enabled) {
-      const thresholds = settings.colorThresholds;
-      if (
-        hasThresholdCrossed(prevSession, newSession, thresholds) ||
-        hasThresholdCrossed(prevWeekly, newWeekly, thresholds)
-      ) {
+    const thresholds = settings.colorThresholds;
+    const crossed = (
+      hasThresholdCrossed(prevSession, newSession, thresholds) ||
+      hasThresholdCrossed(prevWeekly, newWeekly, thresholds)
+    );
+    if (crossed) {
+      if (voice.enabled) {
+        const pct = Math.round(Math.max(newSession, newWeekly));
+        speakText(`${pct}% threshold reached`, voice.voiceName || null);
+      } else if (sfx.thresholdCrossed?.enabled) {
         playSound(sfx.thresholdCrossed.file);
       }
     }
@@ -310,7 +342,34 @@ ipcMain.handle("get-platform", () => process.platform);
 ipcMain.on("open-external", (_, url) => shell.openExternal(url));
 ipcMain.handle("get-token-history", () => loadTokenHistory());
 ipcMain.handle("get-active-sessions", () => getActiveSessions());
+ipcMain.on("speak-preview", (_, text) => speakText(text, settings.voice?.voiceName || null));
+ipcMain.handle("piper-status", () => piper.getInstallStatus());
+ipcMain.handle("piper-install-binary", async (event) => {
+  try {
+    await piper.installPiperBinary((p) => {
+      event.sender.send("piper-progress", { kind: "binary", progress: p });
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+ipcMain.handle("piper-install-voice", async (event, voiceId) => {
+  try {
+    await piper.installVoice(voiceId, (p) => {
+      event.sender.send("piper-progress", { kind: "voice", voiceId, progress: p });
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
 ipcMain.handle("backfill-transcripts", () => backfillAllTranscripts());
+ipcMain.handle("check-paths-exist", (_, paths) => {
+  const result = {};
+  for (const p of paths) result[p] = require("fs").existsSync(p);
+  return result;
+});
 ipcMain.on("open-in-explorer", (_, folderPath) => shell.openPath(folderPath));
 ipcMain.on("open-in-vscode", (_, folderPath) => {
   const cmd = process.platform === "win32" ? "code.cmd" : "code";

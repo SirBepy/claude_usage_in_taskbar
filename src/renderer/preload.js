@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => ipcRenderer.removeListener("history-updated", handler);
   },
 
+  // File system
+  checkPathsExist: (paths) => ipcRenderer.invoke("check-paths-exist", paths),
+
   // Open project
   openInExplorer: (folderPath) => ipcRenderer.send("open-in-explorer", folderPath),
   openInVSCode: (folderPath) => ipcRenderer.send("open-in-vscode", folderPath),
@@ -48,6 +51,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getTokenHistory: () => ipcRenderer.invoke("get-token-history"),
   getActiveSessions: () => ipcRenderer.invoke("get-active-sessions"),
   backfillTranscripts: () => ipcRenderer.invoke("backfill-transcripts"),
+  speakPreview: (text) => ipcRenderer.send("speak-preview", text),
+  piperStatus: () => ipcRenderer.invoke("piper-status"),
+  piperInstallBinary: () => ipcRenderer.invoke("piper-install-binary"),
+  piperInstallVoice: (voiceId) => ipcRenderer.invoke("piper-install-voice", voiceId),
+  onPiperProgress: (cb) => {
+    const handler = (_, data) => cb(data);
+    ipcRenderer.on("piper-progress", handler);
+    return () => ipcRenderer.removeListener("piper-progress", handler);
+  },
   onTokenHistoryUpdated: (cb) => {
     const handler = (_, data) => cb(data);
     ipcRenderer.on("token-history-updated", handler);

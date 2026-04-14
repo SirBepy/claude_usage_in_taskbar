@@ -336,6 +336,31 @@
                         <span class="slider"></span>
                     </label>
                 </div>
+                <div class="option" id="voiceSelectOption" style="display:none">
+                    <span class="option-label">Voice</span>
+                    <select id="voiceSelect" style="flex:1;max-width:220px"></select>
+                </div>
+                <div id="piperVoicesOption" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
+                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">High-quality voices (Piper)</span>
+                    <div id="piperVoicesList" style="display:flex;flex-direction:column;gap:6px"></div>
+                </div>
+                <div id="voicePreviewOption" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
+                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Preview</span>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <select id="voicePreviewType" style="flex:1">
+                            <option value="question">Has a question</option>
+                            <option value="finished">Work finished</option>
+                            <option value="threshold">Threshold reached</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px" id="voicePreviewProjectRow">
+                        <select id="voicePreviewProject" style="flex:1"></select>
+                        <button class="btn-secondary" id="voicePreviewPlay" style="padding:3px 10px;font-size:0.8rem">▶</button>
+                    </div>
+                    <div style="display:none;align-items:center;gap:8px;justify-content:flex-end" id="voicePreviewThresholdRow">
+                        <button class="btn-secondary" id="voicePreviewPlayThreshold" style="padding:3px 10px;font-size:0.8rem">▶</button>
+                    </div>
+                </div>
             </div>
             <div id="soundSections">
             <div class="section">
@@ -542,12 +567,25 @@
             <div id="project-chart-container"></div>
             <div id="project-sessions-list" style="margin-top:12px"></div>
             <div id="projectDetailPath" style="padding:10px 0 4px;font-size:0.68rem;color:var(--text-dim);font-family:'Fira Code',monospace;word-break:break-all"></div>
+            <div id="project-merged-paths"></div>
             <div style="padding:4px 0 8px">
                 <div class="section-title" style="margin-bottom:8px;font-size:0.72rem">Open project</div>
                 <div style="display:flex;gap:8px">
                     <button class="btn-secondary" id="openExplorerBtn" style="flex:1;font-size:0.8rem">File Explorer</button>
                     <button class="btn-secondary" id="openVSCodeBtn" style="flex:1;font-size:0.8rem">VSCode</button>
                 </div>
+                <button class="btn-danger" id="hideProjectBtn" style="width:100%;font-size:0.78rem;margin-top:8px">Hide from list</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merge confirmation modal -->
+    <div id="merge-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;max-width:280px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+            <p id="merge-modal-text" style="margin:0 0 16px;font-size:0.85rem;line-height:1.5;color:var(--text)"></p>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button class="btn-secondary" id="merge-cancel-btn" style="font-size:0.8rem;padding:5px 14px">Cancel</button>
+                <button class="btn-primary" id="merge-confirm-btn" style="font-size:0.8rem;padding:5px 14px">Merge</button>
             </div>
         </div>
     </div>
