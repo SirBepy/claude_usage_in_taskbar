@@ -27,6 +27,7 @@ const {
   quitAndInstall,
   downloadUpdate,
   downloadAndInstall,
+  setAutoUpdate,
 } = require("./src/core/updater");
 const { createHookServer } = require("./src/core/hook-server");
 const {
@@ -350,6 +351,7 @@ ipcMain.handle("get-settings", () => settings);
 ipcMain.on("save-settings", (_, newSettings) => {
   settings = newSettings;
   saveSettings(settings);
+  setAutoUpdate(settings.autoUpdate);
   clearTempDisplay();
   updateTray(usageData);
 });
@@ -474,6 +476,7 @@ app.whenReady().then(async () => {
   });
 
   createAudioWindow();
+  setAutoUpdate(settings.autoUpdate);
   setupAutoUpdater(() => {
     const state = getUpdateState();
     console.log("Updater state changed via callback:", state);

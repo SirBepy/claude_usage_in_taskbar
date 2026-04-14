@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   iconStyle: "rings", // "rings" | "bars"
   timeStyle: "absolute", // "absolute" | "countdown"
   launchAtLogin: false,
+  autoUpdate: false,
   estimateTokens: false,
   showSafePace: true,
   sessionPlan: 44000,

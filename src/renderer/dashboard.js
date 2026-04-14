@@ -22,7 +22,8 @@ document.getElementById("logoutBtn").onclick = () => window.electronAPI?.logout(
 document.getElementById("nav-visuals").onclick = () => showView("settings-visuals");
 document.getElementById("nav-themes").onclick = () => showView("settings-themes");
 document.getElementById("nav-notifications").onclick = () => showView("settings-notifications");
-document.getElementById("nav-sync").onclick = () => showView("settings-sync");
+// TODO: re-enable when Sync feature resumes.
+// document.getElementById("nav-sync").onclick = () => showView("settings-sync");
 
 // Back buttons on all subpages
 document.querySelectorAll(".back-to-settings").forEach((btn) => {

@@ -274,6 +274,7 @@ function primeWebVoices() {
   speechSynthesis.addEventListener?.("voiceschanged", refreshAllVoiceSelects);
   speechSynthesis.onvoiceschanged = refreshAllVoiceSelects;
 }
+const autoUpdate = document.getElementById("autoUpdate");
 const refreshUpdateBtn = document.getElementById("refreshUpdateBtn");
 const copyLogsBtn = document.getElementById("copyLogsBtn");
 const appVersionLabel = document.getElementById("appVersionLabel");
@@ -294,6 +295,7 @@ function saveSettings() {
     tooltipShowSafePace: tooltipShowSafePace.checked,
     tooltipEstimateTokens: tooltipEstimateTokens.checked,
     launchAtLogin: launchAtLogin.checked,
+    autoUpdate: autoUpdate.checked,
     dashboardShowSession: dashboardShowSession.checked,
     dashboardShowWeekly: dashboardShowWeekly.checked,
     dashboardShowSafePace: dashboardShowSafePace.checked,
@@ -429,6 +431,10 @@ function renderUpdateState(updateState) {
 window.onload = async () => {
   const platform = await window.electronAPI?.getPlatform();
   isMac = platform === "darwin";
+  if (isMac) {
+    const row = document.getElementById("autoUpdateRow");
+    if (row) row.style.display = "none";
+  }
 
   const settings = await window.electronAPI?.getSettings();
   if (settings) {
@@ -445,6 +451,7 @@ window.onload = async () => {
     tooltipShowSafePace.checked = settings.tooltipShowSafePace !== false;
     tooltipEstimateTokens.checked = settings.tooltipEstimateTokens ?? settings.estimateTokens ?? false;
     launchAtLogin.checked = settings.launchAtLogin || false;
+    autoUpdate.checked = settings.autoUpdate || false;
     dashboardShowSession.checked = settings.dashboardShowSession !== false;
     dashboardShowWeekly.checked = settings.dashboardShowWeekly !== false;
     dashboardShowSafePace.checked = settings.dashboardShowSafePace ?? settings.showSafePace ?? true;
@@ -487,7 +494,7 @@ window.onload = async () => {
   for (const el of [iconStyle, overlayStyle, timeStyle, tooltipLayout, sessionPlan, weeklyPlan]) {
     el.addEventListener("change", saveSettings);
   }
-  for (const el of [launchAtLogin, tooltipShowSafePace, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
+  for (const el of [launchAtLogin, autoUpdate, tooltipShowSafePace, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
     el.addEventListener("change", saveSettings);
   }
 

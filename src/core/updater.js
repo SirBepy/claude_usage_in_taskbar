@@ -7,8 +7,21 @@ let updateState = "none"; // "none" | "available" | "downloading" | "downloaded"
 let updateVersion = null;
 let _onStateChange = null;
 let autoInstallAfterDownload = false;
+let autoUpdateEnabled = false;
 
 let initialized = false;
+
+function setAutoUpdate(enabled) {
+  autoUpdateEnabled = !!enabled;
+  // If an update is already waiting, kick the flow immediately.
+  if (!autoUpdateEnabled) return;
+  if (updateState === "available") {
+    autoInstallAfterDownload = true;
+    try { autoUpdater.downloadUpdate(); } catch (_) {}
+  } else if (updateState === "downloaded") {
+    try { autoUpdater.quitAndInstall(); } catch (_) {}
+  }
+}
 
 function setupAutoUpdater(onStateChange) {
   if (onStateChange) _onStateChange = onStateChange;
@@ -34,6 +47,10 @@ function setupAutoUpdater(onStateChange) {
     updateState = "available";
     updateVersion = info.version;
     _onStateChange?.();
+    if (autoUpdateEnabled) {
+      autoInstallAfterDownload = true;
+      try { autoUpdater.downloadUpdate(); } catch (_) {}
+    }
   });
 
   autoUpdater.on("download-progress", () => {
@@ -47,7 +64,7 @@ function setupAutoUpdater(onStateChange) {
     updateState = "downloaded";
     updateVersion = info.version;
     _onStateChange?.();
-    if (autoInstallAfterDownload) {
+    if (autoInstallAfterDownload || autoUpdateEnabled) {
       autoInstallAfterDownload = false;
       autoUpdater.quitAndInstall();
     }
@@ -86,4 +103,5 @@ module.exports = {
   quitAndInstall,
   downloadUpdate,
   downloadAndInstall,
+  setAutoUpdate,
 };

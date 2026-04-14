@@ -41,7 +41,7 @@
         <div class="view-body">
 
             <div class="section">
-                <div class="section-title">General</div>
+                <div class="section-title">Appearance</div>
                 <div class="nav-row" id="nav-visuals">
                     <span class="nav-row-label">Visuals</span>
                     <span class="nav-row-arrow">›</span>
@@ -50,18 +50,35 @@
                     <span class="nav-row-label">Themes</span>
                     <span class="nav-row-arrow">›</span>
                 </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">System</div>
                 <div class="nav-row" id="nav-notifications">
                     <span class="nav-row-label">Notifications</span>
                     <span class="nav-row-arrow">›</span>
                 </div>
+                <!-- TODO: re-enable Sync once backend work resumes.
                 <div class="nav-row" id="nav-sync">
                     <span class="nav-row-label">Sync</span>
                     <span class="nav-row-arrow">›</span>
                 </div>
+                -->
                 <div class="option">
                     <span class="option-label">Launch at Login</span>
                     <label class="switch">
                         <input type="checkbox" id="launchAtLogin">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">Version</div>
+                <div class="option" id="autoUpdateRow">
+                    <span class="option-label">Auto-Update</span>
+                    <label class="switch">
+                        <input type="checkbox" id="autoUpdate">
                         <span class="slider"></span>
                     </label>
                 </div>
