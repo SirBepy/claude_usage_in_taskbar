@@ -7,6 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "postinstall": "node scripts/download-piper.js",
+    "piper:download": "node scripts/download-piper.js",
     "dist": "electron-builder",
     "dist:publish": "electron-builder --publish always"
   },
@@ -58,6 +60,13 @@
     ],
     "asarUnpack": [
       "node_modules/sql.js/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/piper",
+        "to": "piper",
+        "filter": ["**/*"]
+      }
     ]
   }
 }

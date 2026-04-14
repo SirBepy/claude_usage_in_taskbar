@@ -32,18 +32,44 @@ function platformKey() {
   return PIPER_ARCHIVE[key] ? key : null;
 }
 
-function getPiperRoot() {
+function getBundledRoot() {
+  const isPackaged = app.isPackaged;
+  if (isPackaged) return path.join(process.resourcesPath, "piper");
+  return path.join(__dirname, "..", "..", "resources", "piper");
+}
+
+function getUserRoot() {
   return path.join(app.getPath("userData"), "piper");
 }
 
-function getPiperBinary() {
-  const root = getPiperRoot();
+function getBundledBinary() {
   const exe = process.platform === "win32" ? "piper.exe" : "piper";
-  return path.join(root, "piper", exe);
+  return path.join(getBundledRoot(), "bin", `${process.platform}_${process.arch}`, "piper", exe);
+}
+
+function getUserBinary() {
+  const exe = process.platform === "win32" ? "piper.exe" : "piper";
+  return path.join(getUserRoot(), "piper", exe);
+}
+
+function getPiperBinary() {
+  const bundled = getBundledBinary();
+  if (fs.existsSync(bundled)) return bundled;
+  return getUserBinary();
+}
+
+function getBundledVoicePath(voiceId) {
+  return path.join(getBundledRoot(), "voices", voiceId + ".onnx");
+}
+
+function getUserVoicePath(voiceId) {
+  return path.join(getUserRoot(), "voices", voiceId + ".onnx");
 }
 
 function getVoicePath(voiceId) {
-  return path.join(getPiperRoot(), "voices", voiceId + ".onnx");
+  const bundled = getBundledVoicePath(voiceId);
+  if (fs.existsSync(bundled)) return bundled;
+  return getUserVoicePath(voiceId);
 }
 
 function getVoiceJsonPath(voiceId) {
@@ -66,7 +92,8 @@ function downloadFile(url, dest, onProgress) {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close();
         try { fs.unlinkSync(dest); } catch {}
-        return downloadFile(res.headers.location, dest, onProgress).then(resolve, reject);
+        const next = new URL(res.headers.location, url).toString();
+        return downloadFile(next, dest, onProgress).then(resolve, reject);
       }
       if (res.statusCode !== 200) {
         file.close();
@@ -90,11 +117,21 @@ function downloadFile(url, dest, onProgress) {
 function extractArchive(archivePath, destDir) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(destDir, { recursive: true });
-    // Windows 10+ and macOS/Linux all have tar; handles .zip and .tar.gz
-    execFile("tar", ["-xf", archivePath, "-C", destDir], (err) => {
-      if (err) reject(new Error(`tar extract failed: ${err.message}`));
-      else resolve();
-    });
+    const isZip = archivePath.toLowerCase().endsWith(".zip");
+    if (isZip && process.platform === "win32") {
+      const cmd = `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`;
+      execFile("powershell", ["-NoProfile", "-NonInteractive", "-Command", cmd], (err, stdout, stderr) => {
+        if (err) reject(new Error(`Expand-Archive failed: ${err.message} ${stderr || ""}`));
+        else resolve();
+      });
+    } else {
+      const archiveName = path.basename(archivePath);
+      const cwd = path.dirname(archivePath);
+      execFile("tar", ["-xf", archiveName, "-C", destDir], { cwd }, (err) => {
+        if (err) reject(new Error(`tar extract failed: ${err.message}`));
+        else resolve();
+      });
+    }
   });
 }
 
@@ -103,14 +140,14 @@ async function installPiperBinary(onProgress) {
   if (!key) throw new Error(`Unsupported platform: ${process.platform}_${process.arch}`);
   const archiveName = PIPER_ARCHIVE[key];
   const url = `${PIPER_BASE}/${archiveName}`;
-  const root = getPiperRoot();
+  const root = getUserRoot();
   fs.mkdirSync(root, { recursive: true });
   const archivePath = path.join(root, archiveName);
   await downloadFile(url, archivePath, onProgress);
   await extractArchive(archivePath, root);
   try { fs.unlinkSync(archivePath); } catch {}
   if (process.platform !== "win32") {
-    try { fs.chmodSync(getPiperBinary(), 0o755); } catch {}
+    try { fs.chmodSync(getUserBinary(), 0o755); } catch {}
   }
   if (!isPiperInstalled()) throw new Error("Piper binary missing after extraction");
 }
@@ -120,8 +157,10 @@ async function installVoice(voiceId, onProgress) {
   if (!voice) throw new Error(`Unknown voice: ${voiceId}`);
   const onnxUrl = `${VOICE_BASE}/${voice.path}/${voice.id}.onnx`;
   const jsonUrl = `${VOICE_BASE}/${voice.path}/${voice.id}.onnx.json`;
-  await downloadFile(onnxUrl, getVoicePath(voiceId), p => onProgress && onProgress(p * 0.98));
-  await downloadFile(jsonUrl, getVoiceJsonPath(voiceId), p => onProgress && onProgress(0.98 + p * 0.02));
+  const onnxDest = getUserVoicePath(voiceId);
+  const jsonDest = onnxDest + ".json";
+  await downloadFile(onnxUrl, onnxDest, p => onProgress && onProgress(p * 0.98));
+  await downloadFile(jsonUrl, jsonDest, p => onProgress && onProgress(0.98 + p * 0.02));
 }
 
 function speak(text, voiceId) {

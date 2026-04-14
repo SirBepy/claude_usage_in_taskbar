@@ -1,6 +1,7 @@
 node_modules/
 dist/
 out/
+resources/piper/
 *.log
 .DS_Store
 Thumbs.db
