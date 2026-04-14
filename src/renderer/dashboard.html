@@ -320,121 +320,61 @@
             <div style="width:32px"></div>
         </div>
         <div class="view-body">
+            <template id="notifCardTemplate">
+                <div class="section notif-card">
+                    <div class="section-title notif-title"></div>
+                    <div class="option">
+                        <span class="option-label">Enabled</span>
+                        <label class="switch">
+                            <input type="checkbox" class="notif-enabled">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="option notif-body" style="display:none">
+                        <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Type</span>
+                        <div style="display:flex;gap:10px">
+                            <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="radio" class="notif-mode" value="sound"> Sound</label>
+                            <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="radio" class="notif-mode" value="voice"> Voice</label>
+                        </div>
+                    </div>
+                    <div class="option notif-sound-row" style="display:none">
+                        <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <select class="notif-sound-file">
+                                <option value="sound1.mp3">Sound 1</option>
+                                <option value="sound2.mp3">Sound 2</option>
+                                <option value="sound3.mp3">Sound 3</option>
+                                <option value="sound4.mp3">Sound 4</option>
+                                <option value="sound5.mp3">Sound 5</option>
+                                <option value="sound6.mp3">Sound 6</option>
+                            </select>
+                            <button class="btn-secondary notif-sound-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
+                        </div>
+                    </div>
+                    <div class="notif-voice-rows" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
+                        <div class="option" style="border:none;padding:0">
+                            <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Voice</span>
+                            <select class="notif-voice-select" style="flex:1;max-width:220px"></select>
+                        </div>
+                        <div class="option" style="border:none;padding:0;flex-direction:column;align-items:stretch;gap:4px">
+                            <span class="option-label notif-template-label" style="font-size:0.82rem;color:var(--text-dim)">Message</span>
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <input type="text" class="notif-template" style="flex:1;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.85rem">
+                                <button class="btn-secondary notif-voice-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
+                            </div>
+                            <span class="notif-template-hint" style="font-size:0.72rem;color:var(--text-dim)"></span>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <div id="notifCards"></div>
             <div class="section">
-                <div class="section-title">Voice</div>
-                <div class="option">
-                    <span class="option-label"><span class="info-wrap">Voice Notifications<span class="info-icon">?</span><span class="info-tooltip">When enabled, voice announcements replace sound effects for work finished and question events</span></span></span>
-                    <label class="switch">
-                        <input type="checkbox" id="voiceEnabled">
-                        <span class="slider"></span>
-                    </label>
+                <div class="section-title">High-quality voices (Piper)</div>
+                <div id="piperVoicesList" style="display:flex;flex-direction:column;gap:6px;padding:6px 0"></div>
+                <div class="option" id="voicePreviewProjectRow" style="display:none">
+                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Preview project</span>
+                    <select id="voicePreviewProject" style="flex:1;max-width:220px"></select>
                 </div>
-                <div class="option" id="voiceIncludeProjectNameOption" style="display:none">
-                    <span class="option-label">Include Project Name</span>
-                    <label class="switch">
-                        <input type="checkbox" id="voiceIncludeProjectName">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="option" id="voiceSelectOption" style="display:none">
-                    <span class="option-label">Voice</span>
-                    <select id="voiceSelect" style="flex:1;max-width:220px"></select>
-                </div>
-                <div id="piperVoicesOption" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
-                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">High-quality voices (Piper)</span>
-                    <div id="piperVoicesList" style="display:flex;flex-direction:column;gap:6px"></div>
-                </div>
-                <div id="voicePreviewOption" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
-                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Preview</span>
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <select id="voicePreviewType" style="flex:1">
-                            <option value="question">Has a question</option>
-                            <option value="finished">Work finished</option>
-                            <option value="threshold">Threshold reached</option>
-                        </select>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px" id="voicePreviewProjectRow">
-                        <select id="voicePreviewProject" style="flex:1"></select>
-                        <button class="btn-secondary" id="voicePreviewPlay" style="padding:3px 10px;font-size:0.8rem">▶</button>
-                    </div>
-                    <div style="display:none;align-items:center;gap:8px;justify-content:flex-end" id="voicePreviewThresholdRow">
-                        <button class="btn-secondary" id="voicePreviewPlayThreshold" style="padding:3px 10px;font-size:0.8rem">▶</button>
-                    </div>
-                </div>
-            </div>
-            <div id="soundSections">
-            <div class="section">
-                <div class="section-title">Work Finished</div>
-                <div class="option">
-                    <span class="option-label">Enabled</span>
-                    <label class="switch">
-                        <input type="checkbox" id="soundWorkFinishedEnabled">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="option" id="soundWorkFinishedPicker" style="display:none">
-                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <select id="soundWorkFinishedFile">
-                            <option value="sound1.mp3">Sound 1</option>
-                            <option value="sound2.mp3">Sound 2</option>
-                            <option value="sound3.mp3">Sound 3</option>
-                            <option value="sound4.mp3">Sound 4</option>
-                            <option value="sound5.mp3">Sound 5</option>
-                            <option value="sound6.mp3">Sound 6</option>
-                        </select>
-                        <button class="btn-secondary" id="previewWorkFinished" style="padding:3px 10px;font-size:0.8rem">▶</button>
-                    </div>
-                </div>
-            </div>
-            <div class="section">
-                <div class="section-title">Question Asked</div>
-                <div class="option">
-                    <span class="option-label">Enabled</span>
-                    <label class="switch">
-                        <input type="checkbox" id="soundQuestionAskedEnabled">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="option" id="soundQuestionAskedPicker" style="display:none">
-                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <select id="soundQuestionAskedFile">
-                            <option value="sound1.mp3">Sound 1</option>
-                            <option value="sound2.mp3">Sound 2</option>
-                            <option value="sound3.mp3">Sound 3</option>
-                            <option value="sound4.mp3">Sound 4</option>
-                            <option value="sound5.mp3">Sound 5</option>
-                            <option value="sound6.mp3">Sound 6</option>
-                        </select>
-                        <button class="btn-secondary" id="previewQuestionAsked" style="padding:3px 10px;font-size:0.8rem">▶</button>
-                    </div>
-                </div>
-            </div>
-            <div class="section">
-                <div class="section-title">Threshold Crossed</div>
-                <div class="option">
-                    <span class="option-label">Enabled</span>
-                    <label class="switch">
-                        <input type="checkbox" id="soundThresholdEnabled">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="option" id="soundThresholdPicker" style="display:none">
-                    <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <select id="soundThresholdFile">
-                            <option value="sound1.mp3">Sound 1</option>
-                            <option value="sound2.mp3">Sound 2</option>
-                            <option value="sound3.mp3">Sound 3</option>
-                            <option value="sound4.mp3">Sound 4</option>
-                            <option value="sound5.mp3">Sound 5</option>
-                            <option value="sound6.mp3">Sound 6</option>
-                        </select>
-                        <button class="btn-secondary" id="previewThreshold" style="padding:3px 10px;font-size:0.8rem">▶</button>
-                    </div>
-                </div>
-            </div>
             </div>
         </div>
     </div>

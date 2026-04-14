@@ -91,9 +91,13 @@ const syncClient = new SyncClient({
 });
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
+// Unified serial queue: entries are { kind: "file", path } | { kind: "speech", text, voiceName }
 let audioWindow = null;
 let audioQueue = [];
-let speechQueue = [];
+let audioBusy = false;
+let audioWatchdog = null;
+const AUDIO_GAP_MS = 250;
+const AUDIO_WATCHDOG_MS = 15000;
 
 function createAudioWindow() {
   audioWindow = new BrowserWindow({
@@ -106,36 +110,57 @@ function createAudioWindow() {
     },
   });
   audioWindow.loadFile(path.join(__dirname, "src", "renderer", "audio-player.html"));
-  audioWindow.webContents.once("did-finish-load", () => {
-    for (const f of audioQueue) audioWindow.webContents.send("play-sound", f);
-    audioQueue = [];
-    for (const t of speechQueue) audioWindow.webContents.send("speak-text", t);
-    speechQueue = [];
-  });
-  audioWindow.on("closed", () => { audioWindow = null; });
+  audioWindow.webContents.once("did-finish-load", () => { processAudioQueue(); });
+  audioWindow.on("closed", () => { audioWindow = null; audioBusy = false; });
 }
 
-function enqueueSound(soundPath) {
-  if (!audioWindow || audioWindow.isDestroyed()) {
-    createAudioWindow();
-    audioQueue.push(soundPath);
-  } else if (audioWindow.webContents.isLoading()) {
-    audioQueue.push(soundPath);
+function processAudioQueue() {
+  if (audioBusy) return;
+  if (!audioQueue.length) return;
+  if (!audioWindow || audioWindow.isDestroyed()) { createAudioWindow(); return; }
+  if (audioWindow.webContents.isLoading()) return;
+
+  const entry = audioQueue.shift();
+  audioBusy = true;
+  if (entry.kind === "file") {
+    audioWindow.webContents.send("play-sound", entry.path);
+  } else if (entry.kind === "speech") {
+    audioWindow.webContents.send("speak-text", { text: entry.text, voiceName: entry.voiceName || null });
   } else {
-    audioWindow.webContents.send("play-sound", soundPath);
+    audioBusy = false;
+    processAudioQueue();
+    return;
   }
+  audioWatchdog = setTimeout(() => {
+    console.warn("[audio] watchdog fired — advancing queue");
+    onAudioFinished();
+  }, AUDIO_WATCHDOG_MS);
+}
+
+function onAudioFinished() {
+  if (audioWatchdog) { clearTimeout(audioWatchdog); audioWatchdog = null; }
+  audioBusy = false;
+  setTimeout(processAudioQueue, AUDIO_GAP_MS);
+}
+
+ipcMain.on("sound-finished", () => onAudioFinished());
+
+function enqueueAudio(entry) {
+  audioQueue.push(entry);
+  if (!audioWindow || audioWindow.isDestroyed()) { createAudioWindow(); return; }
+  processAudioQueue();
 }
 
 function playSound(soundFile) {
   if (!soundFile) return;
   const soundPath = "file:///" + path.join(__dirname, "src", "assets", "sounds", soundFile).replace(/\\/g, "/");
-  enqueueSound(soundPath);
+  enqueueAudio({ kind: "file", path: soundPath });
 }
 
 function playWavAbsolute(absPath) {
   if (!absPath) return;
   const soundPath = "file:///" + absPath.replace(/\\/g, "/");
-  enqueueSound(soundPath);
+  enqueueAudio({ kind: "file", path: soundPath });
 }
 
 async function speakText(text, voiceName) {
@@ -149,14 +174,21 @@ async function speakText(text, voiceName) {
       console.error("[piper] speak failed, falling back:", e.message);
     }
   }
-  const payload = { text, voiceName: null };
-  if (!audioWindow || audioWindow.isDestroyed()) {
-    createAudioWindow();
-    speechQueue.push(payload);
-  } else if (audioWindow.webContents.isLoading()) {
-    speechQueue.push(payload);
-  } else {
-    audioWindow.webContents.send("speak-text", payload);
+  enqueueAudio({ kind: "speech", text, voiceName: null });
+}
+
+function fireNotification(type, ctx = {}) {
+  const cfg = settings.notifications?.[type];
+  if (!cfg?.enabled) return;
+  if (cfg.mode === "voice") {
+    const text = (cfg.template || "")
+      .replace(/\{name\}/g, ctx.name || "")
+      .replace(/\{percent\}/g, ctx.percent != null ? `${ctx.percent}%` : "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) speakText(text, cfg.voiceName || null);
+  } else if (cfg.soundFile) {
+    playSound(cfg.soundFile);
   }
 }
 
@@ -172,8 +204,7 @@ const hookServer = createHookServer({
   appendSession,
   loadTokenHistory,
   dashboardSend: (channel, data) => dashboardWindow?.webContents.send(channel, data),
-  playSound,
-  speakText,
+  fireNotification,
 });
 
 // ── Usage fetching ────────────────────────────────────────────────────────────
@@ -219,24 +250,15 @@ async function refresh(fromHook = false) {
 
     const newSession = parseSessionPct(usageData);
     const newWeekly = parseWeeklyPct(usageData);
-    const sfx = settings.sounds || {};
 
-    const voice = settings.voice || {};
-    if (fromHook && !voice.enabled && sfx.workFinished?.enabled) {
-      playSound(sfx.workFinished.file);
-    }
     const thresholds = settings.colorThresholds;
     const crossed = (
       hasThresholdCrossed(prevSession, newSession, thresholds) ||
       hasThresholdCrossed(prevWeekly, newWeekly, thresholds)
     );
     if (crossed) {
-      if (voice.enabled) {
-        const pct = Math.round(Math.max(newSession, newWeekly));
-        speakText(`${pct}% threshold reached`, voice.voiceName || null);
-      } else if (sfx.thresholdCrossed?.enabled) {
-        playSound(sfx.thresholdCrossed.file);
-      }
+      const pct = Math.round(Math.max(newSession, newWeekly));
+      fireNotification("thresholdCrossed", { percent: pct });
     }
 
     updateTray(usageData);
@@ -342,7 +364,13 @@ ipcMain.handle("get-platform", () => process.platform);
 ipcMain.on("open-external", (_, url) => shell.openExternal(url));
 ipcMain.handle("get-token-history", () => loadTokenHistory());
 ipcMain.handle("get-active-sessions", () => getActiveSessions());
-ipcMain.on("speak-preview", (_, text) => speakText(text, settings.voice?.voiceName || null));
+ipcMain.on("speak-preview", (_, payload) => {
+  if (typeof payload === "string") {
+    speakText(payload, null);
+  } else if (payload && payload.text) {
+    speakText(payload.text, payload.voiceName || null);
+  }
+});
 ipcMain.handle("piper-status", () => piper.getInstallStatus());
 ipcMain.handle("piper-install-binary", async (event) => {
   try {

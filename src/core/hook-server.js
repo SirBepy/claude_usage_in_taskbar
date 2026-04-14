@@ -16,7 +16,7 @@ function parseHookBody(req, cb) {
   });
 }
 
-function focusVSCodeWindow(projectName) {
+function focusVSCodeByTitle(projectName) {
   const safe = projectName.replace(/[^a-zA-Z0-9 _\-\.]/g, "");
   const script = [
     `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); }'`,
@@ -27,10 +27,46 @@ function focusVSCodeWindow(projectName) {
   execFile("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true }, () => {});
 }
 
-function showNotification(title, body, cwd) {
+function focusByPidChain(chain, onFail) {
+  const pids = (chain || []).filter((n) => Number.isInteger(n) && n > 0);
+  if (!pids.length) { onFail && onFail(); return; }
+  const script = [
+    `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); }'`,
+    `$ids = @(${pids.join(",")})`,
+    `$found = $false`,
+    `foreach ($id in $ids) { $p = Get-Process -Id $id -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { if ([W]::IsIconic($p.MainWindowHandle)) { [W]::ShowWindow($p.MainWindowHandle, 9) } else { [W]::ShowWindow($p.MainWindowHandle, 5) }; [W]::SetForegroundWindow($p.MainWindowHandle); $found = $true; break } }`,
+    `if (-not $found) { exit 2 }`,
+  ].join("; ");
+  execFile("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true }, (err) => {
+    if (err && onFail) onFail();
+  });
+}
+
+function focusVSCodeByCwd(cwd, onFail) {
+  execFile("cmd", ["/c", "code", "-r", cwd], { windowsHide: true }, (err) => {
+    if (err && onFail) onFail();
+  });
+}
+
+function focusFromOrigin(origin, cwd) {
+  const o = origin || {};
+  const fallback = () => { if (cwd) focusVSCodeByTitle(path.basename(cwd)); };
+
+  if ((o.termProgram === "vscode" || o.vscodePipe) && cwd) {
+    focusVSCodeByCwd(cwd, () => focusByPidChain(o.ppidChain, fallback));
+    return;
+  }
+  if (Array.isArray(o.ppidChain) && o.ppidChain.length) {
+    focusByPidChain(o.ppidChain, fallback);
+    return;
+  }
+  fallback();
+}
+
+function showNotification(title, body, cwd, origin) {
   try {
     const n = new Notification({ title, body });
-    if (cwd) n.on("click", () => focusVSCodeWindow(path.basename(cwd)));
+    n.on("click", () => focusFromOrigin(origin, cwd));
     n.show();
   } catch { /* app not ready */ }
 }
@@ -45,7 +81,7 @@ function getProjectName(cwd, settings) {
 }
 
 function createHookServer(callbacks) {
-  const { onRefresh, onNotify, onQuit, getSettings, parseTranscript, appendSession, loadTokenHistory, dashboardSend, playSound, speakText } = callbacks;
+  const { onRefresh, onNotify, onQuit, getSettings, parseTranscript, appendSession, loadTokenHistory, dashboardSend, fireNotification } = callbacks;
 
   async function recordTokenStats(payload) {
     if (!payload?.session_id || !payload?.transcript_path) return;
@@ -60,20 +96,11 @@ function createHookServer(callbacks) {
       res.writeHead(204).end();
       parseHookBody(req, (payload) => {
         if (payload && payload.cwd) {
-          showNotification("Claude finished", path.basename(payload.cwd), payload.cwd);
+          showNotification("Claude finished", path.basename(payload.cwd), payload.cwd, payload.origin);
         }
         const s = getSettings();
-        const voice = s.voice || {};
-        console.log("[voice] /refresh cwd=", payload?.cwd, "enabled=", voice.enabled, "includeName=", voice.includeProjectName);
-        if (voice.enabled && payload?.cwd) {
-          const name = getProjectName(payload.cwd, s);
-          console.log("[voice] /refresh resolved name=", JSON.stringify(name));
-          const msg = voice.includeProjectName && name
-            ? `${name} finished`
-            : "Claude finished";
-          console.log("[voice] /refresh speaking:", msg);
-          speakText(msg, voice.voiceName || null);
-        }
+        const name = payload?.cwd ? getProjectName(payload.cwd, s) : "";
+        fireNotification("workFinished", { name });
         recordTokenStats(payload).catch(console.error);
       });
       onRefresh();
@@ -81,25 +108,11 @@ function createHookServer(callbacks) {
       res.writeHead(204).end();
       parseHookBody(req, (payload) => {
         if (payload && payload.cwd) {
-          showNotification("Claude is waiting for your input", path.basename(payload.cwd), payload.cwd);
+          showNotification("Claude is waiting for your input", path.basename(payload.cwd), payload.cwd, payload.origin);
         }
         const s = getSettings();
-        const voice = s.voice || {};
-        console.log("[voice] /notify cwd=", payload?.cwd, "enabled=", voice.enabled, "includeName=", voice.includeProjectName, "aliases=", s.projectAliases);
-        if (voice.enabled) {
-          const name = payload?.cwd ? getProjectName(payload.cwd, s) : "";
-          console.log("[voice] /notify resolved name=", JSON.stringify(name));
-          const msg = voice.includeProjectName && name
-            ? `${name} is waiting`
-            : "Claude is waiting";
-          console.log("[voice] /notify speaking:", msg);
-          speakText(msg, voice.voiceName || null);
-        } else {
-          const sfx = s.sounds || {};
-          if (sfx.questionAsked?.enabled) {
-            playSound(sfx.questionAsked.file);
-          }
-        }
+        const name = payload?.cwd ? getProjectName(payload.cwd, s) : "";
+        fireNotification("questionAsked", { name });
       });
     } else if (req.method === "POST" && req.url === "/quit") {
       res.writeHead(204).end();

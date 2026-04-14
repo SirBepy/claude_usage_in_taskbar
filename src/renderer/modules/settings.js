@@ -104,30 +104,17 @@ const paceColorNearOver = document.getElementById("paceColorNearOver");
 const paceColorOver = document.getElementById("paceColorOver");
 const tokenEstimateFields = document.getElementById("tokenEstimateFields");
 const addColorBtn = document.getElementById("addColorBtn");
-const voiceEnabled = document.getElementById("voiceEnabled");
-const voiceIncludeProjectName = document.getElementById("voiceIncludeProjectName");
-const voiceIncludeProjectNameOption = document.getElementById("voiceIncludeProjectNameOption");
-const voiceSelectOption = document.getElementById("voiceSelectOption");
-const voiceSelect = document.getElementById("voiceSelect");
-const piperVoicesOption = document.getElementById("piperVoicesOption");
+const NOTIF_TYPES = [
+  { key: "workFinished",     title: "Done (Work Finished)",     hint: "Supports {name}",    defaultSound: "sound1.mp3", defaultTemplate: "{name} is done" },
+  { key: "questionAsked",    title: "Waiting (Question Asked)", hint: "Supports {name}",    defaultSound: "sound3.mp3", defaultTemplate: "{name} is waiting" },
+  { key: "thresholdCrossed", title: "Threshold Reached",        hint: "Supports {percent}", defaultSound: "sound6.mp3", defaultTemplate: "{percent} threshold reached" },
+];
+const notifCardsRoot = document.getElementById("notifCards");
+const notifCardTemplate = document.getElementById("notifCardTemplate");
 const piperVoicesList = document.getElementById("piperVoicesList");
-const voicePreviewOption = document.getElementById("voicePreviewOption");
-const voicePreviewType = document.getElementById("voicePreviewType");
 const voicePreviewProject = document.getElementById("voicePreviewProject");
 const voicePreviewProjectRow = document.getElementById("voicePreviewProjectRow");
-const voicePreviewPlay = document.getElementById("voicePreviewPlay");
-const voicePreviewThresholdRow = document.getElementById("voicePreviewThresholdRow");
-const voicePreviewPlayThreshold = document.getElementById("voicePreviewPlayThreshold");
-const soundSections = document.getElementById("soundSections");
-const soundWorkFinishedEnabled = document.getElementById("soundWorkFinishedEnabled");
-const soundWorkFinishedFile = document.getElementById("soundWorkFinishedFile");
-const soundWorkFinishedPicker = document.getElementById("soundWorkFinishedPicker");
-const soundQuestionAskedEnabled = document.getElementById("soundQuestionAskedEnabled");
-const soundQuestionAskedFile = document.getElementById("soundQuestionAskedFile");
-const soundQuestionAskedPicker = document.getElementById("soundQuestionAskedPicker");
-const soundThresholdEnabled = document.getElementById("soundThresholdEnabled");
-const soundThresholdFile = document.getElementById("soundThresholdFile");
-const soundThresholdPicker = document.getElementById("soundThresholdPicker");
+const notifCards = {};
 const refreshUpdateBtn = document.getElementById("refreshUpdateBtn");
 const copyLogsBtn = document.getElementById("copyLogsBtn");
 const appVersionLabel = document.getElementById("appVersionLabel");
@@ -173,20 +160,7 @@ function saveSettings() {
         color: row.querySelector(".color-val").value,
       }))
       .sort((a, b) => a.min - b.min),
-    sounds: {
-      workFinished: { enabled: soundWorkFinishedEnabled.checked, file: soundWorkFinishedFile.value },
-      questionAsked: { enabled: soundQuestionAskedEnabled.checked, file: soundQuestionAskedFile.value },
-      thresholdCrossed: { enabled: soundThresholdEnabled.checked, file: soundThresholdFile.value },
-    },
-    voice: {
-      enabled: voiceEnabled.checked,
-      includeProjectName: voiceIncludeProjectName.checked,
-      voiceName: (() => {
-        const current = currentSettings.voice?.voiceName;
-        const isPiper = current && /^[a-z]{2}_[A-Z]{2}-/.test(current);
-        return isPiper ? current : (voiceSelect.value || null);
-      })(),
-    },
+    notifications: gatherNotifSettings(),
     projectAliases: currentSettings.projectAliases || {},
     sync: currentSettings.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
   };
@@ -334,35 +308,13 @@ window.onload = async () => {
       colorContainer.appendChild(createColorRow(t.min, t.color))
     );
 
-    const sfx = settings.sounds || {};
-    const wf = sfx.workFinished || {};
-    const tc = sfx.thresholdCrossed || {};
-    soundWorkFinishedEnabled.checked = wf.enabled || false;
-    soundWorkFinishedFile.value = wf.file || "sound1.mp3";
-    const qa = sfx.questionAsked || {};
-    soundQuestionAskedEnabled.checked = qa.enabled || false;
-    soundQuestionAskedFile.value = qa.file || "sound3.mp3";
-    soundThresholdEnabled.checked = tc.enabled || false;
-    soundThresholdFile.value = tc.file || "sound6.mp3";
-    soundWorkFinishedPicker.style.display = soundWorkFinishedEnabled.checked ? "flex" : "none";
-    soundQuestionAskedPicker.style.display = soundQuestionAskedEnabled.checked ? "flex" : "none";
-    soundThresholdPicker.style.display = soundThresholdEnabled.checked ? "flex" : "none";
     tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
 
-    const voice = settings.voice || {};
-    voiceEnabled.checked = voice.enabled || false;
-    voiceIncludeProjectName.checked = voice.includeProjectName !== false;
-    voiceIncludeProjectNameOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    voiceSelectOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    piperVoicesOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    voicePreviewOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    soundSections.style.display = voiceEnabled.checked ? "none" : "block";
-    if (voiceEnabled.checked) {
-      populateVoiceList(voice.voiceName);
-      populateVoicePreview();
-      updateVoicePreviewRows();
-      populatePiperVoices();
-    }
+    buildNotifCards();
+    const notifs = settings.notifications || {};
+    for (const t of NOTIF_TYPES) renderNotifCard(t.key, notifs[t.key] || {});
+    populateVoicePreview();
+    populatePiperVoices();
 
     // Initialize sync settings (defined in sync-settings.js)
     if (typeof initSyncSettings === "function") initSyncSettings(settings);
@@ -383,12 +335,122 @@ window.onload = async () => {
     saveSettings();
   };
 
-  function populateVoiceList(selectedName) {
-    const voices = speechSynthesis.getVoices().filter(v => v.name && v.name !== "Matej");
-    const current = selectedName || (voices[0]?.name ?? "");
-    voiceSelect.innerHTML = voices.map(v => `<option value="${v.name}"${v.name === current ? " selected" : ""}>${v.name}</option>`).join("");
+  function getInstalledPiperVoices() {
+    return (piperStatusCache?.voices || []).filter(v => v.installed);
   }
-  speechSynthesis.onvoiceschanged = () => populateVoiceList(currentSettings.voice?.voiceName);
+  function populateVoiceSelect(sel, selected) {
+    const webVoices = (speechSynthesis.getVoices() || []).filter(v => v.name && v.name !== "Matej");
+    const piperVoices = getInstalledPiperVoices();
+    const parts = [];
+    if (piperVoices.length) {
+      parts.push(`<optgroup label="High-quality (Piper)">${piperVoices.map(v => `<option value="${v.id}"${v.id===selected?" selected":""}>${v.label}</option>`).join("")}</optgroup>`);
+    }
+    parts.push(`<optgroup label="System voices">${webVoices.map(v => `<option value="${v.name}"${v.name===selected?" selected":""}>${v.name}</option>`).join("")}</optgroup>`);
+    sel.innerHTML = parts.join("");
+    if (selected) sel.value = selected;
+  }
+  function refreshAllVoiceSelects() {
+    for (const t of NOTIF_TYPES) {
+      const c = notifCards[t.key];
+      if (!c) continue;
+      const desired = c.voiceSelect.dataset.desired || c.voiceSelect.value || null;
+      populateVoiceSelect(c.voiceSelect, desired);
+    }
+  }
+  speechSynthesis.onvoiceschanged = refreshAllVoiceSelects;
+
+  function buildNotifCards() {
+    notifCardsRoot.innerHTML = "";
+    for (const t of NOTIF_TYPES) {
+      const node = notifCardTemplate.content.firstElementChild.cloneNode(true);
+      node.querySelector(".notif-title").textContent = t.title;
+      node.querySelector(".notif-template-hint").textContent = t.hint;
+      node.querySelectorAll(".notif-mode").forEach(r => r.name = `notif-mode-${t.key}`);
+      notifCardsRoot.appendChild(node);
+      notifCards[t.key] = {
+        root: node,
+        enabled: node.querySelector(".notif-enabled"),
+        body: node.querySelector(".notif-body"),
+        modes: node.querySelectorAll(".notif-mode"),
+        soundRow: node.querySelector(".notif-sound-row"),
+        soundFile: node.querySelector(".notif-sound-file"),
+        soundPreview: node.querySelector(".notif-sound-preview"),
+        voiceRows: node.querySelector(".notif-voice-rows"),
+        voiceSelect: node.querySelector(".notif-voice-select"),
+        template: node.querySelector(".notif-template"),
+        voicePreview: node.querySelector(".notif-voice-preview"),
+      };
+      wireNotifCard(t.key);
+    }
+  }
+
+  function renderNotifCard(type, cfg) {
+    const c = notifCards[type];
+    if (!c) return;
+    const def = NOTIF_TYPES.find(n => n.key === type);
+    c.enabled.checked = !!cfg.enabled;
+    const mode = cfg.mode === "voice" ? "voice" : "sound";
+    c.modes.forEach(r => { r.checked = r.value === mode; });
+    c.soundFile.value = cfg.soundFile || def.defaultSound;
+    c.template.value = cfg.template != null ? cfg.template : def.defaultTemplate;
+    if (cfg.voiceName) c.voiceSelect.dataset.desired = cfg.voiceName;
+    populateVoiceSelect(c.voiceSelect, cfg.voiceName || null);
+    applyNotifCardVisibility(type);
+  }
+
+  function applyNotifCardVisibility(type) {
+    const c = notifCards[type];
+    const enabled = c.enabled.checked;
+    const mode = Array.from(c.modes).find(r => r.checked)?.value || "sound";
+    c.body.style.display = enabled ? "flex" : "none";
+    c.soundRow.style.display = (enabled && mode === "sound") ? "flex" : "none";
+    c.voiceRows.style.display = (enabled && mode === "voice") ? "flex" : "none";
+  }
+
+  function wireNotifCard(type) {
+    const c = notifCards[type];
+    const def = NOTIF_TYPES.find(n => n.key === type);
+    const onToggle = () => { applyNotifCardVisibility(type); saveSettings(); };
+    c.enabled.addEventListener("change", onToggle);
+    c.modes.forEach(r => r.addEventListener("change", onToggle));
+    c.soundFile.addEventListener("change", saveSettings);
+    c.template.addEventListener("input", saveSettings);
+    c.voiceSelect.addEventListener("change", () => {
+      c.voiceSelect.dataset.desired = c.voiceSelect.value || "";
+      saveSettings();
+    });
+    c.soundPreview.onclick = () => {
+      new Audio(`../assets/sounds/${c.soundFile.value}`).play().catch(() => {});
+    };
+    c.voicePreview.onclick = () => {
+      const cwd = voicePreviewProject.value || "";
+      const name = cwd ? cwd.split(/[\\/]/).pop() : "Project";
+      const text = (c.template.value || def.defaultTemplate)
+        .replace(/\{name\}/g, name)
+        .replace(/\{percent\}/g, "80%")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!text) return;
+      window.electronAPI.speakPreview({ text, voiceName: c.voiceSelect.value || null });
+    };
+  }
+
+  window.gatherNotifSettings = function gatherNotifSettings() {
+    const out = {};
+    for (const t of NOTIF_TYPES) {
+      const c = notifCards[t.key];
+      if (!c) { out[t.key] = {}; continue; }
+      const mode = Array.from(c.modes).find(r => r.checked)?.value || "sound";
+      out[t.key] = {
+        enabled: c.enabled.checked,
+        mode,
+        soundFile: c.soundFile.value,
+        voiceName: c.voiceSelect.value || null,
+        template: c.template.value,
+      };
+    }
+    return out;
+  };
 
   let piperStatusCache = null;
   let piperClickBound = false;
@@ -397,6 +459,7 @@ window.onload = async () => {
       piperStatusCache = await window.electronAPI.piperStatus();
       console.log("[piper] status:", piperStatusCache);
       renderPiperVoices();
+      refreshAllVoiceSelects();
       if (!piperClickBound) {
         piperClickBound = true;
         piperVoicesList.addEventListener("click", onPiperVoicesClick);
@@ -410,30 +473,22 @@ window.onload = async () => {
     const btn = e.target.closest("button[data-voice]");
     if (!btn) return;
     const voiceId = btn.dataset.voice;
-    console.log("[piper] click:", btn.className, voiceId);
     if (btn.classList.contains("piper-install")) {
       installPiperVoice(voiceId);
-    } else if (btn.classList.contains("piper-select")) {
-      currentSettings.voice = currentSettings.voice || {};
-      currentSettings.voice.voiceName = voiceId;
-      saveSettings();
-      renderPiperVoices();
     }
   }
 
   function renderPiperVoices() {
     if (!piperStatusCache) return;
-    const selected = currentSettings.voice?.voiceName || "";
     const binaryReady = piperStatusCache.piperInstalled;
     const rows = piperStatusCache.voices.map(v => {
-      const isSelected = selected === v.id;
       const status = v.installed ? "✓" : "⬇";
       const action = v.installed
-        ? `<button class="piper-select btn-secondary" data-voice="${v.id}" style="padding:3px 10px;font-size:0.75rem">${isSelected ? "Selected" : "Use"}</button>`
+        ? `<span style="font-size:0.75rem;color:var(--text-dim)">Installed</span>`
         : `<button class="piper-install btn-secondary" data-voice="${v.id}" style="padding:3px 10px;font-size:0.75rem">Download</button>`;
       return `
         <div class="piper-row" data-voice="${v.id}" style="display:flex;align-items:center;gap:8px;padding:4px 0">
-          <span style="flex:1;font-size:0.8rem;color:${isSelected ? 'var(--accent)' : 'var(--text)'}">${status} ${v.label}</span>
+          <span style="flex:1;font-size:0.8rem">${status} ${v.label}</span>
           ${action}
         </div>
         <div class="piper-progress" data-voice="${v.id}" style="display:none;height:3px;background:var(--border);border-radius:2px;overflow:hidden">
@@ -475,6 +530,7 @@ window.onload = async () => {
     }
     if (progBar) progBar.style.width = "100%";
     await populatePiperVoices();
+    refreshAllVoiceSelects();
   }
 
   window.electronAPI.onPiperProgress(({ kind, voiceId, progress }) => {
@@ -506,82 +562,12 @@ window.onload = async () => {
       : `<option value="">No projects yet</option>`;
   }
 
-  voiceEnabled.addEventListener("change", () => {
-    voiceIncludeProjectNameOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    voiceSelectOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    piperVoicesOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    voicePreviewOption.style.display = voiceEnabled.checked ? "flex" : "none";
-    soundSections.style.display = voiceEnabled.checked ? "none" : "block";
-    if (voiceEnabled.checked) {
-      populateVoiceList(currentSettings.voice?.voiceName);
-      populateVoicePreview();
-      updateVoicePreviewRows();
-      populatePiperVoices();
-    }
-    saveSettings();
-  });
-  voiceIncludeProjectName.addEventListener("change", saveSettings);
-  voiceSelect.addEventListener("change", () => {
-    if (currentSettings.voice) currentSettings.voice.voiceName = voiceSelect.value || null;
-    saveSettings();
-    renderPiperVoices();
-  });
+  voicePreviewProjectRow.style.display = "flex";
 
-  function updateVoicePreviewRows() {
-    const isThreshold = voicePreviewType.value === "threshold";
-    voicePreviewProjectRow.style.display = isThreshold ? "none" : "flex";
-    voicePreviewThresholdRow.style.display = isThreshold ? "flex" : "none";
-  }
-
-  voicePreviewType.addEventListener("change", updateVoicePreviewRows);
-
-  voicePreviewPlay.addEventListener("click", () => {
-    const cwd = voicePreviewProject.value;
-    if (!cwd) return;
-    const name = cwd.split(/[\\/]/).pop();
-    const includeProject = voiceIncludeProjectName.checked;
-    const type = voicePreviewType.value;
-    let msg;
-    if (type === "finished") {
-      msg = includeProject ? `${name} finished` : "Claude finished";
-    } else {
-      msg = includeProject ? `${name} is waiting` : "Claude is waiting";
-    }
-    window.electronAPI.speakPreview(msg);
-  });
-
-  voicePreviewPlayThreshold.addEventListener("click", () => {
-    window.electronAPI.speakPreview("80% threshold reached");
-  });
   tooltipEstimateTokens.addEventListener("change", () => {
     tokenEstimateFields.style.display = tooltipEstimateTokens.checked ? "block" : "none";
     saveSettings();
   });
-  soundWorkFinishedEnabled.addEventListener("change", () => {
-    soundWorkFinishedPicker.style.display = soundWorkFinishedEnabled.checked ? "flex" : "none";
-    saveSettings();
-  });
-  soundQuestionAskedEnabled.addEventListener("change", () => {
-    soundQuestionAskedPicker.style.display = soundQuestionAskedEnabled.checked ? "flex" : "none";
-    saveSettings();
-  });
-  soundThresholdEnabled.addEventListener("change", () => {
-    soundThresholdPicker.style.display = soundThresholdEnabled.checked ? "flex" : "none";
-    saveSettings();
-  });
-  soundWorkFinishedFile.addEventListener("change", saveSettings);
-  soundQuestionAskedFile.addEventListener("change", saveSettings);
-  soundThresholdFile.addEventListener("change", saveSettings);
-
-  document.getElementById("previewWorkFinished").onclick = () => {
-    new Audio(`../assets/sounds/${soundWorkFinishedFile.value}`).play().catch(() => {});
-  };
-  document.getElementById("previewQuestionAsked").onclick = () => {
-    new Audio(`../assets/sounds/${soundQuestionAskedFile.value}`).play().catch(() => {});
-  };
-  document.getElementById("previewThreshold").onclick = () => {
-    new Audio(`../assets/sounds/${soundThresholdFile.value}`).play().catch(() => {});
-  };
 
   const version = await window.electronAPI?.getAppVersion();
   if (version) appVersionLabel.innerText = `Version: ${version}`;
