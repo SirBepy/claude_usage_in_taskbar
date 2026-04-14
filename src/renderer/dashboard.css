@@ -812,3 +812,36 @@ input:checked+.slider:before {
 .theme-card.active .theme-card-label {
     color: var(--primary);
 }
+
+/* ── Dead path warning ── */
+.dead-path-warning {
+    color: #f0a500;
+    font-size: 0.75rem;
+    vertical-align: middle;
+}
+
+/* ── Hidden projects row ── */
+.hidden-proj-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+}
+
+/* ── Merged paths section ── */
+.merged-path-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+}
+
+.merged-path-text {
+    flex: 1;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    font-family: 'Fira Code', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

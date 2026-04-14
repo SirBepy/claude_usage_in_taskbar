@@ -63,6 +63,37 @@ let lastTokenHistory = null;
 let currentSettings = {};
 let projectDetailState = { cwd: null, range: "30d", offset: 0 };
 
+// Dead paths: cwds whose folders no longer exist and couldn't be auto-merged
+const _deadPaths = new Set();
+function getDeadPaths() { return _deadPaths; }
+
+async function runDeadPathCheck() {
+  if (!lastTokenHistory || !lastTokenHistory.length) return;
+  const aliases = currentSettings.projectAliases || {};
+  // Collect all unique primary cwds (skip ones already merged into something)
+  const cwds = [...new Set(lastTokenHistory.map((r) => r.cwd).filter(Boolean))].filter((c) => !aliases[c]?.mergedInto);
+  if (!cwds.length) return;
+  const existsMap = await window.electronAPI?.checkPathsExist(cwds);
+  if (!existsMap) return;
+  const dead = cwds.filter((c) => !existsMap[c]);
+  if (!dead.length) return;
+  const live = cwds.filter((c) => existsMap[c]);
+  let anyMerged = false;
+  for (const deadCwd of dead) {
+    const deadName = deadCwd.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase() || "";
+    const matches = live.filter((lc) => (lc.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase() || "") === deadName);
+    if (matches.length === 1) {
+      // Auto-merge: one live project with same folder name
+      doMerge(deadCwd, matches[0]);
+      anyMerged = true;
+    } else {
+      _deadPaths.add(deadCwd);
+    }
+  }
+  if (anyMerged) { renderStats(lastTokenHistory); refreshDashboard(); }
+  else if (_deadPaths.size) renderStats(lastTokenHistory);
+}
+
 // ── Stats rendering ───────────────────────────────────────────────────────────
 const statsContent = document.getElementById("stats-content");
 
@@ -218,7 +249,10 @@ let _initUsage = null;
 let _initTokens = null;
 let _initSettings = false;
 function tryInitialRender() {
-  if (_initUsage && _initTokens && _initSettings) refreshDashboard();
+  if (_initUsage && _initTokens && _initSettings) {
+    refreshDashboard();
+    runDeadPathCheck();
+  }
 }
 window.electronAPI?.getUsageHistory().then((h) => { _initUsage = h; lastHistory = h; tryInitialRender(); });
 fetchTokenHistoryWithLive().then((th) => { _initTokens = th; lastTokenHistory = th; tryInitialRender(); });

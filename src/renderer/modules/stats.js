@@ -33,11 +33,38 @@ function isSubagentCwd(cwd) {
   return cwd && /[/\\]\.claude[/\\]subagents[/\\]/i.test(cwd);
 }
 
+function resolveCwd(cwd) {
+  return currentSettings.projectAliases?.[cwd]?.mergedInto || cwd;
+}
+
+function isBlacklisted(cwd) {
+  const bl = currentSettings.projectBlacklist;
+  if (!bl || !bl.length) return false;
+  return bl.includes(resolveCwd(cwd));
+}
+
+function doHideProject(cwd) {
+  if (!currentSettings.projectBlacklist) currentSettings.projectBlacklist = [];
+  const resolved = resolveCwd(cwd);
+  if (!currentSettings.projectBlacklist.includes(resolved)) {
+    currentSettings.projectBlacklist.push(resolved);
+  }
+  saveSettings();
+}
+
 function aggregateByProject(tokenHistory) {
+  // Build merge map: secondary cwd -> primary cwd
+  const aliases = currentSettings.projectAliases || {};
+  const mergeMap = new Map();
+  for (const [c, a] of Object.entries(aliases)) {
+    if (a && a.mergedInto) mergeMap.set(c, a.mergedInto);
+  }
+
   const map = new Map();
   for (const r of tokenHistory) {
     if (isSubagentCwd(r.cwd)) continue;
-    const key = r.cwd || "(unknown)";
+    const key = mergeMap.get(r.cwd) || r.cwd || "(unknown)";
+    if (isBlacklisted(key)) continue;
     if (!map.has(key)) map.set(key, { cwd: key, sessions: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, turns: 0, lastDate: "" });
     const p = map.get(key);
     p.sessions++;
@@ -116,12 +143,16 @@ function buildProjectListHTML({ title, projects, maxItems, showTime = true, show
     }).join("") + "</tr></thead>";
   }
 
-  const renderRow = (p) => `<tr class="proj-row" data-cwd="${p.cwd}">
-      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${projectLabel(p.cwd)}</td>
+  const renderRow = (p) => {
+    const isDead = typeof getDeadPaths === "function" && getDeadPaths().has(p.cwd);
+    const deadIcon = isDead ? `<span class="dead-path-warning" title="Folder no longer exists">⚠</span> ` : "";
+    return `<tr class="proj-row" data-cwd="${p.cwd}">
+      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${deadIcon}${projectLabel(p.cwd)}</td>
       <td class="mono">${fmtK(p.tokens)}</td>
       ${showPct ? `<td class="mono">${p.sessionPct != null ? p.sessionPct + "%" : "—"}</td>` : ""}
       ${showTime ? `<td class="mono">${timeAgo(p.lastActiveAt)}</td>` : ""}
     </tr>`;
+  };
 
   const visibleRows = visible.map(renderRow).join("");
   const hiddenRows = capped ? sorted.slice(maxItems).map(renderRow).join("") : "";
@@ -186,6 +217,7 @@ function buildTodaySectionHTML(tokenHistory) {
   const byProject = new Map();
   for (const r of todayRecords) {
     const key = r.cwd || "(unknown)";
+    if (isBlacklisted(key)) continue;
     if (!byProject.has(key)) byProject.set(key, { cwd: key, tokens: 0, lastActiveAt: "" });
     const p = byProject.get(key);
     p.tokens += totalTok(r);
@@ -233,6 +265,7 @@ function buildWindowProjectsHTML(startMs, endMs, usageHistory, pctKey = "s", max
     }
 
     const key = r.cwd || "(unknown)";
+    if (isBlacklisted(key)) continue;
     if (!byProject.has(key)) byProject.set(key, { cwd: key, tokens: 0, lastActiveAt: "" });
     const p = byProject.get(key);
     p.tokens += totalTok(r);
@@ -319,14 +352,33 @@ function renderStats(tokenHistory) {
     lastActiveAt: p.lastDate,
   }));
 
+  const blacklist = currentSettings.projectBlacklist || [];
+  const hiddenSection = blacklist.length
+    ? `<div class="today-section" style="margin-top:12px">
+        <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:6px">Hidden projects (${blacklist.length})</div>
+        ${blacklist.map((bl) => `<div class="hidden-proj-row">
+          <span style="font-size:0.78rem;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${projectLabel(bl)}</span>
+          <button class="btn-secondary unhide-btn" data-cwd="${bl}" style="padding:2px 8px;font-size:0.7rem;flex-shrink:0">Unhide</button>
+        </div>`).join("")}
+      </div>`
+    : "";
+
   container.innerHTML = buildProjectListHTML({
     title: "",
     projects,
     sortable: true,
     defaultSort: "lastActiveAt",
     id: "stats-main",
-  });
+  }) + hiddenSection;
 
+  container.querySelectorAll(".unhide-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const bl = currentSettings.projectBlacklist;
+      if (bl) currentSettings.projectBlacklist = bl.filter((c) => c !== btn.dataset.cwd);
+      saveSettings();
+      renderStats(lastTokenHistory);
+    };
+  });
   wireProjectListClicks(container, () => renderStats(lastTokenHistory));
   setupBackfillBtn();
 }
@@ -355,7 +407,71 @@ function setupBackfillBtn() {
   };
 }
 
-// ── Project detail ─────────────────────────────────────────────────────────────
+// ── Merge helpers ──────────────────────────────────────────────────────────────
+function doMerge(fromCwd, intoCwd) {
+  if (!currentSettings.projectAliases) currentSettings.projectAliases = {};
+  const aliases = currentSettings.projectAliases;
+  aliases[fromCwd] = { mergedInto: intoCwd };
+  if (!aliases[intoCwd]) aliases[intoCwd] = {};
+  if (!aliases[intoCwd].mergedPaths) aliases[intoCwd].mergedPaths = [];
+  if (!aliases[intoCwd].mergedPaths.includes(fromCwd)) aliases[intoCwd].mergedPaths.push(fromCwd);
+  saveSettings();
+}
+
+function doUnmerge(secondaryCwd, primaryCwd) {
+  const aliases = currentSettings.projectAliases;
+  if (!aliases) return;
+  delete aliases[secondaryCwd];
+  if (aliases[primaryCwd]?.mergedPaths) {
+    aliases[primaryCwd].mergedPaths = aliases[primaryCwd].mergedPaths.filter((p) => p !== secondaryCwd);
+    if (!aliases[primaryCwd].mergedPaths.length) delete aliases[primaryCwd].mergedPaths;
+  }
+  saveSettings();
+}
+
+function showMergeModal(text, onConfirm, onCancel) {
+  const modal = document.getElementById("merge-modal");
+  const msgEl = document.getElementById("merge-modal-text");
+  const confirmBtn = document.getElementById("merge-confirm-btn");
+  const cancelBtn = document.getElementById("merge-cancel-btn");
+  if (!modal) return;
+  msgEl.textContent = text;
+  modal.style.display = "flex";
+  confirmBtn.onclick = () => { hideMergeModal(); onConfirm(); };
+  cancelBtn.onclick = () => { hideMergeModal(); if (onCancel) onCancel(); };
+}
+
+function hideMergeModal() {
+  const modal = document.getElementById("merge-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function renderMergedPathsSection(cwd) {
+  const el = document.getElementById("project-merged-paths");
+  if (!el) return;
+  const aliases = currentSettings.projectAliases || {};
+  const mergedPaths = aliases[cwd]?.mergedPaths || [];
+  if (!mergedPaths.length) { el.innerHTML = ""; return; }
+  const rows = mergedPaths.map((p) => `
+    <div class="merged-path-row">
+      <span class="merged-path-text" title="${p}">${p}</span>
+      <button class="btn-secondary unmerge-btn" data-path="${p}" style="padding:2px 8px;font-size:0.7rem;flex-shrink:0">Unmerge</button>
+    </div>`).join("");
+  el.innerHTML = `<div class="section" style="padding:8px 14px;margin-top:0">
+    <div class="section-title" style="font-size:0.72rem;margin-bottom:6px">Merged Paths</div>
+    ${rows}
+  </div>`;
+  el.querySelectorAll(".unmerge-btn").forEach((btn) => {
+    btn.onclick = () => {
+      doUnmerge(btn.dataset.path, cwd);
+      renderMergedPathsSection(cwd);
+      renderProjectDetail();
+      renderStats(lastTokenHistory);
+    };
+  });
+}
+
+// ── Project detail ──────────────────────────────────────────────────────────────
 function openProjectDetail(cwd) {
   projectDetailState.cwd = cwd;
   projectDetailState.offset = 0;
@@ -378,9 +494,43 @@ function openProjectDetail(cwd) {
       const name = titleInput.value.trim();
       titleInput.style.display = "none";
       title.style.display = "";
-      if (name) {
-        if (!currentSettings.projectAliases) currentSettings.projectAliases = {};
-        currentSettings.projectAliases[cwd] = { name };
+      if (!name) return;
+      if (!currentSettings.projectAliases) currentSettings.projectAliases = {};
+      const aliases = currentSettings.projectAliases;
+      // Build set of all primary cwds (from token history resolved to primaries + alias-only primaries)
+      const primaryCwds = new Set();
+      if (lastTokenHistory) {
+        for (const r of lastTokenHistory) {
+          if (!r.cwd) continue;
+          primaryCwds.add(aliases[r.cwd]?.mergedInto || r.cwd);
+        }
+      }
+      for (const [c, a] of Object.entries(aliases)) {
+        if (a && !a.mergedInto) primaryCwds.add(c);
+      }
+      // Check for name collision with another primary project
+      let collisionCwd = null;
+      for (const existingCwd of primaryCwds) {
+        if (existingCwd === cwd) continue;
+        if (projectLabel(existingCwd) === name) { collisionCwd = existingCwd; break; }
+      }
+      if (collisionCwd) {
+        showMergeModal(
+          `"${name}" already exists. Merge this project into it?`,
+          () => {
+            doMerge(cwd, collisionCwd);
+            renderStats(lastTokenHistory);
+            openProjectDetail(collisionCwd);
+          },
+          () => {
+            title.style.display = "none";
+            titleInput.style.display = "";
+            titleInput.focus();
+            titleInput.select();
+          }
+        );
+      } else {
+        aliases[cwd] = { ...aliases[cwd], name };
         saveSettings();
         title.textContent = projectLabel(cwd);
         renderStats(lastTokenHistory);
@@ -396,9 +546,24 @@ function openProjectDetail(cwd) {
   // Open project buttons
   const explorerBtn = document.getElementById("openExplorerBtn");
   const vscodeBtn = document.getElementById("openVSCodeBtn");
+  const hideBtn = document.getElementById("hideProjectBtn");
   if (explorerBtn) explorerBtn.onclick = () => window.electronAPI.openInExplorer(cwd);
   if (vscodeBtn) vscodeBtn.onclick = () => window.electronAPI.openInVSCode(cwd);
+  if (hideBtn) {
+    hideBtn.onclick = () => {
+      showMergeModal(
+        `Hide "${projectLabel(cwd)}" from the list? You can unhide it later in settings.`,
+        () => {
+          doHideProject(cwd);
+          renderStats(lastTokenHistory);
+          showView("stats");
+        },
+        null
+      );
+    };
+  }
 
+  renderMergedPathsSection(cwd);
   renderProjectDetail();
   showView("stats-project");
 }
@@ -412,7 +577,9 @@ function renderProjectDetail() {
     btn.classList.toggle("active", btn.dataset.range === range);
   });
 
-  let records = lastTokenHistory.filter((r) => r.cwd === cwd);
+  const mergedPaths = currentSettings.projectAliases?.[cwd]?.mergedPaths || [];
+  const allCwds = new Set([cwd, ...mergedPaths]);
+  let records = lastTokenHistory.filter((r) => allCwds.has(r.cwd));
   if (range !== "all") {
     const days = range === "7d" ? 7 : 30;
     const cutoff = new Date();
@@ -493,7 +660,9 @@ function renderSessionsList(cwd, range) {
   const list = document.getElementById("project-sessions-list");
   if (!list || !lastTokenHistory) return;
 
-  let records = lastTokenHistory.filter((r) => r.cwd === cwd);
+  const mergedPaths2 = currentSettings.projectAliases?.[cwd]?.mergedPaths || [];
+  const allCwds2 = new Set([cwd, ...mergedPaths2]);
+  let records = lastTokenHistory.filter((r) => allCwds2.has(r.cwd));
   if (range !== "all") {
     const days = range === "7d" ? 7 : 30;
     const cutoff = new Date();
