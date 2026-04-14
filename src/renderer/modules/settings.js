@@ -188,10 +188,12 @@ function wireNotifCard(type) {
   };
   c.voicePreview.onclick = () => {
     const cwd = voicePreviewProject.value || "";
-    const name = cwd ? cwd.split(/[\\/]/).pop() : "Project";
+    const rawName = cwd ? cwd.split(/[\\/]/).pop() : "Project";
+    const name = rawName.replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
     const text = (c.template.value || def.defaultTemplate)
       .replace(/\{name\}/g, name)
       .replace(/\{percent\}/g, "80%")
+      .replace(/[_\-]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
     if (!text) return;

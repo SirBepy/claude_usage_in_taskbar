@@ -177,15 +177,20 @@ async function speakText(text, voiceName) {
   enqueueAudio({ kind: "speech", text, voiceName: null });
 }
 
+function sanitizeForSpeech(s) {
+  return String(s || "").replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function fireNotification(type, ctx = {}) {
   const cfg = settings.notifications?.[type];
   if (!cfg?.enabled) return;
   if (cfg.mode === "voice") {
-    const text = (cfg.template || "")
-      .replace(/\{name\}/g, ctx.name || "")
-      .replace(/\{percent\}/g, ctx.percent != null ? `${ctx.percent}%` : "")
-      .replace(/\s+/g, " ")
-      .trim();
+    const name = sanitizeForSpeech(ctx.name);
+    const text = sanitizeForSpeech(
+      (cfg.template || "")
+        .replace(/\{name\}/g, name)
+        .replace(/\{percent\}/g, ctx.percent != null ? `${ctx.percent}%` : "")
+    );
     if (text) speakText(text, cfg.voiceName || null);
   } else if (cfg.soundFile) {
     playSound(cfg.soundFile);
