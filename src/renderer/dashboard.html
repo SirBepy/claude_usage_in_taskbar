@@ -566,7 +566,9 @@
             </div>
             <div id="project-chart-container"></div>
             <div id="project-sessions-list" style="margin-top:12px"></div>
-            <div id="projectDetailPath" style="padding:10px 0 4px;font-size:0.68rem;color:var(--text-dim);font-family:'Fira Code',monospace;word-break:break-all"></div>
+            <div id="projectDetailPath" style="padding:10px 0 4px;font-size:0.68rem;color:var(--text-dim);font-family:'Fira Code',monospace;word-break:break-all;cursor:pointer" title="Click to repoint to a different folder"></div>
+            <input id="projectDetailPathInput" type="text" style="display:none;width:100%;font-size:0.68rem;font-family:'Fira Code',monospace;margin:10px 0 4px;padding:4px 6px">
+            <div id="projectDetailPathError" style="display:none;font-size:0.65rem;color:var(--danger, #e74c3c);margin:2px 0 6px"></div>
             <div id="project-merged-paths"></div>
             <div style="padding:4px 0 8px">
                 <div class="section-title" style="margin-bottom:8px;font-size:0.72rem">Open project</div>

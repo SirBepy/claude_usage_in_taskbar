@@ -34,7 +34,7 @@ function isSubagentCwd(cwd) {
 }
 
 function resolveCwd(cwd) {
-  return currentSettings.projectAliases?.[cwd]?.mergedInto || cwd;
+  return resolveMergeChain(cwd, currentSettings.projectAliases || {});
 }
 
 function isBlacklisted(cwd) {
@@ -52,12 +52,22 @@ function doHideProject(cwd) {
   saveSettings();
 }
 
+function resolveMergeChain(cwd, aliases) {
+  let cur = cwd;
+  const seen = new Set();
+  while (aliases[cur]?.mergedInto && !seen.has(cur)) {
+    seen.add(cur);
+    cur = aliases[cur].mergedInto;
+  }
+  return cur;
+}
+
 function aggregateByProject(tokenHistory) {
-  // Build merge map: secondary cwd -> primary cwd
+  // Build merge map with full chain resolution (handles A→B→C and re-merges)
   const aliases = currentSettings.projectAliases || {};
   const mergeMap = new Map();
-  for (const [c, a] of Object.entries(aliases)) {
-    if (a && a.mergedInto) mergeMap.set(c, a.mergedInto);
+  for (const c of Object.keys(aliases)) {
+    if (aliases[c]?.mergedInto) mergeMap.set(c, resolveMergeChain(c, aliases));
   }
 
   const map = new Map();
@@ -411,10 +421,34 @@ function setupBackfillBtn() {
 function doMerge(fromCwd, intoCwd) {
   if (!currentSettings.projectAliases) currentSettings.projectAliases = {};
   const aliases = currentSettings.projectAliases;
+  // Transfer any pre-existing mergedPaths on fromCwd to intoCwd and repoint their mergedInto
+  const inheritedPaths = aliases[fromCwd]?.mergedPaths || [];
   aliases[fromCwd] = { mergedInto: intoCwd };
   if (!aliases[intoCwd]) aliases[intoCwd] = {};
   if (!aliases[intoCwd].mergedPaths) aliases[intoCwd].mergedPaths = [];
   if (!aliases[intoCwd].mergedPaths.includes(fromCwd)) aliases[intoCwd].mergedPaths.push(fromCwd);
+  for (const p of inheritedPaths) {
+    if (!aliases[intoCwd].mergedPaths.includes(p)) aliases[intoCwd].mergedPaths.push(p);
+    if (aliases[p]) aliases[p].mergedInto = intoCwd;
+  }
+  saveSettings();
+}
+
+function doRepoint(oldCwd, newCwd) {
+  if (!currentSettings.projectAliases) currentSettings.projectAliases = {};
+  const aliases = currentSettings.projectAliases;
+  // Preserve any name set on oldCwd and transfer to new primary
+  const oldName = aliases[oldCwd]?.name;
+  const inheritedPaths = aliases[oldCwd]?.mergedPaths || [];
+  aliases[oldCwd] = { mergedInto: newCwd };
+  if (!aliases[newCwd]) aliases[newCwd] = {};
+  if (oldName && !aliases[newCwd].name) aliases[newCwd].name = oldName;
+  if (!aliases[newCwd].mergedPaths) aliases[newCwd].mergedPaths = [];
+  if (!aliases[newCwd].mergedPaths.includes(oldCwd)) aliases[newCwd].mergedPaths.push(oldCwd);
+  for (const p of inheritedPaths) {
+    if (!aliases[newCwd].mergedPaths.includes(p)) aliases[newCwd].mergedPaths.push(p);
+    if (aliases[p]) aliases[p].mergedInto = newCwd;
+  }
   saveSettings();
 }
 
@@ -479,7 +513,61 @@ function openProjectDetail(cwd) {
   const titleInput = document.getElementById("projectDetailTitleInput");
   if (title) title.textContent = projectLabel(cwd);
   const pathEl = document.getElementById("projectDetailPath");
-  if (pathEl) pathEl.textContent = cwd || "";
+  const pathInput = document.getElementById("projectDetailPathInput");
+  const pathError = document.getElementById("projectDetailPathError");
+  if (pathEl) {
+    pathEl.textContent = cwd || "";
+    pathEl.style.display = "";
+  }
+  if (pathInput) pathInput.style.display = "none";
+  if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
+
+  // Inline repoint: click path to change root folder
+  if (pathEl && pathInput) {
+    pathEl.onclick = () => {
+      pathInput.value = cwd || "";
+      pathEl.style.display = "none";
+      pathInput.style.display = "";
+      if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
+      pathInput.focus();
+      pathInput.select();
+    };
+    const cancelRepoint = () => {
+      pathInput.style.display = "none";
+      pathEl.style.display = "";
+      if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
+    };
+    const commitRepoint = async () => {
+      const newCwd = pathInput.value.trim();
+      if (!newCwd || newCwd === cwd) { cancelRepoint(); return; }
+      const showErr = (msg) => {
+        if (!pathError) return;
+        pathError.textContent = msg;
+        pathError.style.display = "block";
+      };
+      // Block repointing onto an existing primary that already has usage
+      const aliases = currentSettings.projectAliases || {};
+      const existingAlias = aliases[newCwd];
+      if (existingAlias?.mergedInto) { showErr("Target is already merged into another project."); return; }
+      const targetUsed = lastTokenHistory?.some((r) => r.cwd === newCwd);
+      if (targetUsed) { showErr("Target folder is already a tracked project. Rename to merge instead."); return; }
+      try {
+        const existsMap = await window.electronAPI?.checkPathsExist([newCwd]);
+        if (!existsMap || !existsMap[newCwd]) { showErr("Folder does not exist on disk."); return; }
+      } catch (e) { showErr("Could not verify folder: " + e.message); return; }
+      doRepoint(cwd, newCwd);
+      renderStats(lastTokenHistory);
+      openProjectDetail(newCwd);
+    };
+    pathInput.onblur = () => {
+      // Defer so a click on an error message doesn't cancel prematurely
+      setTimeout(() => { if (pathInput.style.display !== "none") commitRepoint(); }, 0);
+    };
+    pathInput.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commitRepoint(); }
+      if (e.key === "Escape") { e.preventDefault(); cancelRepoint(); }
+    };
+  }
 
   // Inline rename: click title to edit
   if (title && titleInput) {
@@ -502,7 +590,7 @@ function openProjectDetail(cwd) {
       if (lastTokenHistory) {
         for (const r of lastTokenHistory) {
           if (!r.cwd) continue;
-          primaryCwds.add(aliases[r.cwd]?.mergedInto || r.cwd);
+          primaryCwds.add(resolveMergeChain(r.cwd, aliases));
         }
       }
       for (const [c, a] of Object.entries(aliases)) {
