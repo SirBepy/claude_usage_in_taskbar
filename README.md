@@ -53,24 +53,37 @@ Open Settings from the right-click menu to change the icon style, time display f
 
 ## Auto-refresh on Claude Code activity (optional)
 
-The app listens on `http://127.0.0.1:27182/refresh` and refreshes when it receives a `POST` request.
-Add this to your Claude Code settings (`~/.claude/settings.json` on Windows: `%APPDATA%\..\Roaming\Claude\settings.json` or `%USERPROFILE%\.claude\settings.json`) to refresh automatically after every response:
+The app listens on `http://127.0.0.1:27182/refresh` and `/notify` for Claude Code hooks.
+
+**Minimal setup** (refresh only, no click-to-focus):
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "curl -s -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:27182/refresh" }] }]
+  }
+}
+```
+
+**Recommended setup** (click notification → focus the exact terminal/VSCode window that fired the hook):
+
+Copy [scripts/aiusage-hook.ps1](scripts/aiusage-hook.ps1) to `%USERPROFILE%\.claude\aiusage-hook.ps1`, then:
 
 ```json
 {
   "hooks": {
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "curl -s -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:27182/refresh"
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.claude\\aiusage-hook.ps1\" refresh" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.claude\\aiusage-hook.ps1\" notify" }] }
     ]
   }
 }
 ```
 
-`curl` is included with Windows 10/11 — no extra software needed.
+The wrapper script forwards the hook payload plus the originating terminal's env vars (`TERM_PROGRAM`, `VSCODE_IPC_HOOK_CLI`, `WT_SESSION`) and parent-PID chain. Clicking a notification then routes to the right window:
+
+- **VSCode integrated terminal** → `code -r <cwd>` focuses the window hosting that workspace.
+- **Windows Terminal / pwsh / cmd / WezTerm / etc.** → walks the PID chain and `SetForegroundWindow`s the first ancestor with a visible window.
+- **Fallback** → legacy title-match on VSCode processes.
