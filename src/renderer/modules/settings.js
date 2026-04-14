@@ -114,6 +114,164 @@ const notifCardTemplate = document.getElementById("notifCardTemplate");
 const voicePreviewProject = document.getElementById("voicePreviewProject");
 const voicePreviewProjectRow = document.getElementById("voicePreviewProjectRow");
 const notifCards = {};
+let piperStatusCache = null;
+
+function getInstalledPiperVoices() {
+  return (piperStatusCache?.voices || []).filter(v => v.installed);
+}
+
+function populateVoiceSelect(sel, selected) {
+  const webVoices = (window.speechSynthesis?.getVoices() || []).filter(v => v.name && v.name !== "Matej");
+  const piperVoices = getInstalledPiperVoices();
+  const parts = [];
+  if (piperVoices.length) {
+    parts.push(`<optgroup label="High-quality (Piper)">${piperVoices.map(v => `<option value="${v.id}"${v.id===selected?" selected":""}>${v.label}</option>`).join("")}</optgroup>`);
+  }
+  if (webVoices.length) {
+    parts.push(`<optgroup label="System voices">${webVoices.map(v => `<option value="${v.name}"${v.name===selected?" selected":""}>${v.name}</option>`).join("")}</optgroup>`);
+  }
+  if (!parts.length) parts.push(`<option value="">(loading voices...)</option>`);
+  sel.innerHTML = parts.join("");
+  if (selected) {
+    const opt = Array.from(sel.options).find(o => o.value === selected);
+    if (opt) sel.value = selected;
+  }
+}
+
+function refreshAllVoiceSelects() {
+  for (const t of NOTIF_TYPES) {
+    const c = notifCards[t.key];
+    if (!c) continue;
+    const desired = c.voiceSelect.dataset.desired || c.voiceSelect.value || null;
+    populateVoiceSelect(c.voiceSelect, desired);
+  }
+}
+
+function applyNotifCardVisibility(type) {
+  const c = notifCards[type];
+  if (!c) return;
+  const enabled = c.enabled.checked;
+  const mode = Array.from(c.modes).find(r => r.checked)?.value || "sound";
+  c.body.style.display = enabled ? "flex" : "none";
+  c.soundRow.style.display = (enabled && mode === "sound") ? "flex" : "none";
+  c.voiceRows.style.display = (enabled && mode === "voice") ? "flex" : "none";
+}
+
+function renderNotifCard(type, cfg) {
+  const c = notifCards[type];
+  if (!c) return;
+  const def = NOTIF_TYPES.find(n => n.key === type);
+  c.enabled.checked = cfg.enabled !== false;
+  const mode = cfg.mode === "voice" ? "voice" : "sound";
+  c.modes.forEach(r => { r.checked = r.value === mode; });
+  c.soundFile.value = cfg.soundFile || def.defaultSound;
+  c.template.value = cfg.template || def.defaultTemplate;
+  if (cfg.voiceName) c.voiceSelect.dataset.desired = cfg.voiceName;
+  populateVoiceSelect(c.voiceSelect, cfg.voiceName || null);
+  applyNotifCardVisibility(type);
+}
+
+function wireNotifCard(type) {
+  const c = notifCards[type];
+  const def = NOTIF_TYPES.find(n => n.key === type);
+  const onToggle = () => { applyNotifCardVisibility(type); saveSettings(); };
+  c.enabled.addEventListener("change", onToggle);
+  c.modes.forEach(r => r.addEventListener("change", onToggle));
+  c.soundFile.addEventListener("change", saveSettings);
+  c.template.addEventListener("input", saveSettings);
+  c.voiceSelect.addEventListener("change", () => {
+    c.voiceSelect.dataset.desired = c.voiceSelect.value || "";
+    saveSettings();
+  });
+  c.soundPreview.onclick = () => {
+    new Audio(`../assets/sounds/${c.soundFile.value}`).play().catch(() => {});
+  };
+  c.voicePreview.onclick = () => {
+    const cwd = voicePreviewProject.value || "";
+    const name = cwd ? cwd.split(/[\\/]/).pop() : "Project";
+    const text = (c.template.value || def.defaultTemplate)
+      .replace(/\{name\}/g, name)
+      .replace(/\{percent\}/g, "80%")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) return;
+    window.electronAPI.speakPreview({ text, voiceName: c.voiceSelect.value || null });
+  };
+}
+
+function buildNotifCards() {
+  if (!notifCardsRoot || !notifCardTemplate) {
+    console.error("[notif] template or root missing");
+    return;
+  }
+  notifCardsRoot.innerHTML = "";
+  for (const t of NOTIF_TYPES) {
+    const node = notifCardTemplate.content.firstElementChild.cloneNode(true);
+    node.querySelector(".notif-title").textContent = t.title;
+    node.querySelector(".notif-template-hint").textContent = t.hint;
+    node.querySelectorAll(".notif-mode").forEach(r => { r.name = `notif-mode-${t.key}`; });
+    notifCardsRoot.appendChild(node);
+    notifCards[t.key] = {
+      root: node,
+      enabled: node.querySelector(".notif-enabled"),
+      body: node.querySelector(".notif-body"),
+      modes: node.querySelectorAll(".notif-mode"),
+      soundRow: node.querySelector(".notif-sound-row"),
+      soundFile: node.querySelector(".notif-sound-file"),
+      soundPreview: node.querySelector(".notif-sound-preview"),
+      voiceRows: node.querySelector(".notif-voice-rows"),
+      voiceSelect: node.querySelector(".notif-voice-select"),
+      template: node.querySelector(".notif-template"),
+      voicePreview: node.querySelector(".notif-voice-preview"),
+    };
+    wireNotifCard(t.key);
+  }
+}
+
+function gatherNotifSettings() {
+  const out = {};
+  for (const t of NOTIF_TYPES) {
+    const c = notifCards[t.key];
+    const def = NOTIF_TYPES.find(n => n.key === t.key);
+    if (!c) {
+      out[t.key] = { enabled: true, mode: "sound", soundFile: def.defaultSound, voiceName: null, template: def.defaultTemplate };
+      continue;
+    }
+    const mode = Array.from(c.modes).find(r => r.checked)?.value || "sound";
+    out[t.key] = {
+      enabled: c.enabled.checked,
+      mode,
+      soundFile: c.soundFile.value,
+      voiceName: c.voiceSelect.value || c.voiceSelect.dataset.desired || null,
+      template: c.template.value || def.defaultTemplate,
+    };
+  }
+  return out;
+}
+
+async function loadPiperVoices() {
+  try {
+    piperStatusCache = await window.electronAPI.piperStatus();
+    refreshAllVoiceSelects();
+  } catch (e) {
+    console.error("[piper] populate failed:", e);
+  }
+}
+
+// Electron quirk: speechSynthesis.getVoices() often returns [] initially.
+// Poll for ~3s and also subscribe to onvoiceschanged.
+function primeWebVoices() {
+  if (!window.speechSynthesis) return;
+  let tries = 0;
+  const tick = () => {
+    const list = speechSynthesis.getVoices() || [];
+    if (list.length > 0) { refreshAllVoiceSelects(); return; }
+    if (tries++ < 30) setTimeout(tick, 100);
+  };
+  tick();
+  speechSynthesis.addEventListener?.("voiceschanged", refreshAllVoiceSelects);
+  speechSynthesis.onvoiceschanged = refreshAllVoiceSelects;
+}
 const refreshUpdateBtn = document.getElementById("refreshUpdateBtn");
 const copyLogsBtn = document.getElementById("copyLogsBtn");
 const appVersionLabel = document.getElementById("appVersionLabel");
@@ -313,7 +471,7 @@ window.onload = async () => {
     const notifs = settings.notifications || {};
     for (const t of NOTIF_TYPES) renderNotifCard(t.key, notifs[t.key] || {});
     populateVoicePreview();
-    populatePiperVoices();
+    loadPiperVoices();
 
     // Initialize sync settings (defined in sync-settings.js)
     if (typeof initSyncSettings === "function") initSyncSettings(settings);
@@ -334,142 +492,7 @@ window.onload = async () => {
     saveSettings();
   };
 
-  function getInstalledPiperVoices() {
-    return (piperStatusCache?.voices || []).filter(v => v.installed);
-  }
-  function populateVoiceSelect(sel, selected) {
-    const webVoices = (speechSynthesis.getVoices() || []).filter(v => v.name && v.name !== "Matej");
-    const piperVoices = getInstalledPiperVoices();
-    const parts = [];
-    if (piperVoices.length) {
-      parts.push(`<optgroup label="High-quality (Piper)">${piperVoices.map(v => `<option value="${v.id}"${v.id===selected?" selected":""}>${v.label}</option>`).join("")}</optgroup>`);
-    }
-    parts.push(`<optgroup label="System voices">${webVoices.map(v => `<option value="${v.name}"${v.name===selected?" selected":""}>${v.name}</option>`).join("")}</optgroup>`);
-    sel.innerHTML = parts.join("");
-    if (selected) sel.value = selected;
-  }
-  function refreshAllVoiceSelects() {
-    for (const t of NOTIF_TYPES) {
-      const c = notifCards[t.key];
-      if (!c) continue;
-      const desired = c.voiceSelect.dataset.desired || c.voiceSelect.value || null;
-      populateVoiceSelect(c.voiceSelect, desired);
-    }
-  }
-  speechSynthesis.onvoiceschanged = refreshAllVoiceSelects;
-
-  function buildNotifCards() {
-    notifCardsRoot.innerHTML = "";
-    for (const t of NOTIF_TYPES) {
-      const node = notifCardTemplate.content.firstElementChild.cloneNode(true);
-      node.querySelector(".notif-title").textContent = t.title;
-      node.querySelector(".notif-template-hint").textContent = t.hint;
-      node.querySelectorAll(".notif-mode").forEach(r => r.name = `notif-mode-${t.key}`);
-      notifCardsRoot.appendChild(node);
-      notifCards[t.key] = {
-        root: node,
-        enabled: node.querySelector(".notif-enabled"),
-        body: node.querySelector(".notif-body"),
-        modes: node.querySelectorAll(".notif-mode"),
-        soundRow: node.querySelector(".notif-sound-row"),
-        soundFile: node.querySelector(".notif-sound-file"),
-        soundPreview: node.querySelector(".notif-sound-preview"),
-        voiceRows: node.querySelector(".notif-voice-rows"),
-        voiceSelect: node.querySelector(".notif-voice-select"),
-        template: node.querySelector(".notif-template"),
-        voicePreview: node.querySelector(".notif-voice-preview"),
-      };
-      wireNotifCard(t.key);
-    }
-  }
-
-  function renderNotifCard(type, cfg) {
-    const c = notifCards[type];
-    if (!c) return;
-    const def = NOTIF_TYPES.find(n => n.key === type);
-    c.enabled.checked = !!cfg.enabled;
-    const mode = cfg.mode === "voice" ? "voice" : "sound";
-    c.modes.forEach(r => { r.checked = r.value === mode; });
-    c.soundFile.value = cfg.soundFile || def.defaultSound;
-    c.template.value = cfg.template || def.defaultTemplate;
-    if (cfg.voiceName) c.voiceSelect.dataset.desired = cfg.voiceName;
-    populateVoiceSelect(c.voiceSelect, cfg.voiceName || null);
-    applyNotifCardVisibility(type);
-  }
-
-  function applyNotifCardVisibility(type) {
-    const c = notifCards[type];
-    const enabled = c.enabled.checked;
-    const mode = Array.from(c.modes).find(r => r.checked)?.value || "sound";
-    c.body.style.display = enabled ? "flex" : "none";
-    c.soundRow.style.display = (enabled && mode === "sound") ? "flex" : "none";
-    c.voiceRows.style.display = (enabled && mode === "voice") ? "flex" : "none";
-  }
-
-  function wireNotifCard(type) {
-    const c = notifCards[type];
-    const def = NOTIF_TYPES.find(n => n.key === type);
-    const onToggle = () => { applyNotifCardVisibility(type); saveSettings(); };
-    c.enabled.addEventListener("change", onToggle);
-    c.modes.forEach(r => r.addEventListener("change", onToggle));
-    c.soundFile.addEventListener("change", saveSettings);
-    c.template.addEventListener("input", saveSettings);
-    c.voiceSelect.addEventListener("change", () => {
-      c.voiceSelect.dataset.desired = c.voiceSelect.value || "";
-      saveSettings();
-    });
-    c.soundPreview.onclick = () => {
-      new Audio(`../assets/sounds/${c.soundFile.value}`).play().catch(() => {});
-    };
-    c.voicePreview.onclick = () => {
-      const cwd = voicePreviewProject.value || "";
-      const name = cwd ? cwd.split(/[\\/]/).pop() : "Project";
-      const text = (c.template.value || def.defaultTemplate)
-        .replace(/\{name\}/g, name)
-        .replace(/\{percent\}/g, "80%")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (!text) return;
-      window.electronAPI.speakPreview({ text, voiceName: c.voiceSelect.value || null });
-    };
-  }
-
-  window.gatherNotifSettings = function gatherNotifSettings() {
-    const out = {};
-    for (const t of NOTIF_TYPES) {
-      const c = notifCards[t.key];
-      if (!c) { out[t.key] = {}; continue; }
-      const mode = Array.from(c.modes).find(r => r.checked)?.value || "sound";
-      out[t.key] = {
-        enabled: c.enabled.checked,
-        mode,
-        soundFile: c.soundFile.value,
-        voiceName: c.voiceSelect.value || null,
-        template: c.template.value,
-      };
-    }
-    return out;
-  };
-
-  let piperStatusCache = null;
-  async function populatePiperVoices() {
-    try {
-      piperStatusCache = await window.electronAPI.piperStatus();
-      refreshAllVoiceSelects();
-    } catch (e) {
-      console.error("[piper] populate failed:", e);
-    }
-  }
-
-  // Electron quirk: speechSynthesis.getVoices() often returns [] on first call
-  // and onvoiceschanged may not fire. Poll a few times until voices arrive.
-  let voicePollTries = 0;
-  function pollWebVoices() {
-    const list = speechSynthesis.getVoices() || [];
-    if (list.length > 0) { refreshAllVoiceSelects(); return; }
-    if (voicePollTries++ < 20) setTimeout(pollWebVoices, 150);
-  }
-  pollWebVoices();
+  primeWebVoices();
 
   async function populateVoicePreview() {
     const history = await window.electronAPI.getTokenHistory();
