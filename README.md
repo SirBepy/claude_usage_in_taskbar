@@ -64,7 +64,7 @@ Add this to your Claude Code settings (`~/.claude/settings.json` on Windows: `%A
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -X POST http://127.0.0.1:27182/refresh"
+            "command": "curl -s -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:27182/refresh"
           }
         ]
       }
