@@ -391,9 +391,34 @@ window.onload = async () => {
   speechSynthesis.onvoiceschanged = () => populateVoiceList(currentSettings.voice?.voiceName);
 
   let piperStatusCache = null;
+  let piperClickBound = false;
   async function populatePiperVoices() {
-    piperStatusCache = await window.electronAPI.piperStatus();
-    renderPiperVoices();
+    try {
+      piperStatusCache = await window.electronAPI.piperStatus();
+      console.log("[piper] status:", piperStatusCache);
+      renderPiperVoices();
+      if (!piperClickBound) {
+        piperClickBound = true;
+        piperVoicesList.addEventListener("click", onPiperVoicesClick);
+      }
+    } catch (e) {
+      console.error("[piper] populate failed:", e);
+    }
+  }
+
+  function onPiperVoicesClick(e) {
+    const btn = e.target.closest("button[data-voice]");
+    if (!btn) return;
+    const voiceId = btn.dataset.voice;
+    console.log("[piper] click:", btn.className, voiceId);
+    if (btn.classList.contains("piper-install")) {
+      installPiperVoice(voiceId);
+    } else if (btn.classList.contains("piper-select")) {
+      currentSettings.voice = currentSettings.voice || {};
+      currentSettings.voice.voiceName = voiceId;
+      saveSettings();
+      renderPiperVoices();
+    }
   }
 
   function renderPiperVoices() {
@@ -420,34 +445,29 @@ window.onload = async () => {
       ? ""
       : `<div style="font-size:0.75rem;color:var(--text-dim);padding:4px 0">Piper engine not installed. Downloads the ~15MB engine on first voice.</div>`;
     piperVoicesList.innerHTML = header + rows.join("");
-
-    piperVoicesList.querySelectorAll(".piper-install").forEach(btn => {
-      btn.addEventListener("click", () => installPiperVoice(btn.dataset.voice));
-    });
-    piperVoicesList.querySelectorAll(".piper-select").forEach(btn => {
-      btn.addEventListener("click", () => {
-        currentSettings.voice = currentSettings.voice || {};
-        currentSettings.voice.voiceName = btn.dataset.voice;
-        saveSettings();
-        renderPiperVoices();
-      });
-    });
   }
 
   async function installPiperVoice(voiceId) {
+    console.log("[piper] installPiperVoice:", voiceId);
     const progEl = piperVoicesList.querySelector(`.piper-progress[data-voice="${voiceId}"]`);
     const progBar = progEl?.querySelector(".piper-progress-bar");
     if (progEl) progEl.style.display = "block";
+    if (progBar) progBar.style.width = "1%";
 
     if (!piperStatusCache?.piperInstalled) {
+      console.log("[piper] installing binary...");
       const r = await window.electronAPI.piperInstallBinary();
+      console.log("[piper] binary result:", r);
       if (!r.ok) {
         alert("Piper engine install failed: " + r.error);
         if (progEl) progEl.style.display = "none";
         return;
       }
+      piperStatusCache.piperInstalled = true;
     }
+    console.log("[piper] installing voice:", voiceId);
     const r = await window.electronAPI.piperInstallVoice(voiceId);
+    console.log("[piper] voice result:", r);
     if (!r.ok) {
       alert("Voice install failed: " + r.error);
       if (progEl) progEl.style.display = "none";
