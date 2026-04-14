@@ -67,9 +67,7 @@ The app listens on `http://127.0.0.1:27182/refresh` and `/notify` for Claude Cod
 
 **Recommended setup** (click notification → focus the exact terminal/VSCode window that fired the hook):
 
-> Windows only for now. macOS users: use the minimal setup above, a bash wrapper equivalent to `aiusage-hook.ps1` is not yet shipped.
-
-Copy [scripts/aiusage-hook.ps1](scripts/aiusage-hook.ps1) to `%USERPROFILE%\.claude\aiusage-hook.ps1`, then:
+**Windows** - copy [scripts/aiusage-hook.ps1](scripts/aiusage-hook.ps1) to `%USERPROFILE%\.claude\aiusage-hook.ps1`, then:
 
 ```json
 {
@@ -84,8 +82,24 @@ Copy [scripts/aiusage-hook.ps1](scripts/aiusage-hook.ps1) to `%USERPROFILE%\.cla
 }
 ```
 
+**macOS** - copy [scripts/aiusage-hook.sh](scripts/aiusage-hook.sh) to `~/.claude/aiusage-hook.sh`, `chmod +x` it, then:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/aiusage-hook.sh refresh" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "$HOME/.claude/aiusage-hook.sh notify" }] }
+    ]
+  }
+}
+```
+
 The wrapper script forwards the hook payload plus the originating terminal's env vars (`TERM_PROGRAM`, `VSCODE_IPC_HOOK_CLI`, `WT_SESSION`) and parent-PID chain. Clicking a notification then routes to the right window:
 
-- **VSCode integrated terminal** → `code -r <cwd>` focuses the window hosting that workspace.
+- **VSCode integrated terminal** → `code -r <cwd>` focuses the window hosting that workspace (both platforms).
 - **Windows Terminal / pwsh / cmd / WezTerm / etc.** → walks the PID chain and `SetForegroundWindow`s the first ancestor with a visible window.
-- **Fallback** → legacy title-match on VSCode processes.
+- **macOS Terminal / iTerm2 / Ghostty / etc.** → walks the PID chain and uses `osascript` + System Events to front the first ancestor with a GUI process.
+- **Fallback** → activate VSCode (macOS) or title-match VSCode processes (Windows).

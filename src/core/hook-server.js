@@ -6,6 +6,7 @@ const { Notification } = require("electron");
 const { execFile } = require("child_process");
 
 const HOOK_SERVER_PORT = 27182;
+const IS_MAC = process.platform === "darwin";
 
 function parseHookBody(req, cb) {
   const chunks = [];
@@ -18,6 +19,11 @@ function parseHookBody(req, cb) {
 
 function focusVSCodeByTitle(projectName) {
   const safe = projectName.replace(/[^a-zA-Z0-9 _\-\.]/g, "");
+  if (IS_MAC) {
+    const script = `tell application "Visual Studio Code" to activate`;
+    execFile("osascript", ["-e", script], () => {});
+    return;
+  }
   const script = [
     `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); }'`,
     `$p = Get-Process -Name Code -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*${safe}*' } | Select-Object -First 1`,
@@ -30,6 +36,24 @@ function focusVSCodeByTitle(projectName) {
 function focusByPidChain(chain, onFail) {
   const pids = (chain || []).filter((n) => Number.isInteger(n) && n > 0);
   if (!pids.length) { onFail && onFail(); return; }
+  if (IS_MAC) {
+    // Walk chain, activate first process that has a GUI (System Events finds it by unix id).
+    const script = `
+set pids to {${pids.join(", ")}}
+repeat with pid in pids
+  try
+    tell application "System Events"
+      set proc to first process whose unix id is pid
+      set frontmost of proc to true
+    end tell
+    return
+  end try
+end repeat
+error "no gui process in chain" number 2
+`;
+    execFile("osascript", ["-e", script], (err) => { if (err && onFail) onFail(); });
+    return;
+  }
   const script = [
     `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); }'`,
     `$ids = @(${pids.join(",")})`,
@@ -43,6 +67,10 @@ function focusByPidChain(chain, onFail) {
 }
 
 function focusVSCodeByCwd(cwd, onFail) {
+  if (IS_MAC) {
+    execFile("code", ["-r", cwd], (err) => { if (err && onFail) onFail(); });
+    return;
+  }
   execFile("cmd", ["/c", "code", "-r", cwd], { windowsHide: true }, (err) => {
     if (err && onFail) onFail();
   });
