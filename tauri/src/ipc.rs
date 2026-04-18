@@ -68,3 +68,14 @@ pub fn logout(state: State<AppState>, app: AppHandle) -> Result<(), String> {
     let _ = app.emit("auth-progress", serde_json::json!({"stage": "needs-login"}));
     Ok(())
 }
+
+#[tauri::command]
+pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
+    match crate::scheduler::poll_once(&app).await {
+        Ok(snap) => {
+            let _ = app.emit("usage-updated", snap.clone());
+            Ok(snap)
+        }
+        Err(e) => Err(format!("{e:?}")),
+    }
+}

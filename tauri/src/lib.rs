@@ -2,6 +2,7 @@ pub mod history;
 pub mod icon;
 pub mod ipc;
 pub mod paths;
+pub mod scheduler;
 pub mod scraper;
 pub mod session;
 pub mod settings;
@@ -37,9 +38,11 @@ pub fn run() {
             ipc::open_dashboard,
             ipc::quit_app,
             ipc::logout,
+            ipc::poll_now,
         ])
-        .setup(|_app| {
+        .setup(|app| {
             log::info!("claude-usage-tauri started");
+            crate::scheduler::spawn(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
