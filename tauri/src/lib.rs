@@ -1,3 +1,4 @@
+pub mod history;
 pub mod paths;
 pub mod session;
 pub mod settings;
