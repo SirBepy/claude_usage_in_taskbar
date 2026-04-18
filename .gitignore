@@ -1,5 +1,6 @@
 node_modules/
-dist/
+/dist/
+!tauri/dist/
 out/
 resources/piper/
 *.log

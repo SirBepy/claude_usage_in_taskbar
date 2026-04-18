@@ -62,6 +62,7 @@ tauri-build = { version = "2.0", features = [] }
 [dependencies]
 tauri = { version = "2.0", features = ["tray-icon"] }
 tauri-plugin-log = "2.0"
+log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
