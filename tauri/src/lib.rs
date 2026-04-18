@@ -1,4 +1,5 @@
 pub mod history;
+pub mod icon;
 pub mod paths;
 pub mod scraper;
 pub mod session;
