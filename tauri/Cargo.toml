@@ -21,9 +21,12 @@ anyhow = "1"
 thiserror = "1"
 dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }
 
 [dev-dependencies]
 tempfile = "3"
+mockito = "1"
 
 [profile.release]
 codegen-units = 1

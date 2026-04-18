@@ -1,5 +1,6 @@
 pub mod history;
 pub mod paths;
+pub mod scraper;
 pub mod session;
 pub mod settings;
 pub mod types;
