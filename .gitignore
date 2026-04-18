@@ -5,3 +5,5 @@ resources/piper/
 *.log
 .DS_Store
 Thumbs.db
+.direct-api-test-output.json
+.captured-cookies.json
