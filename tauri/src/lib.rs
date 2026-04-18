@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod cdp;
 pub mod history;
 pub mod icon;
@@ -41,6 +42,7 @@ pub fn run() {
             ipc::quit_app,
             ipc::logout,
             ipc::poll_now,
+            ipc::start_login,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

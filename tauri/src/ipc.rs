@@ -79,3 +79,26 @@ pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
         Err(e) => Err(format!("{e:?}")),
     }
 }
+
+#[tauri::command]
+pub async fn start_login(app: AppHandle, state: State<'_, AppState>)
+    -> Result<(), String>
+{
+    *state.auth_state.lock().unwrap() = AuthState::InProgress;
+    let _ = app.emit("auth-progress", serde_json::json!({"stage": "starting"}));
+    match crate::auth::run(app.clone()).await {
+        Ok(()) => {
+            *state.auth_state.lock().unwrap() = AuthState::LoggedIn;
+            // Kick an immediate poll so the dashboard shows data right away.
+            let h = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::scheduler::poll_once(&h).await;
+            });
+            Ok(())
+        }
+        Err(e) => {
+            *state.auth_state.lock().unwrap() = AuthState::NeedsLogin;
+            Err(e.to_string())
+        }
+    }
+}
