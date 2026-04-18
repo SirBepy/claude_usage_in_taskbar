@@ -1,3 +1,4 @@
+pub mod cdp;
 pub mod history;
 pub mod icon;
 pub mod ipc;
