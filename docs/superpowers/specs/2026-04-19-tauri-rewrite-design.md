@@ -58,7 +58,8 @@ libraries for tray, auto-update, and autostart.
   existing Electron users but the Tauri app is local-only).
 - Piper TTS + voice notifications (post-MVP).
 - Token-stats JSONL walker for `~/.claude/projects/` (post-MVP).
-- Removal of the Electron app (runs in parallel until Tauri proves itself).
+- Removal of the Electron app during MVP (runs in parallel until Tauri
+  reaches feature parity; see "Cutover" section below for retirement plan).
 
 ## Architecture
 
@@ -313,3 +314,64 @@ Electron MVP path.
 
 Failure to hit any of these means the MVP is re-evaluated before v2 work
 starts.
+
+## Cutover (Electron retirement)
+
+Once the Tauri app reaches feature parity with the Electron app for the
+owner's daily use and has run for at least two weeks without a regression
+that forced a fallback to Electron, the Electron code is retired from
+`master`. Until then, nothing described in this section happens.
+
+### Trigger conditions (all must hold)
+
+1. Tauri version handles: tray rings, hourly poll, login flow, dashboard,
+   hook server, auto-update, autostart.
+2. Feature parity reached for any v2 items the owner actually uses
+   (e.g. piper TTS, token stats) if those ship before cutover.
+3. Two weeks of daily use on the owner's Windows machine with no
+   unresolved bug that required running the Electron app instead.
+
+### Retirement steps
+
+1. Tag current `master` as `electron-final` and push to origin as a
+   long-lived archival branch `electron-archive`. This is the preservation
+   artifact: the last working Electron state is always recoverable.
+2. Delete from `master`:
+   - `main.js`
+   - `src/` (Electron source)
+   - `scripts/download-piper.js`, `scripts/generate-icons.js`,
+     `scripts/aiusage-hook.ps1`, `scripts/aiusage-hook.sh`
+   - `resources/` (piper binaries)
+   - `build/` (NSIS extras)
+   - `package.json`, `package-lock.json`, `node_modules/` (via .gitignore)
+   - Any Electron-only entries in `.github/workflows/*`
+3. Promote `tauri/` contents to the repo root: move `tauri/Cargo.toml`,
+   `tauri/src/`, `tauri/dist/`, `tauri/tauri.conf.json` up one level,
+   delete the empty `tauri/` dir.
+4. Keep untouched: `server/`, `mcp-server/`, `docs/`, `scripts/test-*.js`
+   (useful as regression harnesses), `LICENSE`, `.github/ISSUE_TEMPLATE/`.
+5. Rewrite `README.md` for the Tauri stack (install, build, architecture).
+6. Rewrite `CLAUDE.md` to describe the Rust module layout; remove the
+   Electron architecture table.
+7. Update `.github/workflows/release.yml` (or equivalent) to run
+   `cargo tauri build` and publish NSIS installer to the same
+   `SirBepy/claude_usage_in_taskbar` release pipeline. Old Electron
+   releases stay attached to their tags; new releases are Tauri-only.
+8. Bump to `v2.0.0` for the first post-cutover release to signal the
+   breaking stack change to downstream tooling.
+
+### Existing-user migration
+
+- `electron-updater` in the Electron app pulls from the same GitHub
+  releases. If a Tauri release ships under the same repo with an artifact
+  name `electron-updater` does not recognize, it will fail quietly rather
+  than upgrade an Electron user to a Tauri binary (mismatched formats).
+- To force existing Electron users to upgrade, ship one last Electron
+  release (`v1.x.y`) whose only behavior is a dialog instructing the user
+  to download the new Tauri installer from the releases page, and then
+  exits. This avoids half-upgraded states where Electron keeps running
+  alongside a Tauri install.
+- Settings + history files live at different paths
+  (`claude-usage-tauri` vs the Electron app's path). A one-time migration
+  routine in the Tauri app's first launch can import from the Electron
+  path if it exists. Low priority; defer unless the owner asks.
