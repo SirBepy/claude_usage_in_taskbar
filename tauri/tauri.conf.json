@@ -15,7 +15,7 @@
       {
         "label": "main",
         "title": "Claude Usage",
-        "url": "index.html",
+        "url": "dashboard.html",
         "width": 900,
         "height": 640,
         "resizable": true,
