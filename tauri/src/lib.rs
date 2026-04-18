@@ -7,6 +7,7 @@ pub mod scraper;
 pub mod session;
 pub mod settings;
 pub mod state;
+pub mod tray;
 pub mod types;
 
 use crate::state::AppState;
@@ -42,6 +43,7 @@ pub fn run() {
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
+            crate::tray::setup(app.handle())?;
             crate::scheduler::spawn(app.handle().clone());
             Ok(())
         })
