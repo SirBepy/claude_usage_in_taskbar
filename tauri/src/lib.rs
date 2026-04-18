@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod cdp;
 pub mod history;
+pub mod hook_server;
 pub mod icon;
 pub mod ipc;
 pub mod paths;
@@ -48,6 +49,12 @@ pub fn run() {
             log::info!("claude-usage-tauri started");
             crate::tray::setup(app.handle())?;
             crate::scheduler::spawn(app.handle().clone());
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = crate::hook_server::spawn(handle).await {
+                    log::error!("hook server spawn failed: {e}");
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
