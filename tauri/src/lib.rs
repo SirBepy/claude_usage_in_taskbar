@@ -15,6 +15,7 @@ pub mod types;
 
 use crate::state::AppState;
 use crate::types::AuthState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,6 +33,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             ipc::get_current_usage,
@@ -48,6 +54,17 @@ pub fn run() {
         .setup(|app| {
             log::info!("claude-usage-tauri started");
             crate::tray::setup(app.handle())?;
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let autostart_mgr = app.autolaunch();
+                let state = app.state::<crate::state::AppState>();
+                let desired = state.settings.lock().unwrap().autostart;
+                let _ = if desired {
+                    autostart_mgr.enable()
+                } else {
+                    autostart_mgr.disable()
+                };
+            }
             crate::scheduler::spawn(app.handle().clone());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

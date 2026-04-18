@@ -35,5 +35,15 @@
     "category": "Utility",
     "shortDescription": "Claude AI usage in your taskbar",
     "longDescription": "Tray app that monitors Claude AI usage and shows it as progress rings in the system tray."
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/SirBepy/claude_usage_in_taskbar/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE-WITH-GENERATED-PUBKEY",
+      "dialog": true
+    }
   }
 }
