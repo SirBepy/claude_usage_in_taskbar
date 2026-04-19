@@ -64,23 +64,18 @@ pub async fn run(app: AppHandle) -> Result<()> {
         .ok_or_else(|| anyhow!("Chrome/Edge not found in standard install locations"))?;
     log::info!("launching browser: {}", bin.display());
 
-    let profile = std::env::temp_dir().join(format!(
-        "claude-usage-tauri-login-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&profile).context("create temp profile dir")?;
+    let profile = crate::paths::data_dir()
+        .context("data dir")?
+        .join("chrome-login-profile");
+    std::fs::create_dir_all(&profile).context("create profile dir")?;
 
     let mut child = spawn_browser(&bin, &profile, CDP_PORT)
         .context("spawn browser")?;
 
-    // cleanup guard: make sure we always kill + rm profile
-    let cleanup = scopeguard::guard(profile.clone(), |p| {
-        let _ = std::fs::remove_dir_all(&p);
-    });
-
     let result = run_inner(&app, &mut child).await;
     kill_browser(&mut child);
-    drop(cleanup);
+    // NOTE: do NOT delete the profile dir, we want Google/SSO cookies to persist
+    // across re-logins so the user only types their password once.
 
     match result {
         Ok(session_key) => {

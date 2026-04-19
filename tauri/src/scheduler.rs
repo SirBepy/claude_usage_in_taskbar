@@ -21,25 +21,33 @@ pub fn spawn(app: AppHandle) {
             match poll_once(&app).await {
                 Ok(snap) => {
                     fail_streak = 0;
+                    log::info!(
+                        "poll ok: 5h={:.1}% 7d={:.1}%",
+                        snap.five_hour.utilization,
+                        snap.seven_day.utilization,
+                    );
                     let _ = app.emit("usage-updated", snap);
                     tokio::time::sleep(Duration::from_secs(interval_secs)).await;
                 }
                 Err(PollErr::NoSession) => {
+                    log::info!("no session on disk - triggering login flow");
                     let _ = app.emit(
                         "poll-failed",
                         serde_json::json!({"reason": "no-session"}),
                     );
                     trigger_login(&app).await;
-                    // After login completes (success or failure), retry soon.
+                    log::info!("login flow returned; retrying poll in {}s", RETRY_AFTER_LOGIN_SECS);
                     tokio::time::sleep(Duration::from_secs(RETRY_AFTER_LOGIN_SECS)).await;
                 }
                 Err(PollErr::NeedsLogin) => {
                     fail_streak += 1;
+                    log::warn!("poll unauthorized (streak={fail_streak}/{FAIL_STREAK_BEFORE_RELOGIN})");
                     let _ = app.emit(
                         "poll-failed",
                         serde_json::json!({"reason": "unauthorized"}),
                     );
                     if fail_streak >= FAIL_STREAK_BEFORE_RELOGIN {
+                        log::info!("auth failure streak reached - triggering login flow");
                         fail_streak = 0;
                         trigger_login(&app).await;
                         tokio::time::sleep(Duration::from_secs(RETRY_AFTER_LOGIN_SECS)).await;
@@ -48,8 +56,7 @@ pub fn spawn(app: AppHandle) {
                     }
                 }
                 Err(PollErr::Other(msg)) => {
-                    // Network error, DNS failure, 5xx, etc. Do NOT touch auth state.
-                    // Do NOT trigger login. Just retry on the normal interval.
+                    log::warn!("poll failed (network or other): {msg}");
                     let _ = app.emit(
                         "poll-failed",
                         serde_json::json!({"reason": msg}),

@@ -30,7 +30,6 @@ tokio-tungstenite = { version = "0.24", default-features = false, features = ["c
 futures-util = { version = "0.3", default-features = false }
 url = "2"
 rand = "0.8"
-scopeguard = "1"
 axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
 
 [dev-dependencies]
