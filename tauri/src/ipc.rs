@@ -65,6 +65,8 @@ pub fn logout(state: State<AppState>, app: AppHandle) -> Result<(), String> {
     let path = paths::session_file().map_err(|e| e.to_string())?;
     session::clear(&path).map_err(|e| e.to_string())?;
     *state.auth_state.lock().unwrap() = AuthState::NeedsLogin;
+    *state.current_usage.lock().unwrap() = None;
+    let _ = app.emit("usage-updated", serde_json::Value::Null);
     let _ = app.emit("auth-progress", serde_json::json!({"stage": "needs-login"}));
     Ok(())
 }
@@ -81,13 +83,15 @@ pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
 }
 
 #[tauri::command]
-pub async fn start_login(app: AppHandle, state: State<'_, AppState>)
-    -> Result<(), String>
-{
-    *state.auth_state.lock().unwrap() = AuthState::InProgress;
+pub async fn start_login(app: AppHandle) -> Result<(), String> {
+    {
+        let state = app.state::<AppState>();
+        *state.auth_state.lock().unwrap() = AuthState::InProgress;
+    }
     let _ = app.emit("auth-progress", serde_json::json!({"stage": "starting"}));
     match crate::auth::run(app.clone()).await {
         Ok(()) => {
+            let state = app.state::<AppState>();
             *state.auth_state.lock().unwrap() = AuthState::LoggedIn;
             // Kick an immediate poll so the dashboard shows data right away.
             let h = app.clone();
@@ -97,6 +101,7 @@ pub async fn start_login(app: AppHandle, state: State<'_, AppState>)
             Ok(())
         }
         Err(e) => {
+            let state = app.state::<AppState>();
             *state.auth_state.lock().unwrap() = AuthState::NeedsLogin;
             Err(e.to_string())
         }

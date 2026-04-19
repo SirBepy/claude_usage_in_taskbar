@@ -3,7 +3,6 @@
 use crate::paths;
 use crate::settings;
 use crate::state::AppState;
-use crate::types::Settings;
 use anyhow::Result;
 use axum::{extract::State as AxState, routing::post, Json, Router};
 use serde::Deserialize;
@@ -44,12 +43,15 @@ pub async fn spawn(app: AppHandle) -> Result<u16> {
     // Persist port to settings for hook client discovery.
     {
         let state = app.state::<AppState>();
-        let mut s: Settings = state.settings.lock().unwrap().clone();
-        s.hook_port = Some(port);
-        *state.settings.lock().unwrap() = s.clone();
-        let path = paths::settings_file()?;
-        let _ = settings::save(&path, &s);
-        let _ = app.emit("settings-changed", s);
+        let mut guard = state.settings.lock().unwrap();
+        if guard.hook_port != Some(port) {
+            guard.hook_port = Some(port);
+            let s = guard.clone();
+            drop(guard);
+            let path = paths::settings_file()?;
+            let _ = settings::save(&path, &s);
+            let _ = app.emit("settings-changed", s);
+        }
     }
 
     let ctx = Arc::new(HookCtx { app: app.clone() });

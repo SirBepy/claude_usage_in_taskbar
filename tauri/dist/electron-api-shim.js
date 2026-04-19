@@ -24,7 +24,10 @@
     authStatus: () => invoke('auth_status'),
 
     // --- Update state: plugin owns this; stubs return a safe default ---
-    getUpdateState: async () => ({ state: 'idle', version: await invoke('__noop_version').catch(() => null) }),
+    getUpdateState: async () => {
+      try { return { state: 'idle', version: await T.app.getVersion() }; }
+      catch { return { state: 'idle', version: null }; }
+    },
     downloadUpdate: () => {},
     downloadAndInstall: () => {},
     installUpdate: () => {},
@@ -39,7 +42,10 @@
 
     onUpdateStateChange: (_cb) => () => {},
     onHistoryUpdated: (cb) => {
-      const unlisten = listen('usage-updated', (e) => cb(e.payload));
+      const unlisten = listen('usage-updated', async () => {
+        try { cb(await invoke('get_history', { limit: null })); }
+        catch (e) { console.error('onHistoryUpdated refetch failed', e); }
+      });
       return () => unlisten.then((u) => u());
     },
 
