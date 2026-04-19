@@ -15,6 +15,7 @@ pub mod types;
 
 use crate::state::AppState;
 use crate::types::AuthState;
+use tauri::Emitter;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,7 +33,12 @@ pub fn run() {
     let state = AppState::new(loaded_settings, auth);
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .level_for("claude_usage_tauri_lib", log::LevelFilter::Debug)
+                .build(),
+        )
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![]),
@@ -80,6 +86,34 @@ pub fn run() {
                         let _ = w.hide();
                     }
                 });
+            }
+            // Auto-trigger login if no session on first launch.
+            {
+                use crate::state::AppState;
+                use crate::types::AuthState;
+                let needs_login = matches!(
+                    *app.state::<AppState>().auth_state.lock().unwrap(),
+                    AuthState::NeedsLogin
+                );
+                if needs_login {
+                    let h = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        {
+                            *h.state::<AppState>().auth_state.lock().unwrap() = AuthState::InProgress;
+                        }
+                        let _ = h.emit("auth-progress", serde_json::json!({"stage": "starting"}));
+                        match crate::auth::run(h.clone()).await {
+                            Ok(()) => {
+                                *h.state::<AppState>().auth_state.lock().unwrap() = AuthState::LoggedIn;
+                                let _ = crate::scheduler::poll_once(&h).await;
+                            }
+                            Err(e) => {
+                                *h.state::<AppState>().auth_state.lock().unwrap() = AuthState::NeedsLogin;
+                                log::error!("auto-login failed: {e}");
+                            }
+                        }
+                    });
+                }
             }
             Ok(())
         })

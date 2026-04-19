@@ -106,7 +106,7 @@ pub enum PollErr {
 
 pub async fn poll_once(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
     let session_path = paths::session_file()
-        .map_err(|e| PollErr::Other(e.to_string()))?;
+        .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     let Some(session_key) = session::load(&session_path) else {
         return Err(PollErr::NoSession);
     };
@@ -115,7 +115,7 @@ pub async fn poll_once(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
         Ok(s) => s,
         Err(ScrapeError::Unauthorized) => return Err(PollErr::NeedsLogin),
         Err(ScrapeError::Forbidden) => return Err(PollErr::NeedsLogin),
-        Err(e) => return Err(PollErr::Other(e.to_string())),
+        Err(e) => return Err(PollErr::Other(format!("{e:#}"))),
     };
 
     // Persist into in-memory + on-disk history
@@ -125,9 +125,9 @@ pub async fn poll_once(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
         *state.auth_state.lock().unwrap() = AuthState::LoggedIn;
     }
     let hpath = paths::history_file()
-        .map_err(|e| PollErr::Other(e.to_string()))?;
+        .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     history::append(&hpath, &snap)
-        .map_err(|e| PollErr::Other(e.to_string()))?;
+        .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     // Opportunistic prune once per poll (fast when nothing to prune).
     let _ = history::prune(&hpath);
 
