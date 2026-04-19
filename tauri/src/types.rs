@@ -19,8 +19,8 @@ pub struct WindowUsage {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ExtraUsage {
     pub is_enabled: bool,
-    pub monthly_limit: u32,
-    pub used_credits: u32,
+    pub monthly_limit: f64,
+    pub used_credits: f64,
     pub utilization: f64,
     pub currency: String,
 }
@@ -92,6 +92,6 @@ mod tests {
         }"#;
         let parsed: UsageSnapshot = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed.five_hour.utilization, 7.0);
-        assert_eq!(parsed.extra_usage.as_ref().unwrap().monthly_limit, 8500);
+        assert_eq!(parsed.extra_usage.as_ref().unwrap().monthly_limit, 8500.0);
     }
 }
