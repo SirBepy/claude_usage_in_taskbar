@@ -72,6 +72,15 @@ pub fn run() {
                     log::error!("hook server spawn failed: {e}");
                 }
             });
+            if let Some(window) = app.get_webview_window("main") {
+                let w = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = w.hide();
+                    }
+                });
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
