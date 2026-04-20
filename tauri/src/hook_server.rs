@@ -127,8 +127,13 @@ async fn on_quit(AxState(ctx): AxState<Arc<HookCtx>>) -> impl IntoResponse {
     (StatusCode::NO_CONTENT, Json(json!({})))
 }
 
+/// Fixed port matching the Electron app + README + installer + user hook scripts
+/// at `~/.claude/aiusage-hook.{ps1,sh}`. Changing this breaks every already-installed
+/// hook client, so it stays pinned.
+const HOOK_PORT: u16 = 27182;
+
 pub async fn spawn(app: AppHandle) -> Result<u16> {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+    let listener = TcpListener::bind(("127.0.0.1", HOOK_PORT)).await?;
     let port = listener.local_addr()?.port();
     log::info!("hook server listening on 127.0.0.1:{port}");
 
