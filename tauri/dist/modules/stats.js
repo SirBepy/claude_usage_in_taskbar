@@ -165,30 +165,21 @@ function buildProjectListHTML({ title, projects, maxItems, showTime = true, show
   };
 
   const visibleRows = visible.map(renderRow).join("");
-  // Hidden overflow rows live in the same tbody so "Show X more" can reveal
-  // them inline without a re-render. This was previously dead code — the
-  // wired handler looked them up via `graphDetailConfigs[listId]`, which is
-  // only set for the dashboard cards, leaving the button inert on the Token
-  // Stats page.
-  const hiddenRows = capped
-    ? sorted.slice(maxItems).map((p) => renderRow(p).replace("<tr class=\"proj-row\"", "<tr class=\"proj-row hidden-overflow\" style=\"display:none\""))
-        .join("")
-    : "";
 
   const remaining = sorted.length - visible.length;
   const showMoreBtn = capped
-    ? `<tfoot><tr><td colspan="${cols.length}" style="text-align:center;padding-top:6px;border-bottom:none">
+    ? `<div style="display:flex;justify-content:center;padding-top:8px">
          <button class="btn-secondary show-more-btn" data-list-id="${containerId}" style="font-size:0.72rem;padding:2px 10px">Show ${remaining} more</button>
-       </td></tr></tfoot>`
+       </div>`
     : "";
 
   return `<div class="today-section" ${style ? `style="${style}"` : ""}>
     ${title ? `<div style="font-size:0.92rem;font-weight:700;margin-bottom:10px">${title}</div>` : ""}
     <table class="stats-table">
       ${headerRow}
-      <tbody>${visibleRows}${hiddenRows}</tbody>
-      ${showMoreBtn}
+      <tbody>${visibleRows}</tbody>
     </table>
+    ${showMoreBtn}
   </div>`;
 }
 
@@ -206,27 +197,9 @@ function wireProjectListClicks(container, onSort) {
     btn._wired = true;
     btn.onclick = () => {
       const listId = btn.dataset.listId;
-      // Dashboard chart cards register a detail config — prefer the full
-      // graph-detail view when it exists (more useful than a long table).
       if (listId && typeof graphDetailConfigs !== "undefined" && graphDetailConfigs[listId]) {
         openGraphDetail(listId);
-        return;
       }
-      // Everywhere else (Token Stats table), just reveal the hidden rows
-      // that were already rendered into the tbody.
-      const table = btn.closest("table");
-      if (!table) return;
-      table.querySelectorAll("tr.hidden-overflow").forEach((row) => {
-        row.style.display = "";
-        row.classList.remove("hidden-overflow");
-        // Newly-revealed rows still need click wiring since they were added
-        // before wireProjectListClicks ran.
-        if (row.dataset.cwd && !row._wired) {
-          row._wired = true;
-          row.onclick = () => openProjectDetail(row.dataset.cwd);
-        }
-      });
-      btn.closest("tfoot")?.remove();
     };
   });
   container.querySelectorAll("th[data-sort][data-list]").forEach((th) => {
