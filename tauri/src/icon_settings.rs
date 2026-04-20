@@ -163,12 +163,12 @@ impl Default for NotificationsConfig {
 
 // -- TryFrom impls ------------------------------------------------------------
 
-fn s(v: Option<&Value>) -> Option<&str> { v.and_then(|x| x.as_str()) }
-fn f(v: Option<&Value>) -> Option<f64>  { v.and_then(|x| x.as_f64()) }
-fn b(v: Option<&Value>) -> Option<bool> { v.and_then(|x| x.as_bool()) }
+fn val_str(v: Option<&Value>) -> Option<&str> { v.and_then(|x| x.as_str()) }
+fn val_f64(v: Option<&Value>) -> Option<f64>  { v.and_then(|x| x.as_f64()) }
+fn val_bool(v: Option<&Value>) -> Option<bool> { v.and_then(|x| x.as_bool()) }
 
 fn parse_enum<T: Default>(raw: Option<&Value>, map: &[(&str, T)]) -> T where T: Copy {
-    let Some(key) = s(raw) else { return T::default(); };
+    let Some(key) = val_str(raw) else { return T::default(); };
     for (k, v) in map { if *k == key { return *v; } }
     T::default()
 }
@@ -233,7 +233,7 @@ impl TryFrom<&Settings> for IconSettings {
                 ("pace", ColorMode::Pace),
             ]),
             color_thresholds: parse_color_stops(e.get("colorThresholds")),
-            pace_band: f(e.get("paceBand")).unwrap_or(10.0) as f32,
+            pace_band: val_f64(e.get("paceBand")).unwrap_or(10.0) as f32,
             pace_colors: parse_pace_colors(e.get("paceColors")),
             apply_color_to: parse_apply_to(e.get("colorApplyTo")),
         })
@@ -253,23 +253,22 @@ impl TryFrom<&Settings> for TooltipSettings {
                 ("absolute", TimeStyle::Absolute),
                 ("relative", TimeStyle::Relative),
             ]),
-            show_safe_pace: b(e.get("tooltipShowSafePace")).unwrap_or(true),
-            apply_color: b(e.get("colorApplyTo").and_then(|v| v.as_object())
-                          .and_then(|m| m.get("tooltip"))).unwrap_or(true),
+            show_safe_pace: val_bool(e.get("tooltipShowSafePace")).unwrap_or(true),
+            apply_color: parse_apply_to(e.get("colorApplyTo")).tooltip,
         })
     }
 }
 
 fn rule_from(m: &serde_json::Map<String, Value>, defaults: NotificationRule) -> NotificationRule {
     NotificationRule {
-        enabled: b(m.get("enabled")).unwrap_or(defaults.enabled),
+        enabled: val_bool(m.get("enabled")).unwrap_or(defaults.enabled),
         mode: parse_enum(m.get("mode"), &[
             ("sound", NotifMode::Sound),
             ("voice", NotifMode::Voice),
         ]),
-        sound_file: s(m.get("soundFile")).map(String::from).unwrap_or(defaults.sound_file),
-        voice_name: s(m.get("voiceName")).map(String::from),
-        template: s(m.get("template")).map(String::from).unwrap_or(defaults.template),
+        sound_file: val_str(m.get("soundFile")).map(String::from).unwrap_or(defaults.sound_file),
+        voice_name: val_str(m.get("voiceName")).map(String::from),
+        template: val_str(m.get("template")).map(String::from).unwrap_or(defaults.template),
     }
 }
 
@@ -355,6 +354,6 @@ mod tests {
         }));
         let icon = IconSettings::try_from(&s).unwrap();
         assert_eq!(icon.icon_style, IconStyle::Rings);
-        assert!(!icon.color_thresholds.is_empty());  // default set populated
+        assert_eq!(icon.color_thresholds, IconSettings::default().color_thresholds);
     }
 }
