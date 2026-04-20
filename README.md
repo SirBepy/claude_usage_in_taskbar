@@ -103,3 +103,9 @@ The wrapper script forwards the hook payload plus the originating terminal's env
 - **Windows Terminal / pwsh / cmd / WezTerm / etc.** → walks the PID chain and `SetForegroundWindow`s the first ancestor with a visible window.
 - **macOS Terminal / iTerm2 / Ghostty / etc.** → walks the PID chain and uses `osascript` + System Events to front the first ancestor with a GUI process.
 - **Fallback** → activate VSCode (macOS) or title-match VSCode processes (Windows).
+
+## Notification sounds
+
+- Per-project notification overrides: pick a different sound per project
+  (e.g., a Warcraft-style "Work work" clip for one repo, a beep for
+  another). Sound packs download on demand.

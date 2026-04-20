@@ -43,6 +43,7 @@ npm start
 | `scripts/generate-icons.js` | Dev utility — regenerates icon.png from icon.svg via sharp |
 | `server/` | Sync backend - Express API with SQLite for cross-device data sync |
 | `mcp-server/` | Standalone MCP server - pushes local usage to sync backend |
+| `tauri/src/soundpacks.rs` (tauri backend) | Sound pack catalog, install (download+unzip), path resolution |
 
 ## Authentication flow
 
@@ -134,6 +135,18 @@ via env vars `SYNC_SERVER_URL` and `SYNC_API_KEY`.
 **Whenever the authentication flow, tray behaviour, scraping approach, or project
 structure changes, update `README.md` to match.** The README is the user-facing
 document; CLAUDE.md is the developer reference. Both must stay in sync.
+
+## Sound packs
+
+Notifications can play any sound from the bundled **default** pack or any
+**downloaded pack** (currently `peon`; more planned). Packs install on
+demand via the `install_sound_pack` Tauri command and land in
+`<app-data>/sound-packs/<packId>/`. Per-project overrides live under
+`settings.projectNotifOverrides[cwdKey][eventKey]`, gated by an `enabled`
+flag; when off the event falls back to the default rule. Resolver lives in
+`notifications::resolve_notif_config` (`tauri/src/notifications.rs`). Sound
+files are served to the frontend as base64 data URLs via
+`sound_pack_file_url`.
 
 ## Key dependencies
 
