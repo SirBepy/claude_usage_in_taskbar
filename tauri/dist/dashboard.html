@@ -351,15 +351,10 @@
                     </div>
                     <div class="option notif-sound-row" style="display:none">
                         <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <select class="notif-sound-file">
-                                <option value="sound1.mp3">Sound 1</option>
-                                <option value="sound2.mp3">Sound 2</option>
-                                <option value="sound3.mp3">Sound 3</option>
-                                <option value="sound4.mp3">Sound 4</option>
-                                <option value="sound5.mp3">Sound 5</option>
-                                <option value="sound6.mp3">Sound 6</option>
-                            </select>
+                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+                            <select class="notif-sound-pack"></select>
+                            <select class="notif-sound-file"></select>
+                            <button class="btn-secondary notif-pack-install" style="display:none;padding:3px 10px;font-size:0.8rem">Install</button>
                             <button class="btn-secondary notif-sound-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
                         </div>
                     </div>

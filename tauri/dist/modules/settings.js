@@ -151,14 +151,22 @@ function applyNotifCardVisibility(type) {
   c.voiceRows.style.display = (enabled && mode === "voice") ? "flex" : "none";
 }
 
-function renderNotifCard(type, cfg) {
+async function renderNotifCard(type, cfg) {
   const c = notifCards[type];
   if (!c) return;
   const def = NOTIF_TYPES.find(n => n.key === type);
   c.enabled.checked = cfg.enabled !== false;
   const mode = cfg.mode === "voice" ? "voice" : "sound";
   c.modes.forEach(r => { r.checked = r.value === mode; });
-  c.soundFile.value = cfg.soundFile || def.defaultSound;
+
+  const packs = await window.SoundPacks.loadPacks();
+  const currentPack = cfg.soundPack || "default";
+  const currentSound = cfg.soundFile || def.defaultSound;
+  window.SoundPacks.populatePackSelect(c.soundPack, packs, currentPack);
+  const pack = window.SoundPacks.findPack(packs, currentPack);
+  window.SoundPacks.populateSoundSelect(c.soundFile, pack, currentSound);
+  c.packInstall.style.display = (pack && !pack.installed) ? "inline-block" : "none";
+
   c.template.value = cfg.template || def.defaultTemplate;
   if (cfg.voiceName) c.voiceSelect.dataset.desired = cfg.voiceName;
   populateVoiceSelect(c.voiceSelect, cfg.voiceName || null);
@@ -171,16 +179,39 @@ function wireNotifCard(type) {
   const onToggle = () => { applyNotifCardVisibility(type); saveSettings(); };
   c.enabled.addEventListener("change", onToggle);
   c.modes.forEach(r => r.addEventListener("change", onToggle));
+  c.soundPack.addEventListener("change", async () => {
+    const packs = await window.SoundPacks.loadPacks();
+    const pack = window.SoundPacks.findPack(packs, c.soundPack.value);
+    window.SoundPacks.populateSoundSelect(c.soundFile, pack, pack?.sounds[0]?.id);
+    c.packInstall.style.display = (pack && !pack.installed) ? "inline-block" : "none";
+    saveSettings();
+  });
+  c.packInstall.addEventListener("click", async () => {
+    c.packInstall.disabled = true;
+    c.packInstall.textContent = "Installing...";
+    try {
+      const packs = await window.SoundPacks.installPack(c.soundPack.value);
+      const pack = window.SoundPacks.findPack(packs, c.soundPack.value);
+      window.SoundPacks.populatePackSelect(c.soundPack, packs, c.soundPack.value);
+      window.SoundPacks.populateSoundSelect(c.soundFile, pack, c.soundFile.value);
+      c.packInstall.style.display = "none";
+    } catch (e) {
+      console.error("[pack install] failed", e);
+      alert("Sound pack install failed. See console.");
+    } finally {
+      c.packInstall.disabled = false;
+      c.packInstall.textContent = "Install";
+    }
+  });
   c.soundFile.addEventListener("change", saveSettings);
   c.template.addEventListener("input", saveSettings);
   c.voiceSelect.addEventListener("change", () => {
     c.voiceSelect.dataset.desired = c.voiceSelect.value || "";
     saveSettings();
   });
-  c.soundPreview.onclick = () => {
-    const f = c.soundFile.value;
-    if (!f) return;
-    window.electronAPI.playSoundPreview(f).catch((e) => console.error("sound preview failed", e));
+  c.soundPreview.onclick = async () => {
+    const url = await window.electronAPI.soundPackFileUrl(c.soundPack.value, c.soundFile.value);
+    if (url) new Audio(url).play().catch(() => {});
   };
   c.voicePreview.onclick = () => {
     const cwd = voicePreviewProject.value || "";
@@ -215,6 +246,8 @@ function buildNotifCards() {
       body: node.querySelector(".notif-body"),
       modes: node.querySelectorAll(".notif-mode"),
       soundRow: node.querySelector(".notif-sound-row"),
+      soundPack: node.querySelector(".notif-sound-pack"),
+      packInstall: node.querySelector(".notif-pack-install"),
       soundFile: node.querySelector(".notif-sound-file"),
       soundPreview: node.querySelector(".notif-sound-preview"),
       voiceRows: node.querySelector(".notif-voice-rows"),
@@ -239,6 +272,7 @@ function gatherNotifSettings() {
     out[t.key] = {
       enabled: c.enabled.checked,
       mode,
+      soundPack: c.soundPack.value || "default",
       soundFile: c.soundFile.value,
       voiceName: c.voiceSelect.value || c.voiceSelect.dataset.desired || null,
       template: c.template.value || def.defaultTemplate,
@@ -487,7 +521,7 @@ window.onload = async () => {
 
     buildNotifCards();
     const notifs = settings.notifications || {};
-    for (const t of NOTIF_TYPES) renderNotifCard(t.key, notifs[t.key] || {});
+    await Promise.all(NOTIF_TYPES.map(t => renderNotifCard(t.key, notifs[t.key] || {})));
     populateVoicePreview();
     loadPiperVoices();
 
