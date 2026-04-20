@@ -7,9 +7,36 @@
   const invoke = T.core.invoke;
   const listen = T.event.listen;
 
+  // The Tauri backend returns UsageSnapshot { captured_at, five_hour, seven_day,
+  // extra_usage }, but dashboard.js/chart.js still read the legacy Electron
+  // shape { hour, session_pct, weekly_pct, session_resets_at, weekly_resets_at }.
+  // Translate here until the renderer is ported to the new names.
+  function toLegacyRecord(snap) {
+    if (!snap || !snap.five_hour || !snap.seven_day) return null;
+    const d = new Date(snap.captured_at);
+    // `hourToMs` in formatters.js parses "YYYY-MM-DDTHH[:MM]" as LOCAL time.
+    // Emit a local-time hour bucket so the two sides round-trip cleanly.
+    const pad = (n) => String(n).padStart(2, "0");
+    const hour =
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}`;
+    return {
+      hour,
+      session_pct: Math.round(snap.five_hour.utilization),
+      weekly_pct: Math.round(snap.seven_day.utilization),
+      session_resets_at: snap.five_hour.resets_at || null,
+      weekly_resets_at: snap.seven_day.resets_at || null,
+      extra_usage: snap.extra_usage || null,
+    };
+  }
+
+  async function fetchHistoryLegacy() {
+    const raw = await invoke('get_history', { limit: null });
+    return (raw || []).map(toLegacyRecord).filter(Boolean);
+  }
+
   const bridge = {
     // --- Usage + history ---
-    getUsageHistory: () => invoke('get_history', { limit: null }),
+    getUsageHistory: fetchHistoryLegacy,
 
     // --- Settings ---
     getSettings: () => invoke('get_settings'),
@@ -23,38 +50,43 @@
     startLogin: () => invoke('start_login'),
     authStatus: () => invoke('auth_status'),
 
-    // --- Update state: plugin owns this; stubs return a safe default ---
-    getUpdateState: async () => {
-      try { return { state: 'idle', version: await T.app.getVersion() }; }
-      catch { return { state: 'idle', version: null }; }
-    },
+    // --- Update state ---
+    getUpdateState: () => invoke('get_update_state'),
     downloadUpdate: () => {},
-    downloadAndInstall: () => {},
-    installUpdate: () => {},
-    checkForUpdates: () => {},
-    copyLogs: () => {},
-    getAppVersion: async () => {
-      const meta = await T.app.getVersion();
-      return meta;
-    },
-    getPlatform: async () => 'win32',
-    openExternal: (url) => T.shell?.open?.(url),
+    downloadAndInstall: () => invoke('download_and_install_update'),
+    installUpdate: () => invoke('install_update'),
+    checkForUpdates: () => invoke('check_for_updates'),
+    copyLogs: () => invoke('copy_logs'),
+    getAppVersion: () => invoke('get_app_version'),
+    getPlatform: () => invoke('get_platform'),
+    openExternal: (url) => invoke('open_external', { url }),
 
-    onUpdateStateChange: (_cb) => () => {},
+    onUpdateStateChange: (cb) => {
+      T.event.listen('update-state', (e) => cb(e.payload));
+    },
     onHistoryUpdated: (cb) => {
       const unlisten = listen('usage-updated', async () => {
-        try { cb(await invoke('get_history', { limit: null })); }
+        try { cb(await fetchHistoryLegacy()); }
         catch (e) { console.error('onHistoryUpdated refetch failed', e); }
       });
       return () => unlisten.then((u) => u());
     },
 
     // --- File system (dashboard stats tabs may call this) ---
-    checkPathsExist: async (_paths) => ({}),
+    checkPathsExist: async (paths) => {
+      try { return (await invoke('check_paths_exist', { paths })) || {}; }
+      catch (e) { console.error('check_paths_exist failed', e); return {}; }
+    },
 
-    // --- Open in explorer / VS Code (optional niceties) ---
-    openInExplorer: (p) => T.shell?.open?.(p),
-    openInVSCode: (_p) => {},
+    // --- Open in explorer / VS Code ---
+    openInExplorer: async (p) => {
+      try { await invoke('open_in_explorer', { path: p }); }
+      catch (e) { console.error('open_in_explorer failed', e); }
+    },
+    openInVSCode: async (p) => {
+      try { await invoke('open_in_vscode', { path: p }); }
+      catch (e) { console.error('open_in_vscode failed', e); }
+    },
 
     // --- Sync (cut from MVP — stubs) ---
     syncRegister: async () => { throw new Error('sync disabled in MVP'); },
@@ -64,18 +96,36 @@
     syncPull: async () => null,
     syncPush: async () => null,
 
-    // --- Token stats (deferred to v2 — stubs) ---
-    getTokenHistory: async () => [],
-    getActiveSessions: async () => [],
-    backfillTranscripts: async () => ({ processed: 0 }),
+    // --- Token stats ---
+    getTokenHistory: async () => {
+      try { return (await invoke('get_token_history')) || []; }
+      catch (e) { console.error('get_token_history failed', e); return []; }
+    },
+    getActiveSessions: async () => {
+      try { return (await invoke('get_active_sessions')) || []; }
+      catch (e) { console.error('get_active_sessions failed', e); return []; }
+    },
+    backfillTranscripts: async () => {
+      try { return await invoke('backfill_transcripts'); }
+      catch (e) {
+        console.error('backfill_transcripts failed', e);
+        return { processed: 0, skipped: 0, subProcessed: 0, subSkipped: 0 };
+      }
+    },
 
-    // --- Piper TTS (deferred to v2 — stubs) ---
-    speakPreview: (_t) => {},
-    piperStatus: async () => ({ installed: false }),
+    // --- Piper TTS ---
+    piperStatus: () => invoke('piper_status'),
+    piperInstallVoice: (id) => invoke('piper_install_voice', { id }),
+    speakPreview: ({ text, voiceName }) => invoke('piper_speak_preview', { text, voiceName }),
     piperInstallBinary: async () => ({ ok: false, reason: 'disabled in MVP' }),
-    piperInstallVoice: async () => ({ ok: false, reason: 'disabled in MVP' }),
     onPiperProgress: (_cb) => () => {},
-    onTokenHistoryUpdated: (_cb) => () => {},
+    onTokenHistoryUpdated: (cb) => {
+      const unlisten = listen('token-history-updated', (e) => {
+        try { cb(e?.payload || []); }
+        catch (err) { console.error('onTokenHistoryUpdated handler threw', err); }
+      });
+      return () => unlisten.then((u) => u());
+    },
   };
 
   window.electronAPI = bridge;
