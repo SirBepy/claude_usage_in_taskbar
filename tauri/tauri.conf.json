@@ -16,8 +16,9 @@
         "label": "main",
         "title": "Claude Usage",
         "url": "dashboard.html",
-        "width": 900,
-        "height": 640,
+        "width": 520,
+        "height": 720,
+        "minWidth": 360,
         "resizable": true,
         "visible": false,
         "decorations": true
@@ -34,7 +35,8 @@
     "publisher": "SirBepy",
     "category": "Utility",
     "shortDescription": "Claude AI usage in your taskbar",
-    "longDescription": "Tray app that monitors Claude AI usage and shows it as progress rings in the system tray."
+    "longDescription": "Tray app that monitors Claude AI usage and shows it as progress rings in the system tray.",
+    "resources": ["assets/sounds/*"]
   },
   "plugins": {
     "updater": {
@@ -42,7 +44,7 @@
       "endpoints": [
         "https://github.com/SirBepy/claude_usage_in_taskbar/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE-WITH-GENERATED-PUBKEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyREUzNzgyMDU2QjhFN0EKUldSNmptc0ZnamZlY29kWDlDbE5xU0toUGhNN2dXemxjU3VZVmdMZHpxeUdDTXNoVUFNL2FmdFIK",
       "dialog": true
     }
   }

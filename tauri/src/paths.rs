@@ -23,6 +23,20 @@ pub fn session_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("session.txt"))
 }
 
+pub fn token_history_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("token-history.json"))
+}
+
+pub fn sounds_dir() -> anyhow::Result<std::path::PathBuf> {
+    // In dev: tauri/assets/sounds. In bundle: resource dir beside the exe.
+    let exe = std::env::current_exe()?;
+    let bundled = exe.parent().map(|p| p.join("resources").join("assets").join("sounds"));
+    if let Some(p) = bundled.filter(|p| p.exists()) { return Ok(p); }
+    // Dev fallback:
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    Ok(manifest.join("assets").join("sounds"))
+}
+
 /// Ensures the data directory exists. Idempotent.
 pub fn ensure_data_dir() -> Result<PathBuf> {
     let dir = data_dir()?;

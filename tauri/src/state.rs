@@ -9,6 +9,7 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub auth_state: Mutex<AuthState>,
     pub display: Mutex<TrayDisplayState>,
+    pub audio: crate::audio::AudioCtx,
 }
 
 impl AppState {
@@ -18,6 +19,7 @@ impl AppState {
             settings: Mutex::new(settings),
             auth_state: Mutex::new(auth_state),
             display: Mutex::new(TrayDisplayState::default()),
+            audio: crate::audio::AudioCtx::new(),
         }
     }
 }
