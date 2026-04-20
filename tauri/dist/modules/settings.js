@@ -78,8 +78,6 @@ const defaultDisplay = document.getElementById("defaultDisplay");
 const iconStyle = document.getElementById("iconStyle");
 const timeStyle = document.getElementById("timeStyle");
 const iconStyleSection = document.getElementById("iconStyleSection");
-const overlayStyle = document.getElementById("overlayStyle");
-const overlayStyleSection = document.getElementById("overlayStyleSection");
 const launchAtLogin = document.getElementById("launchAtLogin");
 const tooltipLayout = document.getElementById("tooltipLayout");
 const tooltipShowSafePace = document.getElementById("tooltipShowSafePace");
@@ -285,7 +283,6 @@ function saveSettings() {
     theme: document.documentElement.dataset.theme || "void",
     defaultDisplay: defaultDisplay.value,
     iconStyle: iconStyle.value,
-    overlayStyle: overlayStyle.value,
     timeStyle: timeStyle.value,
     tooltipLayout: tooltipLayout.value,
     tooltipShowSafePace: tooltipShowSafePace.checked,
@@ -348,8 +345,6 @@ function createColorRow(min = 0, color = "#ffffff") {
 function updateVisibilities() {
   // Icon style always visible (icon is always one of the 3 cycle states)
   iconStyleSection.style.display = "flex";
-  // Number font always visible (number states are always in cycle)
-  overlayStyleSection.style.display = "flex";
 }
 
 function updateColorModeVisibility() {
@@ -442,7 +437,6 @@ window.onload = async () => {
 
     defaultDisplay.value = settings.defaultDisplay || "icon";
     iconStyle.value = settings.iconStyle || "rings";
-    overlayStyle.value = settings.overlayStyle || "classic";
     timeStyle.value = settings.timeStyle || "absolute";
     tooltipLayout.value = settings.tooltipLayout || "rows";
     tooltipShowSafePace.checked = settings.tooltipShowSafePace !== false;
@@ -483,7 +477,7 @@ window.onload = async () => {
   updateVisibilities();
 
   // Auto-save on any input change
-  for (const el of [iconStyle, overlayStyle, timeStyle, tooltipLayout]) {
+  for (const el of [iconStyle, timeStyle, tooltipLayout]) {
     el.addEventListener("change", saveSettings);
   }
   for (const el of [launchAtLogin, autoUpdate, tooltipShowSafePace, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
