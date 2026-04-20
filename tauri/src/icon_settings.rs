@@ -27,7 +27,7 @@ impl Default for ColorMode { fn default() -> Self { Self::Threshold } }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum TooltipLayout { Rows, Compact }
+pub enum TooltipLayout { Rows, Columns }
 impl Default for TooltipLayout { fn default() -> Self { Self::Rows } }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,7 +247,7 @@ impl TryFrom<&Settings> for TooltipSettings {
         Ok(TooltipSettings {
             layout: parse_enum(e.get("tooltipLayout"), &[
                 ("rows", TooltipLayout::Rows),
-                ("compact", TooltipLayout::Compact),
+                ("columns", TooltipLayout::Columns),
             ]),
             time_style: parse_enum(e.get("timeStyle"), &[
                 ("absolute", TimeStyle::Absolute),

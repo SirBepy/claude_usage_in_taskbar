@@ -489,32 +489,10 @@ function doUnmerge(secondaryCwd, primaryCwd) {
   saveSettings();
 }
 
-function showMergeModal(text, onConfirm, onCancel, confirmLabel) {
-  const modal = document.getElementById("merge-modal");
-  const msgEl = document.getElementById("merge-modal-text");
-  const confirmBtn = document.getElementById("merge-confirm-btn");
-  const cancelBtn = document.getElementById("merge-cancel-btn");
-  if (!modal) return;
-  msgEl.textContent = text;
-  confirmBtn.textContent = confirmLabel || "Merge";
-  modal.style.display = "flex";
-  confirmBtn.onclick = () => { hideMergeModal(); onConfirm(); };
-  cancelBtn.onclick = () => { hideMergeModal(); if (onCancel) onCancel(); };
-  modal.onclick = (e) => { if (e.target === modal) { hideMergeModal(); if (onCancel) onCancel(); } };
+function showMergeModal(text, onConfirm, onCancel, _confirmLabel) {
+  if (window.confirm(text)) onConfirm();
+  else if (onCancel) onCancel();
 }
-
-function hideMergeModal() {
-  const modal = document.getElementById("merge-modal");
-  if (modal) { modal.style.display = "none"; modal.onclick = null; }
-}
-
-// Any nav click should dismiss a leftover modal — prevents it persisting
-// across view switches.
-document.addEventListener("click", (e) => {
-  if (e.target.closest(".nav-row, .back-to-settings, #backBtn")) {
-    hideMergeModal();
-  }
-}, true);
 
 function renderMergedPathsSection(cwd) {
   const el = document.getElementById("project-merged-paths");

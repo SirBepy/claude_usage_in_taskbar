@@ -35,26 +35,35 @@ pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: Dat
     let sess_reset = format_reset(&snap.five_hour.resets_at, s.time_style, now);
     let weekly_reset = format_reset(&snap.seven_day.resets_at, s.time_style, now);
 
-    let pace_row = if s.show_safe_pace {
-        let sess_pace = pace_summary(sess, sess_safe);
-        let weekly_pace = pace_summary(weekly, weekly_safe);
-        Some(format!("Pace    session: {sess_pace}  weekly: {weekly_pace}"))
-    } else { None };
-
     match s.layout {
         TooltipLayout::Rows => {
-            let mut lines = vec![
-                format!("Session  {:>3.0}%  {}", sess, sess_reset),
-                format!("Weekly   {:>3.0}%  {}", weekly, weekly_reset),
-            ];
-            if let Some(p) = pace_row { lines.push(p); }
+            let mut lines = vec![];
+            let mut sess_parts = vec![format!("Session  {:.0}%", sess)];
+            if s.show_safe_pace { if let Some(v) = sess_safe { sess_parts.push(format!("{:.0}%", v)); } }
+            if !sess_reset.is_empty() { sess_parts.push(sess_reset); }
+            lines.push(sess_parts.join("  "));
+
+            let mut wk_parts = vec![format!("Weekly   {:.0}%", weekly)];
+            if s.show_safe_pace { if let Some(v) = weekly_safe { wk_parts.push(format!("{:.0}%", v)); } }
+            if !weekly_reset.is_empty() { wk_parts.push(weekly_reset); }
+            lines.push(wk_parts.join("  "));
             lines.join("\n")
         }
-        TooltipLayout::Compact => {
-            let base = format!("S {:.0}% · W {:.0}%", sess, weekly);
-            if let Some(safe) = sess_safe.filter(|_| s.show_safe_pace) {
-                format!("{base} · pace {:.0}%", safe)
-            } else { base }
+        TooltipLayout::Columns => {
+            // Header + pct + (optional safe pace row) + reset times, tab-separated.
+            let mut lines = vec!["Session\tWeekly".to_string()];
+            lines.push(format!("{:.0}%\t{:.0}%", sess, weekly));
+            if s.show_safe_pace {
+                let a = sess_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
+                let b = weekly_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
+                if !a.is_empty() || !b.is_empty() {
+                    lines.push(format!("{a}\t{b}").trim_end().to_string());
+                }
+            }
+            if !sess_reset.is_empty() || !weekly_reset.is_empty() {
+                lines.push(format!("{sess_reset}\t{weekly_reset}").trim_end().to_string());
+            }
+            lines.join("\n")
         }
     }
 }
@@ -158,19 +167,21 @@ mod tests {
     }
 
     #[test]
-    fn build_tooltip_compact_relative_includes_safe_pace() {
+    fn build_tooltip_columns_relative_includes_safe_pace() {
         let now = Utc.with_ymd_and_hms(2026, 4, 20, 12, 30, 0).unwrap();
         let s = TooltipSettings {
-            layout: TooltipLayout::Compact,
+            layout: TooltipLayout::Columns,
             time_style: TimeStyle::Relative,
             show_safe_pace: true,
             apply_color: true,
         };
         let u = snap(55.0, "2026-04-20T15:00:00Z", 22.0, "2026-04-23T10:00:00Z");
         let tip = build_tooltip(Some(&u), &s, now);
-        assert!(tip.starts_with("S 55%"));
-        assert!(tip.contains("W 22%"));
-        assert!(tip.contains("pace"));
+        let lines: Vec<&str> = tip.lines().collect();
+        assert_eq!(lines[0], "Session\tWeekly");
+        assert_eq!(lines[1], "55%\t22%");
+        // Safe-pace row present (value depends on now vs resets_at)
+        assert!(lines.len() >= 4);
     }
 
     #[test]
