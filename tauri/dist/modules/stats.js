@@ -1,5 +1,11 @@
 "use strict";
 
+const OVERRIDE_EVENTS = [
+  { key: "workFinished",     title: "Done (Work Finished)" },
+  { key: "questionAsked",    title: "Waiting (Question Asked)" },
+  { key: "thresholdCrossed", title: "Threshold Reached" },
+];
+
 // ── Token stats helpers ────────────────────────────────────────────────────────
 function fmtK(n) {
   if (!n) return "0";
@@ -644,6 +650,101 @@ function openProjectDetail(cwd) {
   showView("stats-project");
 }
 
+async function renderProjectOverrides(cwdKey) {
+  const root = document.getElementById("projectOverrideRows");
+  const tpl = document.getElementById("projectOverrideRowTemplate");
+  if (!root || !tpl) return;
+  root.innerHTML = "";
+  const settings = window.currentSettings || {};
+  settings.projectNotifOverrides = settings.projectNotifOverrides || {};
+  const perProject = settings.projectNotifOverrides[cwdKey] || {};
+  const packs = await window.SoundPacks.loadPacks();
+
+  for (const ev of OVERRIDE_EVENTS) {
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    const rule = perProject[ev.key] || {};
+    node.querySelector(".override-title").textContent = ev.title;
+    const enabledBox = node.querySelector(".override-enabled");
+    const body = node.querySelector(".override-body");
+    const modes = node.querySelectorAll(".override-mode");
+    const soundRow = node.querySelector(".override-sound-row");
+    const voiceRows = node.querySelector(".override-voice-rows");
+    const packSel = node.querySelector(".override-sound-pack");
+    const soundSel = node.querySelector(".override-sound-file");
+    const installBtn = node.querySelector(".override-pack-install");
+    const previewBtn = node.querySelector(".override-sound-preview");
+    const voiceSel = node.querySelector(".override-voice-select");
+    const templateInput = node.querySelector(".override-template");
+
+    enabledBox.checked = !!rule.enabled;
+    const mode = rule.mode === "voice" ? "voice" : "sound";
+    modes.forEach(r => { r.checked = r.value === mode; r.name = `override-mode-${ev.key}-${cwdKey}`; });
+    const currentPack = rule.soundPack || "default";
+    const currentSound = rule.soundFile || "sound1.mp3";
+    window.SoundPacks.populatePackSelect(packSel, packs, currentPack);
+    const pack = window.SoundPacks.findPack(packs, currentPack);
+    window.SoundPacks.populateSoundSelect(soundSel, pack, currentSound);
+    installBtn.style.display = (pack && !pack.installed) ? "inline-block" : "none";
+    templateInput.value = rule.template || "";
+
+    const applyVis = () => {
+      body.style.display = enabledBox.checked ? "block" : "none";
+      const m = Array.from(modes).find(r => r.checked)?.value || "sound";
+      soundRow.style.display = (enabledBox.checked && m === "sound") ? "flex" : "none";
+      voiceRows.style.display = (enabledBox.checked && m === "voice") ? "flex" : "none";
+    };
+    applyVis();
+
+    const save = () => {
+      settings.projectNotifOverrides = settings.projectNotifOverrides || {};
+      const pp = settings.projectNotifOverrides[cwdKey] = settings.projectNotifOverrides[cwdKey] || {};
+      pp[ev.key] = {
+        enabled: enabledBox.checked,
+        mode: Array.from(modes).find(r => r.checked)?.value || "sound",
+        soundPack: packSel.value || "default",
+        soundFile: soundSel.value,
+        voiceName: voiceSel.value || null,
+        template: templateInput.value || "",
+      };
+      window.electronAPI.saveSettings(settings);
+    };
+
+    enabledBox.addEventListener("change", () => { applyVis(); save(); });
+    modes.forEach(r => r.addEventListener("change", () => { applyVis(); save(); }));
+    packSel.addEventListener("change", async () => {
+      const refreshed = await window.SoundPacks.loadPacks();
+      const p = window.SoundPacks.findPack(refreshed, packSel.value);
+      window.SoundPacks.populateSoundSelect(soundSel, p, p?.sounds[0]?.id);
+      installBtn.style.display = (p && !p.installed) ? "inline-block" : "none";
+      save();
+    });
+    soundSel.addEventListener("change", save);
+    templateInput.addEventListener("input", save);
+    voiceSel.addEventListener("change", save);
+    installBtn.addEventListener("click", async () => {
+      installBtn.disabled = true; installBtn.textContent = "Installing...";
+      try {
+        const refreshed = await window.SoundPacks.installPack(packSel.value);
+        const p = window.SoundPacks.findPack(refreshed, packSel.value);
+        window.SoundPacks.populatePackSelect(packSel, refreshed, packSel.value);
+        window.SoundPacks.populateSoundSelect(soundSel, p, soundSel.value);
+        installBtn.style.display = "none";
+      } catch (e) {
+        console.error("[override pack install] failed", e);
+        alert("Pack install failed.");
+      } finally {
+        installBtn.disabled = false; installBtn.textContent = "Install";
+      }
+    });
+    previewBtn.addEventListener("click", async () => {
+      const url = await window.electronAPI.soundPackFileUrl(packSel.value, soundSel.value);
+      if (url) new Audio(url).play().catch(() => {});
+    });
+
+    root.appendChild(node);
+  }
+}
+
 function renderProjectDetail() {
   const { cwd, range, offset } = projectDetailState;
   const chartContainer = document.getElementById("project-chart-container");
@@ -682,6 +783,7 @@ function renderProjectDetail() {
     if (prevBtn) prevBtn.disabled = true;
     if (nextBtn) nextBtn.disabled = true;
     renderSessionsList(cwd, range);
+    renderProjectOverrides(cwd);
     return;
   }
 
@@ -695,6 +797,7 @@ function renderProjectDetail() {
 
   chartContainer.innerHTML = buildBarChartSVG(visible);
   renderSessionsList(cwd, range);
+  renderProjectOverrides(cwd);
 }
 
 function buildBarChartSVG(days) {
