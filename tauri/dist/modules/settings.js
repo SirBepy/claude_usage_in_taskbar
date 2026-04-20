@@ -353,6 +353,7 @@ function saveSettings() {
     // don't persist it here, each save round-trip drops any project the
     // user just hid.
     projectBlacklist: currentSettings.projectBlacklist || [],
+    projectNotifOverrides: currentSettings.projectNotifOverrides || {},
     sync: currentSettings.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
   };
   currentSettings = settings;
