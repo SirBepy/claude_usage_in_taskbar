@@ -87,3 +87,10 @@ pub fn piper_binary_path() -> anyhow::Result<std::path::PathBuf> {
     let parent = exe.parent().ok_or_else(|| anyhow::anyhow!("no exe parent"))?;
     Ok(parent.join(piper_sidecar_name()))
 }
+
+pub fn sound_packs_dir() -> anyhow::Result<std::path::PathBuf> {
+    let d = ensure_data_dir()?;
+    let p = d.join("sound-packs");
+    std::fs::create_dir_all(&p)?;
+    Ok(p)
+}
