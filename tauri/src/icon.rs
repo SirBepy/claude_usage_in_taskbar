@@ -185,6 +185,11 @@ fn encode_png(img: &RgbaImage) -> Vec<u8> {
     buf
 }
 
+/// Temporary stub; replaced in Task 8 with a real spinning frame.
+pub fn render_spin(_frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
+    render(None, weekly, ctx)
+}
+
 /// Back-compat: existing tray.rs call site uses `render_rings(Some, Some)`.
 /// Forwards to `render` with default-ish IconCtx. Once tray.rs is updated in a
 /// later task this function can be removed.

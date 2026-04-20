@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod display_state;
 pub mod fonts;
 pub mod icon_settings;
 pub mod usage_parser;

@@ -8,6 +8,9 @@ use crate::{history, paths, session};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[derive(Clone, Copy, Debug)]
+pub enum PollTrigger { Scheduled, Manual, Hook }
+
 const BASE_URL: &str = "https://claude.ai";
 const FAIL_STREAK_BEFORE_RELOGIN: u32 = 3;
 const RETRY_AFTER_LOGIN_SECS: u64 = 5;
