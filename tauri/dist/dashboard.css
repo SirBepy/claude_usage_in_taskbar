@@ -118,8 +118,10 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
     -webkit-font-smoothing: antialiased;
 }
+
 
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--surface); }
@@ -168,11 +170,17 @@ body {
 }
 
 /* ── View containers ── */
+/* Content is capped at 560px wide so an oversized window (common when the
+ * user drags the corner) doesn't stretch stat cards across a wall of
+ * whitespace. The window itself can still grow; the content just centres. */
 .view {
     display: flex;
     flex-direction: column;
     flex: 1;
     overflow: hidden;
+    max-width: 560px;
+    width: 100%;
+    margin: 0 auto;
 }
 
 .view.hidden {
