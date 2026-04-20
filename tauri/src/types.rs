@@ -130,7 +130,6 @@ mod tests {
             "theme": "void",
             "defaultDisplay": "session",
             "iconStyle": "bars",
-            "overlayStyle": "digital",
             "colorMode": "pace",
             "launchAtLogin": true,
             "autoUpdate": true,
