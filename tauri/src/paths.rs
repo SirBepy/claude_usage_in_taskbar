@@ -58,9 +58,32 @@ pub fn log_file() -> anyhow::Result<std::path::PathBuf> {
     Ok(p.join("claude-usage-tauri.log"))
 }
 
+/// Target-triple suffix Tauri appends to sidecar binaries at build and bundle
+/// time. Matches the `externalBin` convention in `tauri.conf.json`, where
+/// `binaries/piper/piper` expands to `piper-<triple><ext>` on disk both in
+/// `target/<profile>/` (dev) and next to the app exe (release bundle).
+fn piper_sidecar_name() -> &'static str {
+    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "piper-x86_64-pc-windows-msvc.exe"
+    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        "piper-aarch64-pc-windows-msvc.exe"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "piper-x86_64-apple-darwin"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "piper-aarch64-apple-darwin"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "piper-x86_64-unknown-linux-gnu"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "piper-aarch64-unknown-linux-gnu"
+    } else if cfg!(windows) {
+        "piper.exe"
+    } else {
+        "piper"
+    }
+}
+
 pub fn piper_binary_path() -> anyhow::Result<std::path::PathBuf> {
     let exe = std::env::current_exe()?;
     let parent = exe.parent().ok_or_else(|| anyhow::anyhow!("no exe parent"))?;
-    let name = if cfg!(windows) { "piper.exe" } else { "piper" };
-    Ok(parent.join(name))
+    Ok(parent.join(piper_sidecar_name()))
 }
