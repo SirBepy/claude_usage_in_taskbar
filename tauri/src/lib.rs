@@ -4,6 +4,7 @@ pub mod display_state;
 pub mod fonts;
 pub mod icon_settings;
 pub mod notifications;
+pub mod soundpacks;
 pub mod piper;
 pub mod usage_parser;
 pub mod cdp;
