@@ -26,7 +26,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Usage</title>
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob:">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Manrope:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -565,10 +565,13 @@
         </div>
     </div>
 
+    <script src="debug-overlay.js"></script>
     <script src="modules/formatters.js"></script>
     <script src="modules/stats.js"></script>
     <script src="modules/chart.js"></script>
     <script src="electron-api-shim.js"></script>
+    <script src="modules/speech-fallback.js"></script>
+    <script src="modules/settings.js"></script>
     <script src="dashboard.js"></script>
 </body>
 
