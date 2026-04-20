@@ -58,6 +58,7 @@ async fn on_refresh(
         &ctx.app,
         crate::notifications::NotifKind::WorkFinished,
         crate::notifications::NotifContext { name, percent: None },
+        payload.cwd.as_deref(),
     );
 
     // Record token stats in the background — must not block the CLI hook.
@@ -117,6 +118,7 @@ async fn on_notify(
         &ctx.app,
         crate::notifications::NotifKind::QuestionAsked,
         crate::notifications::NotifContext { name, percent: None },
+        payload.cwd.as_deref(),
     );
     StatusCode::OK
 }

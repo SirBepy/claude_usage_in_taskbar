@@ -77,6 +77,12 @@ fn play_blocking(handle: &rodio::OutputStreamHandle, path: &Path) -> Result<()> 
     Ok(())
 }
 
+/// Shared entry point: enqueue a resolved absolute path for playback.
+fn play_file_internal(app: &AppHandle, path: &Path) {
+    use tauri::Manager;
+    app.state::<crate::state::AppState>().audio.play_file(path);
+}
+
 /// Resolve `sounds_dir()/name` -> absolute path, skipping if not found.
 pub fn play_sound_file(app: &AppHandle, filename: &str) {
     let Ok(dir) = crate::paths::sounds_dir() else { return; };
@@ -85,11 +91,24 @@ pub fn play_sound_file(app: &AppHandle, filename: &str) {
         log::warn!("sound file missing: {path:?}");
         return;
     }
-    use tauri::Manager;
-    app.state::<crate::state::AppState>().audio.play_file(path);
+    play_file_internal(app, &path);
+}
+
+/// Play a sound from a named pack. Pack "default" uses the bundled
+/// `sounds_dir()`, all others use `sound_packs_dir()/<pack>/`.
+/// Falls back silently if the file is missing (pack uninstalled).
+pub fn play_pack_sound(app: &AppHandle, pack: &str, file: &str) {
+    let Some(path) = crate::soundpacks::sound_path(pack, file) else {
+        log::warn!("play_pack_sound: unknown pack {pack}");
+        return;
+    };
+    if !path.exists() {
+        log::warn!("play_pack_sound: missing file {path:?} (pack {pack} not installed?)");
+        return;
+    }
+    play_file_internal(app, &path);
 }
 
 pub fn play_wav(app: &AppHandle, path: &Path) {
-    use tauri::Manager;
-    app.state::<crate::state::AppState>().audio.play_file(path);
+    play_file_internal(app, path);
 }

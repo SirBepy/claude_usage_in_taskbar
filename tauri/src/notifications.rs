@@ -1,7 +1,8 @@
 //! Notification firing: workFinished / questionAsked / thresholdCrossed.
 
 use crate::audio;
-use crate::icon_settings::{NotifMode, NotificationsConfig};
+use crate::icon_settings::NotifMode;
+use crate::project_overrides::{self, ProjectOverrides};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -14,17 +15,37 @@ pub struct NotifContext {
     pub percent: Option<u32>,
 }
 
-pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext) {
-    let cfg: NotificationsConfig = (&*app.state::<AppState>().settings.lock().unwrap())
-        .try_into().unwrap_or_default();
-    let rule = match kind {
-        NotifKind::WorkFinished => cfg.work_finished,
-        NotifKind::QuestionAsked => cfg.question_asked,
-        NotifKind::ThresholdCrossed => cfg.threshold_crossed,
+/// Resolves the active notification rule for this event + project.
+/// Returns the project-specific override if one is enabled, else the global default.
+pub fn resolve_notif_config(
+    cfg: &crate::icon_settings::NotificationsConfig,
+    overrides: &std::collections::HashMap<String, ProjectOverrides>,
+    kind: NotifKind,
+    cwd_key: Option<&str>,
+) -> crate::icon_settings::NotificationRule {
+    let default_rule = match kind {
+        NotifKind::WorkFinished     => cfg.work_finished.clone(),
+        NotifKind::QuestionAsked    => cfg.question_asked.clone(),
+        NotifKind::ThresholdCrossed => cfg.threshold_crossed.clone(),
     };
+    let Some(key) = cwd_key else { return default_rule; };
+    let Some(po) = overrides.get(key) else { return default_rule; };
+    let override_rule = match kind {
+        NotifKind::WorkFinished     => po.work_finished.clone(),
+        NotifKind::QuestionAsked    => po.question_asked.clone(),
+        NotifKind::ThresholdCrossed => po.threshold_crossed.clone(),
+    };
+    override_rule.unwrap_or(default_rule)
+}
+
+pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option<&str>) {
+    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    let cfg: crate::icon_settings::NotificationsConfig = (&settings).try_into().unwrap_or_default();
+    let overrides = project_overrides::parse(&settings);
+    let rule = resolve_notif_config(&cfg, &overrides, kind, cwd_key);
     if !rule.enabled { return; }
     match rule.mode {
-        NotifMode::Sound => audio::play_sound_file(app, &rule.sound_file),
+        NotifMode::Sound => audio::play_pack_sound(app, &rule.sound_pack, &rule.sound_file),
         NotifMode::Voice => {
             let text = render_template(&rule.template, &ctx);
             if text.is_empty() { return; }
@@ -111,5 +132,44 @@ mod tests {
         assert_eq!(project_name_from_cwd("C:\\Users\\tecno\\Desktop\\alpha"), Some("alpha".into()));
         assert_eq!(project_name_from_cwd("/home/tecno/beta"), Some("beta".into()));
         assert_eq!(project_name_from_cwd(""), None);
+    }
+
+    #[test]
+    fn resolver_returns_default_when_no_cwd() {
+        use crate::icon_settings::NotificationsConfig;
+        use std::collections::HashMap;
+        let cfg = NotificationsConfig::default();
+        let rule = resolve_notif_config(&cfg, &HashMap::new(), NotifKind::WorkFinished, None);
+        assert_eq!(rule.sound_file, "sound1.mp3");
+        assert_eq!(rule.sound_pack, "default");
+    }
+
+    #[test]
+    fn resolver_returns_default_when_project_has_no_override() {
+        use crate::icon_settings::NotificationsConfig;
+        use std::collections::HashMap;
+        let cfg = NotificationsConfig::default();
+        let rule = resolve_notif_config(&cfg, &HashMap::new(), NotifKind::WorkFinished, Some("C:/x"));
+        assert_eq!(rule.sound_file, "sound1.mp3");
+    }
+
+    #[test]
+    fn resolver_returns_override_when_enabled() {
+        use crate::icon_settings::{NotificationsConfig, NotifMode, NotificationRule};
+        use crate::project_overrides::ProjectOverrides;
+        use std::collections::HashMap;
+        let cfg = NotificationsConfig::default();
+        let mut map = HashMap::new();
+        map.insert("C:/proj".into(), ProjectOverrides {
+            work_finished: Some(NotificationRule {
+                enabled: true, mode: NotifMode::Sound,
+                sound_pack: "peon".into(), sound_file: "work-work.mp3".into(),
+                voice_name: None, template: "".into(),
+            }),
+            ..Default::default()
+        });
+        let rule = resolve_notif_config(&cfg, &map, NotifKind::WorkFinished, Some("C:/proj"));
+        assert_eq!(rule.sound_pack, "peon");
+        assert_eq!(rule.sound_file, "work-work.mp3");
     }
 }
