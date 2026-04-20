@@ -447,11 +447,22 @@ window.onload = async () => {
     dashboardShowSession.checked = settings.dashboardShowSession !== false;
     dashboardShowWeekly.checked = settings.dashboardShowWeekly !== false;
     dashboardShowSafePace.checked = settings.dashboardShowSafePace ?? settings.showSafePace ?? true;
-    const cat = settings.colorApplyTo || {};
-    colorApplyIcon.checked = cat.icon !== false;
-    colorApplyNumber.checked = cat.number !== false;
-    colorApplyDashboard.checked = cat.dashboard !== false;
-    colorApplyTooltip.checked = cat.tooltip !== false;
+    // Normalize colorApplyTo so every key has an explicit boolean. Keys added
+    // after the field shipped (dashboard, tooltip) may be missing on stale
+    // settings files; without this migration, valueColor sees undefined and
+    // the read-side check still falls through, but anything that copies the
+    // object loses the implicit-true default.
+    const cat = {
+      icon: settings.colorApplyTo?.icon !== false,
+      number: settings.colorApplyTo?.number !== false,
+      dashboard: settings.colorApplyTo?.dashboard !== false,
+      tooltip: settings.colorApplyTo?.tooltip !== false,
+    };
+    settings.colorApplyTo = cat;
+    colorApplyIcon.checked = cat.icon;
+    colorApplyNumber.checked = cat.number;
+    colorApplyDashboard.checked = cat.dashboard;
+    colorApplyTooltip.checked = cat.tooltip;
     colorMode.value = settings.colorMode || "threshold";
     paceBand.value = settings.paceBand ?? 10;
     const pc = settings.paceColors || {};
@@ -470,6 +481,7 @@ window.onload = async () => {
     const thresholds = (settings.colorThresholds && settings.colorThresholds.length)
       ? settings.colorThresholds
       : DEFAULT_THRESHOLDS;
+    settings.colorThresholds = thresholds;
     thresholds.forEach((t) =>
       colorContainer.appendChild(createColorRow(t.min, t.color))
     );

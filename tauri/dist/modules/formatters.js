@@ -38,11 +38,17 @@ function getPaceColor(pct, safePace, settings) {
 }
 
 function valueColor(pct, safePace) {
-  if (currentSettings.colorApplyTo?.dashboard === false) return "var(--text)";
-  if (currentSettings.colorMode === "pace" && safePace != null) {
-    return getPaceColor(pct, safePace, currentSettings);
+  const s = (typeof currentSettings === "object" && currentSettings) || {};
+  if (s.colorApplyTo?.dashboard === false) return "var(--text)";
+  if (s.colorMode === "pace" && safePace != null) {
+    const pc = s.paceColors || {};
+    const band = s.paceBand ?? 10;
+    if (pct < safePace - band) return pc.under || "#27ae60";
+    if (pct < safePace) return pc.nearSafe || "#f1c40f";
+    if (pct < safePace + band) return pc.nearOver || "#e67e22";
+    return pc.over || "#e74c3c";
   }
-  const c = getThresholdColor(pct, currentSettings.colorThresholds);
+  const c = getThresholdColor(pct, s.colorThresholds);
   return c || pctColor(pct);
 }
 

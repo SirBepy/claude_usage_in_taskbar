@@ -268,7 +268,19 @@ function tryInitialRender() {
 }
 window.electronAPI?.getUsageHistory().then((h) => { _initUsage = h; lastHistory = h; tryInitialRender(); });
 fetchTokenHistoryWithLive().then((th) => { _initTokens = th; lastTokenHistory = th; tryInitialRender(); });
-window.electronAPI?.getSettings().then((s) => { if (s) currentSettings = s; _initSettings = true; tryInitialRender(); });
+window.electronAPI?.getSettings().then((s) => {
+  if (s) {
+    s.colorApplyTo = {
+      icon: s.colorApplyTo?.icon !== false,
+      number: s.colorApplyTo?.number !== false,
+      dashboard: s.colorApplyTo?.dashboard !== false,
+      tooltip: s.colorApplyTo?.tooltip !== false,
+    };
+    currentSettings = s;
+  }
+  _initSettings = true;
+  tryInitialRender();
+});
 
 window.electronAPI?.onHistoryUpdated((h) => {
   lastHistory = h;
