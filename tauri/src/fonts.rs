@@ -16,6 +16,7 @@ fn font() -> &'static FontRef<'static> {
 /// glyph pixel's alpha comes from ab_glyph coverage.
 pub fn draw_text(img: &mut RgbaImage, text: &str, x: i32, y: i32, color: [u8; 3], size_px: f32) {
     if text.is_empty() { return; }
+    debug_assert!(size_px > 0.0, "size_px must be positive");
     let font = font();
     let scaled = font.as_scaled(PxScale::from(size_px));
     let ascent = scaled.ascent();
@@ -46,12 +47,14 @@ pub fn draw_text(img: &mut RgbaImage, text: &str, x: i32, y: i32, color: [u8; 3]
 /// Returns (width, height). Returns (0, 0) for empty input.
 pub fn measure_text(text: &str, size_px: f32) -> (u32, u32) {
     if text.is_empty() { return (0, 0); }
+    debug_assert!(size_px > 0.0, "size_px must be positive");
     let font = font();
     let scaled = font.as_scaled(PxScale::from(size_px));
     let mut pen_x = 0.0f32;
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
     let mut min_y = f32::MAX;
     let mut max_y = f32::MIN;
-    let mut max_x = 0.0f32;
     let mut prev: Option<ab_glyph::GlyphId> = None;
     for c in text.chars() {
         let gid = scaled.glyph_id(c);
@@ -59,15 +62,16 @@ pub fn measure_text(text: &str, size_px: f32) -> (u32, u32) {
         let glyph = gid.with_scale_and_position(PxScale::from(size_px), ab_glyph::point(pen_x, scaled.ascent()));
         if let Some(outlined) = font.outline_glyph(glyph) {
             let bb = outlined.px_bounds();
+            min_x = min_x.min(bb.min.x);
+            max_x = max_x.max(bb.max.x);
             min_y = min_y.min(bb.min.y);
             max_y = max_y.max(bb.max.y);
-            max_x = max_x.max(bb.max.x);
         }
         pen_x += scaled.h_advance(gid);
         prev = Some(gid);
     }
-    if min_y > max_y { return (0, 0); }
-    let w = max_x.ceil().max(0.0) as u32;
+    if min_y > max_y || min_x > max_x { return (0, 0); }
+    let w = (max_x - min_x).ceil().max(0.0) as u32;
     let h = (max_y - min_y).ceil().max(0.0) as u32;
     (w, h)
 }
