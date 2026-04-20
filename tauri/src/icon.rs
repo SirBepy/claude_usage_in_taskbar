@@ -85,9 +85,9 @@ fn color_for(pct: Option<f32>, ctx: &IconCtx, safe: Option<f32>, is_icon: bool) 
 
 fn overlay_size_px(text: &str) -> f32 {
     match text.chars().count() {
-        0 | 1 => 14.0,
-        2 => 12.0,
-        _ => 10.0,
+        0 | 1 => 24.0,
+        2 => 24.0,
+        _ => 18.0,
     }
 }
 

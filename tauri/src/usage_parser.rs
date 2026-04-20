@@ -62,6 +62,7 @@ pub fn build_tooltip(
             if s.show_safe_pace { if let Some(v) = weekly_safe { wk_parts.push(format!("{:.0}%", v)); } }
             lines.push(wk_parts.join("  "));
             if !weekly_reset.is_empty() {
+                lines.push("");
                 lines.push("Resets:".to_string());
                 lines.push(weekly_reset);
             }
@@ -79,6 +80,7 @@ pub fn build_tooltip(
                 }
             }
             if !sess_reset.is_empty() || !weekly_reset.is_empty() {
+                lines.push("");
                 lines.push("Resets:".to_string());
                 lines.push(format!("{sess_reset}\t{weekly_reset}").trim_end().to_string());
             }

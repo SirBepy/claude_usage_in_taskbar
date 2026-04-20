@@ -12,8 +12,10 @@ fn font() -> &'static FontRef<'static> {
     FONT.get_or_init(|| FontRef::try_from_slice(FONT_BYTES).expect("embedded font is valid TTF"))
 }
 
-/// Rasterize `text` at `size_px` with top-left at (x, y). `color` is RGB; each
-/// glyph pixel's alpha comes from ab_glyph coverage.
+/// Rasterize `text` at `size_px` with the drawn pixel bbox top-left at (x, y).
+/// This matches `measure_text` semantics, so centering with `(SIZE - w) / 2`
+/// works correctly. `color` is RGB; each glyph pixel's alpha comes from
+/// ab_glyph coverage.
 pub fn draw_text(img: &mut RgbaImage, text: &str, x: i32, y: i32, color: [u8; 3], size_px: f32) {
     if text.is_empty() { return; }
     debug_assert!(size_px > 0.0, "size_px must be positive");
@@ -21,12 +23,36 @@ pub fn draw_text(img: &mut RgbaImage, text: &str, x: i32, y: i32, color: [u8; 3]
     let scaled = font.as_scaled(PxScale::from(size_px));
     let ascent = scaled.ascent();
 
-    let mut pen_x = x as f32;
+    // Pass 1: compute the drawn bbox's minimum x/y at a reference origin so we
+    // can shift the actual draw to land the bbox top-left exactly at (x, y).
+    let mut pen_x = 0.0f32;
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
     let mut prev: Option<ab_glyph::GlyphId> = None;
     for c in text.chars() {
         let gid = scaled.glyph_id(c);
         if let Some(p) = prev { pen_x += scaled.kern(p, gid); }
-        let glyph = gid.with_scale_and_position(PxScale::from(size_px), ab_glyph::point(pen_x, y as f32 + ascent));
+        let glyph = gid.with_scale_and_position(PxScale::from(size_px), ab_glyph::point(pen_x, ascent));
+        if let Some(outlined) = font.outline_glyph(glyph) {
+            let bb = outlined.px_bounds();
+            min_x = min_x.min(bb.min.x);
+            min_y = min_y.min(bb.min.y);
+        }
+        pen_x += scaled.h_advance(gid);
+        prev = Some(gid);
+    }
+    if min_x == f32::MAX { return; }
+
+    // Shift so the glyph bbox top-left lands at (x, y).
+    let shift_x = x as f32 - min_x;
+    let shift_y = y as f32 - min_y;
+
+    let mut pen_x = shift_x;
+    let mut prev: Option<ab_glyph::GlyphId> = None;
+    for c in text.chars() {
+        let gid = scaled.glyph_id(c);
+        if let Some(p) = prev { pen_x += scaled.kern(p, gid); }
+        let glyph = gid.with_scale_and_position(PxScale::from(size_px), ab_glyph::point(pen_x, shift_y));
         if let Some(outlined) = font.outline_glyph(glyph) {
             let bb = outlined.px_bounds();
             outlined.draw(|dx, dy, coverage| {
@@ -136,6 +162,15 @@ mod tests {
         let (w, h) = measure_text("42", 12.0);
         assert!(w > 0 && h > 0, "expected nonzero w/h, got ({w}, {h})");
         assert!(w < 22 && h < 22, "expected to fit in 22x22, got ({w}, {h})");
+    }
+
+    #[test]
+    fn probe_sizes() {
+        for s in ["1", "99", "88", "20"] {
+            for size in [18.0f32, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 26.0, 28.0] {
+                println!("{:?} @ {} = {:?}", s, size, measure_text(s, size));
+            }
+        }
     }
 
     #[test]
