@@ -40,7 +40,6 @@
     "externalBin": ["binaries/piper/piper"]
   },
   "plugins": {
-    "clipboard-manager": {},
     "updater": {
       "active": true,
       "endpoints": [
