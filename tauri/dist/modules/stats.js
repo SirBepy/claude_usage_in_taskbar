@@ -165,7 +165,15 @@ function buildProjectListHTML({ title, projects, maxItems, showTime = true, show
   };
 
   const visibleRows = visible.map(renderRow).join("");
-  const hiddenRows = capped ? sorted.slice(maxItems).map(renderRow).join("") : "";
+  // Hidden overflow rows live in the same tbody so "Show X more" can reveal
+  // them inline without a re-render. This was previously dead code — the
+  // wired handler looked them up via `graphDetailConfigs[listId]`, which is
+  // only set for the dashboard cards, leaving the button inert on the Token
+  // Stats page.
+  const hiddenRows = capped
+    ? sorted.slice(maxItems).map((p) => renderRow(p).replace("<tr class=\"proj-row\"", "<tr class=\"proj-row hidden-overflow\" style=\"display:none\""))
+        .join("")
+    : "";
 
   const remaining = sorted.length - visible.length;
   const showMoreBtn = capped
@@ -178,7 +186,7 @@ function buildProjectListHTML({ title, projects, maxItems, showTime = true, show
     ${title ? `<div style="font-size:0.92rem;font-weight:700;margin-bottom:10px">${title}</div>` : ""}
     <table class="stats-table">
       ${headerRow}
-      <tbody>${visibleRows}</tbody>
+      <tbody>${visibleRows}${hiddenRows}</tbody>
       ${showMoreBtn}
     </table>
   </div>`;
@@ -198,9 +206,27 @@ function wireProjectListClicks(container, onSort) {
     btn._wired = true;
     btn.onclick = () => {
       const listId = btn.dataset.listId;
-      if (listId && graphDetailConfigs[listId]) {
+      // Dashboard chart cards register a detail config — prefer the full
+      // graph-detail view when it exists (more useful than a long table).
+      if (listId && typeof graphDetailConfigs !== "undefined" && graphDetailConfigs[listId]) {
         openGraphDetail(listId);
+        return;
       }
+      // Everywhere else (Token Stats table), just reveal the hidden rows
+      // that were already rendered into the tbody.
+      const table = btn.closest("table");
+      if (!table) return;
+      table.querySelectorAll("tr.hidden-overflow").forEach((row) => {
+        row.style.display = "";
+        row.classList.remove("hidden-overflow");
+        // Newly-revealed rows still need click wiring since they were added
+        // before wireProjectListClicks ran.
+        if (row.dataset.cwd && !row._wired) {
+          row._wired = true;
+          row.onclick = () => openProjectDetail(row.dataset.cwd);
+        }
+      });
+      btn.closest("tfoot")?.remove();
     };
   });
   container.querySelectorAll("th[data-sort][data-list]").forEach((th) => {
@@ -463,22 +489,32 @@ function doUnmerge(secondaryCwd, primaryCwd) {
   saveSettings();
 }
 
-function showMergeModal(text, onConfirm, onCancel) {
+function showMergeModal(text, onConfirm, onCancel, confirmLabel) {
   const modal = document.getElementById("merge-modal");
   const msgEl = document.getElementById("merge-modal-text");
   const confirmBtn = document.getElementById("merge-confirm-btn");
   const cancelBtn = document.getElementById("merge-cancel-btn");
   if (!modal) return;
   msgEl.textContent = text;
+  confirmBtn.textContent = confirmLabel || "Merge";
   modal.style.display = "flex";
   confirmBtn.onclick = () => { hideMergeModal(); onConfirm(); };
   cancelBtn.onclick = () => { hideMergeModal(); if (onCancel) onCancel(); };
+  modal.onclick = (e) => { if (e.target === modal) { hideMergeModal(); if (onCancel) onCancel(); } };
 }
 
 function hideMergeModal() {
   const modal = document.getElementById("merge-modal");
-  if (modal) modal.style.display = "none";
+  if (modal) { modal.style.display = "none"; modal.onclick = null; }
 }
+
+// Any nav click should dismiss a leftover modal — prevents it persisting
+// across view switches.
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".nav-row, .back-to-settings, #backBtn")) {
+    hideMergeModal();
+  }
+}, true);
 
 function renderMergedPathsSection(cwd) {
   const el = document.getElementById("project-merged-paths");
@@ -646,7 +682,8 @@ function openProjectDetail(cwd) {
           renderStats(lastTokenHistory);
           showView("stats");
         },
-        null
+        null,
+        "Hide"
       );
     };
   }
