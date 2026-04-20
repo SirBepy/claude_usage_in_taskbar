@@ -161,8 +161,11 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
                 crate::usage_parser::threshold_crossed(prev_wk, new_wk, &icon_s.color_thresholds);
             if crossed {
                 let pct = new_sess.unwrap_or(0.0).max(new_wk.unwrap_or(0.0)).round() as u32;
-                // Task 11 replaces this with notifications::fire(...).
-                let _ = app.emit("threshold-crossed", serde_json::json!({ "percent": pct }));
+                crate::notifications::fire(
+                    app,
+                    crate::notifications::NotifKind::ThresholdCrossed,
+                    crate::notifications::NotifContext { percent: Some(pct), name: None },
+                );
             }
         }
     }

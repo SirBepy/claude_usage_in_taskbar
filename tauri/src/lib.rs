@@ -3,6 +3,7 @@ pub mod auth;
 pub mod display_state;
 pub mod fonts;
 pub mod icon_settings;
+pub mod notifications;
 pub mod usage_parser;
 pub mod cdp;
 pub mod history;

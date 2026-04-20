@@ -53,6 +53,13 @@ async fn on_refresh(
         let _ = crate::scheduler::poll_once(&h, crate::scheduler::PollTrigger::Hook).await;
     });
 
+    let name = payload.cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
+    crate::notifications::fire(
+        &ctx.app,
+        crate::notifications::NotifKind::WorkFinished,
+        crate::notifications::NotifContext { name, percent: None },
+    );
+
     // Record token stats in the background — must not block the CLI hook.
     if let (Some(session_id), Some(transcript_path)) =
         (payload.session_id.clone(), payload.transcript_path.clone())
@@ -100,10 +107,18 @@ async fn on_refresh(
     (StatusCode::NO_CONTENT, Json(json!({})))
 }
 
-async fn on_notify(AxState(_ctx): AxState<Arc<HookCtx>>) -> impl IntoResponse {
-    // Native notifications not yet ported; the endpoint exists so hook
-    // clients do not get 404s.
-    (StatusCode::NO_CONTENT, Json(json!({})))
+async fn on_notify(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(payload): Json<RefreshPayload>,
+) -> impl IntoResponse {
+    log::info!("hook /notify: cwd={}", payload.cwd.as_deref().unwrap_or("-"));
+    let name = payload.cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
+    crate::notifications::fire(
+        &ctx.app,
+        crate::notifications::NotifKind::QuestionAsked,
+        crate::notifications::NotifContext { name, percent: None },
+    );
+    StatusCode::OK
 }
 
 async fn on_quit(AxState(ctx): AxState<Arc<HookCtx>>) -> impl IntoResponse {
