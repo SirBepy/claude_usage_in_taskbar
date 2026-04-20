@@ -123,6 +123,8 @@ pub async fn poll_once(app: &AppHandle, trigger: PollTrigger) -> Result<UsageSna
 }
 
 async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
+    let prev_snap = app.state::<crate::state::AppState>().current_usage.lock().unwrap().clone();
+
     let session_path = paths::session_file()
         .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     let Some(session_key) = session::load(&session_path) else {
@@ -142,6 +144,29 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
         *state.current_usage.lock().unwrap() = Some(snap.clone());
         *state.auth_state.lock().unwrap() = AuthState::LoggedIn;
     }
+
+    // Check for threshold crossings and emit event if any occurred.
+    {
+        let new_snap = app.state::<crate::state::AppState>().current_usage.lock().unwrap().clone();
+        if let (Some(prev), Some(new)) = (prev_snap.as_ref(), new_snap.as_ref()) {
+            let icon_s = crate::icon_settings::IconSettings::try_from(
+                &*app.state::<crate::state::AppState>().settings.lock().unwrap()
+            ).unwrap_or_default();
+            let prev_sess = Some(crate::usage_parser::session_pct(prev));
+            let new_sess = Some(crate::usage_parser::session_pct(new));
+            let prev_wk = Some(crate::usage_parser::weekly_pct(prev));
+            let new_wk = Some(crate::usage_parser::weekly_pct(new));
+            let crossed =
+                crate::usage_parser::threshold_crossed(prev_sess, new_sess, &icon_s.color_thresholds) ||
+                crate::usage_parser::threshold_crossed(prev_wk, new_wk, &icon_s.color_thresholds);
+            if crossed {
+                let pct = new_sess.unwrap_or(0.0).max(new_wk.unwrap_or(0.0)).round() as u32;
+                // Task 11 replaces this with notifications::fire(...).
+                let _ = app.emit("threshold-crossed", serde_json::json!({ "percent": pct }));
+            }
+        }
+    }
+
     let hpath = paths::history_file()
         .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     history::append(&hpath, &snap)
