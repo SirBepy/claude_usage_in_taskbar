@@ -33,15 +33,14 @@ pub struct ExtraUsage {
 /// isn't named below, so a save→load round-trip preserves them verbatim.
 /// Without this, each `saveSettings` would silently drop ~25 fields.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct Settings {
     pub poll_interval_secs: u64,
     pub display_mode: DisplayMode,
     pub threshold_warn: f64,
     pub threshold_crit: f64,
     pub autostart: bool,
-    #[serde(default = "default_true")]
     pub auto_update: bool,
-    #[serde(default)]
     pub hook_port: Option<u16>,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
@@ -49,8 +48,6 @@ pub struct Settings {
     #[serde(flatten, default)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
-
-fn default_true() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -120,6 +117,33 @@ mod tests {
         assert_eq!(out["projectAliases"]["C:/a"]["name"], "Alpha");
         assert_eq!(out["projectBlacklist"][0], "C:/dead");
         assert_eq!(out["notifications"]["workFinished"]["enabled"], true);
+    }
+
+    #[test]
+    fn settings_from_dashboard_payload_without_snake_case_fields() {
+        // The dashboard sends ONLY camelCase keys; it doesn't know about
+        // poll_interval_secs, display_mode, threshold_warn, threshold_crit,
+        // autostart, auto_update, hook_port. Before #[serde(default)] on the
+        // struct, missing keys caused deserialization to fail silently in
+        // save_settings, and changing dropdowns did nothing.
+        let raw = r#"{
+            "theme": "void",
+            "defaultDisplay": "session",
+            "iconStyle": "bars",
+            "overlayStyle": "digital",
+            "colorMode": "pace",
+            "launchAtLogin": true,
+            "autoUpdate": true,
+            "colorThresholds": [],
+            "notifications": {}
+        }"#;
+        let parsed: Settings = serde_json::from_str(raw).expect("must not fail");
+        assert_eq!(parsed.extra["iconStyle"], "bars");
+        assert_eq!(parsed.extra["defaultDisplay"], "session");
+        // Missing snake_case fields took their defaults:
+        assert_eq!(parsed.poll_interval_secs, 3600);
+        assert!(parsed.autostart);
+        assert!(parsed.auto_update);
     }
 
     #[test]

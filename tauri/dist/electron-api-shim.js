@@ -42,7 +42,7 @@
     getSettings: () => invoke('get_settings'),
     saveSettings: async (settings) => {
       try { await invoke('save_settings', { updated: settings }); }
-      catch (e) { console.error('save_settings failed', e); }
+      catch (e) { console.error('save_settings failed', e); throw e; }
     },
     logout: () => invoke('logout'),
 
