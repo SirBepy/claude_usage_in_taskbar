@@ -113,6 +113,10 @@
       }
     },
 
+    // --- Sound packs ---
+    listSoundPacks: () => invoke('list_sound_packs'),
+    installSoundPack: (packId) => invoke('install_sound_pack', { packId }),
+
     // --- Piper TTS ---
     piperStatus: () => invoke('piper_status'),
     piperInstallVoice: (id) => invoke('piper_install_voice', { id }),
