@@ -116,6 +116,8 @@
     // --- Sound packs ---
     listSoundPacks: () => invoke('list_sound_packs'),
     installSoundPack: (packId) => invoke('install_sound_pack', { packId }),
+    soundPackFileUrl: (pack, sound) =>
+      window.__TAURI__.core.invoke("sound_pack_file_url", { pack, sound }),
 
     // --- Piper TTS ---
     piperStatus: () => invoke('piper_status'),

@@ -107,6 +107,30 @@ pub async fn install(pack_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Returns a data URL the frontend `<audio>` tag can play, or None if
+/// unknown/missing. Uses base64 to avoid configuring the asset protocol.
+pub fn file_data_url(pack: &str, sound: &str) -> Option<String> {
+    let path = sound_path(pack, sound)?;
+    if !path.exists() { return None; }
+    let bytes = std::fs::read(&path).ok()?;
+    let mime = mime_from_filename(sound);
+    let b64 = base64_encode(&bytes);
+    Some(format!("data:{mime};base64,{b64}"))
+}
+
+fn mime_from_filename(name: &str) -> &'static str {
+    if name.ends_with(".mp3") { "audio/mpeg" }
+    else if name.ends_with(".wav") { "audio/wav" }
+    else if name.ends_with(".ogg") { "audio/ogg" }
+    else if name.ends_with(".flac") { "audio/flac" }
+    else { "application/octet-stream" }
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

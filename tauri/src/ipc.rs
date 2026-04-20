@@ -365,3 +365,8 @@ pub fn list_sound_packs() -> Vec<crate::soundpacks::SoundPack> {
 pub async fn install_sound_pack(pack_id: String) -> Result<(), String> {
     crate::soundpacks::install(&pack_id).await.map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn sound_pack_file_url(pack: String, sound: String) -> Option<String> {
+    crate::soundpacks::file_data_url(&pack, &sound)
+}

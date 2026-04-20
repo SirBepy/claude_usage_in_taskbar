@@ -37,6 +37,7 @@ axum = { version = "0.7", default-features = false, features = ["http1", "json",
 rodio = { version = "0.19", default-features = false, features = ["mp3", "symphonia-mp3", "symphonia-wav"] }
 which = "7"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
