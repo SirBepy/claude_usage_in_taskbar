@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod auth;
+pub mod project_overrides;
 pub mod display_state;
 pub mod fonts;
 pub mod icon_settings;

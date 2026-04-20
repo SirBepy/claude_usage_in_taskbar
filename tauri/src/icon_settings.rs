@@ -251,6 +251,10 @@ impl TryFrom<&Settings> for TooltipSettings {
     }
 }
 
+pub fn rule_from_public(m: &serde_json::Map<String, Value>, defaults: NotificationRule) -> NotificationRule {
+    rule_from(m, defaults)
+}
+
 fn rule_from(m: &serde_json::Map<String, Value>, defaults: NotificationRule) -> NotificationRule {
     NotificationRule {
         enabled: val_bool(m.get("enabled")).unwrap_or(defaults.enabled),
