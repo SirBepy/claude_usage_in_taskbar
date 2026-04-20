@@ -33,7 +33,7 @@ struct RefreshPayload {
     #[serde(default)] cwd: Option<String>,
     // origin.* fields are kept around for future notification-click focus
     // support but aren't used yet on the Tauri side.
-    #[serde(default)] origin: Option<serde_json::Value>,
+    #[serde(default)] #[allow(dead_code)] origin: Option<serde_json::Value>,
 }
 
 async fn on_refresh(

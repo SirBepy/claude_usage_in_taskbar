@@ -281,6 +281,7 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
+    #[allow(deprecated)]
     app.shell().open(url, None).map_err(|e| e.to_string())
 }
 
