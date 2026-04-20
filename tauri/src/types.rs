@@ -26,6 +26,12 @@ pub struct ExtraUsage {
 }
 
 /// User-configurable app settings.
+///
+/// The dashboard owns a LOT of UI state (theme, project aliases + blacklist,
+/// color thresholds, notification config, ...) that the Rust side has no
+/// reason to inspect. `extra` catches every field the dashboard sends that
+/// isn't named below, so a save→load round-trip preserves them verbatim.
+/// Without this, each `saveSettings` would silently drop ~25 fields.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Settings {
     pub poll_interval_secs: u64,
@@ -33,9 +39,18 @@ pub struct Settings {
     pub threshold_warn: f64,
     pub threshold_crit: f64,
     pub autostart: bool,
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
     #[serde(default)]
     pub hook_port: Option<u16>,
+    /// Everything the dashboard persists that Rust doesn't need to read —
+    /// project aliases, blacklist, colour thresholds, themes, etc. Stored
+    /// verbatim so renames / hides / theme changes actually stick.
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
+
+fn default_true() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -45,7 +60,9 @@ impl Default for Settings {
             threshold_warn: 50.0,
             threshold_crit: 80.0,
             autostart: true,
+            auto_update: true,
             hook_port: None,
+            extra: serde_json::Map::new(),
         }
     }
 }
@@ -76,6 +93,33 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
+    }
+
+    #[test]
+    fn settings_round_trip_preserves_extra_fields_from_dashboard() {
+        // The dashboard sends every UI-owned field (theme, projectAliases,
+        // projectBlacklist, notifications, ...) via saveSettings(). Before
+        // the `extra` catch-all, these got silently dropped. Regression
+        // guard: after deserialise → serialise, every unknown field we
+        // sent in must still be there.
+        let raw = r#"{
+            "poll_interval_secs": 3600,
+            "display_mode": "rings",
+            "threshold_warn": 50.0,
+            "threshold_crit": 80.0,
+            "autostart": true,
+            "theme": "void",
+            "projectAliases": { "C:/a": { "name": "Alpha" } },
+            "projectBlacklist": ["C:/dead"],
+            "notifications": { "workFinished": { "enabled": true } }
+        }"#;
+        let parsed: Settings = serde_json::from_str(raw).unwrap();
+        let out = serde_json::to_value(&parsed).unwrap();
+
+        assert_eq!(out["theme"], "void");
+        assert_eq!(out["projectAliases"]["C:/a"]["name"], "Alpha");
+        assert_eq!(out["projectBlacklist"][0], "C:/dead");
+        assert_eq!(out["notifications"]["workFinished"]["enabled"], true);
     }
 
     #[test]

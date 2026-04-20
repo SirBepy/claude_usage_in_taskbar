@@ -257,6 +257,66 @@ pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
 }
 
 #[tauri::command]
+pub fn copy_logs(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let log_path = paths::log_file().map_err(|e| e.to_string())?;
+    let contents = std::fs::read_to_string(&log_path).unwrap_or_else(|_| "<no log file>".into());
+    app.clipboard().write_text(contents).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_platform() -> String {
+    match std::env::consts::OS {
+        "macos" => "darwin".into(),
+        "windows" => "win32".into(),
+        other => other.into(),
+    }
+}
+
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+pub async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    app.shell().open(url, None).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn check_for_updates(app: AppHandle) -> Result<serde_json::Value, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(u)) => Ok(serde_json::json!({ "state": "available", "version": u.version })),
+        Ok(None) => Ok(serde_json::json!({ "state": "up-to-date" })),
+        Err(e) => Ok(serde_json::json!({ "state": "error", "message": e.to_string() })),
+    }
+}
+
+#[tauri::command]
+pub async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Err("no update available".into());
+    };
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn install_update(app: AppHandle) {
+    app.restart();
+}
+
+#[tauri::command]
+pub fn get_update_state() -> serde_json::Value {
+    serde_json::json!({ "state": "idle" })
+}
+
+#[tauri::command]
 pub async fn start_login(app: AppHandle) -> Result<(), String> {
     {
         let state = app.state::<AppState>();

@@ -52,6 +52,8 @@ pub fn run() {
             Some(vec![]),
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             ipc::get_current_usage,
@@ -74,6 +76,14 @@ pub fn run() {
             ipc::piper_status,
             ipc::piper_install_voice,
             ipc::piper_speak_preview,
+            ipc::copy_logs,
+            ipc::get_platform,
+            ipc::get_app_version,
+            ipc::open_external,
+            ipc::check_for_updates,
+            ipc::download_and_install_update,
+            ipc::install_update,
+            ipc::get_update_state,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
@@ -88,6 +98,33 @@ pub fn run() {
                 } else {
                     autostart_mgr.disable()
                 };
+            }
+            {
+                use tauri::Listener;
+                let h = app.handle().clone();
+                app.listen("settings-changed", move |event| {
+                    use tauri_plugin_autostart::ManagerExt;
+                    let Ok(settings) = serde_json::from_str::<crate::types::Settings>(event.payload()) else { return; };
+                    let mgr = h.autolaunch();
+                    let _ = if settings.autostart { mgr.enable() } else { mgr.disable() };
+                });
+            }
+            {
+                use tauri::Manager;
+                let auto = app.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
+                if auto {
+                    let h = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = check_updater(&h).await;
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
+                            use tauri::Manager;
+                            let still = h.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
+                            if !still { break; }
+                            let _ = check_updater(&h).await;
+                        }
+                    });
+                }
             }
             crate::scheduler::spawn(app.handle().clone());
 
@@ -163,4 +200,16 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn check_updater(app: &tauri::AppHandle) -> anyhow::Result<()> {
+    use tauri_plugin_updater::UpdaterExt;
+    use tauri::Emitter;
+    let updater = app.updater()?;
+    if let Some(update) = updater.check().await? {
+        let _ = app.emit("update-state", serde_json::json!({
+            "state": "available", "version": update.version
+        }));
+    }
+    Ok(())
 }

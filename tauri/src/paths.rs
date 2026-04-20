@@ -51,6 +51,13 @@ pub fn piper_voices_dir() -> anyhow::Result<std::path::PathBuf> {
     Ok(p)
 }
 
+pub fn log_file() -> anyhow::Result<std::path::PathBuf> {
+    let d = ensure_data_dir()?;
+    let p = d.join("logs");
+    std::fs::create_dir_all(&p).ok();
+    Ok(p.join("claude-usage-tauri.log"))
+}
+
 pub fn piper_binary_path() -> anyhow::Result<std::path::PathBuf> {
     let exe = std::env::current_exe()?;
     let parent = exe.parent().ok_or_else(|| anyhow::anyhow!("no exe parent"))?;
