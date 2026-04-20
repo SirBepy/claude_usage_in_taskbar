@@ -178,7 +178,9 @@ function wireNotifCard(type) {
     saveSettings();
   });
   c.soundPreview.onclick = () => {
-    new Audio(`../assets/sounds/${c.soundFile.value}`).play().catch(() => {});
+    const f = c.soundFile.value;
+    if (!f) return;
+    window.electronAPI.playSoundPreview(f).catch((e) => console.error("sound preview failed", e));
   };
   c.voicePreview.onclick = () => {
     const cwd = voicePreviewProject.value || "";

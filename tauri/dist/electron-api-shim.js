@@ -117,6 +117,7 @@
     piperStatus: () => invoke('piper_status'),
     piperInstallVoice: (id) => invoke('piper_install_voice', { id }),
     speakPreview: ({ text, voiceName }) => invoke('piper_speak_preview', { text, voiceName }),
+    playSoundPreview: (filename) => invoke('play_sound_preview', { filename }),
     piperInstallBinary: async () => ({ ok: false, reason: 'disabled in MVP' }),
     onPiperProgress: (_cb) => () => {},
     onTokenHistoryUpdated: (cb) => {

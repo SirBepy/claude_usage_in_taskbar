@@ -76,6 +76,7 @@ pub fn run() {
             ipc::piper_status,
             ipc::piper_install_voice,
             ipc::piper_speak_preview,
+            ipc::play_sound_preview,
             ipc::copy_logs,
             ipc::get_platform,
             ipc::get_app_version,

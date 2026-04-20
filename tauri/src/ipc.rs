@@ -246,6 +246,19 @@ pub fn piper_speak_preview(app: AppHandle, text: String, voice_name: Option<Stri
 }
 
 #[tauri::command]
+pub fn play_sound_preview(app: AppHandle, filename: String) -> Result<(), String> {
+    if filename.is_empty()
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains("..")
+    {
+        return Err("invalid sound filename".into());
+    }
+    crate::audio::play_sound_file(&app, &filename);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
     match crate::scheduler::poll_once(&app, crate::scheduler::PollTrigger::Manual).await {
         Ok(snap) => {
