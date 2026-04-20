@@ -52,7 +52,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            poll_interval_secs: 3600,
+            poll_interval_secs: 600,
             display_mode: DisplayMode::Rings,
             threshold_warn: 50.0,
             threshold_crit: 80.0,
@@ -100,7 +100,7 @@ mod tests {
         // guard: after deserialise → serialise, every unknown field we
         // sent in must still be there.
         let raw = r#"{
-            "poll_interval_secs": 3600,
+            "poll_interval_secs": 600,
             "display_mode": "rings",
             "threshold_warn": 50.0,
             "threshold_crit": 80.0,
@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(parsed.extra["iconStyle"], "bars");
         assert_eq!(parsed.extra["defaultDisplay"], "session");
         // Missing snake_case fields took their defaults:
-        assert_eq!(parsed.poll_interval_secs, 3600);
+        assert_eq!(parsed.poll_interval_secs, 600);
         assert!(parsed.autostart);
         assert!(parsed.auto_update);
     }

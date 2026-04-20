@@ -7,10 +7,18 @@ use std::path::Path;
 /// Loads settings from disk. If the file is missing or corrupt, returns defaults
 /// (and does NOT rewrite the file automatically — the caller decides when to save).
 pub fn load(path: &Path) -> Settings {
-    match std::fs::read_to_string(path) {
+    let mut s: Settings = match std::fs::read_to_string(path) {
         Err(_) => Settings::default(),
         Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+    };
+    // Migrate stale default from earlier tauri-rewrite builds that shipped
+    // with a 1-hour poll before the 10-minute default landed. No UI ever
+    // exposed this value, so any persisted 3600 is the old default, not
+    // a user choice.
+    if s.poll_interval_secs == 3600 {
+        s.poll_interval_secs = 600;
     }
+    s
 }
 
 /// Saves settings to disk, creating parent dirs if needed.
