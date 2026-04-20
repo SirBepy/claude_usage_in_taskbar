@@ -183,7 +183,7 @@ function renderHistory(history) {
             <div class="stat-sublabel">current</div>
           </div>
           <div class="stat-col">
-            <div class="stat-value" style="color:var(--text-dim)">${fmtPct(sessionSafePct)}</div>
+            <div class="stat-value stat-value-dim">${fmtPct(sessionSafePct)}</div>
             <div class="stat-sublabel">safe pace</div>
           </div>
         </div>` : `
@@ -199,7 +199,7 @@ function renderHistory(history) {
             <div class="stat-sublabel">current</div>
           </div>
           <div class="stat-col">
-            <div class="stat-value" style="color:var(--text-dim)">${fmtPct(weeklySafePct)}</div>
+            <div class="stat-value stat-value-dim">${fmtPct(weeklySafePct)}</div>
             <div class="stat-sublabel">safe pace</div>
           </div>
         </div>` : `

@@ -1,7 +1,7 @@
 //! Pure math + formatting helpers. No Tauri deps. `now` is always injected
 //! so tests stay deterministic.
 
-use crate::icon_settings::{ColorStop, TimeStyle, TooltipLayout, TooltipSettings};
+use crate::icon_settings::{ColorMode, ColorStop, IconSettings, TimeStyle, TooltipLayout, TooltipSettings};
 use crate::types::UsageSnapshot;
 use chrono::{DateTime, Duration, Utc};
 
@@ -26,7 +26,12 @@ pub fn threshold_crossed(prev: Option<f32>, new: Option<f32>, stops: &[ColorStop
     })
 }
 
-pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: DateTime<Utc>) -> String {
+pub fn build_tooltip(
+    snap: Option<&UsageSnapshot>,
+    s: &TooltipSettings,
+    icon_s: &IconSettings,
+    now: DateTime<Utc>,
+) -> String {
     let Some(snap) = snap else { return "Claude Usage — initializing…".into(); };
     let sess = session_pct(snap);
     let weekly = weekly_pct(snap);
@@ -35,18 +40,25 @@ pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: Dat
     let sess_reset = format_reset(&snap.five_hour.resets_at, s.time_style, now);
     let weekly_reset = format_reset(&snap.seven_day.resets_at, s.time_style, now);
 
+    // Emoji prefix for the current-% number (OS tray tooltips are plain text,
+    // so we fake "color" with a coloured circle). Only prefix when the user
+    // has tooltip colouring turned on.
+    let sess_pct = fmt_pct(sess, sess_safe, s.apply_color, icon_s);
+    let weekly_pct = fmt_pct(weekly, weekly_safe, s.apply_color, icon_s);
+
     match s.layout {
         TooltipLayout::Rows => {
             let mut lines = vec![];
-            let mut sess_parts = vec![format!("Session  {:.0}%", sess)];
+            let mut sess_parts = vec![format!("Session  {sess_pct}")];
             if s.show_safe_pace { if let Some(v) = sess_safe { sess_parts.push(format!("{:.0}%", v)); } }
             lines.push(sess_parts.join("  "));
             if !sess_reset.is_empty() {
+                lines.push("");
                 lines.push("Resets:".to_string());
                 lines.push(sess_reset);
             }
 
-            let mut wk_parts = vec![format!("Weekly   {:.0}%", weekly)];
+            let mut wk_parts = vec![format!("Weekly   {weekly_pct}")];
             if s.show_safe_pace { if let Some(v) = weekly_safe { wk_parts.push(format!("{:.0}%", v)); } }
             lines.push(wk_parts.join("  "));
             if !weekly_reset.is_empty() {
@@ -58,7 +70,7 @@ pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: Dat
         TooltipLayout::Columns => {
             // Header + pct + (optional safe pace row) + "Resets:" header + times.
             let mut lines = vec!["Session\tWeekly".to_string()];
-            lines.push(format!("{:.0}%\t{:.0}%", sess, weekly));
+            lines.push(format!("{sess_pct}\t{weekly_pct}"));
             if s.show_safe_pace {
                 let a = sess_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
                 let b = weekly_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
@@ -75,6 +87,57 @@ pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: Dat
     }
 }
 
+fn fmt_pct(pct: f32, safe: Option<f32>, apply_color: bool, icon_s: &IconSettings) -> String {
+    let base = format!("{pct:.0}%");
+    if !apply_color { return base; }
+    let hex = pick_color(pct, safe, icon_s);
+    match hex.and_then(hex_to_emoji) {
+        Some(e) => format!("{e} {base}"),
+        None => base,
+    }
+}
+
+fn pick_color<'a>(pct: f32, safe: Option<f32>, icon_s: &'a IconSettings) -> Option<&'a str> {
+    match icon_s.color_mode {
+        ColorMode::Pace => safe.map(|s| pace_color(pct, s, icon_s)),
+        ColorMode::Threshold => threshold_color(pct, &icon_s.color_thresholds),
+    }
+}
+
+fn threshold_color(pct: f32, stops: &[ColorStop]) -> Option<&str> {
+    let mut sorted: Vec<&ColorStop> = stops.iter().collect();
+    sorted.sort_by(|a, b| b.min.cmp(&a.min));
+    for s in sorted {
+        if pct >= s.min as f32 { return Some(&s.color); }
+    }
+    None
+}
+
+fn pace_color<'a>(pct: f32, safe: f32, icon_s: &'a IconSettings) -> &'a str {
+    let band = icon_s.pace_band;
+    let pc = &icon_s.pace_colors;
+    if pct < safe - band       { &pc.under }
+    else if pct < safe         { &pc.near_safe }
+    else if pct < safe + band  { &pc.near_over }
+    else                       { &pc.over }
+}
+
+/// Map a hex colour to the closest coloured-circle emoji. Mirrors the
+/// original Electron `hexToEmoji` in `src/core/usage-parser.js`.
+fn hex_to_emoji(hex: &str) -> Option<&'static str> {
+    let h = hex.trim_start_matches('#');
+    if h.len() < 6 { return None; }
+    let r = u8::from_str_radix(&h[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&h[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&h[4..6], 16).ok()?;
+    let max = r.max(g).max(b);
+    Some(if max == r && g < 120      { "🔴" }
+         else if max == r            { "🟠" }
+         else if max == g            { "🟢" }
+         else if max == b            { "🔵" }
+         else                        { "⚪" })
+}
+
 fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String {
     let Ok(resets) = DateTime::parse_from_rfc3339(resets_at) else { return String::new(); };
     let resets = resets.with_timezone(&Utc);
@@ -84,9 +147,9 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
             if delta <= Duration::zero() { return "resets now".into(); }
             let h = delta.num_hours();
             let m = (delta.num_minutes() - h * 60).max(0);
-            if h > 0 { format!("resets in {h}h {m}m") } else { format!("resets in {m}m") }
+            if h > 0 { format!("{h}h {m}m") } else { format!("{m}m") }
         }
-        TimeStyle::Absolute => resets.format("resets %a %H:%M").to_string(),
+        TimeStyle::Absolute => resets.format("%a %H:%M").to_string(),
     }
 }
 
@@ -162,10 +225,11 @@ mod tests {
             layout: TooltipLayout::Rows,
             time_style: TimeStyle::Absolute,
             show_safe_pace: false,
-            apply_color: true,
+            apply_color: false,
         };
+        let icon = IconSettings::default();
         let u = snap(45.0, "2026-04-20T12:30:00Z", 12.0, "2026-04-23T10:00:00Z");
-        let tip = build_tooltip(Some(&u), &s, now);
+        let tip = build_tooltip(Some(&u), &s, &icon, now);
         assert!(tip.contains("Session"));
         assert!(tip.contains("45%"));
         assert!(tip.contains("Weekly"));
@@ -180,10 +244,11 @@ mod tests {
             layout: TooltipLayout::Columns,
             time_style: TimeStyle::Relative,
             show_safe_pace: true,
-            apply_color: true,
+            apply_color: false,
         };
+        let icon = IconSettings::default();
         let u = snap(55.0, "2026-04-20T15:00:00Z", 22.0, "2026-04-23T10:00:00Z");
-        let tip = build_tooltip(Some(&u), &s, now);
+        let tip = build_tooltip(Some(&u), &s, &icon, now);
         let lines: Vec<&str> = tip.lines().collect();
         assert_eq!(lines[0], "Session\tWeekly");
         assert_eq!(lines[1], "55%\t22%");
@@ -194,7 +259,34 @@ mod tests {
     #[test]
     fn build_tooltip_no_snapshot_is_initializing() {
         let s = TooltipSettings::default();
-        let tip = build_tooltip(None, &s, Utc::now());
+        let icon = IconSettings::default();
+        let tip = build_tooltip(None, &s, &icon, Utc::now());
         assert!(tip.to_lowercase().contains("init"));
+    }
+
+    #[test]
+    fn build_tooltip_apply_color_adds_emoji_prefix() {
+        let now = Utc.with_ymd_and_hms(2026, 4, 20, 10, 0, 0).unwrap();
+        let s = TooltipSettings {
+            layout: TooltipLayout::Rows,
+            time_style: TimeStyle::Absolute,
+            show_safe_pace: false,
+            apply_color: true,
+        };
+        // Default thresholds: 0→green, 50→orange, 80→red
+        let icon = IconSettings::default();
+        let u = snap(85.0, "2026-04-20T12:30:00Z", 30.0, "2026-04-23T10:00:00Z");
+        let tip = build_tooltip(Some(&u), &s, &icon, now);
+        // Red threshold -> red circle before session %, green before weekly %.
+        assert!(tip.contains("🔴 85%"), "expected red emoji for 85%, got: {tip}");
+        assert!(tip.contains("🟢 30%"), "expected green emoji for 30%, got: {tip}");
+    }
+
+    #[test]
+    fn hex_to_emoji_picks_channel_by_max() {
+        assert_eq!(super::hex_to_emoji("#e74c3c"), Some("🔴"));
+        assert_eq!(super::hex_to_emoji("#e67e22"), Some("🟠"));
+        assert_eq!(super::hex_to_emoji("#27ae60"), Some("🟢"));
+        assert_eq!(super::hex_to_emoji("#3b82f6"), Some("🔵"));
     }
 }

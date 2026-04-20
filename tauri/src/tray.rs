@@ -150,5 +150,5 @@ pub fn render_tray_now(app: &AppHandle) {
     };
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return; };
     if let Ok(img) = Image::from_bytes(&bytes) { let _ = tray.set_icon(Some(img)); }
-    let _ = tray.set_tooltip(Some(usage_parser::build_tooltip(snap.as_ref(), &tip_s, now)));
+    let _ = tray.set_tooltip(Some(usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)));
 }

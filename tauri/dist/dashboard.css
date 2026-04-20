@@ -224,6 +224,12 @@ body {
     font-size: 2rem;
     font-weight: 700;
     line-height: 1;
+    color: var(--text);
+}
+
+.stat-value-dim {
+    color: var(--text);
+    opacity: 0.45;
 }
 
 .stat-sublabel {
