@@ -43,9 +43,12 @@ pub fn draw_text(img: &mut RgbaImage, text: &str, x: i32, y: i32, color: [u8; 3]
     }
     if min_x == f32::MAX { return; }
 
-    // Shift so the glyph bbox top-left lands at (x, y).
+    // Shift so the glyph bbox top-left lands at (x, y). For y we add `ascent`
+    // because min_y from pass 1 is measured in pixel space (baseline positioned
+    // at y=ascent), so the glyph top relative to a baseline-at-0 is
+    // (min_y - ascent). Solving `baseline + (min_y - ascent) = y` gives this.
     let shift_x = x as f32 - min_x;
-    let shift_y = y as f32 - min_y;
+    let shift_y = y as f32 - min_y + ascent;
 
     let mut pen_x = shift_x;
     let mut prev: Option<ab_glyph::GlyphId> = None;
@@ -144,6 +147,41 @@ mod tests {
     }
 
     #[test]
+    fn draw_text_lands_at_passed_top_left() {
+        // Regression: draw_text must place the painted bbox top-left at (x, y),
+        // matching measure_text. Previously a missing `ascent` term in the
+        // y-shift caused glyphs to render ~ascent pixels above the image.
+        let mut img = RgbaImage::new(22, 22);
+        let size = 20.0;
+        let (tw, th) = measure_text("9", size);
+        let x = ((22 - tw as i32) / 2).max(0);
+        let y = ((22 - th as i32) / 2).max(0);
+        draw_text(&mut img, "9", x, y, [255, 255, 255], size);
+
+        let mut min_py = u32::MAX;
+        let mut max_py = 0u32;
+        for (px, py, pix) in img.enumerate_pixels() {
+            if pix.0[3] > 0 {
+                let _ = px;
+                min_py = min_py.min(py);
+                max_py = max_py.max(py);
+            }
+        }
+        assert!(min_py != u32::MAX, "expected painted pixels");
+        // Top of painted region should be at or just past y. Allow 1px slack
+        // for AA fringe.
+        assert!(
+            (min_py as i32 - y).abs() <= 1,
+            "expected painted top near y={y}, got {min_py}"
+        );
+        let painted_h = (max_py - min_py + 1) as u32;
+        assert!(
+            painted_h.abs_diff(th) <= 1,
+            "painted height {painted_h} should match measured {th}"
+        );
+    }
+
+    #[test]
     fn draw_text_respects_image_bounds() {
         // y far below image bottom — must not panic, must paint nothing.
         let mut img = RgbaImage::new(22, 22);
@@ -162,15 +200,6 @@ mod tests {
         let (w, h) = measure_text("42", 12.0);
         assert!(w > 0 && h > 0, "expected nonzero w/h, got ({w}, {h})");
         assert!(w < 22 && h < 22, "expected to fit in 22x22, got ({w}, {h})");
-    }
-
-    #[test]
-    fn probe_sizes() {
-        for s in ["1", "99", "88", "20"] {
-            for size in [18.0f32, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 26.0, 28.0] {
-                println!("{:?} @ {} = {:?}", s, size, measure_text(s, size));
-            }
-        }
     }
 
     #[test]

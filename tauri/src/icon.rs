@@ -87,7 +87,7 @@ fn overlay_size_px(text: &str) -> f32 {
     match text.chars().count() {
         0 | 1 => 24.0,
         2 => 24.0,
-        _ => 18.0,
+        _ => 16.0,
     }
 }
 
