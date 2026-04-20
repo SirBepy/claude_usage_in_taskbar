@@ -21,7 +21,7 @@ pub fn spawn(app: AppHandle) {
         loop {
             let interval_secs = interval_for(&app);
 
-            match poll_once(&app).await {
+            match poll_once(&app, PollTrigger::Scheduled).await {
                 Ok(snap) => {
                     fail_streak = 0;
                     log::info!(
@@ -107,7 +107,22 @@ pub enum PollErr {
     Other(String),
 }
 
-pub async fn poll_once(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
+pub async fn poll_once(app: &AppHandle, trigger: PollTrigger) -> Result<UsageSnapshot, PollErr> {
+    let spinning = matches!(trigger, PollTrigger::Manual | PollTrigger::Hook);
+    let spin_task = if spinning { Some(start_spin(app.clone())) } else { None };
+
+    let result = do_poll(app).await;
+
+    if let Some(handle) = spin_task { handle.abort(); }
+    {
+        let st = app.state::<crate::state::AppState>();
+        st.display.lock().unwrap().spin_frame = None;
+    }
+    crate::tray::render_tray_now(app);
+    result
+}
+
+async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
     let session_path = paths::session_file()
         .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     let Some(session_key) = session::load(&session_path) else {
@@ -135,4 +150,19 @@ pub async fn poll_once(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
     let _ = history::prune(&hpath);
 
     Ok(snap)
+}
+
+fn start_spin(app: AppHandle) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        let mut frame: u32 = 0;
+        loop {
+            {
+                let st = app.state::<crate::state::AppState>();
+                st.display.lock().unwrap().spin_frame = Some(frame);
+            }
+            crate::tray::render_tray_now(&app);
+            frame = frame.wrapping_add(1);
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
 }

@@ -1,6 +1,7 @@
 //! IPC commands exposed to the webview via `invoke()`.
 
 use crate::state::AppState;
+use crate::token_stats::{self, BackfillResult, TokenRecord};
 use crate::types::{AuthState, Settings, UsageSnapshot};
 use crate::{history, paths, session, settings};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -71,9 +72,166 @@ pub fn logout(state: State<AppState>, app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Reads a log file from disk, returning a friendly placeholder when it does
+/// not exist yet (common on a fresh install before the first log line is
+/// written). Extracted from the Tauri command so it can be unit-tested.
+pub fn read_log_contents(log_path: &std::path::Path) -> Result<String, String> {
+    match std::fs::read_to_string(log_path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Ok(format!("(no log file yet at {})", log_path.display()))
+        }
+        Err(e) => Err(format!("reading {}: {e}", log_path.display())),
+    }
+}
+
+/// Reads the tauri-plugin-log log file and returns its contents as a string.
+/// The renderer writes this to the clipboard for bug reports.
+#[tauri::command]
+pub fn read_log_file(app: AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    // tauri-plugin-log's default filename is "<product-name>.log".
+    let product = app.package_info().name.clone();
+    let log_path = log_dir.join(format!("{product}.log"));
+    read_log_contents(&log_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_log_contents;
+    use tempfile::tempdir;
+
+    #[test]
+    fn returns_placeholder_when_log_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("does-not-exist.log");
+        let out = read_log_contents(&path).unwrap();
+        assert!(out.starts_with("(no log file yet at "), "got: {out}");
+    }
+
+    #[test]
+    fn returns_file_contents_when_present() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("app.log");
+        std::fs::write(&path, "line 1\nline 2\n").unwrap();
+        assert_eq!(read_log_contents(&path).unwrap(), "line 1\nline 2\n");
+    }
+
+    #[test]
+    fn check_paths_exist_reports_each_path_independently() {
+        use super::check_paths_exist;
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let fake = dir.path().join("not-here");
+
+        let result = check_paths_exist(vec![
+            real.to_string_lossy().to_string(),
+            fake.to_string_lossy().to_string(),
+        ]);
+        assert_eq!(result[&real.to_string_lossy().to_string()], true);
+        assert_eq!(result[&fake.to_string_lossy().to_string()], false);
+    }
+}
+
+/// Open a filesystem path in the OS file manager (Explorer on Windows,
+/// Finder on macOS, default handler on Linux).
+#[tauri::command]
+pub fn open_in_explorer(path: String) -> Result<(), String> {
+    if path.is_empty() { return Err("empty path".into()) }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("explorer spawn failed: {e}"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(&path).spawn()
+            .map(|_| ()).map_err(|e| format!("open spawn failed: {e}"))
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(&path).spawn()
+            .map(|_| ()).map_err(|e| format!("xdg-open spawn failed: {e}"))
+    }
+}
+
+/// Open a folder in VS Code. Uses the `code` (or `code.cmd` on Windows)
+/// launcher that ships with VS Code, which must be on PATH (users who
+/// installed VS Code on Windows normally have it).
+#[tauri::command]
+pub fn open_in_vscode(path: String) -> Result<(), String> {
+    if path.is_empty() { return Err("empty path".into()) }
+    #[cfg(target_os = "windows")]
+    {
+        // `code` on Windows is a .cmd shim; invoke via `cmd /c` so we don't
+        // have to worry about PATHEXT lookup semantics from spawn().
+        std::process::Command::new("cmd")
+            .args(["/C", "code", "-n", &path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("code launch failed: {e}"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("code").args(["-n", &path]).spawn()
+            .map(|_| ()).map_err(|e| format!("code launch failed: {e}"))
+    }
+}
+
+/// Bulk existence check for project directories. The dashboard passes the
+/// cwds it has token history for, and we reply with `{path: bool}` so the
+/// renderer can flag genuinely-deleted folders (and hide the warning on
+/// live ones, which was the bug here).
+#[tauri::command]
+pub fn check_paths_exist(paths: Vec<String>) -> std::collections::HashMap<String, bool> {
+    paths
+        .into_iter()
+        .map(|p| {
+            let exists = std::path::Path::new(&p).exists();
+            (p, exists)
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn get_token_history() -> Vec<TokenRecord> {
+    let Ok(path) = paths::token_history_file() else { return vec![] };
+    token_stats::load_history(&path)
+}
+
+#[tauri::command]
+pub async fn get_active_sessions() -> Vec<TokenRecord> {
+    let path = match paths::token_history_file() { Ok(p) => p, Err(_) => return vec![] };
+    // Filesystem walk + transcript parse can take a while on big projects
+    // dirs, so offload off the main async runtime to keep IPC snappy.
+    tauri::async_runtime::spawn_blocking(move || token_stats::active_sessions(&path))
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn backfill_transcripts(app: AppHandle) -> Result<BackfillResult, String> {
+    let path = paths::token_history_file().map_err(|e| e.to_string())?;
+    let path2 = path.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || token_stats::backfill_all(&path2))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+    // Tell the dashboard to refetch.
+    let history = token_stats::load_history(&path);
+    let _ = app.emit("token-history-updated", history);
+    Ok(result)
+}
+
 #[tauri::command]
 pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
-    match crate::scheduler::poll_once(&app).await {
+    match crate::scheduler::poll_once(&app, crate::scheduler::PollTrigger::Manual).await {
         Ok(snap) => {
             let _ = app.emit("usage-updated", snap.clone());
             Ok(snap)
@@ -96,7 +254,7 @@ pub async fn start_login(app: AppHandle) -> Result<(), String> {
             // Kick an immediate poll so the dashboard shows data right away.
             let h = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = crate::scheduler::poll_once(&h).await;
+                let _ = crate::scheduler::poll_once(&h, crate::scheduler::PollTrigger::Manual).await;
             });
             Ok(())
         }

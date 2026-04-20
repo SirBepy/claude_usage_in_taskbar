@@ -143,7 +143,7 @@ pub fn run() {
                         match crate::auth::run(h.clone()).await {
                             Ok(()) => {
                                 *h.state::<AppState>().auth_state.lock().unwrap() = AuthState::LoggedIn;
-                                let _ = crate::scheduler::poll_once(&h).await;
+                                let _ = crate::scheduler::poll_once(&h, crate::scheduler::PollTrigger::Scheduled).await;
                             }
                             Err(e) => {
                                 *h.state::<AppState>().auth_state.lock().unwrap() = AuthState::NeedsLogin;

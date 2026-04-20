@@ -45,7 +45,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                 "refresh" => {
                     let h = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        let _ = crate::scheduler::poll_once(&h).await;
+                        let _ = crate::scheduler::poll_once(&h, crate::scheduler::PollTrigger::Manual).await;
                     });
                 }
                 "quit" => app.exit(0),

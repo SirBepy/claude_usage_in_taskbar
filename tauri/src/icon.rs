@@ -185,9 +185,52 @@ fn encode_png(img: &RgbaImage) -> Vec<u8> {
     buf
 }
 
-/// Temporary stub; replaced in Task 8 with a real spinning frame.
-pub fn render_spin(_frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
-    render(None, weekly, ctx)
+pub fn render_spin(frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
+    let mut img: RgbaImage = ImageBuffer::from_pixel(SIZE, SIZE, Rgba([0, 0, 0, 0]));
+    let arc_len = std::f32::consts::PI * 0.6;
+    let start = (frame as f32 * 0.28) % std::f32::consts::TAU;
+
+    if ctx.settings.icon_style == IconStyle::Bars {
+        // bars: pulse session column blue, weekly steady.
+        let blue = [74u8, 144, 226];
+        let pulse = ((frame as f32 * 0.2).sin()).abs();
+        let alpha = (150.0 + pulse * 105.0).round() as u8;
+        for y in 2..=20 {
+            for x in 3..=8 {
+                img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha]));
+            }
+        }
+        draw_column(&mut img, 13, 18, weekly.unwrap_or(0.0),
+                    color_for(weekly, ctx, ctx.weekly_safe, /*is_icon=*/true));
+    } else {
+        draw_spin_arc(&mut img, start, arc_len, OUTER_R_OUT, OUTER_R_IN, LOADING);
+        draw_ring_arc(&mut img, weekly, INNER_R_OUT, INNER_R_IN,
+                      color_for(weekly, ctx, ctx.weekly_safe, true));
+    }
+    encode_png(&img)
+}
+
+fn draw_spin_arc(img: &mut RgbaImage, start: f32, arc_len: f32, r_out: f32, r_in: f32, fg: [u8; 3]) {
+    let end = start + arc_len;
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - CX + 0.5;
+            let dy = y as f32 - CY + 0.5;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < r_in - 1.0 || dist > r_out + 1.0 { continue; }
+            let edge_alpha = ((dist - (r_in - 1.0)).min(1.0)) * ((r_out + 1.0 - dist).min(1.0));
+            let mut angle = dx.atan2(-dy);
+            if angle < 0.0 { angle += std::f32::consts::TAU; }
+            let in_arc = if end > std::f32::consts::TAU {
+                angle >= start || angle <= end - std::f32::consts::TAU
+            } else {
+                angle >= start && angle <= end
+            };
+            if !in_arc { continue; }
+            let a = (edge_alpha * 255.0) as u8;
+            img.put_pixel(x, y, Rgba([fg[0], fg[1], fg[2], a]));
+        }
+    }
 }
 
 /// Back-compat: existing tray.rs call site uses `render_rings(Some, Some)`.
@@ -351,6 +394,30 @@ mod tests {
             display_mode: DisplayMode::NumberWeekly,
             session_safe: None, weekly_safe: None,
         });
+    }
+
+    #[test]
+    fn render_spin_differs_from_static_render() {
+        let s = test_settings();
+        let ctx = IconCtx {
+            settings: &s, display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        };
+        let a = render(Some(50.0), Some(50.0), &ctx);
+        let b = render_spin(0, Some(50.0), &ctx);
+        assert_ne!(a, b, "spin frame should produce different bytes than static render");
+    }
+
+    #[test]
+    fn render_spin_frames_differ_from_each_other() {
+        let s = test_settings();
+        let ctx = IconCtx {
+            settings: &s, display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        };
+        let f0 = render_spin(0, Some(50.0), &ctx);
+        let f5 = render_spin(5, Some(50.0), &ctx);
+        assert_ne!(f0, f5);
     }
 
     #[test]
