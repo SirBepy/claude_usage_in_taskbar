@@ -355,3 +355,13 @@ pub async fn start_login(app: AppHandle) -> Result<(), String> {
         }
     }
 }
+
+#[tauri::command]
+pub fn list_sound_packs() -> Vec<crate::soundpacks::SoundPack> {
+    crate::soundpacks::list_with_installed_state()
+}
+
+#[tauri::command]
+pub async fn install_sound_pack(pack_id: String) -> Result<(), String> {
+    crate::soundpacks::install(&pack_id).await.map_err(|e| e.to_string())
+}
