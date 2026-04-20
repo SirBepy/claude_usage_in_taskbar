@@ -66,17 +66,12 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
             };
             let val = (pct.round() as i32).clamp(0, 99) as u32;
             let text = val.to_string();
-            let font: &crate::fonts::PixelFont = match ctx.settings.overlay_style {
-                crate::icon_settings::OverlayStyle::Classic => &crate::fonts::CLASSIC,
-                crate::icon_settings::OverlayStyle::Digital => &crate::fonts::DIGITAL,
-                crate::icon_settings::OverlayStyle::Bold    => &crate::fonts::BOLD,
-            };
-            let chars = text.chars().count() as u32;
-            let total_w = chars * font.width + chars.saturating_sub(1);
-            let x = SIZE.saturating_sub(total_w) / 2;
-            let y = SIZE.saturating_sub(font.height) / 2;
+            let size_px = overlay_size_px(&text);
+            let (tw, th) = crate::fonts::measure_text(&text, size_px);
+            let x = ((SIZE as i32 - tw as i32) / 2).max(0);
+            let y = ((SIZE as i32 - th as i32) / 2).max(0);
             let color = color_for(Some(pct), ctx, safe, /*is_icon=*/false);
-            crate::fonts::draw_text(&mut img, &text, x, y, color, font);
+            crate::fonts::draw_text(&mut img, &text, x, y, color, size_px);
         }
     }
     encode_png(&img)
@@ -86,6 +81,14 @@ fn color_for(pct: Option<f32>, ctx: &IconCtx, safe: Option<f32>, is_icon: bool) 
     if is_icon && !ctx.settings.apply_color_to.icon { return NEUTRAL_GRAY; }
     if !is_icon && !ctx.settings.apply_color_to.number { return NEUTRAL_GRAY; }
     urgency_rgb(pct, ctx.settings, safe)
+}
+
+fn overlay_size_px(text: &str) -> f32 {
+    match text.chars().count() {
+        0 | 1 => 14.0,
+        2 => 12.0,
+        _ => 10.0,
+    }
 }
 
 pub fn urgency_rgb(pct: Option<f32>, s: &IconSettings, safe: Option<f32>) -> [u8; 3] {
@@ -248,14 +251,13 @@ pub fn render_rings(sess: Option<f32>, weekly: Option<f32>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icon_settings::{ColorApplyTo, ColorMode, ColorStop, IconSettings, IconStyle, OverlayStyle, PaceColors, DefaultDisplay};
+    use crate::icon_settings::{ColorApplyTo, ColorMode, ColorStop, IconSettings, IconStyle, PaceColors, DefaultDisplay};
     use image::GenericImageView;
 
     fn test_settings() -> IconSettings {
         IconSettings {
             default_display: DefaultDisplay::Icon,
             icon_style: IconStyle::Rings,
-            overlay_style: OverlayStyle::Classic,
             color_mode: ColorMode::Threshold,
             color_thresholds: vec![
                 ColorStop { min: 0, color: "#00ff00".into() },
