@@ -120,6 +120,7 @@ impl Default for TooltipSettings {
 pub struct NotificationRule {
     pub enabled: bool,
     pub mode: NotifMode,
+    pub sound_pack: String,
     pub sound_file: String,
     pub voice_name: Option<String>,
     pub template: String,
@@ -137,16 +138,19 @@ impl Default for NotificationsConfig {
         Self {
             work_finished: NotificationRule {
                 enabled: true, mode: NotifMode::Sound,
+                sound_pack: "default".into(),
                 sound_file: "sound1.mp3".into(), voice_name: None,
                 template: "{name} is done".into(),
             },
             question_asked: NotificationRule {
                 enabled: true, mode: NotifMode::Sound,
+                sound_pack: "default".into(),
                 sound_file: "sound3.mp3".into(), voice_name: None,
                 template: "{name} is waiting".into(),
             },
             threshold_crossed: NotificationRule {
                 enabled: true, mode: NotifMode::Sound,
+                sound_pack: "default".into(),
                 sound_file: "sound6.mp3".into(), voice_name: None,
                 template: "{percent} threshold reached".into(),
             },
@@ -254,6 +258,9 @@ fn rule_from(m: &serde_json::Map<String, Value>, defaults: NotificationRule) -> 
             ("sound", NotifMode::Sound),
             ("voice", NotifMode::Voice),
         ]),
+        sound_pack: val_str(m.get("soundPack"))
+            .map(String::from)
+            .unwrap_or_else(|| "default".into()),
         sound_file: val_str(m.get("soundFile")).map(String::from).unwrap_or(defaults.sound_file),
         voice_name: val_str(m.get("voiceName")).map(String::from),
         template: val_str(m.get("template")).map(String::from).unwrap_or(defaults.template),
@@ -340,5 +347,29 @@ mod tests {
         let icon = IconSettings::try_from(&s).unwrap();
         assert_eq!(icon.icon_style, IconStyle::Rings);
         assert_eq!(icon.color_thresholds, IconSettings::default().color_thresholds);
+    }
+
+    #[test]
+    fn notif_rule_legacy_without_sound_pack_maps_to_default() {
+        let s = settings_with(json!({
+            "notifications": {
+                "workFinished": { "enabled": true, "mode": "sound", "soundFile": "sound1.mp3" }
+            }
+        }));
+        let cfg = NotificationsConfig::try_from(&s).unwrap();
+        assert_eq!(cfg.work_finished.sound_pack, "default");
+        assert_eq!(cfg.work_finished.sound_file, "sound1.mp3");
+    }
+
+    #[test]
+    fn notif_rule_reads_explicit_sound_pack() {
+        let s = settings_with(json!({
+            "notifications": {
+                "workFinished": { "mode": "sound", "soundPack": "peon", "soundFile": "work-work.mp3" }
+            }
+        }));
+        let cfg = NotificationsConfig::try_from(&s).unwrap();
+        assert_eq!(cfg.work_finished.sound_pack, "peon");
+        assert_eq!(cfg.work_finished.sound_file, "work-work.mp3");
     }
 }
