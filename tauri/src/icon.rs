@@ -1,76 +1,136 @@
-//! Renders the tray icon as an RGBA PNG byte buffer.
+//! Renders the 22x22 tray icon as RGBA PNG bytes.
+//!
+//! Ports the AA blend model from `src/core/icon.js` — every pixel in the
+//! icon range gets a soft alpha based on distance from the ring's boundary,
+//! then blended over whatever is already in the buffer (pre-multiplied).
 
+use crate::icon_settings::{ColorMode, IconSettings, IconStyle};
 use image::{ImageBuffer, ImageEncoder, Rgba, RgbaImage};
 
-const SIZE: u32 = 22;
-const CENTER: f32 = (SIZE as f32) / 2.0;
+pub const SIZE: u32 = 22;
+const CX: f32 = SIZE as f32 / 2.0;
+const CY: f32 = SIZE as f32 / 2.0;
 
 const OUTER_R_OUT: f32 = 10.5;
-const OUTER_R_IN: f32  = 7.5;
+const OUTER_R_IN:  f32 = 7.5;
 const INNER_R_OUT: f32 = 5.5;
 const INNER_R_IN:  f32 = 3.5;
 
-const TRACK: Rgba<u8>   = Rgba([60, 60, 60, 255]);
-const LOADING: Rgba<u8> = Rgba([64, 128, 220, 255]); // blue
-const GREEN: Rgba<u8>   = Rgba([60, 180, 75, 255]);
-const ORANGE: Rgba<u8>  = Rgba([240, 150, 40, 255]);
-const RED: Rgba<u8>     = Rgba([220, 60, 60, 255]);
+const TRACK: [u8; 3] = [60, 60, 60];
+const TRACK_ALPHA: u8 = 80;
+const LOADING: [u8; 3] = [74, 144, 226];
+const NEUTRAL_GRAY: [u8; 3] = [200, 200, 200];
+const IDLE_GRAY:    [u8; 3] = [120, 120, 120];
+const FALLBACK_COLOR: [u8; 3] = [74, 144, 226];
 
-fn color_for(pct: f32) -> Rgba<u8> {
-    if pct >= 80.0 { RED }
-    else if pct >= 50.0 { ORANGE }
-    else { GREEN }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisplayMode {
+    Icon,
+    NumberSession,
+    NumberWeekly,
 }
 
-/// Returns RGBA png bytes (as a `Vec<u8>`) for a tray icon showing the two rings.
-/// `five_hour_pct` and `seven_day_pct` are 0..=100. Pass `None` to render the
-/// "loading" state for that ring.
-pub fn render_rings(five_hour_pct: Option<f32>, seven_day_pct: Option<f32>) -> Vec<u8> {
+pub struct IconCtx<'a> {
+    pub settings: &'a IconSettings,
+    pub display_mode: DisplayMode,
+    pub session_safe: Option<f32>,
+    pub weekly_safe: Option<f32>,
+}
+
+pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
     let mut img: RgbaImage = ImageBuffer::from_pixel(SIZE, SIZE, Rgba([0, 0, 0, 0]));
-    draw_ring(&mut img, OUTER_R_OUT, OUTER_R_IN, TRACK);
-    draw_ring(&mut img, INNER_R_OUT, INNER_R_IN, TRACK);
-    if let Some(p) = five_hour_pct {
-        draw_ring_arc(&mut img, OUTER_R_OUT, OUTER_R_IN, p, color_for(p));
-    } else {
-        draw_ring_arc(&mut img, OUTER_R_OUT, OUTER_R_IN, 100.0, LOADING);
-    }
-    if let Some(p) = seven_day_pct {
-        draw_ring_arc(&mut img, INNER_R_OUT, INNER_R_IN, p, color_for(p));
-    } else {
-        draw_ring_arc(&mut img, INNER_R_OUT, INNER_R_IN, 100.0, LOADING);
+    let idle = sess.is_none() && weekly.is_none();
+
+    match ctx.display_mode {
+        DisplayMode::Icon => {
+            if idle {
+                draw_ring_arc(&mut img, Some(100.0), OUTER_R_OUT, OUTER_R_IN, IDLE_GRAY);
+                draw_ring_arc(&mut img, Some(100.0), INNER_R_OUT, INNER_R_IN, IDLE_GRAY);
+            } else if ctx.settings.icon_style == IconStyle::Bars {
+                // bars implemented in a later task — fall back to rings for now.
+                draw_ring_arc(&mut img, sess,    OUTER_R_OUT, OUTER_R_IN, color_for(sess,   ctx, ctx.session_safe, true));
+                draw_ring_arc(&mut img, weekly,  INNER_R_OUT, INNER_R_IN, color_for(weekly, ctx, ctx.weekly_safe,  true));
+            } else {
+                draw_ring_arc(&mut img, sess,    OUTER_R_OUT, OUTER_R_IN, color_for(sess,   ctx, ctx.session_safe, true));
+                draw_ring_arc(&mut img, weekly,  INNER_R_OUT, INNER_R_IN, color_for(weekly, ctx, ctx.weekly_safe,  true));
+            }
+        }
+        DisplayMode::NumberSession | DisplayMode::NumberWeekly => {
+            // digit overlay added in a later task.
+        }
     }
     encode_png(&img)
 }
 
-fn draw_ring(img: &mut RgbaImage, r_out: f32, r_in: f32, color: Rgba<u8>) {
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let dx = x as f32 + 0.5 - CENTER;
-            let dy = y as f32 + 0.5 - CENTER;
-            let d = (dx * dx + dy * dy).sqrt();
-            if d <= r_out && d >= r_in {
-                img.put_pixel(x, y, color);
-            }
-        }
-    }
+fn color_for(pct: Option<f32>, ctx: &IconCtx, safe: Option<f32>, is_icon: bool) -> [u8; 3] {
+    if is_icon && !ctx.settings.apply_color_to.icon { return NEUTRAL_GRAY; }
+    if !is_icon && !ctx.settings.apply_color_to.number { return NEUTRAL_GRAY; }
+    urgency_rgb(pct, ctx.settings, safe)
 }
 
-fn draw_ring_arc(img: &mut RgbaImage, r_out: f32, r_in: f32, pct: f32, color: Rgba<u8>) {
-    let pct = pct.clamp(0.0, 100.0);
-    // Start at 12 o'clock, sweep clockwise, proportional to pct.
-    let max_angle = pct / 100.0 * std::f32::consts::TAU;
+pub fn urgency_rgb(pct: Option<f32>, s: &IconSettings, safe: Option<f32>) -> [u8; 3] {
+    let Some(pct) = pct else { return LOADING; };
+    if s.color_mode == ColorMode::Pace {
+        if let Some(safe) = safe {
+            let b = s.pace_band;
+            let hex = if pct < safe - b { &s.pace_colors.under }
+                      else if pct < safe { &s.pace_colors.near_safe }
+                      else if pct < safe + b { &s.pace_colors.near_over }
+                      else { &s.pace_colors.over };
+            return hex_to_rgb(hex).unwrap_or(FALLBACK_COLOR);
+        }
+    }
+    let mut color = s.color_thresholds.first().map(|t| t.color.as_str()).unwrap_or("#4a90e2");
+    for stop in &s.color_thresholds {
+        if pct >= stop.min as f32 { color = &stop.color; } else { break; }
+    }
+    hex_to_rgb(color).unwrap_or(FALLBACK_COLOR)
+}
+
+fn hex_to_rgb(hex: &str) -> Option<[u8; 3]> {
+    let h = hex.trim_start_matches('#');
+    if h.len() != 6 { return None; }
+    Some([
+        u8::from_str_radix(&h[0..2], 16).ok()?,
+        u8::from_str_radix(&h[2..4], 16).ok()?,
+        u8::from_str_radix(&h[4..6], 16).ok()?,
+    ])
+}
+
+fn draw_ring_arc(img: &mut RgbaImage, pct: Option<f32>, r_out: f32, r_in: f32, fg: [u8; 3]) {
+    let filled_angle = pct.map(|p| (p.min(100.0) / 100.0) * std::f32::consts::TAU).unwrap_or(0.0);
     for y in 0..SIZE {
         for x in 0..SIZE {
-            let dx = x as f32 + 0.5 - CENTER;
-            let dy = y as f32 + 0.5 - CENTER;
-            let d = (dx * dx + dy * dy).sqrt();
-            if d > r_out || d < r_in { continue; }
-            // angle measured clockwise from 12 o'clock:
-            let mut a = (-dy).atan2(dx) * -1.0 + std::f32::consts::FRAC_PI_2;
-            if a < 0.0 { a += std::f32::consts::TAU; }
-            if a <= max_angle {
-                img.put_pixel(x, y, color);
-            }
+            let dx = x as f32 - CX + 0.5;
+            let dy = y as f32 - CY + 0.5;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < r_in - 1.0 || dist > r_out + 1.0 { continue; }
+
+            let edge_alpha = ((dist - (r_in - 1.0)).min(1.0)) * ((r_out + 1.0 - dist).min(1.0));
+            if edge_alpha <= 0.0 { continue; }
+
+            let mut angle = dx.atan2(-dy);
+            if angle < 0.0 { angle += std::f32::consts::TAU; }
+            let in_filled = angle <= filled_angle;
+
+            let cur = img.get_pixel(x, y).0;
+            let src_a = cur[3] as f32 / 255.0;
+            let dst_a = if in_filled { edge_alpha } else { (TRACK_ALPHA as f32 / 255.0) * edge_alpha };
+            let out_a = dst_a + src_a * (1.0 - dst_a);
+            if out_a < 0.004 { continue; }
+
+            let (fr, fg_c, fb) = if in_filled { (fg[0], fg[1], fg[2]) } else { (TRACK[0], TRACK[1], TRACK[2]) };
+            let blend = |dst: u8, src: u8| -> u8 {
+                let d = dst as f32;
+                let s = src as f32;
+                ((s * dst_a + d * src_a * (1.0 - dst_a)) / out_a).round() as u8
+            };
+            img.put_pixel(x, y, Rgba([
+                blend(cur[0], fr),
+                blend(cur[1], fg_c),
+                blend(cur[2], fb),
+                (out_a * 255.0).round() as u8,
+            ]));
         }
     }
 }
@@ -78,30 +138,63 @@ fn draw_ring_arc(img: &mut RgbaImage, r_out: f32, r_in: f32, pct: f32, color: Rg
 fn encode_png(img: &RgbaImage) -> Vec<u8> {
     let mut buf = Vec::with_capacity(4096);
     image::codecs::png::PngEncoder::new(&mut buf)
-        .write_image(
-            img.as_raw(),
-            img.width(),
-            img.height(),
-            image::ExtendedColorType::Rgba8,
-        )
+        .write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8)
         .expect("png encode");
     buf
+}
+
+/// Back-compat: existing tray.rs call site uses `render_rings(Some, Some)`.
+/// Forwards to `render` with default-ish IconCtx. Once tray.rs is updated in a
+/// later task this function can be removed.
+pub fn render_rings(sess: Option<f32>, weekly: Option<f32>) -> Vec<u8> {
+    let settings = IconSettings::default();
+    render(sess, weekly, &IconCtx {
+        settings: &settings,
+        display_mode: DisplayMode::Icon,
+        session_safe: None, weekly_safe: None,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::icon_settings::{ColorApplyTo, ColorMode, ColorStop, IconSettings, IconStyle, OverlayStyle, PaceColors, DefaultDisplay};
+    use image::GenericImageView;
+
+    fn test_settings() -> IconSettings {
+        IconSettings {
+            default_display: DefaultDisplay::Icon,
+            icon_style: IconStyle::Rings,
+            overlay_style: OverlayStyle::Classic,
+            color_mode: ColorMode::Threshold,
+            color_thresholds: vec![
+                ColorStop { min: 0, color: "#00ff00".into() },
+                ColorStop { min: 50, color: "#ff8800".into() },
+                ColorStop { min: 80, color: "#ff0000".into() },
+            ],
+            pace_band: 10.0,
+            pace_colors: PaceColors::default(),
+            apply_color_to: ColorApplyTo::default(),
+        }
+    }
 
     #[test]
     fn png_header_correct() {
-        let bytes = render_rings(Some(40.0), Some(80.0));
-        // PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+        let bytes = render(Some(40.0), Some(80.0), &IconCtx {
+            settings: &test_settings(),
+            display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        });
         assert_eq!(&bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     }
 
     #[test]
     fn decoded_dimensions_are_22x22() {
-        let bytes = render_rings(Some(40.0), Some(80.0));
+        let bytes = render(Some(40.0), Some(80.0), &IconCtx {
+            settings: &test_settings(),
+            display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        });
         let decoded = image::load_from_memory(&bytes).unwrap();
         assert_eq!(decoded.width(), SIZE);
         assert_eq!(decoded.height(), SIZE);
@@ -109,13 +202,77 @@ mod tests {
 
     #[test]
     fn loading_state_renders_without_panicking() {
-        let _ = render_rings(None, None);
+        let _ = render(None, None, &IconCtx {
+            settings: &test_settings(),
+            display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        });
     }
 
     #[test]
-    fn full_ring_colors_high_pct_red() {
-        assert_eq!(color_for(85.0), RED);
-        assert_eq!(color_for(50.0), ORANGE);
-        assert_eq!(color_for(10.0), GREEN);
+    fn urgency_rgb_threshold_mode_selects_by_highest_reached_stop() {
+        let s = test_settings();
+        assert_eq!(urgency_rgb(Some(10.0), &s, None), [0, 255, 0]);
+        assert_eq!(urgency_rgb(Some(55.0), &s, None), [255, 136, 0]);
+        assert_eq!(urgency_rgb(Some(85.0), &s, None), [255, 0, 0]);
+    }
+
+    #[test]
+    fn urgency_rgb_loading_state_returns_blue() {
+        let s = test_settings();
+        let rgb = urgency_rgb(None, &s, None);
+        assert_eq!(rgb, [74, 144, 226]);
+    }
+
+    #[test]
+    fn urgency_rgb_pace_mode_uses_pace_colors() {
+        let mut s = test_settings();
+        s.color_mode = ColorMode::Pace;
+        // pct < safe-band = under
+        let under = urgency_rgb(Some(20.0), &s, Some(40.0));
+        // pct in [safe-band, safe) = near_safe
+        let near_safe = urgency_rgb(Some(35.0), &s, Some(40.0));
+        // pct in [safe, safe+band) = near_over
+        let near_over = urgency_rgb(Some(45.0), &s, Some(40.0));
+        // pct >= safe+band = over
+        let over = urgency_rgb(Some(60.0), &s, Some(40.0));
+        assert_ne!(under, near_safe);
+        assert_ne!(near_safe, near_over);
+        assert_ne!(near_over, over);
+    }
+
+    #[test]
+    fn aa_ring_has_soft_edges() {
+        let bytes = render(Some(50.0), Some(50.0), &IconCtx {
+            settings: &test_settings(),
+            display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        });
+        let img = image::load_from_memory(&bytes).unwrap();
+        // Sample a pixel near the outer ring's outer edge.
+        // center=11,11; r_out=10.5. Pixel (21, 11) is right at the outer edge.
+        let edge = img.get_pixel(21, 11);
+        assert!(edge[3] > 0 && edge[3] < 255, "expected AA alpha, got {}", edge[3]);
+    }
+
+    #[test]
+    fn apply_color_to_icon_false_grays_out_icon() {
+        let mut s = test_settings();
+        s.apply_color_to.icon = false;
+        let bytes = render(Some(90.0), Some(10.0), &IconCtx {
+            settings: &s,
+            display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        });
+        let img = image::load_from_memory(&bytes).unwrap();
+        // Scan all colored pixels; none should be red (threshold mode at 90%).
+        let mut has_red = false;
+        for y in 0..img.height() {
+            for x in 0..img.width() {
+                let p = img.get_pixel(x, y);
+                if p[3] > 100 && p[0] > 200 && p[1] < 50 && p[2] < 50 { has_red = true; }
+            }
+        }
+        assert!(!has_red, "expected grayed icon, found red pixels");
     }
 }
