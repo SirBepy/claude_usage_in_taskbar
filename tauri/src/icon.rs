@@ -56,7 +56,29 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
             }
         }
         DisplayMode::NumberSession | DisplayMode::NumberWeekly => {
-            // digit overlay added in a later task.
+            let (pct, safe) = match ctx.display_mode {
+                DisplayMode::NumberSession => (sess, ctx.session_safe),
+                DisplayMode::NumberWeekly  => (weekly, ctx.weekly_safe),
+                _ => unreachable!(),
+            };
+            let Some(pct) = pct else {
+                // no data — draw dim rings like idle state
+                draw_ring_arc(&mut img, Some(100.0), OUTER_R_OUT, OUTER_R_IN, IDLE_GRAY);
+                return encode_png(&img);
+            };
+            let val = (pct.round() as i32).clamp(0, 99) as u32;
+            let text = val.to_string();
+            let font: &crate::fonts::PixelFont = match ctx.settings.overlay_style {
+                crate::icon_settings::OverlayStyle::Classic => &crate::fonts::CLASSIC,
+                crate::icon_settings::OverlayStyle::Digital => &crate::fonts::DIGITAL,
+                crate::icon_settings::OverlayStyle::Bold    => &crate::fonts::BOLD,
+            };
+            let chars = text.chars().count() as u32;
+            let total_w = chars * font.width + chars.saturating_sub(1);
+            let x = SIZE.saturating_sub(total_w) / 2;
+            let y = SIZE.saturating_sub(font.height) / 2;
+            let color = color_for(Some(pct), ctx, safe, /*is_icon=*/false);
+            crate::fonts::draw_text(&mut img, &text, x, y, color, font);
         }
     }
     encode_png(&img)
@@ -274,5 +296,35 @@ mod tests {
             }
         }
         assert!(!has_red, "expected grayed icon, found red pixels");
+    }
+
+    #[test]
+    fn number_session_mode_renders_digits_centered() {
+        let s = test_settings();
+        let bytes = render(Some(45.0), Some(12.0), &IconCtx {
+            settings: &s,
+            display_mode: DisplayMode::NumberSession,
+            session_safe: None, weekly_safe: None,
+        });
+        let img = image::load_from_memory(&bytes).unwrap();
+        // Count lit pixels in the center band (rows 7-14)
+        let mut lit_center = 0;
+        for y in 7..15 {
+            for x in 0..22 {
+                if img.get_pixel(x, y)[3] > 100 { lit_center += 1; }
+            }
+        }
+        assert!(lit_center > 10, "expected '45' digits, found {lit_center} lit pixels");
+    }
+
+    #[test]
+    fn number_weekly_mode_does_not_panic_on_large_pct() {
+        // If weekly=150 we should still render a max of 99 (no overflow).
+        let s = test_settings();
+        let _ = render(Some(10.0), Some(150.0), &IconCtx {
+            settings: &s,
+            display_mode: DisplayMode::NumberWeekly,
+            session_safe: None, weekly_safe: None,
+        });
     }
 }
