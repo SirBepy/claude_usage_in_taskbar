@@ -460,7 +460,15 @@ window.onload = async () => {
     updateColorModeVisibility();
     currentSettings = settings;
     if (settings.projectAliases) currentSettings.projectAliases = settings.projectAliases;
-    (settings.colorThresholds || []).forEach((t) =>
+    const DEFAULT_THRESHOLDS = [
+      { min: 0,  color: "#27ae60" },
+      { min: 50, color: "#e67e22" },
+      { min: 80, color: "#e74c3c" },
+    ];
+    const thresholds = (settings.colorThresholds && settings.colorThresholds.length)
+      ? settings.colorThresholds
+      : DEFAULT_THRESHOLDS;
+    thresholds.forEach((t) =>
       colorContainer.appendChild(createColorRow(t.min, t.color))
     );
 
