@@ -47,9 +47,7 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
                 draw_ring_arc(&mut img, Some(100.0), OUTER_R_OUT, OUTER_R_IN, IDLE_GRAY);
                 draw_ring_arc(&mut img, Some(100.0), INNER_R_OUT, INNER_R_IN, IDLE_GRAY);
             } else if ctx.settings.icon_style == IconStyle::Bars {
-                // bars implemented in a later task — fall back to rings for now.
-                draw_ring_arc(&mut img, sess,    OUTER_R_OUT, OUTER_R_IN, color_for(sess,   ctx, ctx.session_safe, true));
-                draw_ring_arc(&mut img, weekly,  INNER_R_OUT, INNER_R_IN, color_for(weekly, ctx, ctx.weekly_safe,  true));
+                draw_bars(&mut img, sess, weekly, ctx);
             } else {
                 draw_ring_arc(&mut img, sess,    OUTER_R_OUT, OUTER_R_IN, color_for(sess,   ctx, ctx.session_safe, true));
                 draw_ring_arc(&mut img, weekly,  INNER_R_OUT, INNER_R_IN, color_for(weekly, ctx, ctx.weekly_safe,  true));
@@ -153,6 +151,28 @@ fn draw_ring_arc(img: &mut RgbaImage, pct: Option<f32>, r_out: f32, r_in: f32, f
                 blend(cur[2], fb),
                 (out_a * 255.0).round() as u8,
             ]));
+        }
+    }
+}
+
+fn draw_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
+    let sess_color = color_for(sess, ctx, ctx.session_safe, /*is_icon=*/true);
+    let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
+    draw_column(img, 3, 8, sess.unwrap_or(0.0), sess_color);
+    draw_column(img, 13, 18, weekly.unwrap_or(0.0), weekly_color);
+}
+
+fn draw_column(img: &mut RgbaImage, x0: u32, x1: u32, pct: f32, fg: [u8; 3]) {
+    let fill_h = (pct.clamp(0.0, 100.0) / 100.0) * 18.0;
+    for y in 2..=20u32 {
+        let filled = (20 - y) as f32 <= fill_h;
+        let (r, g, b, a) = if filled {
+            (fg[0], fg[1], fg[2], 255)
+        } else {
+            (TRACK[0], TRACK[1], TRACK[2], 80)
+        };
+        for x in x0..=x1 {
+            img.put_pixel(x, y, Rgba([r, g, b, a]));
         }
     }
 }
@@ -326,5 +346,29 @@ mod tests {
             display_mode: DisplayMode::NumberWeekly,
             session_safe: None, weekly_safe: None,
         });
+    }
+
+    #[test]
+    fn bars_mode_fills_left_column_for_session_pct() {
+        let mut s = test_settings();
+        s.icon_style = IconStyle::Bars;
+        let bytes = render(Some(80.0), Some(20.0), &IconCtx {
+            settings: &s,
+            display_mode: DisplayMode::Icon,
+            session_safe: None, weekly_safe: None,
+        });
+        let img = image::load_from_memory(&bytes).unwrap();
+        // Left bar x∈[3,8] — count fully-opaque pixels in that column range.
+        let mut left_filled = 0;
+        let mut right_filled = 0;
+        for y in 2..=20 {
+            for x in 3..=8 {
+                if img.get_pixel(x, y)[3] == 255 { left_filled += 1; }
+            }
+            for x in 13..=18 {
+                if img.get_pixel(x, y)[3] == 255 { right_filled += 1; }
+            }
+        }
+        assert!(left_filled > right_filled, "session 80% should fill more than weekly 20%");
     }
 }
