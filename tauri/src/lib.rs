@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod icon_settings;
+pub mod usage_parser;
 pub mod cdp;
 pub mod history;
 pub mod hook_server;
