@@ -1,0 +1,14 @@
+{
+  "name": "claude-usage-tauri-tests",
+  "private": true,
+  "version": "0.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^29.0.2",
+    "vitest": "^2.1.0"
+  }
+}
