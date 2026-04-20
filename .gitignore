@@ -8,3 +8,4 @@ resources/piper/
 Thumbs.db
 .direct-api-test-output.json
 .captured-cookies.json
+.playwright-mcp/
