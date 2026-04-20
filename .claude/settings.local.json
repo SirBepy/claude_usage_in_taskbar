@@ -54,7 +54,11 @@
       "Bash(powershell -Command \"Expand-Archive -Force inter.zip inter-extract\")",
       "Bash(xxd tauri/assets/Inter-SemiBold.ttf)",
       "Bash(git show *)",
-      "Bash(pkill *)"
+      "Bash(pkill *)",
+      "Bash(git stash *)",
+      "Bash(tar -tzf /c/tmp/piper-dl/linux-x64.tar.gz)",
+      "WebFetch(domain:wowwiki-archive.fandom.com)",
+      "WebFetch(domain:liquipedia.net)"
     ]
   }
 }
