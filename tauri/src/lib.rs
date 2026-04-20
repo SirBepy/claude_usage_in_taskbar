@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod icon_settings;
 pub mod cdp;
 pub mod history;
 pub mod hook_server;
@@ -10,6 +11,7 @@ pub mod scraper;
 pub mod session;
 pub mod settings;
 pub mod state;
+pub mod token_stats;
 pub mod tray;
 pub mod types;
 
@@ -56,6 +58,13 @@ pub fn run() {
             ipc::logout,
             ipc::poll_now,
             ipc::start_login,
+            ipc::read_log_file,
+            ipc::get_token_history,
+            ipc::get_active_sessions,
+            ipc::backfill_transcripts,
+            ipc::check_paths_exist,
+            ipc::open_in_explorer,
+            ipc::open_in_vscode,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
@@ -72,6 +81,32 @@ pub fn run() {
                 };
             }
             crate::scheduler::spawn(app.handle().clone());
+
+            // Auto-backfill token history once, off the main thread. Keeps
+            // the stats page populated on first launch / after new sessions.
+            {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let Ok(path) = paths::token_history_file() else { return };
+                    let path_clone = path.clone();
+                    match tauri::async_runtime::spawn_blocking(move || {
+                        crate::token_stats::backfill_all(&path_clone)
+                    })
+                    .await
+                    {
+                        Ok(Ok(r)) => {
+                            log::info!(
+                                "startup backfill: {} new, {} skipped (sub: {} new, {} skipped)",
+                                r.processed, r.skipped, r.sub_processed, r.sub_skipped
+                            );
+                            let history = crate::token_stats::load_history(&path);
+                            let _ = h.emit("token-history-updated", history);
+                        }
+                        Ok(Err(e)) => log::warn!("startup backfill failed: {e:?}"),
+                        Err(e) => log::warn!("startup backfill join error: {e}"),
+                    }
+                });
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = crate::hook_server::spawn(handle).await {
