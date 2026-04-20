@@ -1,3 +1,6 @@
 target/
 gen/
 icons/
+# Piper sidecar stubs (real binaries placed manually, not committed)
+binaries/piper/piper-*.exe
+binaries/piper/piper-*

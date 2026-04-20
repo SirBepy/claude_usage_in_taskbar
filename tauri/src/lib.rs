@@ -4,6 +4,7 @@ pub mod display_state;
 pub mod fonts;
 pub mod icon_settings;
 pub mod notifications;
+pub mod piper;
 pub mod usage_parser;
 pub mod cdp;
 pub mod history;
@@ -70,6 +71,9 @@ pub fn run() {
             ipc::check_paths_exist,
             ipc::open_in_explorer,
             ipc::open_in_vscode,
+            ipc::piper_status,
+            ipc::piper_install_voice,
+            ipc::piper_speak_preview,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

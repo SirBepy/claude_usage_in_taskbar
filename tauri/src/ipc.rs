@@ -230,6 +230,22 @@ pub async fn backfill_transcripts(app: AppHandle) -> Result<BackfillResult, Stri
 }
 
 #[tauri::command]
+pub fn piper_status() -> crate::piper::PiperStatus {
+    crate::piper::status()
+}
+
+#[tauri::command]
+pub async fn piper_install_voice(id: String) -> Result<(), String> {
+    crate::piper::install_voice(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn piper_speak_preview(app: AppHandle, text: String, voice_name: Option<String>) -> Result<(), String> {
+    crate::notifications::speak_public(&app, &text, voice_name.as_deref());
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
     match crate::scheduler::poll_once(&app, crate::scheduler::PollTrigger::Manual).await {
         Ok(snap) => {

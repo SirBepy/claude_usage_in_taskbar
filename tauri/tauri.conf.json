@@ -36,7 +36,8 @@
     "category": "Utility",
     "shortDescription": "Claude AI usage in your taskbar",
     "longDescription": "Tray app that monitors Claude AI usage and shows it as progress rings in the system tray.",
-    "resources": ["assets/sounds/*"]
+    "resources": ["assets/sounds/*"],
+    "externalBin": ["binaries/piper/piper"]
   },
   "plugins": {
     "updater": {

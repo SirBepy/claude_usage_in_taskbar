@@ -52,8 +52,27 @@ pub fn project_name_from_cwd(cwd: &str) -> Option<String> {
 }
 
 fn speak(app: &AppHandle, text: &str, voice: Option<&str>) {
-    // Piper-first wiring comes in Task 12. For now always fall back to
-    // renderer-side speechSynthesis via an event.
+    if let Some(v) = voice {
+        let status = crate::piper::status();
+        let has_voice = status.voices.iter().any(|e| e.id == v && e.installed);
+        if status.installed && has_voice {
+            let app = app.clone();
+            let text = text.to_string();
+            let voice = v.to_string();
+            tauri::async_runtime::spawn(async move {
+                match crate::piper::synthesize(&text, &voice).await {
+                    Ok(wav) => crate::audio::play_wav(&app, &wav),
+                    Err(e) => {
+                        log::warn!("piper synth failed: {e}; falling back to web speech");
+                        let _ = app.emit("speak-fallback", serde_json::json!({
+                            "text": text, "voiceName": voice,
+                        }));
+                    }
+                }
+            });
+            return;
+        }
+    }
     let _ = app.emit("speak-fallback", serde_json::json!({
         "text": text,
         "voiceName": voice,

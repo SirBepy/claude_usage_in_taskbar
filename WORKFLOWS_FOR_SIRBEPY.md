@@ -19,3 +19,5 @@ Numbered steps Joe needs to do by hand that can't be automated.
        git push origin tauri-v0.1.0
 
    Watch the Actions tab for build progress. The release lands in the Drafts tab - promote it manually after smoke-testing the installer.
+
+4. Place Piper binaries in `tauri/binaries/piper/`: `piper.exe` (Windows), `piper` (mac/linux). Download from https://github.com/rhasspy/piper/releases. Required for high-quality notification voices.

@@ -43,3 +43,17 @@ pub fn ensure_data_dir() -> Result<PathBuf> {
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
+
+pub fn piper_voices_dir() -> anyhow::Result<std::path::PathBuf> {
+    let d = ensure_data_dir()?;
+    let p = d.join("piper").join("voices");
+    std::fs::create_dir_all(&p)?;
+    Ok(p)
+}
+
+pub fn piper_binary_path() -> anyhow::Result<std::path::PathBuf> {
+    let exe = std::env::current_exe()?;
+    let parent = exe.parent().ok_or_else(|| anyhow::anyhow!("no exe parent"))?;
+    let name = if cfg!(windows) { "piper.exe" } else { "piper" };
+    Ok(parent.join(name))
+}
