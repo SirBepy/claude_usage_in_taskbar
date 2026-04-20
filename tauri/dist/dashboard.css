@@ -336,6 +336,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 9px 0;
+    min-height: 44px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -344,6 +345,12 @@ body {
 }
 
 .option:last-of-type {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.notif-card .notif-sound-row,
+.notif-card .notif-voice-rows {
     border-bottom: none;
     padding-bottom: 0;
 }
@@ -514,11 +521,12 @@ select {
     border: 1px solid var(--border);
     border-top-color: rgba(0,0,0,0.5);
     border-bottom-color: rgba(255,255,255,0.1);
-    padding: 0.65rem 1rem;
-    border-radius: 10px;
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
+    min-width: 150px;
     outline: none;
     font-family: 'DM Sans', system-ui, sans-serif;
-    font-size: 0.88rem;
+    font-size: 0.85rem;
     box-shadow:
         inset 0 3px 10px rgba(0,0,0,0.5),
         inset 0 1px 2px 0 rgba(0,0,0,0.3),
@@ -526,6 +534,10 @@ select {
         0 1px 0 0 rgba(255,255,255,0.06);
     transition: border-color 0.2s, box-shadow 0.2s;
     cursor: pointer;
+}
+
+select.wide {
+    min-width: 220px;
 }
 
 select:focus {
@@ -536,6 +548,45 @@ select:focus {
         inset 0 -1px 1px 0 rgba(255,255,255,0.07),
         0 0 0 3px rgba(157,125,252,0.15),
         0 0 16px rgba(157,125,252,0.08);
+}
+
+/* ── Color picker ── */
+input[type="color"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 36px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-top-color: rgba(0,0,0,0.5);
+    border-bottom-color: rgba(255,255,255,0.1);
+    border-radius: 6px;
+    background: var(--surface-alt);
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 2px;
+    border: none;
+    border-radius: 5px;
+}
+
+input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+
+input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+
+input[type="color"]:hover {
+    border-color: var(--primary);
 }
 
 button {

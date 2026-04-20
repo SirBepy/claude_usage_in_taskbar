@@ -333,8 +333,7 @@ function createColorRow(min = 0, color = "#ffffff") {
     <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
       <input type="number" class="color-min" value="${min}" min="0" max="100" style="width:50px">
       <span style="font-size: 0.8rem; color: var(--text-dim);">%</span>
-      <input type="color" class="color-val" value="${color}"
-        style="width: 30px; height: 24px; border: none; background: none; cursor: pointer;">
+      <input type="color" class="color-val" value="${color}">
     </div>
     <button class="btn-secondary remove-color-btn" style="padding: 2px 8px; font-size: 0.7rem;">Remove</button>
   `;
