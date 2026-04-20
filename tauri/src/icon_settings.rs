@@ -17,11 +17,6 @@ impl Default for IconStyle { fn default() -> Self { Self::Rings } }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum OverlayStyle { Classic, Digital, Bold }
-impl Default for OverlayStyle { fn default() -> Self { Self::Classic } }
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
 pub enum ColorMode { Threshold, Pace }
 impl Default for ColorMode { fn default() -> Self { Self::Threshold } }
 
@@ -78,7 +73,6 @@ impl Default for ColorApplyTo {
 pub struct IconSettings {
     pub default_display: DefaultDisplay,
     pub icon_style: IconStyle,
-    pub overlay_style: OverlayStyle,
     pub color_mode: ColorMode,
     pub color_thresholds: Vec<ColorStop>,
     pub pace_band: f32,
@@ -91,7 +85,6 @@ impl Default for IconSettings {
         Self {
             default_display: DefaultDisplay::default(),
             icon_style: IconStyle::default(),
-            overlay_style: OverlayStyle::default(),
             color_mode: ColorMode::default(),
             color_thresholds: vec![
                 ColorStop { min: 0,  color: "#27ae60".into() },
@@ -223,11 +216,6 @@ impl TryFrom<&Settings> for IconSettings {
                 ("rings", IconStyle::Rings),
                 ("bars", IconStyle::Bars),
             ]),
-            overlay_style: parse_enum(e.get("overlayStyle"), &[
-                ("classic", OverlayStyle::Classic),
-                ("digital", OverlayStyle::Digital),
-                ("bold", OverlayStyle::Bold),
-            ]),
             color_mode: parse_enum(e.get("colorMode"), &[
                 ("threshold", ColorMode::Threshold),
                 ("pace", ColorMode::Pace),
@@ -307,7 +295,6 @@ mod tests {
         let icon = IconSettings::try_from(&s).unwrap();
         assert_eq!(icon.default_display, DefaultDisplay::Icon);
         assert_eq!(icon.icon_style, IconStyle::Rings);
-        assert_eq!(icon.overlay_style, OverlayStyle::Classic);
         assert_eq!(icon.color_mode, ColorMode::Threshold);
         assert!(icon.apply_color_to.icon);
         assert!(icon.apply_color_to.number);
@@ -320,7 +307,6 @@ mod tests {
         let s = settings_with(json!({
             "defaultDisplay": "session",
             "iconStyle": "bars",
-            "overlayStyle": "digital",
             "colorMode": "pace",
             "paceBand": 15,
             "paceColors": {"under": "#11ff00", "nearSafe": "#ffff00",
@@ -335,7 +321,6 @@ mod tests {
         let icon = IconSettings::try_from(&s).unwrap();
         assert_eq!(icon.default_display, DefaultDisplay::Session);
         assert_eq!(icon.icon_style, IconStyle::Bars);
-        assert_eq!(icon.overlay_style, OverlayStyle::Digital);
         assert_eq!(icon.color_mode, ColorMode::Pace);
         assert_eq!(icon.pace_band, 15.0);
         assert_eq!(icon.pace_colors.under, "#11ff00");
