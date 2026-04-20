@@ -40,17 +40,23 @@ pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: Dat
             let mut lines = vec![];
             let mut sess_parts = vec![format!("Session  {:.0}%", sess)];
             if s.show_safe_pace { if let Some(v) = sess_safe { sess_parts.push(format!("{:.0}%", v)); } }
-            if !sess_reset.is_empty() { sess_parts.push(sess_reset); }
             lines.push(sess_parts.join("  "));
+            if !sess_reset.is_empty() {
+                lines.push("Resets:".to_string());
+                lines.push(sess_reset);
+            }
 
             let mut wk_parts = vec![format!("Weekly   {:.0}%", weekly)];
             if s.show_safe_pace { if let Some(v) = weekly_safe { wk_parts.push(format!("{:.0}%", v)); } }
-            if !weekly_reset.is_empty() { wk_parts.push(weekly_reset); }
             lines.push(wk_parts.join("  "));
+            if !weekly_reset.is_empty() {
+                lines.push("Resets:".to_string());
+                lines.push(weekly_reset);
+            }
             lines.join("\n")
         }
         TooltipLayout::Columns => {
-            // Header + pct + (optional safe pace row) + reset times, tab-separated.
+            // Header + pct + (optional safe pace row) + "Resets:" header + times.
             let mut lines = vec!["Session\tWeekly".to_string()];
             lines.push(format!("{:.0}%\t{:.0}%", sess, weekly));
             if s.show_safe_pace {
@@ -61,6 +67,7 @@ pub fn build_tooltip(snap: Option<&UsageSnapshot>, s: &TooltipSettings, now: Dat
                 }
             }
             if !sess_reset.is_empty() || !weekly_reset.is_empty() {
+                lines.push("Resets:".to_string());
                 lines.push(format!("{sess_reset}\t{weekly_reset}").trim_end().to_string());
             }
             lines.join("\n")
