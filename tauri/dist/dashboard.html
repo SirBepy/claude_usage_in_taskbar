@@ -332,6 +332,30 @@
             <div style="width:32px"></div>
         </div>
         <div class="view-body">
+            <div class="section" id="muteSection">
+                <div class="section-title">Mute</div>
+                <div class="option">
+                    <span class="option-label">Mute all notifications</span>
+                    <label class="switch">
+                        <input type="checkbox" id="muteAllSwitch">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="option mute-child">
+                    <span class="option-label">Mute sounds</span>
+                    <label class="switch">
+                        <input type="checkbox" id="muteSoundsSwitch">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="option mute-child is-disabled" title="Coming soon — OS toasts aren't implemented yet">
+                    <span class="option-label">Mute system notifications <span style="color:var(--text-dim);font-size:0.75rem">(coming soon)</span></span>
+                    <label class="switch">
+                        <input type="checkbox" id="muteSystemSwitch" disabled>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
             <template id="notifCardTemplate">
                 <div class="section notif-card">
                     <div class="section-title notif-title"></div>
