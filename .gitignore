@@ -2,6 +2,7 @@ node_modules/
 out/
 /target/
 /gen/schemas/
+/icons/
 *.log
 .DS_Store
 Thumbs.db
