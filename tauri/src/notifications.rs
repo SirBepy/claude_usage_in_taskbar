@@ -4,6 +4,7 @@ use crate::audio;
 use crate::icon_settings::NotifMode;
 use crate::project_overrides::{self, ProjectOverrides};
 use crate::state::AppState;
+use crate::types::Settings;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +37,14 @@ pub fn resolve_notif_config(
         NotifKind::ThresholdCrossed => po.threshold_crossed.clone(),
     };
     override_rule.unwrap_or(default_rule)
+}
+
+/// Pure helper: decide whether a notification of `mode` must be dropped
+/// given the current settings. Keeps `fire()` thin and testable without
+/// a live Tauri app.
+pub(crate) fn should_suppress(settings: &Settings, mode: NotifMode) -> bool {
+    if settings.mute_all() { return true; }
+    matches!(mode, NotifMode::Sound | NotifMode::Voice) && settings.mute_sounds()
 }
 
 pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option<&str>) {
@@ -105,6 +114,36 @@ pub fn speak_public(app: &AppHandle, text: &str, voice: Option<&str>) { speak(ap
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::icon_settings::NotifMode;
+    use crate::types::Settings;
+
+    fn settings_with(key: &str, val: bool) -> Settings {
+        let mut s = Settings::default();
+        s.extra.insert(key.into(), serde_json::Value::Bool(val));
+        s
+    }
+
+    #[test]
+    fn should_suppress_returns_false_when_all_flags_off() {
+        let s = Settings::default();
+        assert!(!super::should_suppress(&s, NotifMode::Sound));
+        assert!(!super::should_suppress(&s, NotifMode::Voice));
+    }
+
+    #[test]
+    fn should_suppress_returns_true_when_mute_all_regardless_of_mode() {
+        let s = settings_with("muteAll", true);
+        assert!(super::should_suppress(&s, NotifMode::Sound));
+        assert!(super::should_suppress(&s, NotifMode::Voice));
+    }
+
+    #[test]
+    fn should_suppress_mutes_sound_and_voice_when_mute_sounds() {
+        let s = settings_with("muteSounds", true);
+        assert!(super::should_suppress(&s, NotifMode::Sound));
+        assert!(super::should_suppress(&s, NotifMode::Voice));
+    }
 
     #[test]
     fn template_substitutes_name() {
