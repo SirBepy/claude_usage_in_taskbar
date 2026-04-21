@@ -10,19 +10,15 @@ use anyhow::Result;
 use chrono::Utc;
 use std::time::{Duration, Instant};
 use tauri::image::Image;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::{AppHandle, Listener, Manager};
 
 pub const TRAY_ID: &str = "main-tray";
 
 pub fn setup(app: &AppHandle) -> Result<()> {
-    let menu = MenuBuilder::new(app)
-        .item(&MenuItemBuilder::with_id("open", "Open Dashboard").build(app)?)
-        .item(&MenuItemBuilder::with_id("refresh", "Refresh Now").build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("quit", "Quit").build(app)?)
-        .build()?;
+    let initial_mute = app.state::<AppState>().settings.lock().unwrap().mute_all();
+    let menu = build_menu(app, initial_mute)?;
 
     let idle_bytes = {
         let s = IconSettings::default();
@@ -49,6 +45,12 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                     });
                 }
                 "quit" => app.exit(0),
+                "mute-all" => {
+                    let h = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        toggle_mute_all(h);
+                    });
+                }
                 _ => {}
             }
         })
@@ -151,4 +153,37 @@ pub fn render_tray_now(app: &AppHandle) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return; };
     if let Ok(img) = Image::from_bytes(&bytes) { let _ = tray.set_icon(Some(img)); }
     let _ = tray.set_tooltip(Some(usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)));
+}
+
+fn build_menu(app: &AppHandle, mute_all: bool) -> Result<Menu<tauri::Wry>> {
+    let mute = CheckMenuItemBuilder::with_id("mute-all", "Mute Notifications")
+        .checked(mute_all)
+        .build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&MenuItemBuilder::with_id("open", "Open Dashboard").build(app)?)
+        .item(&MenuItemBuilder::with_id("refresh", "Refresh Now").build(app)?)
+        .separator()
+        .item(&mute)
+        .separator()
+        .item(&MenuItemBuilder::with_id("quit", "Quit").build(app)?)
+        .build()?;
+    Ok(menu)
+}
+
+fn toggle_mute_all(app: AppHandle) {
+    use crate::paths;
+    use tauri::Emitter;
+    let state = app.state::<AppState>();
+    let updated = {
+        let mut s = state.settings.lock().unwrap();
+        let current = s.mute_all();
+        s.extra.insert("muteAll".into(), serde_json::Value::Bool(!current));
+        s.clone()
+    };
+    if let Ok(path) = paths::settings_file() {
+        if let Err(e) = crate::settings::save(&path, &updated) {
+            log::warn!("persist mute toggle failed: {e}");
+        }
+    }
+    let _ = app.emit("settings-changed", &updated);
 }
