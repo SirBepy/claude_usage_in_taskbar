@@ -41,6 +41,13 @@ base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 sysinfo = "0.31"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 tempfile = "3"
 mockito = "1"

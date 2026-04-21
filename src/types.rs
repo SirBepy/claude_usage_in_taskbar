@@ -184,6 +184,19 @@ pub enum AuthState {
     InProgress,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelStatus {
+    /// Starting but no child or hwnd yet.
+    Starting,
+    /// Running with a live child.
+    Running,
+    /// Exited recently; restart policy may re-spawn.
+    Stopped,
+    /// Crashed and backoff has exhausted; no automatic restart.
+    Crashed,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,5 +381,13 @@ mod tests {
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();
         assert_eq!(i, back);
+    }
+
+    #[test]
+    fn channel_status_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&ChannelStatus::Running).unwrap(),
+            "\"running\""
+        );
     }
 }
