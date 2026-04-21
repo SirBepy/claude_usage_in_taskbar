@@ -70,6 +70,47 @@ pub struct ProjectConfig {
     pub last_active_at: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InstanceKind {
+    Automated,
+    External,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum EndReason {
+    HookSessionEnd,
+    ProcessGone,
+    ChildExit,
+    Manual,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Instance {
+    pub session_id: String,
+    pub pid: u32,
+    pub cwd: std::path::PathBuf,
+    pub project_id: String,
+    pub kind: InstanceKind,
+    #[serde(default)]
+    pub is_remote: bool,
+    pub started_at: String,
+    #[serde(default)]
+    pub transcript_path: Option<std::path::PathBuf>,
+    #[serde(default)]
+    pub bridge_session_id: Option<String>,
+    #[serde(default)]
+    pub ended_at: Option<String>,
+    #[serde(default)]
+    pub end_reason: Option<EndReason>,
+}
+
+/// Shape served to the webview. Same as `Instance` for now; kept as a
+/// distinct type so future payload tweaks don't require a registry-wide
+/// schema change.
+pub type InstanceSummary = Instance;
+
 /// User-configurable app settings.
 ///
 /// The dashboard owns a LOT of UI state (theme, project aliases + blacklist,
@@ -286,5 +327,46 @@ mod tests {
         assert_eq!(raw, r#"{"kind":"emoji","value":"🦊"}"#);
         let back: Avatar = serde_json::from_str(&raw).unwrap();
         assert_eq!(a, back);
+    }
+
+    #[test]
+    fn instance_kind_serializes_lowercase() {
+        let a = InstanceKind::Automated;
+        let e = InstanceKind::External;
+        assert_eq!(serde_json::to_string(&a).unwrap(), "\"automated\"");
+        assert_eq!(serde_json::to_string(&e).unwrap(), "\"external\"");
+    }
+
+    #[test]
+    fn end_reason_serializes_kebab_case() {
+        let cases: Vec<(EndReason, &str)> = vec![
+            (EndReason::HookSessionEnd, "\"hook-session-end\""),
+            (EndReason::ProcessGone, "\"process-gone\""),
+            (EndReason::ChildExit, "\"child-exit\""),
+            (EndReason::Manual, "\"manual\""),
+        ];
+        for (r, expected) in cases {
+            assert_eq!(serde_json::to_string(&r).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn instance_roundtrips_json() {
+        let i = Instance {
+            session_id: "s1".into(),
+            pid: 1234,
+            cwd: std::path::PathBuf::from("C:/x"),
+            project_id: "proj-a".into(),
+            kind: InstanceKind::External,
+            is_remote: false,
+            started_at: "2026-04-21T10:00:00Z".into(),
+            transcript_path: Some(std::path::PathBuf::from("C:/t/abc.jsonl")),
+            bridge_session_id: None,
+            ended_at: None,
+            end_reason: None,
+        };
+        let raw = serde_json::to_string(&i).unwrap();
+        let back: Instance = serde_json::from_str(&raw).unwrap();
+        assert_eq!(i, back);
     }
 }
