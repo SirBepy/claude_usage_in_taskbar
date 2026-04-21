@@ -223,9 +223,10 @@ function wireNotifCard(type) {
     c.voiceSelect.dataset.desired = c.voiceSelect.value || "";
     saveSettings();
   });
-  c.soundPreview.onclick = async () => {
-    const url = await window.electronAPI.soundPackFileUrl(c.soundPack.value, c.soundFile.value);
-    if (url) new Audio(url).play().catch(() => {});
+  c.soundPreview.onclick = () => {
+    window.electronAPI.playPackSoundPreview(c.soundPack.value, c.soundFile.value).catch(e => {
+      console.error("[sound preview] failed", e);
+    });
   };
   c.voicePreview.onclick = () => {
     const cwd = voicePreviewProject.value || "";

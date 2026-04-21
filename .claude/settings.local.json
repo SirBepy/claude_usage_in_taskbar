@@ -58,7 +58,16 @@
       "Bash(git stash *)",
       "Bash(tar -tzf /c/tmp/piper-dl/linux-x64.tar.gz)",
       "WebFetch(domain:wowwiki-archive.fandom.com)",
-      "WebFetch(domain:liquipedia.net)"
+      "WebFetch(domain:liquipedia.net)",
+      "Bash(powershell *)",
+      "Bash(gh auth *)",
+      "Bash(ffmpeg -version)",
+      "Bash(zip -j /c/tmp/peon.zip *.wav ATTRIBUTION.txt)",
+      "Bash(gh release *)",
+      "Bash(xxd)",
+      "Bash(git tag *)",
+      "Bash(git rm *)",
+      "Bash(git checkout *)"
     ]
   }
 }

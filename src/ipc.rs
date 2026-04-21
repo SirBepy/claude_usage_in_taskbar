@@ -259,6 +259,16 @@ pub fn play_sound_preview(app: AppHandle, filename: String) -> Result<(), String
 }
 
 #[tauri::command]
+pub fn play_pack_sound_preview(app: AppHandle, pack: String, sound: String) -> Result<(), String> {
+    let invalid = |s: &str| s.is_empty() || s.contains('/') || s.contains('\\') || s.contains("..");
+    if invalid(&pack) || invalid(&sound) {
+        return Err("invalid pack or sound".into());
+    }
+    crate::audio::play_pack_sound(&app, &pack, &sound);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
     match crate::scheduler::poll_once(&app, crate::scheduler::PollTrigger::Manual).await {
         Ok(snap) => {

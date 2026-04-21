@@ -736,9 +736,10 @@ async function renderProjectOverrides(cwdKey) {
         installBtn.disabled = false; installBtn.textContent = "Install";
       }
     });
-    previewBtn.addEventListener("click", async () => {
-      const url = await window.electronAPI.soundPackFileUrl(packSel.value, soundSel.value);
-      if (url) new Audio(url).play().catch(() => {});
+    previewBtn.addEventListener("click", () => {
+      window.electronAPI.playPackSoundPreview(packSel.value, soundSel.value).catch(e => {
+        console.error("[sound preview] failed", e);
+      });
     });
 
     root.appendChild(node);
