@@ -1,8 +1,9 @@
 //! Runtime app state shared across Tauri commands and background tasks.
 
 use crate::display_state::TrayDisplayState;
+use crate::instances::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct AppState {
     pub current_usage: Mutex<Option<UsageSnapshot>>,
@@ -10,6 +11,8 @@ pub struct AppState {
     pub auth_state: Mutex<AuthState>,
     pub display: Mutex<TrayDisplayState>,
     pub audio: crate::audio::AudioCtx,
+    pub instances: Arc<Registry>,
+    pub hook_registration_pending: Mutex<bool>,
 }
 
 impl AppState {
@@ -20,6 +23,8 @@ impl AppState {
             auth_state: Mutex::new(auth_state),
             display: Mutex::new(TrayDisplayState::default()),
             audio: crate::audio::AudioCtx::new(),
+            instances: Arc::new(Registry::new()),
+            hook_registration_pending: Mutex::new(false),
         }
     }
 }
