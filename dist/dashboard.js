@@ -12,9 +12,40 @@ function showView(name) {
   for (const id of VIEWS) {
     document.getElementById(`view-${id}`).classList.toggle("hidden", id !== name);
   }
+  updateSidemenuActive(name);
 }
 
-document.getElementById("settingsBtn").onclick = () => showView("settings");
+// ── Sidemenu ───────────────────────────────────────────────────────────────
+function openSidemenu() {
+  document.getElementById("sidemenu").classList.add("open");
+  document.getElementById("sidemenuBackdrop").classList.add("open");
+}
+function closeSidemenu() {
+  document.getElementById("sidemenu").classList.remove("open");
+  document.getElementById("sidemenuBackdrop").classList.remove("open");
+}
+function updateSidemenuActive(viewName) {
+  document.querySelectorAll(".sidemenu-nav-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.view === viewName);
+  });
+}
+
+// Every burger button in the app opens the sidemenu.
+document.querySelectorAll("[data-burger]").forEach((btn) => {
+  btn.onclick = () => openSidemenu();
+});
+
+document.getElementById("sidemenuBackdrop").onclick = closeSidemenu;
+
+// Nav item click → navigate + close.
+document.querySelectorAll(".sidemenu-nav-item").forEach((item) => {
+  item.onclick = () => {
+    const view = item.dataset.view;
+    showView(view);
+    closeSidemenu();
+  };
+});
+
 document.getElementById("backBtn").onclick = () => showView("dashboard");
 document.getElementById("logoutBtn").onclick = () => window.electronAPI?.logout();
 
@@ -31,10 +62,6 @@ document.querySelectorAll(".back-to-settings").forEach((btn) => {
 });
 
 // Stats navigation
-document.getElementById("statsBtn").onclick = () => {
-  renderStats(lastTokenHistory);
-  showView("stats");
-};
 document.getElementById("statsBackBtn").onclick = () => {
   showView("dashboard");
 };
