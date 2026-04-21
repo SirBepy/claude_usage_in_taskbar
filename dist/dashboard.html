@@ -36,14 +36,36 @@
 
 <body>
 
+<!-- ══════════════════════════════════════════════════════════════════════
+     Sidemenu (overlay)
+═══════════════════════════════════════════════════════════════════════ -->
+<div class="sidemenu-backdrop" id="sidemenuBackdrop"></div>
+<aside class="sidemenu" id="sidemenu" aria-label="Main navigation">
+  <div class="sidemenu-header">Claude Usage</div>
+  <div class="sidemenu-nav-item" data-view="dashboard" id="sm-home">
+    <i class="ph ph-house"></i><span>Home</span>
+  </div>
+  <div class="sidemenu-nav-item" data-view="statistics" id="sm-statistics">
+    <i class="ph ph-chart-line"></i><span>Statistics</span>
+  </div>
+  <div class="sidemenu-nav-item" data-view="projects" id="sm-projects">
+    <i class="ph ph-folder"></i><span>Projects</span>
+  </div>
+  <div class="sidemenu-nav-item" data-view="settings" id="sm-settings">
+    <i class="ph ph-gear"></i><span>Settings</span>
+  </div>
+</aside>
+
     <!-- ══════════════════════════════════════════════════════════════════════
          View: Dashboard
     ═══════════════════════════════════════════════════════════════════════ -->
     <div id="view-dashboard" class="view">
         <div class="view-header">
-            <button class="icon-btn" id="statsBtn" title="Token Stats">≡</button>
+            <button class="icon-btn burger" id="burgerBtn-home" title="Menu" data-burger="true">
+                <i class="ph ph-list"></i>
+            </button>
             <h2>Claude Usage</h2>
-            <button class="icon-btn" id="settingsBtn" title="Settings">⚙</button>
+            <div style="width:32px"></div>
         </div>
         <div class="view-body">
             <div id="stats-content"><div class="no-data">Loading...</div></div>
