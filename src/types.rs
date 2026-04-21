@@ -25,6 +25,51 @@ pub struct ExtraUsage {
     pub currency: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
+pub enum Avatar {
+    None,
+    Emoji(String),
+    Image(std::path::PathBuf),
+}
+
+impl Default for Avatar {
+    fn default() -> Self { Avatar::None }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewMode {
+    Grid,
+    List,
+}
+
+impl Default for ViewMode {
+    fn default() -> Self { ViewMode::Grid }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub struct AutomationConfig {
+    pub enabled: bool,
+    pub autostart_on_boot: bool,
+    pub session_name_prefix: Option<String>,
+    pub continue_flag: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ProjectConfig {
+    pub id: String,
+    pub path: std::path::PathBuf,
+    pub name: String,
+    #[serde(default)]
+    pub avatar: Avatar,
+    #[serde(default)]
+    pub automation: Option<AutomationConfig>,
+    pub created_at: String,
+    #[serde(default)]
+    pub last_active_at: Option<String>,
+}
+
 /// User-configurable app settings.
 ///
 /// The dashboard owns a LOT of UI state (theme, project aliases + blacklist,
@@ -42,6 +87,10 @@ pub struct Settings {
     pub autostart: bool,
     pub auto_update: bool,
     pub hook_port: Option<u16>,
+    pub projects: Vec<ProjectConfig>,
+    pub projects_view_mode: ViewMode,
+    pub hooks_registered: bool,
+    pub hook_registration_declined: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -59,6 +108,10 @@ impl Default for Settings {
             autostart: true,
             auto_update: true,
             hook_port: None,
+            projects: Vec::new(),
+            projects_view_mode: ViewMode::Grid,
+            hooks_registered: false,
+            hook_registration_declined: false,
             extra: serde_json::Map::new(),
         }
     }
@@ -199,5 +252,39 @@ mod tests {
         let parsed: UsageSnapshot = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed.five_hour.utilization, 7.0);
         assert_eq!(parsed.extra_usage.as_ref().unwrap().monthly_limit, 8500.0);
+    }
+
+    #[test]
+    fn project_config_roundtrips_json() {
+        let p = ProjectConfig {
+            id: "abc".into(),
+            path: std::path::PathBuf::from("C:/x/y"),
+            name: "YProject".into(),
+            avatar: Avatar::Emoji("🪶".into()),
+            automation: None,
+            created_at: "2026-04-21T00:00:00Z".into(),
+            last_active_at: None,
+        };
+        let raw = serde_json::to_string(&p).unwrap();
+        let back: ProjectConfig = serde_json::from_str(&raw).unwrap();
+        assert_eq!(p, back);
+    }
+
+    #[test]
+    fn settings_defaults_expose_new_fields() {
+        let s = Settings::default();
+        assert!(s.projects.is_empty());
+        assert_eq!(s.projects_view_mode, ViewMode::Grid);
+        assert!(!s.hooks_registered);
+        assert!(!s.hook_registration_declined);
+    }
+
+    #[test]
+    fn avatar_serializes_as_tagged_enum() {
+        let a = Avatar::Emoji("🦊".into());
+        let raw = serde_json::to_string(&a).unwrap();
+        assert_eq!(raw, r#"{"kind":"emoji","value":"🦊"}"#);
+        let back: Avatar = serde_json::from_str(&raw).unwrap();
+        assert_eq!(a, back);
     }
 }
