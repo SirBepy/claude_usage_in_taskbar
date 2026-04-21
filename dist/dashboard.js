@@ -63,6 +63,7 @@ document.querySelectorAll(".sidemenu-nav-item").forEach((item) => {
     const view = item.dataset.view;
     showView(view);
     closeSidemenu();
+    if (view === "projects") renderProjectsList();
   };
 });
 
@@ -354,13 +355,101 @@ window.electronAPI?.getSettings().then((s) => {
 window.electronAPI?.onHistoryUpdated((h) => {
   lastHistory = h;
   refreshDashboard();
-  if (activeView === "projects") renderStats(lastTokenHistory);
+  if (activeView === "projects") renderProjectsList();
 });
 window.electronAPI?.onTokenHistoryUpdated(async (th) => {
   let active = [];
   try { active = await window.electronAPI?.getActiveSessions() || []; } catch { /* ignore */ }
   lastTokenHistory = active.length ? [...(th || []), ...active] : (th || []);
   refreshDashboard();
-  if (activeView === "projects") renderStats(lastTokenHistory);
+  if (activeView === "projects") renderProjectsList();
   if (activeView === "project-detail") renderProjectDetail();
 });
+
+// ── Projects view (grid/list cards) ────────────────────────────────────────
+async function renderProjectsList() {
+  const tokenHistory = lastTokenHistory || (await window.electronAPI?.getTokenHistory?.()) || [];
+  let projects = [];
+  try { projects = await window.electronAPI?.listProjects?.() || []; } catch { /* ignore */ }
+
+  const byPath = new Map();
+  for (const rec of tokenHistory) {
+    const key = rec.cwd || "(unknown)";
+    const bucket = byPath.get(key) || { cwd: key, tokens_7d: 0 };
+    bucket.tokens_7d += (rec.input_tokens || 0) + (rec.output_tokens || 0);
+    byPath.set(key, bucket);
+  }
+
+  for (const p of projects) {
+    const existing = byPath.get(p.path) || { cwd: p.path, tokens_7d: 0 };
+    existing.name = p.name;
+    existing.avatar = p.avatar;
+    existing.projectId = p.id;
+    byPath.set(p.path, existing);
+  }
+
+  const entries = [...byPath.values()].sort((a, b) => (b.tokens_7d || 0) - (a.tokens_7d || 0));
+
+  const container = document.getElementById("projects-list");
+  const empty = document.getElementById("projects-empty");
+  if (!container || !empty) return;
+  if (entries.length === 0) {
+    container.innerHTML = "";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+
+  const s = (await window.electronAPI?.getSettings?.()) || {};
+  const mode = s.projects_view_mode || "grid";
+  container.classList.toggle("grid-mode", mode === "grid");
+  container.classList.toggle("list-mode", mode === "list");
+
+  container.innerHTML = entries.map((e) => projectCardHtml(e)).join("");
+  container.querySelectorAll(".project-card").forEach((el) => {
+    el.onclick = () => openProjectDetail(el.dataset.cwd);
+  });
+}
+
+function projectCardHtml(entry) {
+  const displayName = entry.name || basenameProj(entry.cwd);
+  const avatar = renderAvatar(entry.avatar);
+  const tokens = formatCompactTokens(entry.tokens_7d || 0);
+  return `
+    <div class="project-card" data-cwd="${escapeProjHtml(entry.cwd)}" data-project-id="${entry.projectId || ""}">
+      <div class="avatar">${avatar}</div>
+      <div class="body">
+        <div class="name">${escapeProjHtml(displayName)}</div>
+        <div class="tokens">${tokens} tokens · last 7d</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAvatar(avatar) {
+  if (!avatar || avatar.kind === "none") return "?";
+  if (avatar.kind === "emoji") return escapeProjHtml(avatar.value);
+  if (avatar.kind === "image") {
+    const src = `file:///${String(avatar.value).replaceAll("\\", "/")}`;
+    return `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:7px" alt="">`;
+  }
+  return "?";
+}
+
+function basenameProj(p) {
+  if (!p) return "(unknown)";
+  const parts = String(p).split(/[\\/]/);
+  return parts.filter(Boolean).pop() || "(unknown)";
+}
+
+function formatCompactTokens(n) {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return String(n);
+}
+
+function escapeProjHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;"
+  }[c]));
+}
