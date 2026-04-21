@@ -648,6 +648,7 @@ function openProjectDetail(cwd) {
   renderMergedPathsSection(cwd);
   renderProjectDetail();
   showView("project-detail");
+  if (typeof renderRunningInstances === "function") renderRunningInstances();
 }
 
 async function renderProjectOverrides(cwdKey) {

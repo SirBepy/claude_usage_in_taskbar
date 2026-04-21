@@ -529,5 +529,91 @@ document.getElementById("hookModalNever").onclick = async () => {
   hideHookModal();
 };
 
+// ── Running instances ────────────────────────────────────────────────────────
+
+async function renderRunningInstances() {
+  if (!projectDetailState.cwd) return;
+
+  const projects = await window.electronAPI.listProjects();
+  const proj = projects.find((p) => p.path === projectDetailState.cwd);
+  if (!proj) {
+    setRunningInstancesEmpty(0);
+    return;
+  }
+  const instances = (await window.electronAPI.listInstancesForProject(proj.id))
+    .filter((i) => !i.end_reason);
+  const count = instances.length;
+
+  document.getElementById("runningInstancesCount").textContent = count;
+  const listEl = document.getElementById("runningInstancesList");
+  const emptyEl = document.getElementById("runningInstancesEmpty");
+  if (count === 0) {
+    listEl.style.display = "none";
+    emptyEl.style.display = "block";
+    return;
+  }
+  emptyEl.style.display = "none";
+  listEl.style.display = "block";
+
+  listEl.innerHTML = instances.map((i) => instanceRowHtml(i)).join("");
+  listEl.querySelectorAll(".phone-link-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const url = await window.electronAPI.phoneLink(btn.dataset.sessionId);
+      if (!url) return showToast("Phone link not available yet.");
+      await navigator.clipboard.writeText(url);
+      showToast(`Copied: ${url}`);
+    };
+  });
+}
+
+function setRunningInstancesEmpty(count) {
+  document.getElementById("runningInstancesCount").textContent = count;
+  document.getElementById("runningInstancesList").style.display = "none";
+  document.getElementById("runningInstancesEmpty").style.display = "block";
+}
+
+function instanceRowHtml(i) {
+  const uptime = uptimeFrom(i.started_at);
+  const kindClass = i.kind === "external" ? "external" : "";
+  const kindTag = i.kind === "automated" ? "Automated" : "External";
+  const kindTagClass = i.kind === "automated" ? "automated" : "";
+  const remoteTag = i.is_remote ? `<span class="tag remote">📱</span>` : "";
+  const phoneDisabled = i.bridge_session_id ? "" : "disabled";
+  const automatedOnlyDisabled = i.kind === "automated" ? "" : "disabled";
+  return `
+    <div class="instance-row ${kindClass}">
+      <div class="status-dot"></div>
+      <div class="meta">
+        <div class="top">
+          <span class="tag ${kindTagClass}">${kindTag}</span>${remoteTag}
+          <span>pid ${i.pid}</span>
+        </div>
+        <div class="sub">up ${uptime} · session ${i.session_id.slice(0, 8)}…</div>
+      </div>
+      <div class="actions">
+        <button class="act-btn" title="Show terminal" ${automatedOnlyDisabled}>term</button>
+        <button class="act-btn phone-link-btn" title="Copy phone link" data-session-id="${i.session_id}" ${phoneDisabled}>phone</button>
+        <button class="act-btn" title="Restart" ${automatedOnlyDisabled}>restart</button>
+        <button class="act-btn" title="Stop" ${automatedOnlyDisabled}>stop</button>
+      </div>
+    </div>
+  `;
+}
+
+function uptimeFrom(iso) {
+  const start = new Date(iso).getTime();
+  const delta = Math.max(0, Date.now() - start);
+  const s = Math.floor(delta / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+// Subscribe to live updates.
+window.electronAPI.onInstancesChanged(() => {
+  if (activeView === "project-detail") renderRunningInstances();
+  if (activeView === "projects") renderProjectsList();
+});
+
 // Called after settings load.
 maybeShowHookModal();

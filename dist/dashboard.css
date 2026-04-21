@@ -1237,3 +1237,51 @@ input:checked+.slider:before {
     padding: 10px 16px;
     border-top: 1px solid var(--border, #2e2e40);
 }
+
+/* ── Running instances ───────────────────────────────────────────────────── */
+.instance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface, #1f1f2c);
+  border: 1px solid var(--border, #2e2e40);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.instance-row .status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #6ad98a;
+  flex-shrink: 0;
+}
+.instance-row.external .status-dot { background: #8a9eff; }
+.instance-row.ending .status-dot { background: var(--text-dim, #8a8aa0); }
+.instance-row .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.instance-row .meta .top {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.78rem; font-weight: 500;
+}
+.instance-row .meta .sub {
+  font-size: 0.68rem; color: var(--text-dim, #8a8aa0);
+  font-family: 'Fira Code', monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.instance-row .tag {
+  background: var(--surface-alt, #2a2a3a);
+  padding: 1px 6px; border-radius: 3px;
+  font-size: 0.64rem; font-weight: 500;
+  color: var(--text-dim, #8a8aa0);
+}
+.instance-row .tag.automated { background: #3a2a1d; color: #f2b457; }
+.instance-row .tag.remote { background: #2a2845; color: #8a9eff; }
+.instance-row .actions { display: flex; gap: 4px; }
+.instance-row .actions .act-btn {
+  padding: 4px 8px; font-size: 0.7rem;
+  background: var(--surface-alt, #2a2a3a);
+  border: 0; border-radius: 4px;
+  color: var(--text, #c5c5d6);
+  cursor: pointer;
+}
+.instance-row .actions .act-btn:disabled {
+  opacity: 0.4; cursor: not-allowed;
+}
