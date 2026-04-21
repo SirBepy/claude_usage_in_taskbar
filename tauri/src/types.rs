@@ -64,6 +64,16 @@ impl Default for Settings {
     }
 }
 
+impl Settings {
+    pub fn mute_all(&self) -> bool { self.bool_extra("muteAll") }
+    pub fn mute_sounds(&self) -> bool { self.bool_extra("muteSounds") }
+    pub fn mute_system_notifications(&self) -> bool { self.bool_extra("muteSystemNotifications") }
+
+    fn bool_extra(&self, key: &str) -> bool {
+        self.extra.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DisplayMode {
@@ -143,6 +153,35 @@ mod tests {
         assert_eq!(parsed.poll_interval_secs, 600);
         assert!(parsed.autostart);
         assert!(parsed.auto_update);
+    }
+
+    #[test]
+    fn mute_flags_default_false_when_keys_missing() {
+        let s = Settings::default();
+        assert!(!s.mute_all());
+        assert!(!s.mute_sounds());
+        assert!(!s.mute_system_notifications());
+    }
+
+    #[test]
+    fn mute_flags_read_from_extra_camel_case() {
+        let raw = r#"{
+            "muteAll": true,
+            "muteSounds": false,
+            "muteSystemNotifications": true
+        }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert!(s.mute_all());
+        assert!(!s.mute_sounds());
+        assert!(s.mute_system_notifications());
+    }
+
+    #[test]
+    fn mute_flags_treat_wrong_type_as_false() {
+        let raw = r#"{ "muteAll": "yes", "muteSounds": 1 }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert!(!s.mute_all());
+        assert!(!s.mute_sounds());
     }
 
     #[test]
