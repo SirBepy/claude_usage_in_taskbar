@@ -1114,3 +1114,47 @@ input:checked+.slider:before {
   height: 28px;
   font-size: 1rem;
 }
+
+.project-detail-header { align-items: flex-start; padding: 10px 12px; }
+.project-detail-heading {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+.project-detail-heading .avatar-mini {
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  background: var(--surface-alt, #3a3a52);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+.project-detail-titles {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; flex: 1;
+}
+.project-detail-path {
+  font-size: 0.66rem;
+  color: var(--text-dim, #8a8aa0);
+  font-family: 'Fira Code', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.automate-cta {
+  background: var(--primary, #2c5fd6);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+.automate-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

@@ -86,6 +86,24 @@ document.querySelectorAll(".back-to-settings").forEach((btn) => {
 document.getElementById("projectDetailBackBtn").onclick = () => showView("projects");
 document.getElementById("graphDetailBackBtn").onclick = () => showView("dashboard");
 
+function showToast(msg) {
+  let t = document.getElementById("__toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "__toast";
+    t.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--surface-alt,#2a2a3a);color:var(--text,#fff);padding:8px 14px;border-radius:6px;font-size:0.8rem;z-index:2000;opacity:0;transition:opacity 160ms;";
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = "1";
+  clearTimeout(t.__timer);
+  t.__timer = setTimeout(() => { t.style.opacity = "0"; }, 2200);
+}
+
+document.getElementById("automateChannelBtn").onclick = () => {
+  showToast("Channel automation ships in the next update.");
+};
+
 // Stats-project range + scroll buttons
 document.querySelectorAll(".range-btn").forEach((btn) => {
   btn.onclick = () => {

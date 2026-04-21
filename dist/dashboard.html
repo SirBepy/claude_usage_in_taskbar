@@ -558,13 +558,26 @@
          View: Project Detail
     ═══════════════════════════════════════════════════════════════════════ -->
     <div id="view-project-detail" class="view hidden">
-        <div class="view-header">
-            <button class="icon-btn" id="projectDetailBackBtn" title="Back"><i class="ph ph-arrow-left"></i></button>
-            <h2 id="projectDetailTitle" style="font-size:0.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Click to rename">Project</h2>
-            <input id="projectDetailTitleInput" type="text" style="display:none;flex:1;font-weight:600;font-size:0.85rem;text-align:center">
-            <div style="width:32px"></div>
+        <div class="view-header project-detail-header">
+            <button class="icon-btn" id="projectDetailBackBtn" title="Back">
+                <i class="ph ph-arrow-left"></i>
+            </button>
+            <div class="project-detail-heading">
+                <div class="avatar-mini" id="projectDetailAvatar">?</div>
+                <div class="project-detail-titles">
+                    <h2 id="projectDetailTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Click to rename">Project</h2>
+                    <input id="projectDetailTitleInput" type="text" style="display:none;flex:1;font-weight:600;font-size:0.88rem">
+                    <div class="project-detail-path" id="projectDetailHeaderPath"></div>
+                </div>
+            </div>
+            <button class="icon-btn" id="projectDetailMenuBtn" title="Project menu">
+                <i class="ph ph-dots-three-vertical"></i>
+            </button>
         </div>
         <div class="view-body">
+            <div style="padding: 8px 0 14px; display: flex; justify-content: flex-end;">
+                <button class="automate-cta" id="automateChannelBtn">+ Automate channel</button>
+            </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                 <div class="range-toggle">
                     <button class="range-btn" data-range="7d">7d</button>

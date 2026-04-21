@@ -751,6 +751,16 @@ function renderProjectDetail() {
   const chartContainer = document.getElementById("project-chart-container");
   if (!chartContainer || !lastTokenHistory) return;
 
+  const avatarEl = document.getElementById("projectDetailAvatar");
+  const pathEl = document.getElementById("projectDetailHeaderPath");
+  if (avatarEl && pathEl) {
+    const configuredProject = (currentSettings.projects || []).find((p) => p.path === projectDetailState.cwd);
+    avatarEl.innerHTML = (typeof renderAvatar === "function")
+      ? renderAvatar(configuredProject?.avatar || { kind: "emoji", value: (configuredProject?.name || projectDetailState.cwd || "?").charAt(0) })
+      : "?";
+    pathEl.textContent = projectDetailState.cwd || "";
+  }
+
   document.querySelectorAll(".range-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.range === range);
   });
