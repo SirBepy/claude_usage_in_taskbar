@@ -489,3 +489,76 @@ pub async fn install_sound_pack(pack_id: String) -> Result<(), String> {
 pub fn sound_pack_file_url(pack: String, sound: String) -> Option<String> {
     crate::soundpacks::file_data_url(&pack, &sound)
 }
+
+// --- Instances ---
+
+#[tauri::command]
+pub fn list_instances(state: State<AppState>) -> Vec<crate::types::Instance> {
+    state.instances.list()
+}
+
+#[tauri::command]
+pub fn list_instances_for_project(
+    project_id: String,
+    state: State<AppState>,
+) -> Vec<crate::types::Instance> {
+    state.instances.by_project(&project_id)
+}
+
+#[tauri::command]
+pub fn phone_link(session_id: String, state: State<AppState>) -> Option<String> {
+    let inst = state.instances.get(&session_id)?;
+    let bridge = inst.bridge_session_id?;
+    Some(format!("https://claude.ai/code/{bridge}"))
+}
+
+// --- Hook registration ---
+
+#[tauri::command]
+pub fn get_hook_registration_state(state: State<AppState>) -> serde_json::Value {
+    let s = state.settings.lock().unwrap();
+    serde_json::json!({
+        "registered": s.hooks_registered,
+        "declined": s.hook_registration_declined,
+        "port": s.hook_port,
+    })
+}
+
+#[tauri::command]
+pub fn register_hooks_globally(
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let port = {
+        let s = state.settings.lock().unwrap();
+        s.hook_port.ok_or_else(|| "hook server not started yet".to_string())?
+    };
+    crate::hook_installer::install(crate::hook_installer::HookConfig { port })
+        .map_err(|e| e.to_string())?;
+    let snapshot = {
+        let mut g = state.settings.lock().unwrap();
+        g.hooks_registered = true;
+        g.hook_registration_declined = false;
+        g.clone()
+    };
+    let path = paths::settings_file().map_err(|e| e.to_string())?;
+    settings::save(&path, &snapshot).map_err(|e| e.to_string())?;
+    let _ = app.emit("settings-changed", snapshot);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn skip_hook_registration(
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut g = state.settings.lock().unwrap();
+        g.hook_registration_declined = true;
+        g.clone()
+    };
+    let path = paths::settings_file().map_err(|e| e.to_string())?;
+    settings::save(&path, &snapshot).map_err(|e| e.to_string())?;
+    let _ = app.emit("settings-changed", snapshot);
+    Ok(())
+}

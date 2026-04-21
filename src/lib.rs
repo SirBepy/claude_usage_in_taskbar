@@ -100,6 +100,12 @@ pub fn run() {
             ipc::update_project,
             ipc::delete_project,
             ipc::set_projects_view_mode,
+            ipc::list_instances,
+            ipc::list_instances_for_project,
+            ipc::phone_link,
+            ipc::get_hook_registration_state,
+            ipc::register_hooks_globally,
+            ipc::skip_hook_registration,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

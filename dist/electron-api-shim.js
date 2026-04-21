@@ -150,6 +150,41 @@
       try { await invoke('set_projects_view_mode', { mode }); }
       catch (e) { console.error('set_projects_view_mode failed', e); throw e; }
     },
+
+    // --- Instances (Plan B) ---
+    listInstances: async () => {
+      try { return (await invoke('list_instances')) || []; }
+      catch (e) { console.error('list_instances failed', e); return []; }
+    },
+    listInstancesForProject: async (projectId) => {
+      try { return (await invoke('list_instances_for_project', { projectId })) || []; }
+      catch (e) { console.error('list_instances_for_project failed', e); return []; }
+    },
+    phoneLink: async (sessionId) => {
+      try { return await invoke('phone_link', { sessionId }); }
+      catch (e) { console.error('phone_link failed', e); return null; }
+    },
+    onInstancesChanged: (cb) => {
+      const unlisten = listen('instances-changed', (e) => {
+        try { cb(e?.payload || []); }
+        catch (err) { console.error('onInstancesChanged handler threw', err); }
+      });
+      return () => unlisten.then((u) => u());
+    },
+
+    // --- Hook registration (Plan B) ---
+    getHookRegistrationState: async () => {
+      try { return await invoke('get_hook_registration_state'); }
+      catch (e) { console.error('get_hook_registration_state failed', e); return { registered: false, declined: false, port: null }; }
+    },
+    registerHooksGlobally: async () => {
+      try { await invoke('register_hooks_globally'); }
+      catch (e) { console.error('register_hooks_globally failed', e); throw e; }
+    },
+    skipHookRegistration: async () => {
+      try { await invoke('skip_hook_registration'); }
+      catch (e) { console.error('skip_hook_registration failed', e); throw e; }
+    },
   };
 
   window.electronAPI = bridge;
