@@ -1,0 +1,74 @@
+//! Unit-level tests for the pure portion of the project IPC commands.
+//!
+//! The `#[tauri::command]` wrappers require the Tauri `State` and `AppHandle`
+//! harness, so we test the extracted pure helpers directly. The wrappers are
+//! thin glue around these.
+
+use claude_usage_tauri_lib::ipc::projects_test_helpers as h;
+use claude_usage_tauri_lib::types::{Avatar, ProjectConfig, Settings, ViewMode};
+
+fn sample_project(id: &str, path: &str) -> ProjectConfig {
+    ProjectConfig {
+        id: id.into(),
+        path: path.into(),
+        name: id.into(),
+        avatar: Avatar::None,
+        automation: None,
+        created_at: "2026-04-21T00:00:00Z".into(),
+        last_active_at: None,
+    }
+}
+
+#[test]
+fn list_projects_returns_empty_on_defaults() {
+    let s = Settings::default();
+    assert!(h::list_from(&s).is_empty());
+}
+
+#[test]
+fn get_project_finds_by_id() {
+    let mut s = Settings::default();
+    s.projects.push(sample_project("a", "C:/a"));
+    s.projects.push(sample_project("b", "C:/b"));
+    let got = h::get_from(&s, "b").unwrap();
+    assert_eq!(got.path, std::path::PathBuf::from("C:/b"));
+    assert!(h::get_from(&s, "missing").is_none());
+}
+
+#[test]
+fn update_project_applies_patch_in_place() {
+    let mut s = Settings::default();
+    s.projects.push(sample_project("a", "C:/a"));
+    let patch = serde_json::json!({ "name": "Alpha", "avatar": {"kind":"emoji","value":"🅰"} });
+    let ok = h::update_in(&mut s, "a", patch);
+    assert!(ok);
+    assert_eq!(s.projects[0].name, "Alpha");
+    assert_eq!(s.projects[0].avatar, Avatar::Emoji("🅰".into()));
+}
+
+#[test]
+fn update_project_returns_false_for_missing_id() {
+    let mut s = Settings::default();
+    let ok = h::update_in(&mut s, "missing", serde_json::json!({ "name": "X" }));
+    assert!(!ok);
+}
+
+#[test]
+fn delete_project_removes_entry() {
+    let mut s = Settings::default();
+    s.projects.push(sample_project("a", "C:/a"));
+    s.projects.push(sample_project("b", "C:/b"));
+    let ok = h::delete_in(&mut s, "a");
+    assert!(ok);
+    assert_eq!(s.projects.len(), 1);
+    assert_eq!(s.projects[0].id, "b");
+}
+
+#[test]
+fn set_projects_view_mode_updates_field() {
+    let mut s = Settings::default();
+    h::set_view_mode(&mut s, ViewMode::List);
+    assert_eq!(s.projects_view_mode, ViewMode::List);
+    h::set_view_mode(&mut s, ViewMode::Grid);
+    assert_eq!(s.projects_view_mode, ViewMode::Grid);
+}

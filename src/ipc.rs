@@ -2,7 +2,7 @@
 
 use crate::state::AppState;
 use crate::token_stats::{self, BackfillResult, TokenRecord};
-use crate::types::{AuthState, Settings, UsageSnapshot};
+use crate::types::{AuthState, ProjectConfig, Settings, UsageSnapshot, ViewMode};
 use crate::{history, paths, session, settings};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -95,6 +95,115 @@ pub fn read_log_file(app: AppHandle) -> Result<String, String> {
     let product = app.package_info().name.clone();
     let log_path = log_dir.join(format!("{product}.log"));
     read_log_contents(&log_path)
+}
+
+/// Pure helpers extracted from the Tauri command wrappers so they can be
+/// unit-tested without standing up a full app handle.
+pub mod projects_test_helpers {
+    use crate::types::{ProjectConfig, Settings, ViewMode};
+
+    pub fn list_from(s: &Settings) -> Vec<ProjectConfig> { s.projects.clone() }
+
+    pub fn get_from(s: &Settings, id: &str) -> Option<ProjectConfig> {
+        s.projects.iter().find(|p| p.id == id).cloned()
+    }
+
+    /// Applies a partial JSON patch in-place. Unknown keys are ignored.
+    /// Returns `true` if the project existed.
+    pub fn update_in(s: &mut Settings, id: &str, patch: serde_json::Value)
+        -> bool
+    {
+        let Some(p) = s.projects.iter_mut().find(|p| p.id == id) else {
+            return false;
+        };
+        // Round-trip the project through JSON, apply the patch, deserialize
+        // back. This gives us a free partial update without per-field code.
+        let mut obj = serde_json::to_value(&*p).ok().and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        if let Some(patch_obj) = patch.as_object() {
+            for (k, v) in patch_obj {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+        if let Ok(updated) = serde_json::from_value::<ProjectConfig>(serde_json::Value::Object(obj)) {
+            *p = updated;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn delete_in(s: &mut Settings, id: &str) -> bool {
+        let before = s.projects.len();
+        s.projects.retain(|p| p.id != id);
+        s.projects.len() < before
+    }
+
+    pub fn set_view_mode(s: &mut Settings, mode: ViewMode) {
+        s.projects_view_mode = mode;
+    }
+}
+
+#[tauri::command]
+pub fn list_projects(state: State<AppState>) -> Vec<ProjectConfig> {
+    projects_test_helpers::list_from(&state.settings.lock().unwrap())
+}
+
+#[tauri::command]
+pub fn get_project(id: String, state: State<AppState>) -> Option<ProjectConfig> {
+    projects_test_helpers::get_from(&state.settings.lock().unwrap(), &id)
+}
+
+#[tauri::command]
+pub fn update_project(
+    id: String,
+    patch: serde_json::Value,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+    let mut guard = state.settings.lock().unwrap();
+    if !projects_test_helpers::update_in(&mut guard, &id, patch) {
+        return Err(format!("project {id} not found"));
+    }
+    settings::save(&settings_path, &guard).map_err(|e| e.to_string())?;
+    let snapshot = guard.clone();
+    drop(guard);
+    let _ = app.emit("settings-changed", snapshot);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_project(
+    id: String,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+    let mut guard = state.settings.lock().unwrap();
+    if !projects_test_helpers::delete_in(&mut guard, &id) {
+        return Err(format!("project {id} not found"));
+    }
+    settings::save(&settings_path, &guard).map_err(|e| e.to_string())?;
+    let snapshot = guard.clone();
+    drop(guard);
+    let _ = app.emit("settings-changed", snapshot);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_projects_view_mode(
+    mode: ViewMode,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+    let mut guard = state.settings.lock().unwrap();
+    projects_test_helpers::set_view_mode(&mut guard, mode);
+    settings::save(&settings_path, &guard).map_err(|e| e.to_string())?;
+    let snapshot = guard.clone();
+    drop(guard);
+    let _ = app.emit("settings-changed", snapshot);
+    Ok(())
 }
 
 #[cfg(test)]
