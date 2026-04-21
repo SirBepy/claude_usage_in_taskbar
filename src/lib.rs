@@ -11,6 +11,7 @@ pub mod usage_parser;
 pub mod cdp;
 pub mod history;
 pub mod hook_server;
+pub mod instances;
 pub mod icon;
 pub mod ipc;
 pub mod paths;
