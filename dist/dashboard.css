@@ -1285,3 +1285,17 @@ input:checked+.slider:before {
 .instance-row .actions .act-btn:disabled {
   opacity: 0.4; cursor: not-allowed;
 }
+
+/* ── Project card tags ───────────────────────────────────────────────────── */
+.card-tags { margin-left: 6px; }
+.card-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.62rem;
+  font-weight: 500;
+  margin-left: 2px;
+}
+.card-tag.live { background: #1d3a2a; color: #6ad98a; }
+.card-tag.remote { background: #2a2845; color: #8a9eff; }
+.card-tag.automated { background: #3a2a1d; color: #f2b457; }

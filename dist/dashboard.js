@@ -389,24 +389,39 @@ async function renderProjectsList() {
   const tokenHistory = lastTokenHistory || (await window.electronAPI?.getTokenHistory?.()) || [];
   let projects = [];
   try { projects = await window.electronAPI?.listProjects?.() || []; } catch { /* ignore */ }
+  let liveInstances = [];
+  try { liveInstances = ((await window.electronAPI?.listInstances?.()) || []).filter((i) => !i.end_reason); } catch { /* ignore */ }
 
   const byPath = new Map();
   for (const rec of tokenHistory) {
     const key = rec.cwd || "(unknown)";
-    const bucket = byPath.get(key) || { cwd: key, tokens_7d: 0 };
+    const bucket = byPath.get(key) || { cwd: key, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
     bucket.tokens_7d += (rec.input_tokens || 0) + (rec.output_tokens || 0);
     byPath.set(key, bucket);
   }
 
   for (const p of projects) {
-    const existing = byPath.get(p.path) || { cwd: p.path, tokens_7d: 0 };
+    const existing = byPath.get(p.path) || { cwd: p.path, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
     existing.name = p.name;
     existing.avatar = p.avatar;
     existing.projectId = p.id;
+    existing.anyAutomated = existing.anyAutomated || !!p.automation?.enabled;
     byPath.set(p.path, existing);
   }
 
-  const entries = [...byPath.values()].sort((a, b) => (b.tokens_7d || 0) - (a.tokens_7d || 0));
+  for (const inst of liveInstances) {
+    const key = inst.cwd;
+    const existing = byPath.get(key) || { cwd: key, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
+    existing.live = (existing.live || 0) + 1;
+    existing.anyRemote = existing.anyRemote || inst.is_remote;
+    existing.anyAutomated = existing.anyAutomated || inst.kind === "automated";
+    byPath.set(key, existing);
+  }
+
+  const entries = [...byPath.values()].sort((a, b) => {
+    if ((b.live || 0) !== (a.live || 0)) return (b.live || 0) - (a.live || 0);
+    return (b.tokens_7d || 0) - (a.tokens_7d || 0);
+  });
 
   const container = document.getElementById("projects-list");
   const empty = document.getElementById("projects-empty");
@@ -433,11 +448,16 @@ function projectCardHtml(entry) {
   const displayName = entry.name || basenameProj(entry.cwd);
   const avatar = renderAvatar(entry.avatar);
   const tokens = formatCompactTokens(entry.tokens_7d || 0);
+  const tags = [
+    entry.live ? `<span class="card-tag live">● ${entry.live}</span>` : "",
+    entry.anyRemote ? `<span class="card-tag remote">📱</span>` : "",
+    entry.anyAutomated ? `<span class="card-tag automated">⚙</span>` : "",
+  ].filter(Boolean).join(" ");
   return `
     <div class="project-card" data-cwd="${escapeProjHtml(entry.cwd)}" data-project-id="${entry.projectId || ""}">
       <div class="avatar">${avatar}</div>
       <div class="body">
-        <div class="name">${escapeProjHtml(displayName)}</div>
+        <div class="name">${escapeProjHtml(displayName)}${tags ? ` <span class="card-tags">${tags}</span>` : ""}</div>
         <div class="tokens">${tokens} tokens · last 7d</div>
       </div>
     </div>
