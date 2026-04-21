@@ -1,155 +1,150 @@
 # Claude AI Usage Toolbar
 
-Cross-platform (Windows + macOS) system tray app that monitors Claude AI usage
-by loading the Claude settings/usage page in a hidden window and intercepting
-the API response via CDP, once per hour.
+Windows system tray app (Tauri 2) that monitors Claude AI usage by scraping
+the Claude settings/usage page via a CDP-driven hidden Chrome tab, once per
+hour. macOS + Linux builds deferred.
 
 ## Running
 
 ```bash
-npm install
-npm start
+cargo tauri dev
 ```
+
+Production build:
+
+```bash
+cargo tauri build
+```
+
+Requires Rust toolchain at `~/.cargo/bin` + Tauri CLI v2 (`cargo install tauri-cli --version "^2.0"`).
 
 ## Architecture
 
-**Single process: Electron main** (`main.js`) — no renderer bundle, no build step.
+**Single Rust binary + static webview assets.** Rust owns tray, scraping,
+scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 
 | File | Role |
 |---|---|
-| `main.js` | App lifecycle, polling, IPC, state coordination |
-| `src/core/hook-server.js` | HTTP hook server - receives Claude Code stop/notify hooks |
-| `src/core/tray.js` | Tray icon, context menu, display cycling, threshold checking |
-| `src/core/native-auth.js` | Native browser sign-in - localhost callback server + bookmarklet |
-| `src/core/windows.js` | Login window (deprecated fallback) and dashboard window management |
-| `src/core/png-utils.js` | Low-level PNG encoding (crc32, pixelsToPNG, drawRoundedRect) |
-| `src/core/fonts.js` | Pixel font definitions (classic, digital, bold) + drawText |
-| `src/core/icon.js` | Tray icon rendering - rings, bars, spin animation |
-| `src/core/updater.js` | Auto-update wrapper around `electron-updater`; skips in dev mode |
-| `src/core/usage-parser.js` | Parses `five_hour` / `seven_day` fields from usage API response |
-| `src/core/scraper.js` | Fetches usage data via hidden BrowserWindow + CDP Fetch interception |
-| `src/core/session.js` | `clearClaudeCookies()` |
-| `src/core/history.js` | Snapshot persistence - read/write/prune usage history |
-| `src/core/settings.js` | Load/save user settings to disk |
-| `src/core/path-decoder.js` | Decode Claude project dir names back to filesystem paths |
-| `src/core/fs-utils.js` | File traversal helpers (walkJsonl, buildSessionCwdMap, buildSessionFileMap) |
-| `src/renderer/dashboard.html` | Dashboard + settings UI (single-file SPA) |
-| `src/renderer/dashboard.css` | Dashboard styles |
-| `src/renderer/dashboard.js` | Dashboard renderer logic |
-| `src/renderer/preload.js` | Electron contextBridge — exposes IPC to renderer |
-| `src/assets/icon.png` | App icon (512×512, for window chrome and installer) |
-| `src/assets/icon.svg` | Source SVG for icon generation |
-| `src/core/sync.js` | Cross-device sync client - push/pull usage data to/from backend |
-| `scripts/generate-icons.js` | Dev utility — regenerates icon.png from icon.svg via sharp |
-| `server/` | Sync backend - Express API with SQLite for cross-device data sync |
-| `mcp-server/` | Standalone MCP server - pushes local usage to sync backend |
-| `tauri/src/soundpacks.rs` (tauri backend) | Sound pack catalog, install (download+unzip), path resolution |
+| `src/main.rs` | App entry - builds Tauri app, wires plugins, kicks off scheduler |
+| `src/lib.rs` | Module root |
+| `src/auth.rs` | Native browser sign-in - spawns Chrome with CDP, extracts sessionKey |
+| `src/cdp.rs` | Chrome DevTools Protocol client (WebSocket, Fetch domain) |
+| `src/scraper.rs` | Fetches usage JSON via hidden Chrome tab + CDP Fetch interception |
+| `src/session.rs` | Loads/saves sessionKey cookie, verifies it against the API |
+| `src/scheduler.rs` | Hourly poll loop, retry/backoff, triggers tray updates |
+| `src/hook_server.rs` | HTTP hook server for Claude Code stop/notify hooks |
+| `src/ipc.rs` | Tauri command handlers exposed to the webview |
+| `src/state.rs` | Shared app state across threads |
+| `src/tray.rs` | Tray icon menu, display mode cycling, threshold checking |
+| `src/icon.rs` | Tray icon rendering (rings; Bars + Digits + spin anim pending) |
+| `src/icon_settings.rs` | Icon color/threshold logic |
+| `src/display_state.rs` | Tracks which display mode is currently shown |
+| `src/fonts.rs` | Pixel font definitions for future Digits mode |
+| `src/usage_parser.rs` | Parses `five_hour` / `seven_day` fields from API response |
+| `src/history.rs` | Snapshot persistence (history.jsonl read/write/prune) |
+| `src/settings.rs` | Load/save user settings to disk |
+| `src/paths.rs` | App data / session / sound-pack / piper path helpers |
+| `src/notifications.rs` | Notification rule resolution + event firing + mute gating |
+| `src/project_overrides.rs` | Per-project notification override parser |
+| `src/soundpacks.rs` | Sound pack catalog, install (download+unzip), path resolution |
+| `src/audio.rs` | Base64 data URL serving of pack audio files to the webview |
+| `src/piper.rs` | Piper TTS integration (binary resolution; port WIP) |
+| `src/token_stats.rs` | Token stats scaffolding (JSONL walker pending) |
+| `src/types.rs` | Shared data structures |
+| `dist/dashboard.html` | Dashboard + settings UI (single-file SPA) |
+| `dist/dashboard.css` | Dashboard styles |
+| `dist/dashboard.js` | Dashboard renderer logic |
+| `dist/modules/*.js` | Chart, formatters, settings, sound-packs, stats, speech-fallback |
+| `capabilities/default.json` | Tauri 2 IPC permission allowlist |
+| `icons/` | Build-time tray + installer icons (gitignored, regenerated) |
+| `assets/` | Bundled fonts + default notification sounds |
+| `binaries/piper/` | Sidecar Piper TTS binary (per-target-triple name) |
+| `tauri.conf.json` | Tauri config - bundle, updater, windows, frontend path |
+| `Cargo.toml` | Rust deps |
+| `build.rs` | Build-time asset/icon checks |
 
 ## Authentication flow
 
-1. On startup, try to resume from a saved session (Electron persists cookies across runs).
-2. If no session, clear stale cookies and start the **native browser sign-in flow**:
-   a. A localhost HTTP server starts on a random port.
-   b. `claude.ai/login` opens in the user's default browser via `shell.openExternal`.
-   c. A status window shows instructions: the user drags a bookmarklet to their
-      bookmarks bar, then clicks it while on claude.ai after logging in.
-   d. The bookmarklet (running on claude.ai's origin) fetches the usage API
-      directly (same-origin, httpOnly cookies included) and POSTs the response
-      plus `document.cookie` to the localhost callback server.
-   e. The app imports non-httpOnly cookies into Electron's session and uses
-      the usage data directly. Subsequent polls use the Electron scraper.
-   f. If cookies fail verification on the next poll, falls back to the
-      deprecated Electron `BrowserWindow` login (code kept in `windows.js`).
-3. The `aiusage://` protocol is registered via `app.setAsDefaultProtocolClient`
-   for potential future deep-link flows.
+1. On startup, try to resume from the saved `sessionKey` (stored at
+   `<app-data>/session.txt`).
+2. If missing or unverified, launch the **native browser sign-in flow**:
+   a. Spawn Chrome with a dedicated persistent profile
+      (`<app-data>/chrome-login-profile`) and CDP enabled on a random port.
+   b. Point Chrome at `https://claude.ai/login`.
+   c. After the user logs in, read cookies via CDP
+      `Network.getAllCookies`, extract `sessionKey`, persist it.
+3. Verify the sessionKey by hitting the usage API once. If it works, continue
+   polling. If not, re-launch Chrome for another login attempt.
+
+Cookie profile persists across launches so Google re-login is avoided.
 
 ## Usage scraping
 
-Instead of calling the API directly (which requires replicating browser auth headers),
-`fetchUsageFromPage()` in `src/core/scraper.js`:
+`scraper.rs` uses a CDP-driven hidden Chrome tab rather than a direct HTTP
+call (API rejects replicated browser headers). Flow:
 
-1. Opens a hidden `BrowserWindow` (never shown to the user).
-2. Enables the **CDP Fetch domain** with a URL pattern matching `*/api/organizations/*/usage`.
-3. Loads `https://claude.ai/settings/usage`.
-4. When the page makes its own API call, the Fetch domain **pauses** the response.
-5. Calls `Fetch.getResponseBody` to read the body (guaranteed available since paused).
-6. Calls `Fetch.continueRequest` so the page isn't left hanging.
-7. Resolves with the parsed JSON; destroys the window.
+1. Connect to the already-running Chrome instance via CDP.
+2. Open a new target, enable the **Fetch domain** with URL pattern
+   `*/api/organizations/*/usage`.
+3. Navigate to `https://claude.ai/settings/usage`.
+4. When the page's own API call is paused by the Fetch domain, read the body
+   via `Fetch.getResponseBody` and `Fetch.continueRequest`.
+5. Parse JSON, return; close the target.
 
-A redirect to `/login` during navigation signals an expired session (rejects with `HTTP 401`).
+A redirect to `/login` signals expired session - rejects with 401 and
+triggers re-auth.
 
 ## API response shape
 
 ```json
 {
   "five_hour": { "utilization": 30, "resets_at": "<ISO8601>" },
-  "seven_day":  { "utilization": 36, "resets_at": "<ISO8601>" },
-  "extra_usage": { "is_enabled": false, ... }
+  "seven_day": { "utilization": 36, "resets_at": "<ISO8601>" },
+  "extra_usage": { "is_enabled": false, "used_credits": 0.0, "monthly_limit": 0.0 }
 }
 ```
 
-`five_hour.utilization` = session (5-hour window) percentage 0–100.
-`seven_day.utilization` = weekly (7-day window) percentage 0–100.
+`five_hour.utilization` = session (5-hour window) percentage 0-100.
+`seven_day.utilization` = weekly (7-day window) percentage 0-100.
+`extra_usage.used_credits` and `monthly_limit` are `f64`.
 
 ## Tray icon
 
-Generated at runtime as a 22×22 RGBA PNG using only Node built-ins (`zlib` + `Buffer`).
-No image files on disk. Rendered in `src/core/icon.js`.
+Generated at runtime as a 22x22 RGBA PNG. Rendered in `src/icon.rs`.
 
-**Normal state** — dual concentric progress rings:
-- Outer ring (r 7.5–10.5): session utilisation
-- Inner ring (r 3.5–5.5): weekly utilisation
-- Each ring coloured by urgency: Blue (loading) → Green (<50%) → Orange (50–80%) → Red (>80%)
-- Unfilled portion rendered as a dim grey track
+**Rings mode (currently implemented):** dual concentric rings
+- Outer: session utilisation
+- Inner: weekly utilisation
+- Coloured by urgency: Blue (loading), Green (<50%), Orange (50-80%), Red (>80%)
 
-**Refresh animation** — triggered by clicking the tray icon:
-- Outer ring replaced by a rotating bright-blue arc (~108°, 20 fps)
-- Inner ring stays at last known weekly value
-- Implemented in `makeSpinFrame(frame, weeklyPct)`
-
-## Cross-device sync
-
-Optional sync system for sharing usage data across machines. Three components:
-
-**Backend** (`server/`): Express API with SQLite (better-sqlite3). Endpoints:
-- `POST /api/register` - create user + first device, returns API key
-- `POST /api/link` - link new device via short-lived link code
-- `POST /api/link-code` - generate link code (authenticated)
-- `POST /api/usage/push` - push usage snapshots + token sessions
-- `GET /api/usage/pull?since=` - pull merged data from all devices
-- `GET /api/devices` - list linked devices
-- Deploy to Render/Railway/Fly.io free tier.
-
-**App integration** (`src/core/sync.js`): SyncClient class that pushes after
-each poll cycle and supports pull for merged cross-device view. Settings UI
-in the Sync subpage: enable/disable, server URL, API key, device name,
-register/link flows, device list.
-
-**MCP server** (`mcp-server/`): Standalone stdio MCP server for non-app
-machines. Reads local usage data from the app's data directory and exposes
-tools: `get_usage`, `get_token_stats`, `sync_push`, `sync_pull`. Configured
-via env vars `SYNC_SERVER_URL` and `SYNC_API_KEY`.
-
-## Keeping README up to date
-
-**Whenever the authentication flow, tray behaviour, scraping approach, or project
-structure changes, update `README.md` to match.** The README is the user-facing
-document; CLAUDE.md is the developer reference. Both must stay in sync.
+**Bars / Digits / spin-animation modes:** enum values exist but not yet
+rendered. Tracked as follow-up tickets.
 
 ## Sound packs
 
-Notifications can play any sound from the bundled **default** pack or any
-**downloaded pack** (currently `peon`; more planned). Packs install on
+Notifications play any sound from the bundled **default** pack or any
+**downloaded pack** (e.g. `peon`, `peasant`, `acolyte`). Packs install on
 demand via the `install_sound_pack` Tauri command and land in
 `<app-data>/sound-packs/<packId>/`. Per-project overrides live under
 `settings.projectNotifOverrides[cwdKey][eventKey]`, gated by an `enabled`
-flag; when off the event falls back to the default rule. Resolver lives in
-`notifications::resolve_notif_config` (`tauri/src/notifications.rs`). Sound
-files are served to the frontend as base64 data URLs via
-`sound_pack_file_url`.
+flag; when off the event falls back to the default rule. Resolver in
+`notifications::resolve_notif_config` (`src/notifications.rs`). Sound files
+served to the frontend as base64 data URLs via `sound_pack_file_url`.
+
+## Keeping README up to date
+
+**Whenever the authentication flow, tray behaviour, scraping approach, or
+project structure changes, update `README.md` to match.** README is
+user-facing; CLAUDE.md is the developer reference. Both stay in sync.
 
 ## Key dependencies
 
 | Package | Why |
 |---|---|
-| `electron` (devDep) | App framework |
+| `tauri` v2 | App framework |
+| `tauri-plugin-updater` | Auto-update via signed installer |
+| `tauri-plugin-autostart` | Launch on login |
+| `reqwest` (with gzip/brotli/deflate) | HTTP client for API + sound-pack downloads |
+| `tokio` | Async runtime |
+| `serde` / `serde_json` | Config + API payload parsing |
+| `zip` | Sound pack extraction |
