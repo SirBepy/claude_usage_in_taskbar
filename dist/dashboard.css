@@ -1158,3 +1158,33 @@ input:checked+.slider:before {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.instances-section {
+  margin-bottom: 16px;
+}
+.instances-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim, #9a9ab0);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.count-pill {
+  background: var(--surface-alt, #2a2a3a);
+  color: var(--text-dim, #9a9ab0);
+  font-size: 0.66rem;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.instances-section .no-data {
+  font-size: 0.78rem;
+  color: var(--text-dim, #8a8aa0);
+  padding: 10px 0;
+}

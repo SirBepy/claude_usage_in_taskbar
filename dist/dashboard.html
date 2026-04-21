@@ -578,6 +578,11 @@
             <div style="padding: 8px 0 14px; display: flex; justify-content: flex-end;">
                 <button class="automate-cta" id="automateChannelBtn">+ Automate channel</button>
             </div>
+            <section class="instances-section" id="runningInstancesSection">
+                <div class="section-title">Running instances <span id="runningInstancesCount" class="count-pill">0</span></div>
+                <div id="runningInstancesEmpty" class="no-data">No Claude Code instances running in this project.</div>
+                <div id="runningInstancesList" style="display:none"></div>
+            </section>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                 <div class="range-toggle">
                     <button class="range-btn" data-range="7d">7d</button>
