@@ -21,6 +21,38 @@ pub fn load(path: &Path) -> Settings {
     s
 }
 
+/// Finds or creates a `ProjectConfig` for this cwd. Returns `(id, created_new)`.
+///
+/// If the project already exists, updates `last_active_at`. If created,
+/// populates `id` (uuid v4), `name` (basename), `avatar` (None), and
+/// timestamps (`now` comes from the caller so tests can inject).
+pub fn upsert_project_for_cwd(
+    settings: &mut crate::types::Settings,
+    cwd: &std::path::Path,
+    now: &str,
+) -> (String, bool) {
+    if let Some(p) = settings.projects.iter_mut().find(|p| p.path == cwd) {
+        p.last_active_at = Some(now.to_string());
+        return (p.id.clone(), false);
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let name = cwd
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("(unknown)")
+        .to_string();
+    settings.projects.push(crate::types::ProjectConfig {
+        id: id.clone(),
+        path: cwd.to_path_buf(),
+        name,
+        avatar: crate::types::Avatar::None,
+        automation: None,
+        created_at: now.to_string(),
+        last_active_at: Some(now.to_string()),
+    });
+    (id, true)
+}
+
 /// Saves settings to disk, creating parent dirs if needed.
 pub fn save(path: &Path, settings: &Settings) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -67,5 +99,27 @@ mod tests {
         save(&path, &s).unwrap();
         let back = load(&path);
         assert_eq!(s, back);
+    }
+
+    #[test]
+    fn upsert_creates_when_absent() {
+        let mut s = Settings::default();
+        let (id, created) = upsert_project_for_cwd(&mut s, std::path::Path::new("C:/new"), "now");
+        assert!(created);
+        assert_eq!(s.projects.len(), 1);
+        assert_eq!(s.projects[0].id, id);
+        assert_eq!(s.projects[0].path, std::path::PathBuf::from("C:/new"));
+        assert_eq!(s.projects[0].name, "new");
+    }
+
+    #[test]
+    fn upsert_returns_existing_when_path_matches() {
+        let mut s = Settings::default();
+        let (id1, _) = upsert_project_for_cwd(&mut s, std::path::Path::new("C:/same"), "now");
+        let (id2, created) = upsert_project_for_cwd(&mut s, std::path::Path::new("C:/same"), "later");
+        assert!(!created);
+        assert_eq!(id1, id2);
+        assert_eq!(s.projects.len(), 1);
+        assert_eq!(s.projects[0].last_active_at.as_deref(), Some("later"));
     }
 }

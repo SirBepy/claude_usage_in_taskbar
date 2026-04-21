@@ -665,6 +665,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "url",
+ "uuid",
  "which",
  "zip 2.4.2",
 ]
