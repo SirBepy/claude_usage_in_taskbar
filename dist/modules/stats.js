@@ -637,7 +637,7 @@ function openProjectDetail(cwd) {
         () => {
           doHideProject(cwd);
           renderStats(lastTokenHistory);
-          showView("stats");
+          showView("projects");
         },
         null,
         "Hide"
@@ -647,7 +647,7 @@ function openProjectDetail(cwd) {
 
   renderMergedPathsSection(cwd);
   renderProjectDetail();
-  showView("stats-project");
+  showView("project-detail");
 }
 
 async function renderProjectOverrides(cwdKey) {

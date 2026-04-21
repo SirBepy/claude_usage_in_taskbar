@@ -1,7 +1,7 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
-const VIEWS = ["dashboard", "settings", "settings-visuals", "settings-themes", "settings-notifications", "settings-sync", "stats", "stats-project", "graph-detail"];
+const VIEWS = ["dashboard", "settings", "settings-visuals", "settings-themes", "settings-notifications", "settings-sync", "projects", "project-detail", "graph-detail"];
 
 let activeView = "dashboard";
 let previousView = "dashboard";
@@ -62,10 +62,7 @@ document.querySelectorAll(".back-to-settings").forEach((btn) => {
 });
 
 // Stats navigation
-document.getElementById("statsBackBtn").onclick = () => {
-  showView("dashboard");
-};
-document.getElementById("projectDetailBackBtn").onclick = () => showView(previousView === "stats-project" ? "stats" : previousView);
+document.getElementById("projectDetailBackBtn").onclick = () => showView("projects");
 document.getElementById("graphDetailBackBtn").onclick = () => showView("dashboard");
 
 // Stats-project range + scroll buttons
@@ -312,13 +309,13 @@ window.electronAPI?.getSettings().then((s) => {
 window.electronAPI?.onHistoryUpdated((h) => {
   lastHistory = h;
   refreshDashboard();
-  if (activeView === "stats") renderStats(lastTokenHistory);
+  if (activeView === "projects") renderStats(lastTokenHistory);
 });
 window.electronAPI?.onTokenHistoryUpdated(async (th) => {
   let active = [];
   try { active = await window.electronAPI?.getActiveSessions() || []; } catch { /* ignore */ }
   lastTokenHistory = active.length ? [...(th || []), ...active] : (th || []);
   refreshDashboard();
-  if (activeView === "stats") renderStats(lastTokenHistory);
-  if (activeView === "stats-project") renderProjectDetail();
+  if (activeView === "projects") renderStats(lastTokenHistory);
+  if (activeView === "project-detail") renderProjectDetail();
 });

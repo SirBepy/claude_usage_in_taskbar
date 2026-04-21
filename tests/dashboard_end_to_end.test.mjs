@@ -240,13 +240,13 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
     expect(afterActive.classList.contains("sort-active")).toBe(true);
   });
 
-  it("clicking a project row calls openProjectDetail and switches to the stats-project view", async () => {
+  it("clicking a project row calls openProjectDetail and switches to the project-detail view", async () => {
     const window = await boot();
     const row = window.document.querySelector("#stats-content .proj-row[data-cwd]");
     expect(row, "expected a project row inside the dashboard window card").not.toBeNull();
     row.click();
     await new Promise((r) => setTimeout(r, 30));
-    const projectView = window.document.getElementById("view-stats-project");
+    const projectView = window.document.getElementById("view-project-detail");
     const dashView = window.document.getElementById("view-dashboard");
     expect(projectView.classList.contains("hidden")).toBe(false);
     expect(dashView.classList.contains("hidden")).toBe(true);
