@@ -53,6 +53,40 @@ pub fn catalog() -> Vec<SoundPack> {
             ],
             installed: false,
         },
+        SoundPack {
+            id: "peasant".into(),
+            label: "Peasant (Human)".into(),
+            bundled: false,
+            download_url: Some(
+                "https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/sound-packs-v1/peasant.zip".into(),
+            ),
+            sounds: vec![
+                PackSound { id: "ready.wav".into(),  label: "Ready to work".into() },
+                PackSound { id: "yes.wav".into(),    label: "Acknowledge".into() },
+                PackSound { id: "ok.wav".into(),     label: "Acknowledge (alt)".into() },
+                PackSound { id: "what.wav".into(),   label: "Select".into() },
+                PackSound { id: "pissed.wav".into(), label: "Annoyed".into() },
+                PackSound { id: "death.wav".into(),  label: "Death".into() },
+            ],
+            installed: false,
+        },
+        SoundPack {
+            id: "acolyte".into(),
+            label: "Acolyte (Undead)".into(),
+            bundled: false,
+            download_url: Some(
+                "https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/sound-packs-v1/acolyte.zip".into(),
+            ),
+            sounds: vec![
+                PackSound { id: "ready.wav".into(),  label: "The Damned stand ready".into() },
+                PackSound { id: "obey.wav".into(),   label: "I obey".into() },
+                PackSound { id: "serve.wav".into(),  label: "I live to serve".into() },
+                PackSound { id: "what.wav".into(),   label: "Yes, master?".into() },
+                PackSound { id: "pissed.wav".into(), label: "Annoyed".into() },
+                PackSound { id: "death.wav".into(),  label: "Death".into() },
+            ],
+            installed: false,
+        },
     ]
 }
 
