@@ -64,13 +64,19 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         })
         .build(app)?;
 
-    // Listener: settings-changed -> invalidate cycle + re-render.
+    // Listener: settings-changed -> invalidate cycle + rebuild menu + re-render.
     {
         let h = app.clone();
         app.listen("settings-changed", move |_| {
             {
                 let st = h.state::<AppState>();
                 st.display.lock().unwrap().invalidate_cycle();
+            }
+            let mute = h.state::<AppState>().settings.lock().unwrap().mute_all();
+            if let Ok(new_menu) = build_menu(&h, mute) {
+                if let Some(tray) = h.tray_by_id(TRAY_ID) {
+                    let _ = tray.set_menu(Some(new_menu));
+                }
             }
             render_tray_now(&h);
         });
