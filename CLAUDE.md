@@ -159,3 +159,14 @@ The dashboard uses a sidemenu-driven navigation with four top-level views:
 - **Settings** (`view-settings`) — plus the existing `-visuals` / `-themes` / `-notifications` subviews.
 
 The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every top-level view has a burger button (`data-burger="true"`) that opens it. Backdrop click closes it.
+
+## Instance detection (Plan B)
+
+- `src/instances.rs` — in-memory registry keyed by `session_id`. Emits `instances-changed` Tauri events on every mutation.
+- `src/hook_server.rs` — `/hooks/session-start` and `/hooks/session-end` endpoints populate the registry.
+- `src/detector.rs` — 5s reconciliation loop using `sysinfo`. Marks instances as ended after 2 consecutive missing-pid ticks.
+- `src/session_files.rs` — resolves `bridgeSessionId` from `~/.claude/sessions/<pid>.json` for phone-link URLs.
+- `src/hook_installer.rs` — merges our SessionStart/SessionEnd entries into `~/.claude/settings.json`. Preserves every unrelated field, idempotent.
+- First-run modal in `dashboard.html` asks the user to allow the global hook install; "Never" button declines permanently.
+- Project cards on the Projects view surface live-instance count and remote/automated tags.
+- Running-instances list on the Project detail view shows per-instance actions. Terminal/restart/stop are automated-only; phone-link requires a resolved `bridgeSessionId`.
