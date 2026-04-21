@@ -56,9 +56,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
+          cache-on-failure: true
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0"
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@^2.0
 
       - name: Build
         env:
