@@ -174,37 +174,41 @@ function renderHomeCards(history) {
 
   statsContent.innerHTML = `
     <div class="stat-cards">
-      <div class="stat-card">
-        <div class="stat-label">Session (5h)</div>
-        ${showSafePace ? `
-        <div class="stat-values-row">
-          <div class="stat-col">
-            <div class="stat-value" style="color:${valueColor(latest.session_pct, sessionSafePct)}">${fmtPct(latest.session_pct)}</div>
-            <div class="stat-sublabel">current</div>
-          </div>
-          <div class="stat-col">
-            <div class="stat-value stat-value-dim">${fmtPct(sessionSafePct)}</div>
-            <div class="stat-sublabel">safe pace</div>
-          </div>
-        </div>` : `
-        <div class="stat-value" style="color:${valueColor(latest.session_pct, sessionSafePct)}">${fmtPct(latest.session_pct)}</div>`}
-        ${sessionReset ? `<div class="stat-sublabel">${sessionReset}</div>` : ""}
+      <div class="stat-card home-card">
+        <div class="stat-label label">Session (5h)</div>
+        <div class="ring-wrap">
+          ${showSafePace ? `
+          <div class="stat-values-row">
+            <div class="stat-col">
+              <div class="stat-value pct" style="color:${valueColor(latest.session_pct, sessionSafePct)}">${fmtPct(latest.session_pct)}</div>
+              <div class="stat-sublabel">current</div>
+            </div>
+            <div class="stat-col">
+              <div class="stat-value stat-value-dim">${fmtPct(sessionSafePct)}</div>
+              <div class="stat-sublabel">safe pace</div>
+            </div>
+          </div>` : `
+          <div class="stat-value pct" style="color:${valueColor(latest.session_pct, sessionSafePct)}">${fmtPct(latest.session_pct)}</div>`}
+        </div>
+        ${sessionReset ? `<div class="stat-sublabel sub">${sessionReset}</div>` : ""}
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Weekly (7d)</div>
-        ${showSafePace ? `
-        <div class="stat-values-row">
-          <div class="stat-col">
-            <div class="stat-value" style="color:${valueColor(latest.weekly_pct, weeklySafePct)}">${fmtPct(latest.weekly_pct)}</div>
-            <div class="stat-sublabel">current</div>
-          </div>
-          <div class="stat-col">
-            <div class="stat-value stat-value-dim">${fmtPct(weeklySafePct)}</div>
-            <div class="stat-sublabel">safe pace</div>
-          </div>
-        </div>` : `
-        <div class="stat-value" style="color:${valueColor(latest.weekly_pct, weeklySafePct)}">${fmtPct(latest.weekly_pct)}</div>`}
-        ${weeklyReset ? `<div class="stat-sublabel">${weeklyReset}</div>` : ""}
+      <div class="stat-card home-card">
+        <div class="stat-label label">Weekly (7d)</div>
+        <div class="ring-wrap">
+          ${showSafePace ? `
+          <div class="stat-values-row">
+            <div class="stat-col">
+              <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct, weeklySafePct)}">${fmtPct(latest.weekly_pct)}</div>
+              <div class="stat-sublabel">current</div>
+            </div>
+            <div class="stat-col">
+              <div class="stat-value stat-value-dim">${fmtPct(weeklySafePct)}</div>
+              <div class="stat-sublabel">safe pace</div>
+            </div>
+          </div>` : `
+          <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct, weeklySafePct)}">${fmtPct(latest.weekly_pct)}</div>`}
+        </div>
+        ${weeklyReset ? `<div class="stat-sublabel sub">${weeklyReset}</div>` : ""}
       </div>
     </div>
   `;
