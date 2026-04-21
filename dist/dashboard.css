@@ -1024,3 +1024,23 @@ input:checked+.slider:before {
   color: var(--text-dim, #8a8aa0);
   text-align: center;
 }
+
+.view-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #2a2a3a);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.view-mode-toggle .mode-btn {
+  background: transparent;
+  border: 0;
+  padding: 5px 9px;
+  color: var(--text-dim, #8a8aa0);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.view-mode-toggle .mode-btn.active {
+  background: var(--surface-alt, #2a2a3a);
+  color: var(--text, #ffffff);
+}

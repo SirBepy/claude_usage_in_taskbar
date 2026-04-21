@@ -37,6 +37,26 @@ document.querySelectorAll("[data-burger]").forEach((btn) => {
 
 document.getElementById("sidemenuBackdrop").onclick = closeSidemenu;
 
+// Projects grid/list toggle
+document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((btn) => {
+  btn.onclick = async () => {
+    const mode = btn.dataset.mode;
+    document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((b) => {
+      b.classList.toggle("active", b === btn);
+    });
+    await window.electronAPI.setProjectsViewMode(mode);
+    if (typeof renderProjectsList === "function") renderProjectsList();
+  };
+});
+
+async function syncProjectsViewModeFromSettings() {
+  const s = await window.electronAPI.getSettings();
+  const mode = s.projects_view_mode || "grid";
+  document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+}
+
 // Nav item click → navigate + close.
 document.querySelectorAll(".sidemenu-nav-item").forEach((item) => {
   item.onclick = () => {
@@ -328,6 +348,7 @@ window.electronAPI?.getSettings().then((s) => {
   }
   _initSettings = true;
   tryInitialRender();
+  syncProjectsViewModeFromSettings();
 });
 
 window.electronAPI?.onHistoryUpdated((h) => {
