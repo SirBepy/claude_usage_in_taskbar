@@ -39,6 +39,7 @@ which = "7"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
+sysinfo = "0.31"
 
 [dev-dependencies]
 tempfile = "3"

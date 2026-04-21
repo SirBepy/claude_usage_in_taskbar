@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod auth;
+pub mod detector;
 pub mod project_overrides;
 pub mod display_state;
 pub mod fonts;
@@ -173,6 +174,10 @@ pub fn run() {
                     log::error!("hook server spawn failed: {e}");
                 }
             });
+            {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move { crate::detector::run(h).await });
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
                 window.on_window_event(move |event| {
