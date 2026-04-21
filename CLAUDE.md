@@ -56,7 +56,7 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `dist/dashboard.js` | Dashboard renderer logic |
 | `dist/modules/*.js` | Chart, formatters, settings, sound-packs, stats, speech-fallback |
 | `capabilities/default.json` | Tauri 2 IPC permission allowlist |
-| `icons/` | Build-time tray + installer icons (gitignored, regenerated) |
+| `icons/` | Build-time tray + installer icons (committed; regenerate via `cargo tauri icon <source.png>` if logo changes) |
 | `assets/` | Bundled fonts + default notification sounds |
 | `binaries/piper/` | Sidecar Piper TTS binary (per-target-triple name) |
 | `tauri.conf.json` | Tauri config - bundle, updater, windows, frontend path |
