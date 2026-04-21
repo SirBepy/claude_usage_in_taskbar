@@ -942,7 +942,7 @@ input:checked+.slider:before {
   left: 0;
   bottom: 0;
   width: 220px;
-  background: var(--bg-elevated, #1b1b26);
+  background: var(--surface, #1b1b26);
   border-right: 1px solid var(--border, #2a2a3a);
   transform: translateX(-100%);
   transition: transform 200ms ease;
@@ -975,11 +975,11 @@ input:checked+.slider:before {
   color: var(--text, #c5c5d6);
 }
 .sidemenu-nav-item:hover {
-  background: var(--bg-hover, rgba(255,255,255,0.05));
+  background: var(--surface-alt, rgba(255,255,255,0.05));
 }
 .sidemenu-nav-item.active {
-  background: var(--bg-active, #2a2a3a);
-  color: var(--text-strong, #ffffff);
+  background: var(--surface-alt, #2a2a3a);
+  color: var(--text, #ffffff);
 }
 .sidemenu-nav-item i {
   font-size: 1.1rem;
