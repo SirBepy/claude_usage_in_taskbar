@@ -94,7 +94,8 @@ async function bootDashboard(history) {
 
   // Inject each original <script src> inline so the window evaluates it as
   // top-level code and function declarations become global.
-  for (const src of scriptSrcs) {
+  // Skip external CDN URLs (http/https) — jsdom has no network access in tests.
+  for (const src of scriptSrcs.filter((s) => !s.startsWith("http"))) {
     const code = readFileSync(join(distDir, src), "utf8");
     const s = window.document.createElement("script");
     s.textContent = code;
@@ -195,7 +196,8 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
       return null;
     };
 
-    for (const src of scriptSrcs) {
+    // Skip external CDN URLs (http/https) — jsdom has no network access in tests.
+    for (const src of scriptSrcs.filter((s) => !s.startsWith("http"))) {
       const code = readFileSync(join(distDir, src), "utf8");
       const s = window.document.createElement("script");
       s.textContent = code;
