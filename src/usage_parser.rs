@@ -48,24 +48,18 @@ pub fn build_tooltip(
 
     match s.layout {
         TooltipLayout::Rows => {
-            let mut lines = vec![];
-            let mut sess_parts = vec![format!("Session  {sess_pct}")];
-            if s.show_safe_pace { if let Some(v) = sess_safe { sess_parts.push(format!("{:.0}%", v)); } }
-            lines.push(sess_parts.join("  "));
-            if !sess_reset.is_empty() {
-                lines.push(String::new());
-                lines.push("Resets:".to_string());
-                lines.push(sess_reset);
-            }
-
-            let mut wk_parts = vec![format!("Weekly   {weekly_pct}")];
-            if s.show_safe_pace { if let Some(v) = weekly_safe { wk_parts.push(format!("{:.0}%", v)); } }
-            lines.push(wk_parts.join("  "));
-            if !weekly_reset.is_empty() {
-                lines.push(String::new());
-                lines.push("Resets:".to_string());
-                lines.push(weekly_reset);
-            }
+            let row = |label: &str, pct: &str, safe: Option<f32>, reset: &str| {
+                let mut parts = vec![label.to_string(), pct.to_string()];
+                if s.show_safe_pace {
+                    if let Some(v) = safe { parts.push(format!("{:.0}%", v)); }
+                }
+                if !reset.is_empty() { parts.push(reset.to_string()); }
+                parts.join("  ")
+            };
+            let lines = vec![
+                row("Session", &sess_pct, sess_safe, &sess_reset),
+                row("Weekly ", &weekly_pct, weekly_safe, &weekly_reset),
+            ];
             lines.join("\n")
         }
         TooltipLayout::Columns => {
