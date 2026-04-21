@@ -910,3 +910,13 @@ input:checked+.slider:before {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.option.is-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.mute-all-on .option.mute-child {
+    opacity: 0.5;
+    pointer-events: none;
+}

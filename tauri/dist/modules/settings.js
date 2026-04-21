@@ -98,6 +98,20 @@ const paceColorNearSafe = document.getElementById("paceColorNearSafe");
 const paceColorNearOver = document.getElementById("paceColorNearOver");
 const paceColorOver = document.getElementById("paceColorOver");
 const addColorBtn = document.getElementById("addColorBtn");
+const muteAllSwitch = document.getElementById("muteAllSwitch");
+const muteSoundsSwitch = document.getElementById("muteSoundsSwitch");
+const muteSystemSwitch = document.getElementById("muteSystemSwitch");
+const muteSection = document.getElementById("muteSection");
+
+function applyMuteAllVisual() {
+  const dimmed = muteAllSwitch.checked;
+  muteSection.classList.toggle("mute-all-on", dimmed);
+}
+
+muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
+muteSoundsSwitch.addEventListener("change", saveSettings);
+// system switch stays disabled; no listener.
+
 const NOTIF_TYPES = [
   { key: "workFinished",     title: "Done (Work Finished)",     hint: "Supports {name}",    defaultSound: "sound1.mp3", defaultTemplate: "{name} is done" },
   { key: "questionAsked",    title: "Waiting (Question Asked)", hint: "Supports {name}",    defaultSound: "sound3.mp3", defaultTemplate: "{name} is waiting" },
@@ -347,6 +361,9 @@ function saveSettings() {
         color: row.querySelector(".color-val").value,
       }))
       .sort((a, b) => a.min - b.min),
+    muteAll: muteAllSwitch.checked,
+    muteSounds: muteSoundsSwitch.checked,
+    muteSystemNotifications: muteSystemSwitch.checked,
     notifications: gatherNotifSettings(),
     projectAliases: currentSettings.projectAliases || {},
     // stats.js mutates projectBlacklist directly on currentSettings. If we
@@ -519,6 +536,11 @@ window.onload = async () => {
     thresholds.forEach((t) =>
       colorContainer.appendChild(createColorRow(t.min, t.color))
     );
+
+    muteAllSwitch.checked = !!settings.muteAll;
+    muteSoundsSwitch.checked = !!settings.muteSounds;
+    muteSystemSwitch.checked = !!settings.muteSystemNotifications;
+    applyMuteAllVisual();
 
     buildNotifCards();
     const notifs = settings.notifications || {};
