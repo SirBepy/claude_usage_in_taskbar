@@ -471,3 +471,63 @@ function escapeProjHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;"
   }[c]));
 }
+
+// ── Hook-registration consent modal ─────────────────────────────────────────
+
+async function maybeShowHookModal() {
+  const state = await window.electronAPI.getHookRegistrationState();
+  if (!state || state.registered || state.declined) return;
+  showHookModal();
+}
+
+function showHookModal() {
+  const backdrop = document.getElementById("hookModalBackdrop");
+  const modal = document.getElementById("hookModal");
+  backdrop.style.display = "block";
+  modal.style.display = "block";
+  renderHookModalPreview();
+}
+
+function hideHookModal() {
+  document.getElementById("hookModalBackdrop").style.display = "none";
+  document.getElementById("hookModal").style.display = "none";
+}
+
+async function renderHookModalPreview() {
+  const state = await window.electronAPI.getHookRegistrationState();
+  const port = state.port || "?";
+  const preview = [
+    `"hooks": {`,
+    `  "SessionStart": [{`,
+    `    "matcher": "aiusage-taskbar",`,
+    `    "hooks": [{ "type": "command",`,
+    `      "command": "curl -sS -X POST … :${port}/hooks/session-start" }]`,
+    `  }],`,
+    `  "SessionEnd": [{ ... similarly … }]`,
+    `}`,
+  ].join("\n");
+  document.getElementById("hookModalPreview").textContent = preview;
+}
+
+document.getElementById("hookModalAccept").onclick = async () => {
+  try {
+    await window.electronAPI.registerHooksGlobally();
+    hideHookModal();
+    showToast("Hooks enabled. Running instances will now show up.");
+  } catch (e) {
+    showToast(`Hook install failed: ${e}`);
+  }
+};
+
+document.getElementById("hookModalSkip").onclick = () => {
+  hideHookModal();
+  // Will re-offer on next launch.
+};
+
+document.getElementById("hookModalNever").onclick = async () => {
+  await window.electronAPI.skipHookRegistration();
+  hideHookModal();
+};
+
+// Called after settings load.
+maybeShowHookModal();

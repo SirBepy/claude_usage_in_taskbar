@@ -654,6 +654,27 @@
         </div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════════════════
+         First-run: hook registration consent modal
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <div class="modal-backdrop" id="hookModalBackdrop" style="display:none"></div>
+    <div class="modal" id="hookModal" style="display:none">
+        <div class="modal-header">
+            <i class="ph ph-plug"></i>
+            <h3>Enable live instance tracking?</h3>
+        </div>
+        <div class="modal-body">
+            <p>We can register a small hook in <code>~/.claude/settings.json</code> so this app sees when any Claude Code session starts or ends, anywhere on your machine — automated channels, VSCode terminals, ad-hoc shells.</p>
+            <p class="muted">Your existing hooks (from other apps) are preserved. Only our entries are added.</p>
+            <div class="modal-preview" id="hookModalPreview">Loading…</div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-secondary" id="hookModalSkip">Not now</button>
+            <button class="btn-danger" id="hookModalNever">Never</button>
+            <button class="btn-primary" id="hookModalAccept">Enable</button>
+        </div>
+    </div>
+
     <script src="debug-overlay.js"></script>
     <script src="modules/formatters.js"></script>
     <script src="modules/stats.js"></script>
