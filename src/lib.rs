@@ -18,6 +18,7 @@ pub mod paths;
 pub mod scheduler;
 pub mod scraper;
 pub mod session;
+pub mod session_files;
 pub mod settings;
 pub mod state;
 pub mod token_stats;

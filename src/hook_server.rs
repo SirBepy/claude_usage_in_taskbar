@@ -36,6 +36,24 @@ struct RefreshPayload {
     #[serde(default)] #[allow(dead_code)] origin: Option<serde_json::Value>,
 }
 
+/// Payload shape for Claude Code's SessionStart / SessionEnd hooks.
+/// See claude-code docs — fields surveyed from the CLI's hook emission.
+#[derive(Deserialize, Debug, Default)]
+struct SessionStartPayload {
+    pub session_id: String,
+    #[serde(default)] pub cwd: Option<String>,
+    #[serde(default)] pub transcript_path: Option<String>,
+    #[serde(default)] pub pid: Option<u32>,
+    /// "startup" | "resume" | "clear" | "compact" — ignored for v1.
+    #[serde(default)] pub source: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+struct SessionEndPayload {
+    pub session_id: String,
+    #[serde(default)] pub reason: Option<String>,
+}
+
 async fn on_refresh(
     AxState(ctx): AxState<Arc<HookCtx>>,
     Json(payload): Json<RefreshPayload>,
@@ -129,6 +147,86 @@ async fn on_quit(AxState(ctx): AxState<Arc<HookCtx>>) -> impl IntoResponse {
     (StatusCode::NO_CONTENT, Json(json!({})))
 }
 
+async fn on_session_start(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(payload): Json<SessionStartPayload>,
+) -> impl IntoResponse {
+    log::info!(
+        "hook /hooks/session-start: session={} cwd={} pid={:?} source={:?}",
+        payload.session_id,
+        payload.cwd.as_deref().unwrap_or("-"),
+        payload.pid,
+        payload.source,
+    );
+
+    let Some(cwd) = payload.cwd.clone() else {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": "missing cwd"})));
+    };
+
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let state = ctx.app.state::<AppState>();
+    let registry = state.instances.clone();
+
+    // Heuristic kind: if we spawned it, it's Automated. Plan B has no
+    // channels yet, so everything is External; Plan C will set kind
+    // explicitly when registering its own child.
+    let input = crate::instances::RegisterInput {
+        session_id: payload.session_id.clone(),
+        cwd: std::path::PathBuf::from(cwd),
+        pid: payload.pid.unwrap_or(0),
+        kind: crate::types::InstanceKind::External,
+        is_remote: false, // refined once bridgeSessionId resolves
+        transcript_path: payload.transcript_path.map(std::path::PathBuf::from),
+        started_at: now.clone(),
+    };
+
+    let (_project_id, created_new) =
+        registry.register(input.clone(), &state.settings, &now);
+
+    if created_new {
+        // New project auto-created: persist settings to disk.
+        let snapshot = state.settings.lock().unwrap().clone();
+        if let Ok(path) = paths::settings_file() {
+            let _ = settings::save(&path, &snapshot);
+        }
+        let _ = ctx.app.emit("settings-changed", &snapshot);
+    }
+
+    // Enrich with bridgeSessionId in the background.
+    let h = ctx.app.clone();
+    let sid = payload.session_id.clone();
+    let pid_opt = payload.pid;
+    tauri::async_runtime::spawn(async move {
+        let Some(pid) = pid_opt else { return };
+        if let Some(bridge) = crate::session_files::resolve_bridge_session_id(pid).await {
+            let s = h.state::<AppState>();
+            s.instances.set_bridge_session_id(&sid, bridge);
+            let _ = h.emit("instances-changed", s.instances.list());
+        }
+    });
+
+    let _ = ctx.app.emit("instances-changed", registry.list());
+
+    (StatusCode::NO_CONTENT, Json(json!({})))
+}
+
+async fn on_session_end(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(payload): Json<SessionEndPayload>,
+) -> impl IntoResponse {
+    log::info!(
+        "hook /hooks/session-end: session={} reason={}",
+        payload.session_id,
+        payload.reason.as_deref().unwrap_or("-"),
+    );
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let state = ctx.app.state::<AppState>();
+    if state.instances.mark_ended(&payload.session_id, crate::types::EndReason::HookSessionEnd, &now) {
+        let _ = ctx.app.emit("instances-changed", state.instances.list());
+    }
+    StatusCode::NO_CONTENT
+}
+
 /// Fixed port matching the Electron app + README + installer + user hook scripts
 /// at `~/.claude/aiusage-hook.{ps1,sh}`. Changing this breaks every already-installed
 /// hook client, so it stays pinned.
@@ -158,6 +256,8 @@ pub async fn spawn(app: AppHandle) -> Result<u16> {
         .route("/refresh", post(on_refresh))
         .route("/notify", post(on_notify))
         .route("/quit", post(on_quit))
+        .route("/hooks/session-start", post(on_session_start))
+        .route("/hooks/session-end", post(on_session_end))
         .with_state(ctx);
 
     tokio::spawn(async move {
