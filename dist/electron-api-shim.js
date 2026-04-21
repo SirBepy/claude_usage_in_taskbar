@@ -134,6 +134,22 @@
       });
       return () => unlisten.then((u) => u());
     },
+
+    // --- Projects (Plan A shell; populated by Plan B) ---
+    listProjects: () => invoke('list_projects'),
+    getProject: (id) => invoke('get_project', { id }),
+    updateProject: async (id, patch) => {
+      try { await invoke('update_project', { id, patch }); }
+      catch (e) { console.error('update_project failed', e); throw e; }
+    },
+    deleteProject: async (id) => {
+      try { await invoke('delete_project', { id }); }
+      catch (e) { console.error('delete_project failed', e); throw e; }
+    },
+    setProjectsViewMode: async (mode) => {
+      try { await invoke('set_projects_view_mode', { mode }); }
+      catch (e) { console.error('set_projects_view_mode failed', e); throw e; }
+    },
   };
 
   window.electronAPI = bridge;

@@ -91,6 +91,11 @@ pub fn run() {
             ipc::list_sound_packs,
             ipc::install_sound_pack,
             ipc::sound_pack_file_url,
+            ipc::list_projects,
+            ipc::get_project,
+            ipc::update_project,
+            ipc::delete_project,
+            ipc::set_projects_view_mode,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
