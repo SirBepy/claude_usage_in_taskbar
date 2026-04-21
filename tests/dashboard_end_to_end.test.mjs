@@ -210,14 +210,14 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
     }
     for (let i = 0; i < 50; i++) {
       await new Promise((r) => setTimeout(r, 20));
-      if (window.document.querySelector("#stats-content th[data-sort]")) break;
+      if (window.document.querySelector("#statistics-content th[data-sort]")) break;
     }
     return window;
   }
 
   it("renders sortable headers with data-sort + data-list attrs in the dashboard window cards", async () => {
     const window = await boot();
-    const ths = window.document.querySelectorAll("#stats-content th[data-sort][data-list]");
+    const ths = window.document.querySelectorAll("#statistics-content th[data-sort][data-list]");
     expect(ths.length).toBeGreaterThan(0);
   });
 
@@ -225,7 +225,7 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
     const window = await boot();
     // Find a header that is NOT currently the active sort, so clicking it
     // will move the active state — that's the visible proof sorting works.
-    const allThs = [...window.document.querySelectorAll("#stats-content th[data-sort]")];
+    const allThs = [...window.document.querySelectorAll("#statistics-content th[data-sort]")];
     expect(allThs.length).toBeGreaterThanOrEqual(2);
     const inactive = allThs.find((th) => !th.classList.contains("sort-active"));
     expect(inactive, "expected at least one non-active sort header to click").toBeDefined();
@@ -234,7 +234,7 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
     inactive.click();
     await new Promise((r) => setTimeout(r, 30));
     const afterActive = window.document.querySelector(
-      `#stats-content th[data-sort='${targetCol}'][data-list='${targetList}']`
+      `#statistics-content th[data-sort='${targetCol}'][data-list='${targetList}']`
     );
     expect(afterActive).not.toBeNull();
     expect(afterActive.classList.contains("sort-active")).toBe(true);
@@ -242,7 +242,7 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
 
   it("clicking a project row calls openProjectDetail and switches to the project-detail view", async () => {
     const window = await boot();
-    const row = window.document.querySelector("#stats-content .proj-row[data-cwd]");
+    const row = window.document.querySelector("#statistics-content .proj-row[data-cwd]");
     expect(row, "expected a project row inside the dashboard window card").not.toBeNull();
     row.click();
     await new Promise((r) => setTimeout(r, 30));

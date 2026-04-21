@@ -132,53 +132,38 @@ async function runDeadPathCheck() {
 
 // ── Stats rendering ───────────────────────────────────────────────────────────
 const statsContent = document.getElementById("stats-content");
+const statisticsContent = document.getElementById("statistics-content");
 
 /** Re-render the main dashboard and wire all interactive elements. */
 function refreshDashboard() {
   if (!lastHistory) return;
   renderHistory(lastHistory);
-  wireProjectListClicks(statsContent, refreshDashboard);
+  wireProjectListClicks(statisticsContent, refreshDashboard);
 }
 
 
 function renderHistory(history) {
   lastHistory = history;
   if (!history || history.length === 0) {
-    statsContent.innerHTML = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
+    const emptyHtml = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
+    statsContent.innerHTML = emptyHtml;
+    statisticsContent.innerHTML = emptyHtml;
     return;
   }
 
+  renderHomeCards(history);
+  renderStatistics(history);
+}
+
+/** Home view: ONLY the two big session + weekly cards. */
+function renderHomeCards(history) {
   const latest = history[history.length - 1];
   const sessionReset = fmtResetTime(latest.session_resets_at);
   const weeklyReset = fmtResetTime(latest.weekly_resets_at);
 
-  // Weekly window bounds
   const weeklyEndMs = latest.weekly_resets_at
     ? new Date(latest.weekly_resets_at).getTime()
     : Date.now() + 3_600_000;
-  const weeklyStartMs = weeklyEndMs - 7 * 24 * 3_600_000;
-
-  // Session window bounds (5-hour)
-  const SESSION_MS = 5 * 3_600_000;
-  const sessionEndMs = latest.session_resets_at
-    ? new Date(latest.session_resets_at).getTime()
-    : Date.now() + 3_600_000;
-  const sessionBaseStartMs = sessionEndMs - SESSION_MS;
-
-  // Per-chart pagination offsets
-  const WEEK_MS = 7 * 24 * 3_600_000;
-
-  const sessionShiftMs = sessionPageOffset * SESSION_MS;
-  const shiftedSessionEndMs = sessionEndMs - sessionShiftMs;
-  const shiftedSessionStartMs = sessionBaseStartMs - sessionShiftMs;
-  const hasSessionPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedSessionStartMs - SESSION_MS && t < shiftedSessionStartMs; });
-
-  const weeklyShiftMs = weeklyPageOffset * WEEK_MS;
-  const shiftedWeeklyEndMs = weeklyEndMs - weeklyShiftMs;
-  const shiftedWeeklyStartMs = weeklyStartMs - weeklyShiftMs;
-  const hasWeeklyPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedWeeklyStartMs - WEEK_MS && t < shiftedWeeklyStartMs; });
-
-  // Safe pace: % of window time elapsed, clamped 0-100
   const sessionResetMs = latest.session_resets_at ? new Date(latest.session_resets_at).getTime() : null;
   const sessionSafePct = sessionResetMs !== null
     ? Math.max(0, Math.min(100, Math.round((5 * 3_600_000 - (sessionResetMs - Date.now())) / (5 * 3_600_000) * 100)))
@@ -186,15 +171,6 @@ function renderHistory(history) {
   const weeklySafePct = Math.max(0, Math.min(100, Math.round((7 * 24 * 3_600_000 - (weeklyEndMs - Date.now())) / (7 * 24 * 3_600_000) * 100)));
 
   const showSafePace = currentSettings.dashboardShowSafePace !== false;
-  const showSessionGraph = currentSettings.dashboardShowSession !== false;
-  const showWeeklyGraph = currentSettings.dashboardShowWeekly !== false;
-
-  const legendItem = (id, color, isDashed, label) => {
-    const dot = isDashed
-      ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
-      : `<span class="legend-dot" style="background:${color}"></span>`;
-    return `<span id="${id}" style="cursor:pointer">${dot}${label}</span>`;
-  };
 
   statsContent.innerHTML = `
     <div class="stat-cards">
@@ -231,6 +207,50 @@ function renderHistory(history) {
         ${weeklyReset ? `<div class="stat-sublabel">${weeklyReset}</div>` : ""}
       </div>
     </div>
+  `;
+}
+
+/** Statistics view: today section + session graph + weekly graph (everything else). */
+function renderStatistics(history) {
+  const latest = history[history.length - 1];
+
+  // Weekly window bounds
+  const weeklyEndMs = latest.weekly_resets_at
+    ? new Date(latest.weekly_resets_at).getTime()
+    : Date.now() + 3_600_000;
+  const weeklyStartMs = weeklyEndMs - 7 * 24 * 3_600_000;
+
+  // Session window bounds (5-hour)
+  const SESSION_MS = 5 * 3_600_000;
+  const sessionEndMs = latest.session_resets_at
+    ? new Date(latest.session_resets_at).getTime()
+    : Date.now() + 3_600_000;
+  const sessionBaseStartMs = sessionEndMs - SESSION_MS;
+
+  // Per-chart pagination offsets
+  const WEEK_MS = 7 * 24 * 3_600_000;
+
+  const sessionShiftMs = sessionPageOffset * SESSION_MS;
+  const shiftedSessionEndMs = sessionEndMs - sessionShiftMs;
+  const shiftedSessionStartMs = sessionBaseStartMs - sessionShiftMs;
+  const hasSessionPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedSessionStartMs - SESSION_MS && t < shiftedSessionStartMs; });
+
+  const weeklyShiftMs = weeklyPageOffset * WEEK_MS;
+  const shiftedWeeklyEndMs = weeklyEndMs - weeklyShiftMs;
+  const shiftedWeeklyStartMs = weeklyStartMs - weeklyShiftMs;
+  const hasWeeklyPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedWeeklyStartMs - WEEK_MS && t < shiftedWeeklyStartMs; });
+
+  const showSessionGraph = currentSettings.dashboardShowSession !== false;
+  const showWeeklyGraph = currentSettings.dashboardShowWeekly !== false;
+
+  const legendItem = (id, color, isDashed, label) => {
+    const dot = isDashed
+      ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
+      : `<span class="legend-dot" style="background:${color}"></span>`;
+    return `<span id="${id}" style="cursor:pointer">${dot}${label}</span>`;
+  };
+
+  statisticsContent.innerHTML = `
     ${buildTodaySectionHTML(lastTokenHistory)}
     ${showSessionGraph ? buildGraphCard({
       id: "session",
@@ -267,7 +287,7 @@ function renderHistory(history) {
   setupLegendToggles();
   applyLineVisibility();
   setupPaginationButtons();
-  wireChartModeToggles(statsContent);
+  wireChartModeToggles(statisticsContent);
 }
 
 // Merge active (live) sessions into token history so project lists show ongoing work.
