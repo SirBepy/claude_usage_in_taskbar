@@ -148,3 +148,14 @@ user-facing; CLAUDE.md is the developer reference. Both stay in sync.
 | `tokio` | Async runtime |
 | `serde` / `serde_json` | Config + API payload parsing |
 | `zip` | Sound pack extraction |
+
+## Navigation (updated by Plan A)
+
+The dashboard uses a sidemenu-driven navigation with four top-level views:
+
+- **Home** (`view-dashboard`) — two enlarged Session + Weekly cards.
+- **Statistics** (`view-statistics`) — pace charts, history chart, extra-usage summary.
+- **Projects** (`view-projects`) — project cards (grid or list toggle). Click a card → `view-project-detail`.
+- **Settings** (`view-settings`) — plus the existing `-visuals` / `-themes` / `-notifications` subviews.
+
+The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every top-level view has a burger button (`data-burger="true"`) that opens it. Backdrop click closes it.
