@@ -1,7 +1,7 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
-const VIEWS = ["dashboard", "settings", "settings-visuals", "settings-themes", "settings-notifications", "settings-sync", "projects", "project-detail", "graph-detail"];
+const VIEWS = ["dashboard", "settings", "settings-visuals", "settings-themes", "settings-notifications", "settings-sync", "statistics", "projects", "project-detail", "graph-detail"];
 
 let activeView = "dashboard";
 let previousView = "dashboard";
