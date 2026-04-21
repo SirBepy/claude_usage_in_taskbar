@@ -1,9 +1,10 @@
 node_modules/
-dist/
 out/
-resources/piper/
+/target/
+/gen/schemas/
 *.log
 .DS_Store
 Thumbs.db
 .direct-api-test-output.json
 .captured-cookies.json
+.playwright-mcp/

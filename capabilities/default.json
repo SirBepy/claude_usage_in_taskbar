@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "default",
+  "description": "Capability for the main dashboard window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:app:default",
+    "core:app:allow-version",
+    "core:app:allow-name",
+    "core:tray:default",
+    "autostart:default",
+    "updater:default"
+  ]
+}

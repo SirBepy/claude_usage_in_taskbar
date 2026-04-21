@@ -1,0 +1,51 @@
+[package]
+name = "claude-usage-tauri"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "claude_usage_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = ["tray-icon", "image-png", "devtools"] }
+tauri-plugin-log = "2.0"
+tauri-plugin-autostart = "2.0"
+tauri-plugin-updater = "2.0"
+tauri-plugin-clipboard-manager = "2.0"
+tauri-plugin-shell = "2.0"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies", "gzip", "brotli", "deflate"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+ab_glyph = "0.2"
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false }
+url = "2"
+rand = "0.8"
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
+rodio = { version = "0.19", default-features = false, features = ["mp3", "symphonia-mp3", "symphonia-wav"] }
+which = "7"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
+mockito = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"
