@@ -1,8 +1,7 @@
 node_modules/
-/dist/
-!tauri/dist/
 out/
-resources/piper/
+/target/
+/gen/schemas/
 *.log
 .DS_Store
 Thumbs.db
