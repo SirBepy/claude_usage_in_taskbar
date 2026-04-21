@@ -48,11 +48,18 @@ pub(crate) fn should_suppress(settings: &Settings, mode: NotifMode) -> bool {
 }
 
 pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option<&str>) {
-    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
-    let cfg: crate::icon_settings::NotificationsConfig = (&settings).try_into().unwrap_or_default();
-    let overrides = project_overrides::parse(&settings);
+    let state = app.state::<AppState>();
+    let settings_snapshot = state.settings.lock().unwrap().clone();
+
+    let cfg: crate::icon_settings::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
+    let overrides = project_overrides::parse(&settings_snapshot);
     let rule = resolve_notif_config(&cfg, &overrides, kind, cwd_key);
     if !rule.enabled { return; }
+
+    if should_suppress(&settings_snapshot, rule.mode) { return; }
+
+    // TODO: when OS toast channel lands, add a `NotifMode::Toast` arm here
+    //       and gate it on `settings_snapshot.mute_system_notifications()`.
     match rule.mode {
         NotifMode::Sound => audio::play_pack_sound(app, &rule.sound_pack, &rule.sound_file),
         NotifMode::Voice => {
