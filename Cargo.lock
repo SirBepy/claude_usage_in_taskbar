@@ -648,6 +648,7 @@ dependencies = [
  "image",
  "log",
  "mockito",
+ "once_cell",
  "rand 0.8.6",
  "reqwest 0.12.28",
  "rodio",

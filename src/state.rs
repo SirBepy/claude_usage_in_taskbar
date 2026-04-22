@@ -1,5 +1,6 @@
 //! Runtime app state shared across Tauri commands and background tasks.
 
+use crate::channels::Manager as ChannelsManager;
 use crate::display_state::TrayDisplayState;
 use crate::instances::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
@@ -12,6 +13,7 @@ pub struct AppState {
     pub display: Mutex<TrayDisplayState>,
     pub audio: crate::audio::AudioCtx,
     pub instances: Arc<Registry>,
+    pub channels: Arc<ChannelsManager>,
     pub hook_registration_pending: Mutex<bool>,
 }
 
@@ -24,6 +26,7 @@ impl AppState {
             display: Mutex::new(TrayDisplayState::default()),
             audio: crate::audio::AudioCtx::new(),
             instances: Arc::new(Registry::new()),
+            channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),
         }
     }
