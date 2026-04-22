@@ -49,4 +49,32 @@ describe("Projects view DOM", () => {
     expect(html).toMatch(/id="allSessionsBackBtn"/);
     expect(html).toMatch(/id="sessionDetailBackBtn"/);
   });
+
+  it("automation + notif-override + path-editor DOM moved out of #view-project-detail", () => {
+    const detailMatch = html.match(/<div id="view-project-detail"[\s\S]*?<!-- /);
+    expect(detailMatch, "could not locate detail view block").toBeTruthy();
+    const detailBlock = detailMatch[0];
+    expect(detailBlock).not.toMatch(/id="automationSection"/);
+    expect(detailBlock).not.toMatch(/id="projectNotifOverridesSection"/);
+    expect(detailBlock).not.toMatch(/id="projectDetailPath"/);
+    expect(detailBlock).not.toMatch(/id="projectDetailPathInput"/);
+    expect(detailBlock).not.toMatch(/id="project-merged-paths"/);
+    expect(detailBlock).not.toMatch(/id="hideProjectBtn"/);
+  });
+
+  it("automation subview contains the form fields", () => {
+    expect(html).toMatch(/id="view-project-automation"[\s\S]*?id="automationEnabled"/);
+    expect(html).toMatch(/id="view-project-automation"[\s\S]*?id="automateChannelBtn"/);
+  });
+
+  it("folder-mapping subview contains path editor + merged + hide", () => {
+    expect(html).toMatch(/id="view-project-folder-mapping"[\s\S]*?id="projectDetailPath"/);
+    expect(html).toMatch(/id="view-project-folder-mapping"[\s\S]*?id="project-merged-paths"/);
+    expect(html).toMatch(/id="view-project-folder-mapping"[\s\S]*?id="hideProjectBtn"/);
+  });
+
+  it("notif-overrides subview owns the template + rows container", () => {
+    expect(html).toMatch(/id="view-project-notif-overrides"[\s\S]*?id="projectOverrideRowTemplate"/);
+    expect(html).toMatch(/id="view-project-notif-overrides"[\s\S]*?id="projectOverrideRows"/);
+  });
 });
