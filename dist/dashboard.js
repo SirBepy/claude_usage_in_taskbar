@@ -190,7 +190,7 @@ async function renderAutomationForm() {
   const form = document.getElementById("automationForm");
   if (!empty || !form) return;
   if (!proj || !proj.automation) {
-    empty.style.display = "block";
+    empty.style.display = "";
     form.style.display = "none";
     return;
   }
