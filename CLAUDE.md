@@ -170,3 +170,14 @@ The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every t
 - First-run modal in `dashboard.html` asks the user to allow the global hook install; "Never" button declines permanently.
 - Project cards on the Projects view surface live-instance count and remote/automated tags.
 - Running-instances list on the Project detail view shows per-instance actions. Terminal/restart/stop are automated-only; phone-link requires a resolved `bridgeSessionId`.
+
+## Channel management (Plan C)
+
+- `src/channels.rs` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console. Windows-only.
+- Spawn uses `cmd /C claude --remote-control --remote-control-session-name-prefix … --continue` with `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP` so the process gets its own console window (hidden immediately via `ShowWindow(SW_HIDE)`).
+- hwnd resolved via `EnumWindows` filtering by owning pid; stored per-channel so show/hide always targets the right console.
+- Watchdog `tokio::process::Child::wait()` drives the restart policy in `next_restart_delay` (stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed).
+- Kill on shutdown uses `taskkill /T /F /PID <pid>` — claude spawns node subprocesses so tree-kill is required.
+- `src/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` for the automation picker.
+- `ipc::import_legacy_obsidian_config` maps the old Python app's config.json into a new ProjectConfig with an auto-configured automation.
+- The `obsidian_claude_remote` repo is archived on GitHub as of 2026-04-21; see its README.
