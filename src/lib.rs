@@ -197,7 +197,10 @@ pub fn run() {
             });
             {
                 let h = app.handle().clone();
-                tauri::async_runtime::spawn(async move { crate::detector::run(h).await });
+                tauri::async_runtime::spawn(async move {
+                    rehydrate_instances_from_session_files(&h);
+                    crate::detector::run(h).await
+                });
             }
             {
                 let h = app.handle().clone();
@@ -283,6 +286,70 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
         "hook install migrated to v{}",
         crate::hook_installer::CURRENT_INSTALL_VERSION
     );
+}
+
+/// Re-registers every live Claude Code session from `~/.claude/sessions/*.json`.
+/// The instance registry is in-memory only; without this, restarting the
+/// taskbar app (or starting it after Claude was already running) left the
+/// UI blank until each session happened to fire another SessionStart hook,
+/// which Claude only does on session creation.
+///
+/// Dead session files are filtered by checking live pids via sysinfo.
+/// `Registry::register` dedupes by session_id so overlap with a
+/// concurrent SessionStart hook is safe.
+fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<crate::state::AppState>();
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
+    let live_pids: std::collections::HashSet<u32> = sys
+        .processes()
+        .keys()
+        .map(|p| p.as_u32())
+        .collect();
+
+    let scanned = crate::session_files::scan_live_sessions(&live_pids);
+    if scanned.is_empty() { return; }
+
+    let mut added = 0usize;
+    for s in scanned {
+        let started_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(s.started_at_ms)
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let is_ours = state.channels.list().iter().any(|c| c.pid == Some(s.pid));
+        let (kind, is_remote) = if is_ours {
+            (crate::types::InstanceKind::Automated, true)
+        } else {
+            (crate::types::InstanceKind::External, false)
+        };
+        let input = crate::instances::RegisterInput {
+            session_id: s.session_id.clone(),
+            cwd: s.cwd,
+            pid: s.pid,
+            kind,
+            is_remote,
+            transcript_path: None,
+            started_at,
+        };
+        let (_pid_proj, created) = state.instances.register(input, &state.settings, &now);
+        if created { added += 1; }
+        if let Some(bridge) = s.bridge_session_id {
+            state.instances.set_bridge_session_id(&s.session_id, bridge);
+        }
+    }
+
+    if added > 0 {
+        // Persist any projects that got auto-created by the registrations.
+        let snapshot = state.settings.lock().unwrap().clone();
+        if let Ok(path) = paths::settings_file() {
+            let _ = crate::settings::save(&path, &snapshot);
+        }
+        let _ = app.emit("settings-changed", snapshot);
+    }
+
+    let _ = app.emit("instances-changed", state.instances.list());
+    log::info!("rehydrated {added} instance(s) from ~/.claude/sessions");
 }
 
 async fn check_updater(app: &tauri::AppHandle) -> anyhow::Result<()> {
