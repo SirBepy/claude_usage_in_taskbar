@@ -53,7 +53,7 @@ pub fn build_tooltip(
                 if s.show_safe_pace {
                     if let Some(v) = safe { parts.push(format!("{:.0}%", v)); }
                 }
-                if !reset.is_empty() { parts.push(reset.to_string()); }
+                if !reset.is_empty() { parts.push(reset.replace('\n', " ")); }
                 parts.join("  ")
             };
             let lines = vec![
@@ -76,7 +76,14 @@ pub fn build_tooltip(
             if !sess_reset.is_empty() || !weekly_reset.is_empty() {
                 lines.push(String::new());
                 lines.push("Resets:".to_string());
-                lines.push(format!("{sess_reset}\t{weekly_reset}").trim_end().to_string());
+                let s_lines: Vec<&str> = sess_reset.split('\n').collect();
+                let w_lines: Vec<&str> = weekly_reset.split('\n').collect();
+                let rows = s_lines.len().max(w_lines.len());
+                for i in 0..rows {
+                    let a = s_lines.get(i).copied().unwrap_or("");
+                    let b = w_lines.get(i).copied().unwrap_or("");
+                    lines.push(format!("{a}\t{b}").trim_end().to_string());
+                }
             }
             lines.join("\n")
         }
@@ -145,7 +152,17 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
             let m = (delta.num_minutes() - h * 60).max(0);
             if h > 0 { format!("{h}h {m}m") } else { format!("{m}m") }
         }
-        TimeStyle::Absolute => resets.format("%a %H:%M").to_string(),
+        TimeStyle::Absolute => {
+            use chrono::Timelike;
+            let local = resets.with_timezone(&chrono::Local);
+            let h24 = local.hour();
+            let h12 = match h24 % 12 { 0 => 12, n => n };
+            let ampm = if h24 < 12 { "AM" } else { "PM" };
+            let min = local.minute();
+            let day = local.format("%a");
+            if min == 0 { format!("{day}\n{h12} {ampm}") }
+            else { format!("{day}\n{h12}:{min:02} {ampm}") }
+        }
     }
 }
 
