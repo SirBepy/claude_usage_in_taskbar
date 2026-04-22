@@ -911,7 +911,7 @@ function openSessionDetail(record, originView) {
   const titleEl = document.getElementById("sessionDetailTitle");
   const pathEl = document.getElementById("sessionDetailPath");
   if (avatarEl) avatarEl.innerHTML = (typeof renderAvatar === "function") ? renderAvatar(avatar) : "?";
-  if (titleEl) titleEl.textContent = `Session — ${record.date || "unknown date"}`;
+  if (titleEl) titleEl.textContent = `Session - ${record.date || "unknown date"}`;
   if (pathEl) pathEl.textContent = cwd || "";
   renderSessionDetail(record);
   const origin = originView || "project-detail";
