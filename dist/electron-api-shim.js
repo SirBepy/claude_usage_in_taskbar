@@ -174,6 +174,7 @@
     },
     listChannels: () => invoke('list_channels'),
     detectObsidianVaults: () => invoke('detect_obsidian_vaults'),
+    importLegacyObsidianConfig: () => invoke('import_legacy_obsidian_config'),
     onChannelsChanged: (cb) => {
       const unlisten = T.event.listen('channels-changed', (e) => cb(e.payload));
       return () => unlisten.then((u) => u());

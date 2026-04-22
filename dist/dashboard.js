@@ -721,5 +721,28 @@ window.electronAPI.onInstancesChanged(() => {
   if (activeView === "projects") renderProjectsList();
 });
 
+// ── Legacy obsidian_claude_remote import banner ───────────────────────────
+async function maybeOfferLegacyImport() {
+  let imported;
+  try { imported = await window.electronAPI.importLegacyObsidianConfig(); }
+  catch (e) { return; } // command error - backend not ready or no command
+  if (!imported) return; // null = no config file found
+  const banner = document.getElementById('legacyImportBanner');
+  if (!banner) return;
+  banner.style.display = 'flex';
+  document.getElementById('legacyImportAccept').onclick = () => {
+    banner.style.display = 'none';
+    showToast('Imported. See Projects.');
+  };
+  document.getElementById('legacyImportDismiss').onclick = async () => {
+    banner.style.display = 'none';
+    if (imported && imported.id) {
+      try { await window.electronAPI.updateProject(imported.id, { automation: null }); }
+      catch (e) { /* best-effort */ }
+    }
+  };
+}
+maybeOfferLegacyImport();
+
 // Called after settings load.
 maybeShowHookModal();

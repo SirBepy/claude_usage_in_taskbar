@@ -540,6 +540,63 @@ pub fn list_channels(state: State<AppState>) -> Vec<serde_json::Value> {
     })).collect()
 }
 
+// --- Legacy import ---
+
+pub mod legacy_import_test_helpers {
+    use crate::types::{AutomationConfig, ProjectConfig, Settings};
+
+    pub fn import_into(
+        settings: &mut Settings,
+        legacy_raw: &str,
+        now: &str,
+    ) -> Option<ProjectConfig> {
+        let v: serde_json::Value = serde_json::from_str(legacy_raw).ok()?;
+        let vault = v.get("vault_path").and_then(|p| p.as_str())?;
+        let (id, _) = crate::settings::upsert_project_for_cwd(
+            settings,
+            std::path::Path::new(vault),
+            now,
+        );
+        let p = settings.projects.iter_mut().find(|p| p.id == id).unwrap();
+        if p.automation.is_none() {
+            p.automation = Some(AutomationConfig {
+                enabled: true,
+                autostart_on_boot: v
+                    .get("auto_registered_startup")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                session_name_prefix: None,
+                continue_flag: true,
+            });
+        }
+        Some(p.clone())
+    }
+}
+
+#[tauri::command]
+pub fn import_legacy_obsidian_config(
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<Option<crate::types::ProjectConfig>, String> {
+    let Some(appdata) = dirs::config_dir() else { return Ok(None) };
+    let config_path = appdata.join("obsidian_claude_remote").join("config.json");
+    let raw = match std::fs::read_to_string(&config_path) {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut guard = state.settings.lock().unwrap();
+    let imported = legacy_import_test_helpers::import_into(&mut guard, &raw, &now);
+    if imported.is_some() {
+        let snapshot = guard.clone();
+        drop(guard);
+        let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+        settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
+        let _ = app.emit("settings-changed", snapshot);
+    }
+    Ok(imported)
+}
+
 // --- Vault detector ---
 
 #[tauri::command]
