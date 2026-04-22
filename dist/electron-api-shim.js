@@ -151,6 +151,33 @@
       catch (e) { console.error('set_projects_view_mode failed', e); throw e; }
     },
 
+    // --- Channels (Plan C) ---
+    spawnChannel: async (projectId) => {
+      try { await invoke('spawn_channel', { projectId }); }
+      catch (e) { console.error('spawn_channel failed', e); throw e; }
+    },
+    stopChannel: async (projectId) => {
+      try { await invoke('stop_channel', { projectId }); }
+      catch (e) { console.error('stop_channel failed', e); throw e; }
+    },
+    restartChannel: async (projectId) => {
+      try { await invoke('restart_channel', { projectId }); }
+      catch (e) { console.error('restart_channel failed', e); throw e; }
+    },
+    showTerminal: async (projectId) => {
+      try { await invoke('show_terminal', { projectId }); }
+      catch (e) { console.error('show_terminal failed', e); throw e; }
+    },
+    hideTerminal: async (projectId) => {
+      try { await invoke('hide_terminal', { projectId }); }
+      catch (e) { console.error('hide_terminal failed', e); throw e; }
+    },
+    listChannels: () => invoke('list_channels'),
+    onChannelsChanged: (cb) => {
+      const unlisten = T.event.listen('channels-changed', (e) => cb(e.payload));
+      return () => unlisten.then((u) => u());
+    },
+
     // --- Instances (Plan B) ---
     listInstances: async () => {
       try { return (await invoke('list_instances')) || []; }
