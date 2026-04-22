@@ -189,9 +189,11 @@ pub fn run() {
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::hook_server::spawn(handle).await {
+                if let Err(e) = crate::hook_server::spawn(handle.clone()).await {
                     log::error!("hook server spawn failed: {e}");
+                    return;
                 }
+                migrate_hook_install_if_needed(&handle);
             });
             {
                 let h = app.handle().clone();
@@ -247,6 +249,40 @@ pub fn run() {
                 crate::channels::kill_all(app_handle);
             }
         });
+}
+
+/// Re-writes `~/.claude/settings.json` if the user already accepted hook
+/// registration but on an older installer version. Heals the v1 entry
+/// whose `matcher: "aiusage-taskbar"` field silently suppressed every
+/// SessionStart/SessionEnd firing.
+fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<crate::state::AppState>();
+    let (should_run, port) = {
+        let s = state.settings.lock().unwrap();
+        let stale = s.hooks_registered
+            && s.hook_install_version < crate::hook_installer::CURRENT_INSTALL_VERSION;
+        (stale, s.hook_port)
+    };
+    if !should_run { return; }
+    let Some(port) = port else { return };
+    if let Err(e) = crate::hook_installer::install(crate::hook_installer::HookConfig { port }) {
+        log::warn!("hook install migration failed: {e}");
+        return;
+    }
+    let snapshot = {
+        let mut g = state.settings.lock().unwrap();
+        g.hook_install_version = crate::hook_installer::CURRENT_INSTALL_VERSION;
+        g.clone()
+    };
+    if let Ok(path) = paths::settings_file() {
+        let _ = crate::settings::save(&path, &snapshot);
+    }
+    let _ = app.emit("settings-changed", snapshot);
+    log::info!(
+        "hook install migrated to v{}",
+        crate::hook_installer::CURRENT_INSTALL_VERSION
+    );
 }
 
 async fn check_updater(app: &tauri::AppHandle) -> anyhow::Result<()> {

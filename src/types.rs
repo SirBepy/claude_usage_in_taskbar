@@ -132,6 +132,11 @@ pub struct Settings {
     pub projects_view_mode: ViewMode,
     pub hooks_registered: bool,
     pub hook_registration_declined: bool,
+    /// Bumped whenever the shape of the hook entry we write into
+    /// `~/.claude/settings.json` changes. On startup, if `hooks_registered`
+    /// is true but this is behind `hook_installer::CURRENT_INSTALL_VERSION`,
+    /// we re-run `install()` to heal existing users in place.
+    pub hook_install_version: u32,
     pub legacy_obsidian_import_handled: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
@@ -154,6 +159,7 @@ impl Default for Settings {
             projects_view_mode: ViewMode::Grid,
             hooks_registered: false,
             hook_registration_declined: false,
+            hook_install_version: 0,
             legacy_obsidian_import_handled: false,
             extra: serde_json::Map::new(),
         }
@@ -333,6 +339,7 @@ mod tests {
         assert_eq!(s.projects_view_mode, ViewMode::Grid);
         assert!(!s.hooks_registered);
         assert!(!s.hook_registration_declined);
+        assert_eq!(s.hook_install_version, 0);
     }
 
     #[test]

@@ -12,6 +12,21 @@ fn merges_into_empty_settings() {
 }
 
 #[test]
+fn does_not_emit_matcher_on_session_events() {
+    // SessionStart/SessionEnd treat `matcher` as a source filter
+    // (startup|resume|clear|compact). Emitting an app-name literal silently
+    // suppresses every firing, so we MUST leave the field out.
+    let out = merge_hooks(&serde_json::json!({}), &HookConfig { port: 27182 });
+    for event in ["SessionStart", "SessionEnd"] {
+        let entry = &out["hooks"][event][0];
+        assert!(
+            entry.get("matcher").is_none(),
+            "{event} entry must not carry a matcher field: {entry}",
+        );
+    }
+}
+
+#[test]
 fn preserves_existing_unrelated_fields() {
     let existing = serde_json::json!({
         "theme": "dark",
@@ -33,10 +48,40 @@ fn preserves_existing_hooks_from_other_apps() {
     });
     let out = merge_hooks(&existing, &HookConfig { port: 27182 });
     let arr = out["hooks"]["SessionStart"].as_array().unwrap();
-    // Must keep the other-app entry, append ours.
     assert_eq!(arr.len(), 2);
     assert_eq!(arr[0]["matcher"], "other-app");
-    assert_eq!(arr[1]["matcher"], "aiusage-taskbar");
+    // Ours is now identified by command substring, not matcher.
+    let our_cmd = arr[1]["hooks"][0]["command"].as_str().unwrap();
+    assert!(our_cmd.contains("/hooks/session-start"));
+    assert!(our_cmd.contains("27182"));
+}
+
+#[test]
+fn strips_legacy_matcher_entry_on_reinstall() {
+    // v1 installs wrote `matcher: "aiusage-taskbar"` on SessionStart/End.
+    // The migration must detect and replace those, not leave duplicates.
+    let existing = serde_json::json!({
+        "hooks": {
+            "SessionStart": [
+                { "matcher": "aiusage-taskbar", "hooks": [{
+                    "type": "command",
+                    "command": "curl http://127.0.0.1:27182/hooks/session-start"
+                }]}
+            ],
+            "SessionEnd": [
+                { "matcher": "aiusage-taskbar", "hooks": [{
+                    "type": "command",
+                    "command": "curl http://127.0.0.1:27182/hooks/session-end"
+                }]}
+            ]
+        }
+    });
+    let out = merge_hooks(&existing, &HookConfig { port: 27182 });
+    for event in ["SessionStart", "SessionEnd"] {
+        let arr = out["hooks"][event].as_array().unwrap();
+        assert_eq!(arr.len(), 1, "{event} should have exactly one entry after migration");
+        assert!(arr[0].get("matcher").is_none(), "legacy matcher must be stripped");
+    }
 }
 
 #[test]

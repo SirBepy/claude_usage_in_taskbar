@@ -722,6 +722,7 @@ pub fn register_hooks_globally(
         let mut g = state.settings.lock().unwrap();
         g.hooks_registered = true;
         g.hook_registration_declined = false;
+        g.hook_install_version = crate::hook_installer::CURRENT_INSTALL_VERSION;
         g.clone()
     };
     let path = paths::settings_file().map_err(|e| e.to_string())?;

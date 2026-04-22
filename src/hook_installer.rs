@@ -10,8 +10,16 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-/// Fixed matcher identifier so re-runs replace our own entry.
-const MATCHER: &str = "aiusage-taskbar";
+/// Legacy matcher string we used to tag our entry. SessionStart/SessionEnd
+/// treat `matcher` as a source filter (startup|resume|clear|compact), so a
+/// literal app name here silently suppressed every hook firing. Kept only
+/// to recognise and strip old entries during migration.
+const LEGACY_MATCHER: &str = "aiusage-taskbar";
+
+/// Bump this when the shape of the entry we emit changes. Paired with
+/// `Settings::hook_install_version` so existing users get re-installed
+/// once on the next launch after an upgrade.
+pub const CURRENT_INSTALL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HookConfig {
@@ -31,11 +39,11 @@ pub fn merge_hooks(existing: &Value, cfg: &HookConfig) -> Value {
     if !hooks.is_object() { *hooks = json!({}); }
 
     for (event, endpoint) in [("SessionStart", "session-start"), ("SessionEnd", "session-end")] {
+        let command = curl_command(cfg.port, endpoint);
         let entry = json!({
-            "matcher": MATCHER,
             "hooks": [{
                 "type": "command",
-                "command": curl_command(cfg.port, endpoint),
+                "command": command,
             }]
         });
         let arr = hooks
@@ -45,12 +53,29 @@ pub fn merge_hooks(existing: &Value, cfg: &HookConfig) -> Value {
             .or_insert_with(|| json!([]));
         if !arr.is_array() { *arr = json!([]); }
         let vec = arr.as_array_mut().unwrap();
-        // Remove any prior `aiusage-taskbar` entry so the new one is authoritative.
-        vec.retain(|v| v.get("matcher").and_then(|m| m.as_str()) != Some(MATCHER));
+        vec.retain(|v| !is_ours(v, endpoint));
         vec.push(entry);
     }
 
     out
+}
+
+/// Identifies one of our entries, both the current shape (matcher-less,
+/// command contains `/hooks/<endpoint>`) and the legacy shape
+/// (`matcher == "aiusage-taskbar"`). Used to strip prior copies before
+/// pushing the fresh entry.
+fn is_ours(entry: &Value, endpoint: &str) -> bool {
+    if entry.get("matcher").and_then(|m| m.as_str()) == Some(LEGACY_MATCHER) {
+        return true;
+    }
+    let Some(hooks) = entry.get("hooks").and_then(|h| h.as_array()) else { return false };
+    let needle = format!("/hooks/{endpoint}");
+    hooks.iter().any(|h| {
+        h.get("command")
+            .and_then(|c| c.as_str())
+            .map(|c| c.contains(&needle))
+            .unwrap_or(false)
+    })
 }
 
 fn curl_command(port: u16, endpoint: &str) -> String {
@@ -68,7 +93,7 @@ pub fn global_settings_path() -> Result<PathBuf> {
 
 /// Reads the global settings file, merges our hooks, writes atomically.
 /// Returns `Ok(())` on success or if the file is malformed (surfaces an
-/// error the caller can show to the user — does NOT overwrite).
+/// error the caller can show to the user, does NOT overwrite).
 pub fn install(cfg: HookConfig) -> Result<()> {
     let path = global_settings_path()?;
     let raw = match std::fs::read_to_string(&path) {
@@ -77,10 +102,9 @@ pub fn install(cfg: HookConfig) -> Result<()> {
         Err(e) => return Err(e).context(format!("reading {path:?}")),
     };
     let existing: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("parsing {path:?} as JSON — not modifying"))?;
+        .with_context(|| format!("parsing {path:?} as JSON, not modifying"))?;
     let merged = merge_hooks(&existing, &cfg);
     let out = serde_json::to_string_pretty(&merged)?;
-    // Atomic write: temp file + rename.
     if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).ok(); }
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, out)?;
