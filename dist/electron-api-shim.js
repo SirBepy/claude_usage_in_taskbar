@@ -148,9 +148,9 @@
       try { await invoke('delete_project', { id }); }
       catch (e) { console.error('delete_project failed', e); throw e; }
     },
-    setProjectsViewMode: async (mode) => {
-      try { await invoke('set_projects_view_mode', { mode }); }
-      catch (e) { console.error('set_projects_view_mode failed', e); throw e; }
+    setProjectsSortBy: async (sortBy) => {
+      try { await invoke('set_projects_sort_by', { sortBy }); }
+      catch (e) { console.error('set_projects_sort_by failed', e); throw e; }
     },
 
     // --- Channels (Plan C) ---
@@ -195,6 +195,10 @@
     phoneLink: async (sessionId) => {
       try { return await invoke('phone_link', { sessionId }); }
       catch (e) { console.error('phone_link failed', e); return null; }
+    },
+    instanceTokenStats: async (sessionId) => {
+      try { return await invoke('instance_token_stats', { sessionId }); }
+      catch (e) { console.error('instance_token_stats failed', e); return { tokens: 0, turns: 0 }; }
     },
     onInstancesChanged: (cb) => {
       const unlisten = listen('instances-changed', (e) => {

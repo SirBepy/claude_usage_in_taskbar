@@ -15,6 +15,9 @@ let previousView = "dashboard";
 function showView(name) {
   previousView = activeView;
   activeView = name;
+  if (name !== "session-detail" && typeof stopLiveSessionPolling === "function") {
+    stopLiveSessionPolling();
+  }
   for (const id of VIEWS) {
     document.getElementById(`view-${id}`).classList.toggle("hidden", id !== name);
   }
@@ -747,31 +750,16 @@ async function renderRunningInstances() {
   emptyEl.style.display = "none";
   listEl.style.display = "block";
 
-  listEl.innerHTML = instances.map((i) => instanceRowHtml(i)).join("");
-  listEl.querySelectorAll(".phone-link-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      const url = await window.electronAPI.phoneLink(btn.dataset.sessionId);
-      if (!url) return showToast("Phone link not available yet.");
-      await navigator.clipboard.writeText(url);
-      showToast(`Copied: ${url}`);
-    };
-  });
-  listEl.querySelectorAll(".term-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      try { await window.electronAPI.showTerminal(btn.dataset.projectId); }
-      catch (e) { showToast(`Show terminal failed: ${e}`); }
-    };
-  });
-  listEl.querySelectorAll(".restart-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      try { await window.electronAPI.restartChannel(btn.dataset.projectId); showToast("Restarting…"); }
-      catch (e) { showToast(`Restart failed: ${e}`); }
-    };
-  });
-  listEl.querySelectorAll(".stop-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      try { await window.electronAPI.stopChannel(btn.dataset.projectId); showToast("Stopped."); }
-      catch (e) { showToast(`Stop failed: ${e}`); }
+  const stats = await Promise.all(
+    instances.map((i) => window.electronAPI.instanceTokenStats(i.session_id)),
+  );
+  listEl.innerHTML = instances.map((i, idx) => instanceRowHtml(i, stats[idx])).join("");
+  listEl.querySelectorAll(".instance-row").forEach((row) => {
+    const sid = row.dataset.sessionId;
+    const inst = instances.find((x) => x.session_id === sid);
+    if (!inst) return;
+    row.onclick = () => {
+      if (typeof openSessionDetail === "function") openSessionDetail(inst, "project-detail");
     };
   });
 }
@@ -782,31 +770,25 @@ function setRunningInstancesEmpty(count) {
   document.getElementById("runningInstancesEmpty").style.display = "block";
 }
 
-function instanceRowHtml(i) {
+function fmtTokens(n) {
+  if (!n) return "0";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
+
+function instanceRowHtml(i, stats) {
   const uptime = uptimeFrom(i.started_at);
-  const kindClass = i.kind === "automated" ? "" : i.kind;
-  const kindTag = i.kind.charAt(0).toUpperCase() + i.kind.slice(1);
-  const kindTagClass = i.kind === "automated" ? "automated" : "";
-  const remoteTag = i.is_remote ? `<span class="tag remote">📱</span>` : "";
-  const phoneDisabled = i.bridge_session_id ? "" : "disabled";
-  const automatedOnlyDisabled = i.kind === "automated" ? "" : "disabled";
-  const pid = i.project_id;
+  const tokens = stats?.tokens ?? 0;
+  const turns = stats?.turns ?? 0;
+  const prompts = stats?.prompts ?? 0;
+  const pidPart = i.pid > 0 ? `pid ${i.pid}` : "no pid";
+
   return `
-    <div class="instance-row ${kindClass}">
+    <div class="instance-row clickable" data-session-id="${i.session_id}">
       <div class="status-dot"></div>
-      <div class="meta">
-        <div class="top">
-          <span class="tag ${kindTagClass}">${kindTag}</span>${remoteTag}
-          <span>pid ${i.pid}</span>
-        </div>
-        <div class="sub">up ${uptime} · session ${i.session_id.slice(0, 8)}…</div>
-      </div>
-      <div class="actions">
-        <button class="act-btn term-btn" title="Show terminal" data-project-id="${pid}" ${automatedOnlyDisabled}>term</button>
-        <button class="act-btn phone-link-btn" title="Copy phone link" data-session-id="${i.session_id}" ${phoneDisabled}>phone</button>
-        <button class="act-btn restart-btn" title="Restart" data-project-id="${pid}" ${automatedOnlyDisabled}>restart</button>
-        <button class="act-btn stop-btn" title="Stop" data-project-id="${pid}" ${automatedOnlyDisabled}>stop</button>
-      </div>
+      <div class="row-line">${pidPart} · up ${uptime} · ${prompts} ${prompts === 1 ? "msg" : "msgs"} · ${fmtTokens(tokens)} tokens · ${turns} ${turns === 1 ? "turn" : "turns"}</div>
+      <span class="chev">›</span>
     </div>
   `;
 }
