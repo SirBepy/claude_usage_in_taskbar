@@ -92,12 +92,30 @@ pub fn parse_session_file(path: &Path) -> Option<ScannedSession> {
     })
 }
 
-/// Scans `~/.claude/sessions/*.json`, filters out entries whose `pid`
-/// no longer exists in the live process list, and returns the rest.
-/// Caller is responsible for registering each survivor with the
-/// in-memory registry. Live-pid filtering is passed in so tests can
-/// inject a synthetic set.
-pub fn scan_live_sessions(live_pids: &std::collections::HashSet<u32>) -> Vec<ScannedSession> {
+/// Scans `~/.claude/sessions/*.json` and returns only entries whose
+/// pid refers to the same process that originally wrote the file.
+///
+/// Windows recycles pids aggressively, so a session file lingering
+/// from a long-dead Claude run will appear "live" whenever its old
+/// pid gets reused by some unrelated process. We defend against that
+/// by matching each pid's current process start time against the
+/// `startedAt` in the session file, within `tolerance_secs` (60s is
+/// wide enough to absorb clock skew but narrow enough to never
+/// collide with a reused pid running for more than a minute).
+///
+/// `live_processes` is a caller-supplied map from pid to process
+/// start time in unix-epoch seconds, so tests can inject synthetic
+/// data without touching sysinfo.
+pub fn scan_live_sessions(
+    live_processes: &std::collections::HashMap<u32, u64>,
+) -> Vec<ScannedSession> {
+    scan_live_sessions_with_tolerance(live_processes, 60)
+}
+
+pub fn scan_live_sessions_with_tolerance(
+    live_processes: &std::collections::HashMap<u32, u64>,
+    tolerance_secs: u64,
+) -> Vec<ScannedSession> {
     let Some(dir) = sessions_dir() else { return vec![] };
     let Ok(entries) = std::fs::read_dir(&dir) else { return vec![] };
     let mut out = Vec::new();
@@ -105,7 +123,10 @@ pub fn scan_live_sessions(live_pids: &std::collections::HashSet<u32>) -> Vec<Sca
         let path = e.path();
         if path.extension().and_then(|x| x.to_str()) != Some("json") { continue; }
         let Some(parsed) = parse_session_file(&path) else { continue };
-        if !live_pids.contains(&parsed.pid) { continue; }
+        let Some(proc_start_secs) = live_processes.get(&parsed.pid).copied() else { continue };
+        let file_start_secs = (parsed.started_at_ms / 1000) as u64;
+        let diff = proc_start_secs.abs_diff(file_start_secs);
+        if diff > tolerance_secs { continue; }
         out.push(parsed);
     }
     out
@@ -114,7 +135,6 @@ pub fn scan_live_sessions(live_pids: &std::collections::HashSet<u32>) -> Vec<Sca
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use std::io::Write;
     use tempfile::tempdir;
 
@@ -165,30 +185,37 @@ mod tests {
     }
 
     #[test]
-    fn scan_live_sessions_filters_by_live_pid_set() {
-        // We don't have a hook to override sessions_dir in this test, so we
-        // exercise the same filter logic directly against parse_session_file
-        // + an in-memory list. The dir walk is covered by the other tests.
+    fn scan_filters_out_stale_pid_whose_start_time_diverges() {
+        // Simulates the Windows pid-recycling case: session file says
+        // pid 5072 started at t=1000s, but the live pid 5072 is actually
+        // a different process that started at t=9999s.
         let dir = tempdir().unwrap();
         write_session(
             dir.path(),
             "100.json",
-            r#"{"pid":100,"sessionId":"live","cwd":"C:\\a","startedAt":1}"#,
+            r#"{"pid":100,"sessionId":"fresh","cwd":"C:\\a","startedAt":1000000}"#,
         );
         write_session(
             dir.path(),
-            "999.json",
-            r#"{"pid":999,"sessionId":"dead","cwd":"C:\\b","startedAt":1}"#,
+            "5072.json",
+            r#"{"pid":5072,"sessionId":"stale","cwd":"C:\\b","startedAt":2000000}"#,
         );
-        let live: HashSet<u32> = [100u32].into_iter().collect();
-        let mut survivors: Vec<ScannedSession> = std::fs::read_dir(dir.path())
+        let mut live = std::collections::HashMap::new();
+        live.insert(100u32, 1000u64);   // matches (1_000_000ms -> 1000s)
+        live.insert(5072u32, 9999u64);  // mismatches (2_000_000ms -> 2000s, diff >> 60)
+        let survivors: Vec<ScannedSession> = std::fs::read_dir(dir.path())
             .unwrap()
             .flatten()
             .filter_map(|e| parse_session_file(&e.path()))
-            .filter(|s| live.contains(&s.pid))
+            .filter(|s| match live.get(&s.pid) {
+                Some(&proc_start) => {
+                    let file_start = (s.started_at_ms / 1000) as u64;
+                    proc_start.abs_diff(file_start) <= 60
+                }
+                None => false,
+            })
             .collect();
-        survivors.sort_by_key(|s| s.pid);
         assert_eq!(survivors.len(), 1);
-        assert_eq!(survivors[0].session_id, "live");
+        assert_eq!(survivors[0].session_id, "fresh");
     }
 }

@@ -303,13 +303,13 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
     let state = app.state::<crate::state::AppState>();
     let mut sys = sysinfo::System::new();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-    let live_pids: std::collections::HashSet<u32> = sys
+    let live_processes: std::collections::HashMap<u32, u64> = sys
         .processes()
-        .keys()
-        .map(|p| p.as_u32())
+        .iter()
+        .map(|(p, proc)| (p.as_u32(), proc.start_time()))
         .collect();
 
-    let scanned = crate::session_files::scan_live_sessions(&live_pids);
+    let scanned = crate::session_files::scan_live_sessions(&live_processes);
     if scanned.is_empty() { return; }
 
     let mut added = 0usize;
