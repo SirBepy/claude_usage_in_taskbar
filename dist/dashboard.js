@@ -37,6 +37,22 @@ document.querySelectorAll("[data-burger]").forEach((btn) => {
 
 document.getElementById("sidemenuBackdrop").onclick = closeSidemenu;
 
+// Manual refresh button on the Home view header.
+const refreshNowBtn = document.getElementById("refreshNowBtn");
+if (refreshNowBtn) {
+  refreshNowBtn.onclick = async () => {
+    if (refreshNowBtn.dataset.busy === "1") return;
+    refreshNowBtn.dataset.busy = "1";
+    refreshNowBtn.classList.add("spinning");
+    try { await window.electronAPI.pollNow(); }
+    catch (e) { console.error("pollNow failed", e); }
+    finally {
+      refreshNowBtn.classList.remove("spinning");
+      delete refreshNowBtn.dataset.busy;
+    }
+  };
+}
+
 // Projects grid/list toggle
 document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((btn) => {
   btn.onclick = async () => {

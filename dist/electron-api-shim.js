@@ -37,6 +37,7 @@
   const bridge = {
     // --- Usage + history ---
     getUsageHistory: fetchHistoryLegacy,
+    pollNow: () => invoke('poll_now'),
 
     // --- Settings ---
     getSettings: () => invoke('get_settings'),

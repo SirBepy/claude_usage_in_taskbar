@@ -30,7 +30,7 @@ pub fn spawn(app: AppHandle) {
                         snap.seven_day.utilization,
                     );
                     let _ = app.emit("usage-updated", snap);
-                    tokio::time::sleep(Duration::from_secs(interval_secs)).await;
+                    sleep_until_next_target(interval_secs as i64).await;
                 }
                 Err(PollErr::NoSession) => {
                     log::info!("no session on disk - triggering login flow");
@@ -55,7 +55,7 @@ pub fn spawn(app: AppHandle) {
                         trigger_login(&app).await;
                         tokio::time::sleep(Duration::from_secs(RETRY_AFTER_LOGIN_SECS)).await;
                     } else {
-                        tokio::time::sleep(Duration::from_secs(interval_secs)).await;
+                        sleep_until_next_target(interval_secs as i64).await;
                     }
                 }
                 Err(PollErr::Other(msg)) => {
@@ -64,11 +64,41 @@ pub fn spawn(app: AppHandle) {
                         "poll-failed",
                         serde_json::json!({"reason": msg}),
                     );
-                    tokio::time::sleep(Duration::from_secs(interval_secs)).await;
+                    sleep_until_next_target(interval_secs as i64).await;
                 }
             }
         }
     });
+}
+
+/// Next wall-clock target: ceil(now_ts / interval) * interval + offset, where
+/// offset = min(55, interval - 5). Aligns the 10-min poll to HH:X0:55 so a
+/// reset at HH:X0:00 is captured on the very next tick rather than being
+/// sampled right as the server's counter flips.
+pub(crate) fn next_target_ts(interval_secs: i64, now_ts: i64) -> i64 {
+    let interval = interval_secs.max(60);
+    let offset = (interval - 5).min(55).max(0);
+    let mut target = (now_ts / interval) * interval + offset;
+    if target <= now_ts {
+        target += interval;
+    }
+    target
+}
+
+/// Sleep in 15s chunks until the next wall-clock aligned target. Short chunks
+/// let us recover from system-sleep: when the laptop suspends, tokio's
+/// monotonic timer pauses, so a single long `sleep(600s)` would miss every
+/// aligned slot that elapsed during suspend. Checking wall-clock each wake-up
+/// fires the next poll within ~15s of resume.
+async fn sleep_until_next_target(interval_secs: i64) {
+    let target = next_target_ts(interval_secs, chrono::Utc::now().timestamp());
+    loop {
+        let now = chrono::Utc::now().timestamp();
+        if now >= target { return; }
+        let remaining = (target - now).max(1) as u64;
+        let step = remaining.min(15);
+        tokio::time::sleep(Duration::from_secs(step)).await;
+    }
 }
 
 /// Runs the Chrome-CDP login flow, guarding against concurrent invocations
@@ -194,4 +224,35 @@ fn start_spin(app: AppHandle) -> tauri::async_runtime::JoinHandle<()> {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::next_target_ts;
+
+    #[test]
+    fn aligns_to_10min_boundary_plus_55s() {
+        // 2026-04-22 10:03:00 UTC
+        let now = 1_777_198_980;
+        let t = next_target_ts(600, now);
+        assert_eq!(t - now, 7 * 60 + 55);
+    }
+
+    #[test]
+    fn jumps_to_next_slot_when_past_offset() {
+        // 2026-04-22 10:00:56 UTC - one sec past the 10:00:55 offset
+        let now = 1_777_198_856;
+        let t = next_target_ts(600, now);
+        // Next slot should be 10:10:55, i.e. 9m4s away.
+        assert_eq!(t - now, 9 * 60 + 59);
+    }
+
+    #[test]
+    fn non_standard_interval_clamps_offset() {
+        // 60s interval → offset = min(55, 55) = 55
+        let now = 1_000_000;
+        let t = next_target_ts(60, now);
+        let diff = t - now;
+        assert!(diff > 0 && diff <= 60);
+    }
 }

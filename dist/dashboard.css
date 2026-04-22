@@ -169,6 +169,15 @@ body {
     color: var(--text);
 }
 
+.icon-btn.spinning i {
+    animation: icon-btn-spin 0.8s linear infinite;
+}
+
+@keyframes icon-btn-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* ── View containers ── */
 /* Content is capped at 560px wide so an oversized window (common when the
  * user drags the corner) doesn't stretch stat cards across a wall of
