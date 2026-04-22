@@ -583,6 +583,35 @@
                 <div id="runningInstancesEmpty" class="no-data">No Claude Code instances running in this project.</div>
                 <div id="runningInstancesList" style="display:none"></div>
             </section>
+            <section class="automation-section" id="automationSection">
+                <div class="section-title">Automation</div>
+                <div id="automationEmpty" class="no-data">
+                    No automation configured. Click <b>+ Automate channel</b> to have this project's Claude Code session start at boot and stay alive.
+                </div>
+                <div id="automationForm" style="display:none">
+                    <div class="option">
+                        <span class="option-label">Enabled</span>
+                        <label class="switch"><input type="checkbox" id="automationEnabled"><span class="slider"></span></label>
+                    </div>
+                    <div class="option">
+                        <span class="option-label">Start on boot</span>
+                        <label class="switch"><input type="checkbox" id="automationAutostart"><span class="slider"></span></label>
+                    </div>
+                    <div class="option">
+                        <span class="option-label">Continue previous session (<code>--continue</code>)</span>
+                        <label class="switch"><input type="checkbox" id="automationContinue"><span class="slider"></span></label>
+                    </div>
+                    <div class="option">
+                        <span class="option-label">Session name prefix</span>
+                        <input type="text" id="automationPrefix" class="inline-input" placeholder="(uses project name)">
+                    </div>
+                    <div style="display:flex;gap:6px;margin-top:8px">
+                        <button class="btn-secondary" id="automationRemoveBtn">Remove automation</button>
+                        <div style="flex:1"></div>
+                        <button class="btn-primary" id="automationApplyBtn">Apply</button>
+                    </div>
+                </div>
+            </section>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                 <div class="range-toggle">
                     <button class="range-btn" data-range="7d">7d</button>

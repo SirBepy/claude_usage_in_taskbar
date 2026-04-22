@@ -649,6 +649,7 @@ function openProjectDetail(cwd) {
   renderProjectDetail();
   showView("project-detail");
   if (typeof renderRunningInstances === "function") renderRunningInstances();
+  if (typeof renderAutomationForm === "function") renderAutomationForm();
 }
 
 async function renderProjectOverrides(cwdKey) {

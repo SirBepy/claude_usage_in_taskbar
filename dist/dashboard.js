@@ -100,8 +100,75 @@ function showToast(msg) {
   t.__timer = setTimeout(() => { t.style.opacity = "0"; }, 2200);
 }
 
-document.getElementById("automateChannelBtn").onclick = () => {
-  showToast("Channel automation ships in the next update.");
+// ── Automation form ──────────────────────────────────────────────────────────
+
+async function renderAutomationForm() {
+  if (!projectDetailState.cwd) return;
+  const projects = await window.electronAPI.listProjects();
+  const proj = projects.find((p) => p.path === projectDetailState.cwd);
+  const empty = document.getElementById("automationEmpty");
+  const form = document.getElementById("automationForm");
+  if (!empty || !form) return;
+  if (!proj || !proj.automation) {
+    empty.style.display = "block";
+    form.style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+  form.style.display = "block";
+  document.getElementById("automationEnabled").checked = !!proj.automation.enabled;
+  document.getElementById("automationAutostart").checked = !!proj.automation.autostart_on_boot;
+  document.getElementById("automationContinue").checked = !!proj.automation.continue_flag;
+  document.getElementById("automationPrefix").value = proj.automation.session_name_prefix || "";
+  form.dataset.projectId = proj.id;
+}
+
+document.getElementById("automateChannelBtn").onclick = async () => {
+  if (!projectDetailState.cwd) return;
+  const projects = await window.electronAPI.listProjects();
+  const proj = projects.find((p) => p.path === projectDetailState.cwd);
+  if (!proj) return showToast("Project not found.");
+  await window.electronAPI.updateProject(proj.id, {
+    automation: {
+      enabled: false,
+      autostart_on_boot: true,
+      session_name_prefix: null,
+      continue_flag: true,
+    },
+  });
+  await renderAutomationForm();
+  showToast("Automation added. Flip Enabled to start it.");
+};
+
+document.getElementById("automationApplyBtn").onclick = async () => {
+  const projectId = document.getElementById("automationForm").dataset.projectId;
+  if (!projectId) return;
+  const enabled = document.getElementById("automationEnabled").checked;
+  const autostart = document.getElementById("automationAutostart").checked;
+  const cont = document.getElementById("automationContinue").checked;
+  const prefix = document.getElementById("automationPrefix").value.trim() || null;
+  await window.electronAPI.updateProject(projectId, {
+    automation: {
+      enabled, autostart_on_boot: autostart,
+      session_name_prefix: prefix, continue_flag: cont,
+    },
+  });
+  if (enabled) {
+    try { await window.electronAPI.spawnChannel(projectId); }
+    catch (e) { showToast(`Spawn failed: ${e}`); }
+  } else {
+    try { await window.electronAPI.stopChannel(projectId); } catch (_) {}
+  }
+  showToast("Automation updated.");
+};
+
+document.getElementById("automationRemoveBtn").onclick = async () => {
+  const projectId = document.getElementById("automationForm").dataset.projectId;
+  if (!projectId) return;
+  try { await window.electronAPI.stopChannel(projectId); } catch (_) {}
+  await window.electronAPI.updateProject(projectId, { automation: null });
+  await renderAutomationForm();
+  showToast("Automation removed.");
 };
 
 // Stats-project range + scroll buttons
