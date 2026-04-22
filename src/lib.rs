@@ -110,6 +110,7 @@ pub fn run() {
             ipc::list_channels,
             ipc::detect_obsidian_vaults,
             ipc::import_legacy_obsidian_config,
+            ipc::confirm_legacy_obsidian_import,
             ipc::list_instances,
             ipc::list_instances_for_project,
             ipc::phone_link,

@@ -132,6 +132,7 @@ pub struct Settings {
     pub projects_view_mode: ViewMode,
     pub hooks_registered: bool,
     pub hook_registration_declined: bool,
+    pub legacy_obsidian_import_handled: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -153,6 +154,7 @@ impl Default for Settings {
             projects_view_mode: ViewMode::Grid,
             hooks_registered: false,
             hook_registration_declined: false,
+            legacy_obsidian_import_handled: false,
             extra: serde_json::Map::new(),
         }
     }

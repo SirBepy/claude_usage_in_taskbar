@@ -110,11 +110,16 @@ pub mod projects_test_helpers {
 
     /// Applies a partial JSON patch in-place. Unknown keys are ignored.
     /// Returns `true` if the project existed.
+    pub enum UpdateErr {
+        NotFound,
+        InvalidPatch(String),
+    }
+
     pub fn update_in(s: &mut Settings, id: &str, patch: serde_json::Value)
-        -> bool
+        -> Result<(), UpdateErr>
     {
         let Some(p) = s.projects.iter_mut().find(|p| p.id == id) else {
-            return false;
+            return Err(UpdateErr::NotFound);
         };
         // Round-trip the project through JSON, apply the patch, deserialize
         // back. This gives us a free partial update without per-field code.
@@ -124,11 +129,9 @@ pub mod projects_test_helpers {
                 obj.insert(k.clone(), v.clone());
             }
         }
-        if let Ok(updated) = serde_json::from_value::<ProjectConfig>(serde_json::Value::Object(obj)) {
-            *p = updated;
-            true
-        } else {
-            false
+        match serde_json::from_value::<ProjectConfig>(serde_json::Value::Object(obj)) {
+            Ok(updated) => { *p = updated; Ok(()) }
+            Err(e) => Err(UpdateErr::InvalidPatch(e.to_string())),
         }
     }
 
@@ -162,8 +165,14 @@ pub fn update_project(
 ) -> Result<(), String> {
     let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
     let mut guard = state.settings.lock().unwrap();
-    if !projects_test_helpers::update_in(&mut guard, &id, patch) {
-        return Err(format!("project {id} not found"));
+    match projects_test_helpers::update_in(&mut guard, &id, patch) {
+        Ok(()) => {}
+        Err(projects_test_helpers::UpdateErr::NotFound) => {
+            return Err(format!("project_not_found: {id}"));
+        }
+        Err(projects_test_helpers::UpdateErr::InvalidPatch(msg)) => {
+            return Err(format!("invalid_patch: {msg}"));
+        }
     }
     settings::save(&settings_path, &guard).map_err(|e| e.to_string())?;
     let snapshot = guard.clone();
@@ -181,7 +190,7 @@ pub fn delete_project(
     let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
     let mut guard = state.settings.lock().unwrap();
     if !projects_test_helpers::delete_in(&mut guard, &id) {
-        return Err(format!("project {id} not found"));
+        return Err(format!("project_not_found: {id}"));
     }
     settings::save(&settings_path, &guard).map_err(|e| e.to_string())?;
     let snapshot = guard.clone();
@@ -570,11 +579,20 @@ pub mod legacy_import_test_helpers {
     }
 }
 
+/// Preview-only: reads the legacy obsidian_claude_remote config.json and
+/// returns what WOULD be imported. Does NOT write settings. Returns None if
+/// the user has already handled the prompt (accept or decline) in a prior
+/// session, if there is no legacy file on disk, or if it lacks a vault_path.
 #[tauri::command]
 pub fn import_legacy_obsidian_config(
     state: State<AppState>,
-    app: AppHandle,
 ) -> Result<Option<crate::types::ProjectConfig>, String> {
+    {
+        let guard = state.settings.lock().unwrap();
+        if guard.legacy_obsidian_import_handled {
+            return Ok(None);
+        }
+    }
     let Some(appdata) = dirs::config_dir() else { return Ok(None) };
     let config_path = appdata.join("obsidian_claude_remote").join("config.json");
     let raw = match std::fs::read_to_string(&config_path) {
@@ -582,16 +600,37 @@ pub fn import_legacy_obsidian_config(
         Err(_) => return Ok(None),
     };
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let mut guard = state.settings.lock().unwrap();
-    let imported = legacy_import_test_helpers::import_into(&mut guard, &raw, &now);
-    if imported.is_some() {
-        let snapshot = guard.clone();
-        drop(guard);
-        let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
-        settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
-        let _ = app.emit("settings-changed", snapshot);
-    }
-    Ok(imported)
+    let mut preview = state.settings.lock().unwrap().clone();
+    Ok(legacy_import_test_helpers::import_into(&mut preview, &raw, &now))
+}
+
+/// Commit the user's choice on the legacy import banner. When `accept` is
+/// true, the legacy config is actually imported into settings. Either way,
+/// the handled flag is set so the banner never shows again on future loads.
+#[tauri::command]
+pub fn confirm_legacy_obsidian_import(
+    accept: bool,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut guard = state.settings.lock().unwrap();
+        if accept {
+            if let Some(appdata) = dirs::config_dir() {
+                let config_path = appdata.join("obsidian_claude_remote").join("config.json");
+                if let Ok(raw) = std::fs::read_to_string(&config_path) {
+                    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                    let _ = legacy_import_test_helpers::import_into(&mut guard, &raw, &now);
+                }
+            }
+        }
+        guard.legacy_obsidian_import_handled = true;
+        guard.clone()
+    };
+    let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+    settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
+    let _ = app.emit("settings-changed", snapshot);
+    Ok(())
 }
 
 // --- Vault detector ---

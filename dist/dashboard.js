@@ -742,24 +742,21 @@ window.electronAPI.onInstancesChanged(() => {
 
 // ── Legacy obsidian_claude_remote import banner ───────────────────────────
 async function maybeOfferLegacyImport() {
-  let imported;
-  try { imported = await window.electronAPI.importLegacyObsidianConfig(); }
-  catch (e) { return; } // command error - backend not ready or no command
-  if (!imported) return; // null = no config file found
+  let preview;
+  try { preview = await window.electronAPI.importLegacyObsidianConfig(); }
+  catch (e) { return; }
+  if (!preview) return; // null = nothing to import or already handled
   const banner = document.getElementById('legacyImportBanner');
   if (!banner) return;
   banner.style.display = 'flex';
-  document.getElementById('legacyImportAccept').onclick = () => {
+  const finish = async (accept) => {
     banner.style.display = 'none';
-    showToast('Imported. See Projects.');
+    try { await window.electronAPI.confirmLegacyObsidianImport(accept); }
+    catch (e) { console.error('confirm_legacy_obsidian_import failed', e); }
+    if (accept) showToast('Imported. See Projects.');
   };
-  document.getElementById('legacyImportDismiss').onclick = async () => {
-    banner.style.display = 'none';
-    if (imported && imported.id) {
-      try { await window.electronAPI.updateProject(imported.id, { automation: null }); }
-      catch (e) { /* best-effort */ }
-    }
-  };
+  document.getElementById('legacyImportAccept').onclick = () => finish(true);
+  document.getElementById('legacyImportDismiss').onclick = () => finish(false);
 }
 maybeOfferLegacyImport();
 
