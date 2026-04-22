@@ -75,6 +75,43 @@ fn claude_projects_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("projects"))
 }
 
+/// Claude CLI names its per-project transcript dir by replacing every
+/// non-alphanumeric character in the absolute cwd with `-`. Verified
+/// against real directories on disk (e.g. `c:\Users\tecno\Desktop\...\
+/// claude_usage_in_taskbar` → `c--Users-tecno-Desktop-...-claude-usage-
+/// in-taskbar`, `C:\Users\tecno\.claude` → `C--Users-tecno--claude`).
+pub fn encode_cwd_as_project_dir(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// Resolves the transcript Claude CLI is writing *right now* for a
+/// given cwd. A single CLI process can rotate through multiple
+/// transcripts when the user runs `/compact` or `/clear`, and
+/// `~/.claude/sessions/<pid>.json` keeps the stale initial sessionId,
+/// so we cannot rely on sessionId to locate the file. Instead we read
+/// `~/.claude/projects/<encoded-cwd>/` and return the most recently
+/// modified `.jsonl` - that's the live transcript by construction.
+pub fn latest_transcript_for_cwd(cwd: &Path) -> Option<PathBuf> {
+    let projects = claude_projects_dir()?;
+    let dir = projects.join(encode_cwd_as_project_dir(cwd));
+    let entries = std::fs::read_dir(&dir).ok()?;
+    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+        let Ok(meta) = entry.metadata() else { continue };
+        let Ok(mtime) = meta.modified() else { continue };
+        match &best {
+            Some((t, _)) if *t >= mtime => {}
+            _ => best = Some((mtime, path)),
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 /// Recursively collect every `.jsonl` file under `dir`. Unreadable subdirs
 /// are skipped silently — matches the Electron implementation's `try/catch`
 /// around `fs.readdirSync`.
@@ -480,6 +517,26 @@ mod tests {
         found.sort();
         assert_eq!(found.len(), 2);
         assert!(found[0].ends_with("one.jsonl") || found[1].ends_with("one.jsonl"));
+    }
+
+    #[test]
+    fn encode_cwd_matches_claude_cli_layout() {
+        use std::path::Path;
+        assert_eq!(
+            encode_cwd_as_project_dir(Path::new("c:\\Users\\tecno\\Desktop\\Projects\\claude_usage_in_taskbar")),
+            "c--Users-tecno-Desktop-Projects-claude-usage-in-taskbar",
+        );
+        assert_eq!(
+            encode_cwd_as_project_dir(Path::new("C:\\Users\\tecno\\.claude")),
+            "C--Users-tecno--claude",
+        );
+    }
+
+    #[test]
+    fn latest_transcript_for_cwd_returns_none_when_dir_missing() {
+        use std::path::Path;
+        let out = latest_transcript_for_cwd(Path::new("Z:\\does\\not\\exist"));
+        assert!(out.is_none());
     }
 
     #[test]

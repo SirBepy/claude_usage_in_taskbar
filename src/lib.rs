@@ -115,6 +115,7 @@ pub fn run() {
             ipc::list_instances,
             ipc::list_instances_for_project,
             ipc::phone_link,
+            ipc::instance_token_stats,
             ipc::get_hook_registration_state,
             ipc::register_hooks_globally,
             ipc::skip_hook_registration,
@@ -323,13 +324,14 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         } else {
             (crate::types::InstanceKind::External, false)
         };
+        let transcript_path = crate::token_stats::latest_transcript_for_cwd(&s.cwd);
         let input = crate::instances::RegisterInput {
             session_id: s.session_id.clone(),
             cwd: s.cwd,
             pid: s.pid,
             kind,
             is_remote,
-            transcript_path: None,
+            transcript_path,
             started_at,
         };
         let (_pid_proj, created) = state.instances.register(input, &state.settings, &now);
