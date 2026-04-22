@@ -697,9 +697,8 @@ pub fn phone_link(session_id: String, state: State<AppState>) -> Option<String> 
 
 #[tauri::command]
 pub fn instance_token_stats(session_id: String, state: State<AppState>) -> serde_json::Value {
-    let Some(inst) = state.instances.get(&session_id) else {
-        return serde_json::json!({ "tokens": 0, "turns": 0 });
-    };
+    let empty = serde_json::json!({ "tokens": 0, "turns": 0, "prompts": 0 });
+    let Some(inst) = state.instances.get(&session_id) else { return empty };
     // Prefer the path recorded when the instance registered (hook payload
     // carried it). Fall back to the live transcript for this cwd, because
     // rehydrated instances have no recorded path, and rotated transcripts
@@ -708,12 +707,16 @@ pub fn instance_token_stats(session_id: String, state: State<AppState>) -> serde
         Some(p) if p.exists() => p.clone(),
         _ => match token_stats::latest_transcript_for_cwd(&inst.cwd) {
             Some(p) => p,
-            None => return serde_json::json!({ "tokens": 0, "turns": 0 }),
+            None => return empty,
         },
     };
     let t = token_stats::parse_transcript(&path);
     let total = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_creation_tokens;
-    serde_json::json!({ "tokens": total, "turns": t.turns })
+    serde_json::json!({
+        "tokens": total,
+        "turns": t.turns,
+        "prompts": t.user_prompts,
+    })
 }
 
 // --- Hook registration ---

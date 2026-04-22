@@ -55,7 +55,14 @@ pub struct TokenTotals {
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_creation_tokens: u64,
+    /// Count of model invocations (every line with a `usage` block).
+    /// Includes each tool-call round-trip, so a single user prompt can
+    /// produce many turns.
     pub turns: u64,
+    /// Count of `"type":"last-prompt"` lines, i.e. distinct user-typed
+    /// prompts sent to the model. A better proxy for "messages sent by
+    /// me" than `turns`, which inflates with tool-call chatter.
+    pub user_prompts: u64,
 }
 
 /// Result of a `backfill_all()` run — reported back to the renderer so it can
@@ -228,16 +235,24 @@ pub fn parse_transcript(path: &Path) -> TokenTotals {
     for line in reader.lines().map_while(|r| r.ok()) {
         if line.trim().is_empty() { continue }
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
-        if v.get("type").and_then(|t| t.as_str()) != Some("assistant") { continue }
-        // Usage may live under `message.usage` or directly under `usage`.
-        let usage = v.get("message").and_then(|m| m.get("usage")).or_else(|| v.get("usage"));
-        let Some(usage) = usage else { continue };
-        let get = |k: &str| usage.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
-        acc.input_tokens += get("input_tokens");
-        acc.output_tokens += get("output_tokens");
-        acc.cache_read_tokens += get("cache_read_input_tokens");
-        acc.cache_creation_tokens += get("cache_creation_input_tokens");
-        acc.turns += 1;
+        match v.get("type").and_then(|t| t.as_str()) {
+            Some("last-prompt") => {
+                acc.user_prompts += 1;
+                continue;
+            }
+            Some("assistant") => {
+                // Usage may live under `message.usage` or directly under `usage`.
+                let usage = v.get("message").and_then(|m| m.get("usage")).or_else(|| v.get("usage"));
+                let Some(usage) = usage else { continue };
+                let get = |k: &str| usage.get(k).and_then(|n| n.as_u64()).unwrap_or(0);
+                acc.input_tokens += get("input_tokens");
+                acc.output_tokens += get("output_tokens");
+                acc.cache_read_tokens += get("cache_read_input_tokens");
+                acc.cache_creation_tokens += get("cache_creation_input_tokens");
+                acc.turns += 1;
+            }
+            _ => {}
+        }
     }
     acc
 }
