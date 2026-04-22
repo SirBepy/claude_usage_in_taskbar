@@ -898,3 +898,41 @@ function renderAllSessionsList(cwd) {
     };
   });
 }
+
+let currentSessionRecord = null;
+
+function openSessionDetail(record, originView) {
+  if (!record) return;
+  currentSessionRecord = record;
+  const cwd = projectDetailState.cwd;
+  const configuredProject = (currentSettings.projects || []).find((p) => p.path === cwd);
+  const avatar = configuredProject?.avatar || { kind: "emoji", value: (configuredProject?.name || cwd || "?").charAt(0) };
+  const avatarEl = document.getElementById("sessionDetailAvatar");
+  const titleEl = document.getElementById("sessionDetailTitle");
+  const pathEl = document.getElementById("sessionDetailPath");
+  if (avatarEl) avatarEl.innerHTML = (typeof renderAvatar === "function") ? renderAvatar(avatar) : "?";
+  if (titleEl) titleEl.textContent = `Session — ${record.date || "unknown date"}`;
+  if (pathEl) pathEl.textContent = cwd || "";
+  renderSessionDetail(record);
+  const origin = originView || "project-detail";
+  if (typeof openSessionDetailView === "function") openSessionDetailView(origin);
+  else showView("session-detail");
+}
+
+function renderSessionDetail(r) {
+  const body = document.getElementById("session-detail-body");
+  if (!body) return;
+  const rows = [
+    ["Date", r.date || "-"],
+    ["Turns", String(r.turns ?? 0)],
+    ["Total tokens", fmtK(totalTok(r))],
+    ["Input", fmtK(r.inputTokens ?? 0)],
+    ["Output", fmtK(r.outputTokens ?? 0)],
+    ["Cache read", fmtK(r.cacheReadTokens ?? 0)],
+    ["Cache create", fmtK(r.cacheCreationTokens ?? 0)],
+    ["Cache efficiency", `${cacheEffPct(r)}%`],
+  ];
+  body.innerHTML = `<div class="session-detail-list">${rows.map(([k, v]) => `
+    <div class="session-detail-row"><span class="label">${k}</span><span>${v}</span></div>
+  `).join("")}</div>`;
+}
