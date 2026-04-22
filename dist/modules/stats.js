@@ -461,62 +461,6 @@ function openProjectDetail(cwd) {
   const title = document.getElementById("projectDetailTitle");
   const titleInput = document.getElementById("projectDetailTitleInput");
   if (title) title.textContent = projectLabel(cwd);
-  const pathEl = document.getElementById("projectDetailPath");
-  const pathInput = document.getElementById("projectDetailPathInput");
-  const pathError = document.getElementById("projectDetailPathError");
-  if (pathEl) {
-    pathEl.textContent = cwd || "";
-    pathEl.style.display = "";
-  }
-  if (pathInput) pathInput.style.display = "none";
-  if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
-
-  // Inline repoint: click path to change root folder
-  if (pathEl && pathInput) {
-    pathEl.onclick = () => {
-      pathInput.value = cwd || "";
-      pathEl.style.display = "none";
-      pathInput.style.display = "";
-      if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
-      pathInput.focus();
-      pathInput.select();
-    };
-    const cancelRepoint = () => {
-      pathInput.style.display = "none";
-      pathEl.style.display = "";
-      if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
-    };
-    const commitRepoint = async () => {
-      const newCwd = pathInput.value.trim();
-      if (!newCwd || newCwd === cwd) { cancelRepoint(); return; }
-      const showErr = (msg) => {
-        if (!pathError) return;
-        pathError.textContent = msg;
-        pathError.style.display = "block";
-      };
-      // Block repointing onto an existing primary that already has usage
-      const aliases = currentSettings.projectAliases || {};
-      const existingAlias = aliases[newCwd];
-      if (existingAlias?.mergedInto) { showErr("Target is already merged into another project."); return; }
-      const targetUsed = lastTokenHistory?.some((r) => r.cwd === newCwd);
-      if (targetUsed) { showErr("Target folder is already a tracked project. Rename to merge instead."); return; }
-      try {
-        const existsMap = await window.electronAPI?.checkPathsExist([newCwd]);
-        if (!existsMap || !existsMap[newCwd]) { showErr("Folder does not exist on disk."); return; }
-      } catch (e) { showErr("Could not verify folder: " + e.message); return; }
-      doRepoint(cwd, newCwd);
-      refreshProjectsUI();
-      openProjectDetail(newCwd);
-    };
-    pathInput.onblur = () => {
-      // Defer so a click on an error message doesn't cancel prematurely
-      setTimeout(() => { if (pathInput.style.display !== "none") commitRepoint(); }, 0);
-    };
-    pathInput.onkeydown = (e) => {
-      if (e.key === "Enter") { e.preventDefault(); commitRepoint(); }
-      if (e.key === "Escape") { e.preventDefault(); cancelRepoint(); }
-    };
-  }
 
   // Inline rename: click title to edit
   if (title && titleInput) {
@@ -583,25 +527,9 @@ function openProjectDetail(cwd) {
   // Open project buttons
   const explorerBtn = document.getElementById("openExplorerBtn");
   const vscodeBtn = document.getElementById("openVSCodeBtn");
-  const hideBtn = document.getElementById("hideProjectBtn");
   if (explorerBtn) explorerBtn.onclick = () => window.electronAPI.openInExplorer(cwd);
   if (vscodeBtn) vscodeBtn.onclick = () => window.electronAPI.openInVSCode(cwd);
-  if (hideBtn) {
-    hideBtn.onclick = () => {
-      showMergeModal(
-        `Hide "${projectLabel(cwd)}" from the list? You can unhide it later in settings.`,
-        () => {
-          doHideProject(cwd);
-          refreshProjectsUI();
-          showView("projects");
-        },
-        null,
-        "Hide"
-      );
-    };
-  }
 
-  renderMergedPathsSection(cwd);
   renderProjectDetail();
   showView("project-detail");
   if (typeof renderRunningInstances === "function") renderRunningInstances();
@@ -702,6 +630,83 @@ async function renderProjectOverrides(cwdKey) {
 
     root.appendChild(node);
   }
+}
+
+function wireFolderMappingSubview(cwd) {
+  const pathEl = document.getElementById("projectDetailPath");
+  const pathInput = document.getElementById("projectDetailPathInput");
+  const pathError = document.getElementById("projectDetailPathError");
+  const hideBtn = document.getElementById("hideProjectBtn");
+
+  if (pathEl) {
+    pathEl.textContent = cwd || "";
+    pathEl.style.display = "";
+  }
+  if (pathInput) pathInput.style.display = "none";
+  if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
+
+  if (pathEl && pathInput) {
+    pathEl.onclick = () => {
+      pathInput.value = cwd || "";
+      pathEl.style.display = "none";
+      pathInput.style.display = "";
+      if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
+      pathInput.focus();
+      pathInput.select();
+    };
+    const cancelRepoint = () => {
+      pathInput.style.display = "none";
+      pathEl.style.display = "";
+      if (pathError) { pathError.style.display = "none"; pathError.textContent = ""; }
+    };
+    const commitRepoint = async () => {
+      const newCwd = pathInput.value.trim();
+      if (!newCwd || newCwd === cwd) { cancelRepoint(); return; }
+      const showErr = (msg) => {
+        if (!pathError) return;
+        pathError.textContent = msg;
+        pathError.style.display = "block";
+      };
+      const aliases = currentSettings.projectAliases || {};
+      const existingAlias = aliases[newCwd];
+      if (existingAlias?.mergedInto) { showErr("Target is already merged into another project."); return; }
+      const targetUsed = lastTokenHistory?.some((r) => r.cwd === newCwd);
+      if (targetUsed) { showErr("Target folder is already a tracked project. Rename to merge instead."); return; }
+      try {
+        const existsMap = await window.electronAPI?.checkPathsExist([newCwd]);
+        if (!existsMap || !existsMap[newCwd]) { showErr("Folder does not exist on disk."); return; }
+      } catch (e) { showErr("Could not verify folder: " + e.message); return; }
+      doRepoint(cwd, newCwd);
+      refreshProjectsUI();
+      if (Array.isArray(projectSubviewStack)) projectSubviewStack.length = 0;
+      openProjectDetail(newCwd);
+    };
+    pathInput.onblur = () => {
+      setTimeout(() => { if (pathInput.style.display !== "none") commitRepoint(); }, 0);
+    };
+    pathInput.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); commitRepoint(); }
+      if (e.key === "Escape") { e.preventDefault(); cancelRepoint(); }
+    };
+  }
+
+  if (hideBtn) {
+    hideBtn.onclick = () => {
+      showMergeModal(
+        `Hide "${projectLabel(cwd)}" from the list? You can unhide it later in settings.`,
+        () => {
+          doHideProject(cwd);
+          refreshProjectsUI();
+          if (Array.isArray(projectSubviewStack)) projectSubviewStack.length = 0;
+          showView("projects");
+        },
+        null,
+        "Hide"
+      );
+    };
+  }
+
+  renderMergedPathsSection(cwd);
 }
 
 function populateProjectSubviewHeader(prefix) {
