@@ -1045,35 +1045,29 @@ input:checked+.slider:before {
   text-align: center;
 }
 
-.view-mode-toggle {
+.projects-sort {
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.projects-sort-label {
+  font-size: 0.72rem;
+  color: var(--text-dim, #8a8aa0);
+}
+.projects-sort-select {
+  background: var(--surface, #1f1f2c);
   border: 1px solid var(--border, #2a2a3a);
   border-radius: 6px;
-  overflow: hidden;
-}
-.view-mode-toggle .mode-btn {
-  background: transparent;
-  border: 0;
-  padding: 5px 9px;
-  color: var(--text-dim, #8a8aa0);
+  color: var(--text, #e4e4ee);
+  padding: 4px 8px;
+  font-size: 0.78rem;
   cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-}
-.view-mode-toggle .mode-btn.active {
-  background: var(--surface-alt, #2a2a3a);
-  color: var(--text, #ffffff);
 }
 
-.projects-list.grid-mode {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.projects-list.list-mode {
+.projects-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .project-card {
@@ -1124,15 +1118,6 @@ input:checked+.slider:before {
 .project-card .tokens {
   font-size: 0.72rem;
   color: var(--text-dim, #8a8aa0);
-}
-
-.projects-list.list-mode .project-card {
-  padding: 8px 10px;
-}
-.projects-list.list-mode .project-card .avatar {
-  width: 28px;
-  height: 28px;
-  font-size: 1rem;
 }
 
 .project-detail-header { align-items: flex-start; padding: 10px 12px; }
@@ -1347,3 +1332,61 @@ input:checked+.slider:before {
 }
 .banner i { font-size: 1.2rem; color: var(--primary, #9d7dfc); }
 .banner span { flex: 1; min-width: 140px; }
+
+/* Project detail menu popover */
+.menu-anchor { position: relative; display: inline-block; }
+.menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface, #1f1d2e);
+  border: 1px solid var(--border, #2d2c44);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  z-index: 1400;
+}
+.menu-popover.hidden { display: none; }
+.menu-popover .menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.menu-popover .menu-item:hover { background: var(--surface-alt, #2a2840); }
+
+/* Subview header (shared across project subviews) */
+.subview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border, #2d2c44);
+}
+
+/* See-all link row inside Recent sessions */
+.see-all-link {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--accent, #9d7dfc);
+  border: 0;
+  font-size: 0.78rem;
+  text-align: center;
+  cursor: pointer;
+}
+.see-all-link:hover { text-decoration: underline; }
+
+/* Session detail definition list */
+.session-detail-list { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.session-detail-row { display: flex; justify-content: space-between; font-family: 'Fira Code', monospace; font-size: 0.78rem; }
+.session-detail-row .label { color: var(--text-dim); }
