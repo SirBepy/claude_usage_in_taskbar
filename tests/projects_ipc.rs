@@ -5,7 +5,7 @@
 //! thin glue around these.
 
 use claude_usage_tauri_lib::ipc::projects_test_helpers as h;
-use claude_usage_tauri_lib::types::{Avatar, ProjectConfig, Settings, ViewMode};
+use claude_usage_tauri_lib::types::{Avatar, ProjectConfig, ProjectsSortBy, Settings};
 
 fn sample_project(id: &str, path: &str) -> ProjectConfig {
     ProjectConfig {
@@ -73,10 +73,14 @@ fn delete_project_removes_entry() {
 }
 
 #[test]
-fn set_projects_view_mode_updates_field() {
+fn set_projects_sort_by_updates_field() {
     let mut s = Settings::default();
-    h::set_view_mode(&mut s, ViewMode::List);
-    assert_eq!(s.projects_view_mode, ViewMode::List);
-    h::set_view_mode(&mut s, ViewMode::Grid);
-    assert_eq!(s.projects_view_mode, ViewMode::Grid);
+    h::set_sort_by(&mut s, ProjectsSortBy::Name);
+    assert_eq!(s.projects_sort_by, ProjectsSortBy::Name);
+    h::set_sort_by(&mut s, ProjectsSortBy::Tokens);
+    assert_eq!(s.projects_sort_by, ProjectsSortBy::Tokens);
+    h::set_sort_by(&mut s, ProjectsSortBy::Live);
+    assert_eq!(s.projects_sort_by, ProjectsSortBy::Live);
+    h::set_sort_by(&mut s, ProjectsSortBy::Recent);
+    assert_eq!(s.projects_sort_by, ProjectsSortBy::Recent);
 }

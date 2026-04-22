@@ -39,13 +39,15 @@ impl Default for Avatar {
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum ViewMode {
-    Grid,
-    List,
+pub enum ProjectsSortBy {
+    Recent,
+    Live,
+    Name,
+    Tokens,
 }
 
-impl Default for ViewMode {
-    fn default() -> Self { ViewMode::Grid }
+impl Default for ProjectsSortBy {
+    fn default() -> Self { ProjectsSortBy::Recent }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
@@ -129,7 +131,7 @@ pub struct Settings {
     pub auto_update: bool,
     pub hook_port: Option<u16>,
     pub projects: Vec<ProjectConfig>,
-    pub projects_view_mode: ViewMode,
+    pub projects_sort_by: ProjectsSortBy,
     pub hooks_registered: bool,
     pub hook_registration_declined: bool,
     /// Bumped whenever the shape of the hook entry we write into
@@ -156,7 +158,7 @@ impl Default for Settings {
             auto_update: true,
             hook_port: None,
             projects: Vec::new(),
-            projects_view_mode: ViewMode::Grid,
+            projects_sort_by: ProjectsSortBy::Recent,
             hooks_registered: false,
             hook_registration_declined: false,
             hook_install_version: 0,
@@ -336,7 +338,7 @@ mod tests {
     fn settings_defaults_expose_new_fields() {
         let s = Settings::default();
         assert!(s.projects.is_empty());
-        assert_eq!(s.projects_view_mode, ViewMode::Grid);
+        assert_eq!(s.projects_sort_by, ProjectsSortBy::Recent);
         assert!(!s.hooks_registered);
         assert!(!s.hook_registration_declined);
         assert_eq!(s.hook_install_version, 0);

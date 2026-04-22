@@ -2,7 +2,7 @@
 
 use crate::state::AppState;
 use crate::token_stats::{self, BackfillResult, TokenRecord};
-use crate::types::{AuthState, ProjectConfig, Settings, UsageSnapshot, ViewMode};
+use crate::types::{AuthState, ProjectConfig, ProjectsSortBy, Settings, UsageSnapshot};
 use crate::{history, paths, session, settings};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -100,7 +100,7 @@ pub fn read_log_file(app: AppHandle) -> Result<String, String> {
 /// Pure helpers extracted from the Tauri command wrappers so they can be
 /// unit-tested without standing up a full app handle.
 pub mod projects_test_helpers {
-    use crate::types::{ProjectConfig, Settings, ViewMode};
+    use crate::types::{ProjectConfig, ProjectsSortBy, Settings};
 
     pub fn list_from(s: &Settings) -> Vec<ProjectConfig> { s.projects.clone() }
 
@@ -141,8 +141,8 @@ pub mod projects_test_helpers {
         s.projects.len() < before
     }
 
-    pub fn set_view_mode(s: &mut Settings, mode: ViewMode) {
-        s.projects_view_mode = mode;
+    pub fn set_sort_by(s: &mut Settings, sort_by: ProjectsSortBy) {
+        s.projects_sort_by = sort_by;
     }
 }
 
@@ -233,14 +233,14 @@ pub fn delete_project(
 }
 
 #[tauri::command]
-pub fn set_projects_view_mode(
-    mode: ViewMode,
+pub fn set_projects_sort_by(
+    sort_by: ProjectsSortBy,
     state: State<AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
     let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
     let mut guard = state.settings.lock().unwrap();
-    projects_test_helpers::set_view_mode(&mut guard, mode);
+    projects_test_helpers::set_sort_by(&mut guard, sort_by);
     settings::save(&settings_path, &guard).map_err(|e| e.to_string())?;
     let snapshot = guard.clone();
     drop(guard);
