@@ -192,6 +192,10 @@ pub fn run() {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(async move { crate::detector::run(h).await });
             }
+            {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move { crate::channels::autostart_all(h).await });
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
                 window.on_window_event(move |event| {
@@ -231,8 +235,13 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                crate::channels::kill_all(app_handle);
+            }
+        });
 }
 
 async fn check_updater(app: &tauri::AppHandle) -> anyhow::Result<()> {
