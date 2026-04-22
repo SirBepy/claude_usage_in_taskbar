@@ -40,17 +40,25 @@ fn update_project_applies_patch_in_place() {
     let mut s = Settings::default();
     s.projects.push(sample_project("a", "C:/a"));
     let patch = serde_json::json!({ "name": "Alpha", "avatar": {"kind":"emoji","value":"🅰"} });
-    let ok = h::update_in(&mut s, "a", patch);
-    assert!(ok);
+    let res = h::update_in(&mut s, "a", patch);
+    assert!(res.is_ok());
     assert_eq!(s.projects[0].name, "Alpha");
     assert_eq!(s.projects[0].avatar, Avatar::Emoji("🅰".into()));
 }
 
 #[test]
-fn update_project_returns_false_for_missing_id() {
+fn update_project_returns_not_found_for_missing_id() {
     let mut s = Settings::default();
-    let ok = h::update_in(&mut s, "missing", serde_json::json!({ "name": "X" }));
-    assert!(!ok);
+    let res = h::update_in(&mut s, "missing", serde_json::json!({ "name": "X" }));
+    assert!(matches!(res, Err(h::UpdateErr::NotFound)));
+}
+
+#[test]
+fn update_project_returns_invalid_patch_for_bad_type() {
+    let mut s = Settings::default();
+    s.projects.push(sample_project("a", "C:/a"));
+    let res = h::update_in(&mut s, "a", serde_json::json!({ "avatar": "not-an-object" }));
+    assert!(matches!(res, Err(h::UpdateErr::InvalidPatch(_))));
 }
 
 #[test]
