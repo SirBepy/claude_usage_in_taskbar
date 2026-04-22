@@ -1,7 +1,13 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
-const VIEWS = ["dashboard", "settings", "settings-visuals", "settings-themes", "settings-notifications", "settings-sync", "statistics", "projects", "project-detail", "graph-detail"];
+const VIEWS = [
+  "dashboard", "settings", "settings-visuals", "settings-themes",
+  "settings-notifications", "settings-sync", "statistics", "projects",
+  "project-detail", "graph-detail",
+  "project-notif-overrides", "project-automation", "project-folder-mapping",
+  "project-sessions", "session-detail",
+];
 
 let activeView = "dashboard";
 let previousView = "dashboard";
@@ -13,6 +19,25 @@ function showView(name) {
     document.getElementById(`view-${id}`).classList.toggle("hidden", id !== name);
   }
   updateSidemenuActive(name);
+}
+
+// Stack of subview origins so Session detail knows where "back" goes.
+const projectSubviewStack = [];
+
+function openProjectSubview(subview) {
+  // subview: "project-notif-overrides" | "project-automation" | "project-folder-mapping" | "project-sessions"
+  projectSubviewStack.push("project-detail");
+  showView(subview);
+}
+
+function openSessionDetailView(originView) {
+  projectSubviewStack.push(originView);
+  showView("session-detail");
+}
+
+function backFromSubview() {
+  const origin = projectSubviewStack.pop() || "project-detail";
+  showView(origin);
 }
 
 // ── Sidemenu ───────────────────────────────────────────────────────────────
@@ -93,7 +118,52 @@ document.querySelectorAll(".back-to-settings").forEach((btn) => {
 });
 
 // Stats navigation
-document.getElementById("projectDetailBackBtn").onclick = () => showView("projects");
+document.getElementById("projectDetailBackBtn").onclick = () => {
+  projectSubviewStack.length = 0;
+  showView("projects");
+};
+
+// Project-detail 3-dot menu
+const projectDetailMenuBtn = document.getElementById("projectDetailMenuBtn");
+const projectDetailMenu = document.getElementById("projectDetailMenu");
+if (projectDetailMenuBtn && projectDetailMenu) {
+  projectDetailMenuBtn.onclick = (e) => {
+    e.stopPropagation();
+    projectDetailMenu.classList.toggle("hidden");
+  };
+  projectDetailMenu.querySelectorAll(".menu-item").forEach((btn) => {
+    btn.onclick = () => {
+      projectDetailMenu.classList.add("hidden");
+      const kind = btn.dataset.menuItem;
+      if (kind === "notif-overrides") {
+        if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("notifOverrides");
+        if (typeof renderProjectOverrides === "function") renderProjectOverrides(projectDetailState.cwd);
+        openProjectSubview("project-notif-overrides");
+      } else if (kind === "automation") {
+        if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("automation");
+        if (typeof renderAutomationForm === "function") renderAutomationForm();
+        openProjectSubview("project-automation");
+      } else if (kind === "folder-mapping") {
+        if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("folderMapping");
+        if (typeof wireFolderMappingSubview === "function") wireFolderMappingSubview(projectDetailState.cwd);
+        openProjectSubview("project-folder-mapping");
+      }
+    };
+  });
+  document.addEventListener("click", (e) => {
+    if (projectDetailMenu.classList.contains("hidden")) return;
+    if (projectDetailMenu.contains(e.target) || projectDetailMenuBtn.contains(e.target)) return;
+    projectDetailMenu.classList.add("hidden");
+  });
+}
+
+// Back buttons on project subviews
+["notifOverridesBackBtn", "automationBackBtn", "folderMappingBackBtn", "allSessionsBackBtn"].forEach((id) => {
+  const btn = document.getElementById(id);
+  if (btn) btn.onclick = () => backFromSubview();
+});
+const sessionDetailBackBtn = document.getElementById("sessionDetailBackBtn");
+if (sessionDetailBackBtn) sessionDetailBackBtn.onclick = () => backFromSubview();
 document.getElementById("graphDetailBackBtn").onclick = () => showView("dashboard");
 
 function showToast(msg) {

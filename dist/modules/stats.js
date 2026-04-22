@@ -350,52 +350,8 @@ function timeAgo(dateStr) {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-// ── Stats view ─────────────────────────────────────────────────────────────────
-function renderStats(tokenHistory) {
-  const container = document.getElementById("stats-table-container");
-  if (!container) return;
-
-  if (!tokenHistory || !tokenHistory.length) {
-    container.innerHTML = `<div class="no-data">No sessions recorded yet.<br><small style="font-size:0.8rem">Use ↺ Rebuild History to import past sessions.</small></div>`;
-    setupBackfillBtn();
-    return;
-  }
-
-  const projects = aggregateByProject(tokenHistory).map((p) => ({
-    cwd: p.cwd,
-    tokens: totalTok(p),
-    lastActiveAt: p.lastDate,
-  }));
-
-  const blacklist = currentSettings.projectBlacklist || [];
-  const hiddenSection = blacklist.length
-    ? `<div class="today-section" style="margin-top:12px">
-        <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:6px">Hidden projects (${blacklist.length})</div>
-        ${blacklist.map((bl) => `<div class="hidden-proj-row">
-          <span style="font-size:0.78rem;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${projectLabel(bl)}</span>
-          <button class="btn-secondary unhide-btn" data-cwd="${bl}" style="padding:2px 8px;font-size:0.7rem;flex-shrink:0">Unhide</button>
-        </div>`).join("")}
-      </div>`
-    : "";
-
-  container.innerHTML = buildProjectListHTML({
-    title: "",
-    projects,
-    sortable: true,
-    defaultSort: "lastActiveAt",
-    id: "stats-main",
-  }) + hiddenSection;
-
-  container.querySelectorAll(".unhide-btn").forEach((btn) => {
-    btn.onclick = () => {
-      const bl = currentSettings.projectBlacklist;
-      if (bl) currentSettings.projectBlacklist = bl.filter((c) => c !== btn.dataset.cwd);
-      saveSettings();
-      renderStats(lastTokenHistory);
-    };
-  });
-  wireProjectListClicks(container, () => renderStats(lastTokenHistory));
-  setupBackfillBtn();
+function refreshProjectsUI() {
+  if (typeof renderProjectsList === "function") renderProjectsList();
 }
 
 function setupBackfillBtn() {
@@ -412,7 +368,7 @@ function setupBackfillBtn() {
       const msg = result ? `Done — ${result.processed} new, ${result.skipped} skipped` : "Done";
       if (status) status.textContent = msg;
       lastTokenHistory = await window.electronAPI?.getTokenHistory();
-      renderStats(lastTokenHistory);
+      refreshProjectsUI();
     } catch (e) {
       if (status) status.textContent = "Error: " + e.message;
     } finally {
@@ -493,7 +449,7 @@ function renderMergedPathsSection(cwd) {
       doUnmerge(btn.dataset.path, cwd);
       renderMergedPathsSection(cwd);
       renderProjectDetail();
-      renderStats(lastTokenHistory);
+      refreshProjectsUI();
     };
   });
 }
@@ -549,7 +505,7 @@ function openProjectDetail(cwd) {
         if (!existsMap || !existsMap[newCwd]) { showErr("Folder does not exist on disk."); return; }
       } catch (e) { showErr("Could not verify folder: " + e.message); return; }
       doRepoint(cwd, newCwd);
-      renderStats(lastTokenHistory);
+      refreshProjectsUI();
       openProjectDetail(newCwd);
     };
     pathInput.onblur = () => {
@@ -600,7 +556,7 @@ function openProjectDetail(cwd) {
           `"${name}" already exists. Merge this project into it?`,
           () => {
             doMerge(cwd, collisionCwd);
-            renderStats(lastTokenHistory);
+            refreshProjectsUI();
             openProjectDetail(collisionCwd);
           },
           () => {
@@ -614,7 +570,7 @@ function openProjectDetail(cwd) {
         aliases[cwd] = { ...aliases[cwd], name };
         saveSettings();
         title.textContent = projectLabel(cwd);
-        renderStats(lastTokenHistory);
+        refreshProjectsUI();
       }
     };
     titleInput.onblur = commitRename;
@@ -636,7 +592,7 @@ function openProjectDetail(cwd) {
         `Hide "${projectLabel(cwd)}" from the list? You can unhide it later in settings.`,
         () => {
           doHideProject(cwd);
-          renderStats(lastTokenHistory);
+          refreshProjectsUI();
           showView("projects");
         },
         null,
@@ -746,6 +702,19 @@ async function renderProjectOverrides(cwdKey) {
 
     root.appendChild(node);
   }
+}
+
+function populateProjectSubviewHeader(prefix) {
+  // prefix: "notifOverrides" | "automation" | "folderMapping" | "allSessions" | "sessionDetail"
+  const cwd = projectDetailState.cwd;
+  const configuredProject = (currentSettings.projects || []).find((p) => p.path === cwd);
+  const avatar = configuredProject?.avatar || { kind: "emoji", value: (configuredProject?.name || cwd || "?").charAt(0) };
+  const avatarEl = document.getElementById(`${prefix}Avatar`);
+  const titleEl = document.getElementById(`${prefix}Title`);
+  const pathEl = document.getElementById(`${prefix}Path`);
+  if (avatarEl) avatarEl.innerHTML = (typeof renderAvatar === "function") ? renderAvatar(avatar) : "?";
+  if (titleEl) titleEl.textContent = (typeof projectLabel === "function") ? projectLabel(cwd) : (cwd || "");
+  if (pathEl) pathEl.textContent = cwd || "";
 }
 
 function renderProjectDetail() {
