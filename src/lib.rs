@@ -27,6 +27,7 @@ pub mod state;
 pub mod token_stats;
 pub mod tray;
 pub mod types;
+pub mod vault_detector;
 
 use crate::state::AppState;
 use crate::types::AuthState;
@@ -107,6 +108,7 @@ pub fn run() {
             ipc::show_terminal,
             ipc::hide_terminal,
             ipc::list_channels,
+            ipc::detect_obsidian_vaults,
             ipc::list_instances,
             ipc::list_instances_for_project,
             ipc::phone_link,

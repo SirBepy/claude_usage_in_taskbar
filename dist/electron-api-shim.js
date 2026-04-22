@@ -173,6 +173,7 @@
       catch (e) { console.error('hide_terminal failed', e); throw e; }
     },
     listChannels: () => invoke('list_channels'),
+    detectObsidianVaults: () => invoke('detect_obsidian_vaults'),
     onChannelsChanged: (cb) => {
       const unlisten = T.event.listen('channels-changed', (e) => cb(e.payload));
       return () => unlisten.then((u) => u());

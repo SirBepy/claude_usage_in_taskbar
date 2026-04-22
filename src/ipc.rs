@@ -540,6 +540,13 @@ pub fn list_channels(state: State<AppState>) -> Vec<serde_json::Value> {
     })).collect()
 }
 
+// --- Vault detector ---
+
+#[tauri::command]
+pub fn detect_obsidian_vaults() -> Vec<std::path::PathBuf> {
+    crate::vault_detector::detect().unwrap_or_default()
+}
+
 // --- Instances ---
 
 #[tauri::command]
