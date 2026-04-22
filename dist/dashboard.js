@@ -651,6 +651,24 @@ async function renderRunningInstances() {
       showToast(`Copied: ${url}`);
     };
   });
+  listEl.querySelectorAll(".term-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try { await window.electronAPI.showTerminal(btn.dataset.projectId); }
+      catch (e) { showToast(`Show terminal failed: ${e}`); }
+    };
+  });
+  listEl.querySelectorAll(".restart-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try { await window.electronAPI.restartChannel(btn.dataset.projectId); showToast("Restarting…"); }
+      catch (e) { showToast(`Restart failed: ${e}`); }
+    };
+  });
+  listEl.querySelectorAll(".stop-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try { await window.electronAPI.stopChannel(btn.dataset.projectId); showToast("Stopped."); }
+      catch (e) { showToast(`Stop failed: ${e}`); }
+    };
+  });
 }
 
 function setRunningInstancesEmpty(count) {
@@ -667,6 +685,7 @@ function instanceRowHtml(i) {
   const remoteTag = i.is_remote ? `<span class="tag remote">📱</span>` : "";
   const phoneDisabled = i.bridge_session_id ? "" : "disabled";
   const automatedOnlyDisabled = i.kind === "automated" ? "" : "disabled";
+  const pid = i.project_id;
   return `
     <div class="instance-row ${kindClass}">
       <div class="status-dot"></div>
@@ -678,10 +697,10 @@ function instanceRowHtml(i) {
         <div class="sub">up ${uptime} · session ${i.session_id.slice(0, 8)}…</div>
       </div>
       <div class="actions">
-        <button class="act-btn" title="Show terminal" ${automatedOnlyDisabled}>term</button>
+        <button class="act-btn term-btn" title="Show terminal" data-project-id="${pid}" ${automatedOnlyDisabled}>term</button>
         <button class="act-btn phone-link-btn" title="Copy phone link" data-session-id="${i.session_id}" ${phoneDisabled}>phone</button>
-        <button class="act-btn" title="Restart" ${automatedOnlyDisabled}>restart</button>
-        <button class="act-btn" title="Stop" ${automatedOnlyDisabled}>stop</button>
+        <button class="act-btn restart-btn" title="Restart" data-project-id="${pid}" ${automatedOnlyDisabled}>restart</button>
+        <button class="act-btn stop-btn" title="Stop" data-project-id="${pid}" ${automatedOnlyDisabled}>stop</button>
       </div>
     </div>
   `;
