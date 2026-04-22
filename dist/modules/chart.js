@@ -266,12 +266,14 @@ function buildGraphCard(opts) {
 
   return `<div class="chart-container"${id === "session" ? ' style="margin-bottom:12px"' : ""}>
     <div class="chart-pagination">
-      <button id="${prevId}" class="btn-secondary" ${hasPrev ? "" : "disabled"}>◀</button>
       <span class="chart-pagination-label">${pageLabel}</span>
-      <button id="${nextId}" class="btn-secondary" ${pageOffset === 0 ? "disabled" : ""}>▶</button>
-      <div class="chart-mode-toggle">
-        <button class="chart-mode-btn${chartActive}" data-mode="chart" data-graph="${id}">Chart</button>
-        <button class="chart-mode-btn${barsActive}" data-mode="bars" data-graph="${id}">Bars</button>
+      <div class="chart-pagination-right">
+        <button id="${prevId}" class="btn-secondary" ${hasPrev ? "" : "disabled"}>◀</button>
+        <button id="${nextId}" class="btn-secondary" ${pageOffset === 0 ? "disabled" : ""}>▶</button>
+        <div class="chart-mode-toggle">
+          <button class="chart-mode-btn${chartActive}" data-mode="chart" data-graph="${id}" aria-label="Chart view" title="Chart"><i class="ph ph-chart-line-up"></i></button>
+          <button class="chart-mode-btn${barsActive}" data-mode="bars" data-graph="${id}" aria-label="Bars view" title="Bars"><i class="ph ph-chart-bar"></i></button>
+        </div>
       </div>
     </div>
     ${chartContent}
