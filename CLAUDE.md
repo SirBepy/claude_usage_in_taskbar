@@ -174,9 +174,9 @@ The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every t
 ## Channel management (Plan C)
 
 - `src/channels.rs` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console. Windows-only.
-- Spawn uses `cmd /C claude --remote-control --remote-control-session-name-prefix … --continue` with `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP` so the process gets its own console window (hidden immediately via `ShowWindow(SW_HIDE)`).
-- hwnd resolved via `EnumWindows` filtering by owning pid; stored per-channel so show/hide always targets the right console.
-- Watchdog `tokio::process::Child::wait()` drives the restart policy in `next_restart_delay` (stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed).
+- Spawn uses raw `CreateProcessW` with `STARTF_USESHOWWINDOW | SW_HIDE` in `STARTUPINFOW` so the new console is born invisible (no flash) and `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP`. Command line: `cmd.exe /C claude --remote-control --remote-control-session-name-prefix "<prefix>" [--continue]`.
+- After spawn, hwnd resolved via `EnumWindows` by owning pid, then `strip_console_chrome` removes `WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME` so the console is frameless when shown. No X button: user can't kill the process by closing the window; only the dashboard's Stop action does. Hide/Stop/Restart live in the Project detail view.
+- Watchdog blocks on `WaitForSingleObject` via `tokio::task::spawn_blocking` (SpawnOutput now exposes a raw `process_handle: isize`, no tokio `Child`). Drives `next_restart_delay` (stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed).
 - Kill on shutdown uses `taskkill /T /F /PID <pid>` — claude spawns node subprocesses so tree-kill is required.
 - `src/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` for the automation picker.
 - `ipc::import_legacy_obsidian_config` maps the old Python app's config.json into a new ProjectConfig with an auto-configured automation.

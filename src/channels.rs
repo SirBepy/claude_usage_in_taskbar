@@ -53,16 +53,6 @@ pub fn next_restart_delay(state: &mut RestartState, last_runtime: Duration) -> R
 // -------- Spawn --------
 
 use std::path::PathBuf;
-use tokio::process::Command;
-
-#[cfg(windows)]
-#[allow(unused_imports)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
-const CREATE_NEW_CONSOLE: u32 = 0x00000010;
-#[cfg(windows)]
-const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
 #[derive(Debug)]
 pub enum SpawnError {
@@ -90,28 +80,97 @@ pub struct SpawnInput {
 
 pub struct SpawnOutput {
     pub pid: u32,
-    pub child: tokio::process::Child,
+    /// Raw Windows process HANDLE (as isize). Zero on non-windows stubs.
+    /// Ownership: caller must CloseHandle once after WaitForSingleObject.
+    pub process_handle: isize,
 }
 
-#[cfg(windows)]
-pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
-    let mut cmd = Command::new("cmd");
-    let mut args: Vec<String> = vec![
+// Build the command line string fed to CreateProcessW. First token is the
+// executable (cmd.exe); rest are args. Quoting rule: wrap any arg containing
+// whitespace or quotes and escape embedded quotes per MSDN.
+fn build_cmdline(input: &SpawnInput) -> String {
+    fn quote(arg: &str) -> String {
+        if !arg.is_empty()
+            && !arg.contains(|c: char| c.is_whitespace() || c == '"')
+        {
+            return arg.to_string();
+        }
+        let escaped = arg.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{escaped}\"")
+    }
+    let mut parts: Vec<String> = vec![
+        "cmd.exe".into(),
         "/C".into(),
         "claude".into(),
         "--remote-control".into(),
         "--remote-control-session-name-prefix".into(),
-        input.session_name_prefix.clone(),
+        quote(&input.session_name_prefix),
     ];
     if input.continue_flag {
-        args.push("--continue".into());
+        parts.push("--continue".into());
     }
-    cmd.args(&args)
-        .current_dir(&input.cwd)
-        .creation_flags(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP);
-    let child = cmd.spawn().map_err(SpawnError::Io)?;
-    let pid = child.id().unwrap_or(0);
-    Ok(SpawnOutput { pid, child })
+    parts.join(" ")
+}
+
+#[cfg(windows)]
+pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        CreateProcessW, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTF_USESHOWWINDOW,
+        STARTUPINFOW,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+    const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+
+    let cmdline = build_cmdline(&input);
+    let mut cmdline_w: Vec<u16> = cmdline.encode_utf16().chain(std::iter::once(0)).collect();
+    let cwd_w: Vec<u16> = input
+        .cwd
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut si = STARTUPINFOW::default();
+    si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE.0 as u16;
+    let mut pi = PROCESS_INFORMATION::default();
+
+    let flags = PROCESS_CREATION_FLAGS(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP);
+
+    let result = unsafe {
+        CreateProcessW(
+            PCWSTR::null(),
+            PWSTR(cmdline_w.as_mut_ptr()),
+            None,
+            None,
+            false,
+            flags,
+            None,
+            PCWSTR(cwd_w.as_ptr()),
+            &si,
+            &mut pi,
+        )
+    };
+    if let Err(e) = result {
+        return Err(SpawnError::Io(std::io::Error::from_raw_os_error(
+            e.code().0,
+        )));
+    }
+
+    unsafe {
+        let _ = CloseHandle(pi.hThread);
+    }
+
+    Ok(SpawnOutput {
+        pid: pi.dwProcessId,
+        process_handle: pi.hProcess.0 as isize,
+    })
 }
 
 #[cfg(not(windows))]
@@ -123,6 +182,23 @@ pub fn spawn_child(_input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
 pub async fn spawn(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
     spawn_child(input)
 }
+
+/// Block until the child exits. Closes the handle. Returns instantly on
+/// non-windows (handle is 0).
+#[cfg(windows)]
+async fn wait_for_child_exit(process_handle: isize) {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
+    let _ = tokio::task::spawn_blocking(move || unsafe {
+        let h = HANDLE(process_handle as *mut std::ffi::c_void);
+        let _ = WaitForSingleObject(h, INFINITE);
+        let _ = CloseHandle(h);
+    })
+    .await;
+}
+
+#[cfg(not(windows))]
+async fn wait_for_child_exit(_process_handle: isize) {}
 
 // -------- HWND helpers --------
 
@@ -175,6 +251,36 @@ pub fn hide_hwnd(hwnd: isize) {
     }
 }
 
+/// Strip title bar, borders, and system menu so the console comes up
+/// frameless. User can't click X to kill the process (there's no X);
+/// hide/stop/restart must come from the dashboard UI.
+#[cfg(windows)]
+pub fn strip_console_chrome(hwnd: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
+    };
+    unsafe {
+        let h = HWND(hwnd as *mut std::ffi::c_void);
+        let style = GetWindowLongPtrW(h, GWL_STYLE);
+        let remove = (WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0
+            | WS_THICKFRAME.0) as isize;
+        let new_style = style & !remove;
+        let _ = SetWindowLongPtrW(h, GWL_STYLE, new_style);
+        let _ = SetWindowPos(
+            h,
+            HWND::default(),
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
 #[cfg(not(windows))]
 pub fn find_hwnd_for_pid(_pid: u32) -> Option<isize> {
     None
@@ -183,6 +289,8 @@ pub fn find_hwnd_for_pid(_pid: u32) -> Option<isize> {
 pub fn show_hwnd(_hwnd: isize) {}
 #[cfg(not(windows))]
 pub fn hide_hwnd(_hwnd: isize) {}
+#[cfg(not(windows))]
+pub fn strip_console_chrome(_hwnd: isize) {}
 
 /// Polls up to 20 x 50ms for the main console hwnd to appear after spawn.
 pub async fn resolve_console_hwnd(pid: u32) -> Option<isize> {
@@ -351,12 +459,15 @@ pub fn start_channel(
         });
     }
 
-    // Resolve and hide hwnd async.
+    // Resolve hwnd async, strip chrome, keep hidden. Process was spawned
+    // with SW_HIDE so it's already invisible; stripping chrome just prepares
+    // the window for when the user clicks Show.
     {
         let app_h = app.clone();
         let proj_h = project_id.clone();
         tauri::async_runtime::spawn(async move {
             if let Some(hwnd) = resolve_console_hwnd(pid).await {
+                strip_console_chrome(hwnd);
                 hide_hwnd(hwnd);
                 let s = app_h.state::<crate::state::AppState>();
                 s.channels.patch(&proj_h, |s| s.hwnd = Some(hwnd));
@@ -369,10 +480,10 @@ pub fn start_channel(
     {
         let app_w = app.clone();
         let proj_w = project_id.clone();
+        let handle = spawn_out.process_handle;
         tauri::async_runtime::spawn(async move {
             let started_at = std::time::Instant::now();
-            let mut child = spawn_out.child;
-            let _ = child.wait().await;
+            wait_for_child_exit(handle).await;
             let runtime = started_at.elapsed();
 
             let state = app_w.state::<crate::state::AppState>();
