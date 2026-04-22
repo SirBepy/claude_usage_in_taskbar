@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod channels;
 pub mod hook_installer;
 pub mod auth;
 pub mod detector;
