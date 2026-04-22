@@ -833,23 +833,37 @@ function renderSessionsList(cwd, range) {
     cutoff.setDate(cutoff.getDate() - days);
     records = records.filter((r) => r.date >= cutoff.toISOString().slice(0, 10));
   }
+  records = records.filter((r) => totalTok(r) > 0);
 
   if (!records.length) { list.innerHTML = ""; return; }
 
   const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
-  const top = sorted.slice(0, 10);
-  const rowsHTML = top.map((r) => {
+  const top = sorted.slice(0, 5);
+  const rowsHTML = top.map((r, i) => {
     const tot = totalTok(r);
     const eff = cacheEffPct(r);
-    return `<div class="today-row">
+    return `<div class="today-row session-row" data-session-idx="${i}" style="cursor:pointer">
       <span style="font-family:'Fira Code',monospace;font-size:0.75rem;color:var(--text-dim)">${r.date}</span>
       <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${fmtK(tot)} tok · ${r.turns || 0} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
     </div>`;
   }).join("");
-
+  const seeAll = sorted.length > 5
+    ? `<button class="see-all-link" id="seeAllSessionsBtn">See all ${sorted.length} sessions</button>`
+    : "";
   list.innerHTML = `<div class="section" style="padding:10px 14px">
-    <div class="section-title" style="margin-bottom:8px">Recent Sessions</div>
+    <div class="section-title" style="margin-bottom:8px">Recent sessions</div>
     ${rowsHTML}
-    ${records.length > 10 ? `<div style="font-size:0.72rem;color:var(--text-dim);text-align:center;margin-top:6px">…and ${records.length - 10} more</div>` : ""}
+    ${seeAll}
   </div>`;
+
+  list.querySelectorAll(".session-row").forEach((el) => {
+    el.onclick = () => {
+      const idx = Number(el.dataset.sessionIdx);
+      if (typeof openSessionDetail === "function") openSessionDetail(top[idx]);
+    };
+  });
+  const seeAllBtn = list.querySelector("#seeAllSessionsBtn");
+  if (seeAllBtn) seeAllBtn.onclick = () => {
+    if (typeof openAllSessions === "function") openAllSessions(cwd);
+  };
 }
