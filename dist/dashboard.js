@@ -53,24 +53,19 @@ if (refreshNowBtn) {
   };
 }
 
-// Projects grid/list toggle
-document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((btn) => {
-  btn.onclick = async () => {
-    const mode = btn.dataset.mode;
-    document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((b) => {
-      b.classList.toggle("active", b === btn);
-    });
-    await window.electronAPI.setProjectsViewMode(mode);
+// Projects sort dropdown
+const projectsSortSelect = document.getElementById("projectsSortSelect");
+if (projectsSortSelect) {
+  projectsSortSelect.onchange = async () => {
+    await window.electronAPI.setProjectsSortBy(projectsSortSelect.value);
     if (typeof renderProjectsList === "function") renderProjectsList();
   };
-});
+}
 
-async function syncProjectsViewModeFromSettings() {
+async function syncProjectsSortFromSettings() {
   const s = await window.electronAPI.getSettings();
-  const mode = s.projects_view_mode || "grid";
-  document.querySelectorAll("#projectsViewModeToggle .mode-btn").forEach((b) => {
-    b.classList.toggle("active", b.dataset.mode === mode);
-  });
+  const sortBy = s.projects_sort_by || "recent";
+  if (projectsSortSelect) projectsSortSelect.value = sortBy;
 }
 
 // Nav item click → navigate + close.
@@ -83,7 +78,6 @@ document.querySelectorAll(".sidemenu-nav-item").forEach((item) => {
   };
 });
 
-document.getElementById("backBtn").onclick = () => showView("dashboard");
 document.getElementById("logoutBtn").onclick = () => window.electronAPI?.logout();
 
 // Settings subpage nav
@@ -248,8 +242,8 @@ async function runDeadPathCheck() {
       _deadPaths.add(deadCwd);
     }
   }
-  if (anyMerged) { renderStats(lastTokenHistory); refreshDashboard(); }
-  else if (_deadPaths.size) renderStats(lastTokenHistory);
+  if (anyMerged) { if (typeof renderProjectsList === "function") renderProjectsList(); refreshDashboard(); }
+  else if (_deadPaths.size) { if (typeof renderProjectsList === "function") renderProjectsList(); }
 }
 
 // ── Stats rendering ───────────────────────────────────────────────────────────
@@ -450,7 +444,7 @@ window.electronAPI?.getSettings().then((s) => {
   }
   _initSettings = true;
   tryInitialRender();
-  syncProjectsViewModeFromSettings();
+  syncProjectsSortFromSettings();
 });
 
 window.electronAPI?.onHistoryUpdated((h) => {
@@ -475,35 +469,59 @@ async function renderProjectsList() {
   let liveInstances = [];
   try { liveInstances = ((await window.electronAPI?.listInstances?.()) || []).filter((i) => !i.end_reason); } catch { /* ignore */ }
 
+  const mkBucket = (key) => ({ cwd: key, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false, lastActiveMs: 0 });
+  const bump = (bucket, iso) => {
+    if (!iso) return;
+    const ms = Date.parse(iso);
+    if (!Number.isNaN(ms) && ms > bucket.lastActiveMs) bucket.lastActiveMs = ms;
+  };
+
   const byPath = new Map();
   for (const rec of tokenHistory) {
     const key = rec.cwd || "(unknown)";
-    const bucket = byPath.get(key) || { cwd: key, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
+    const bucket = byPath.get(key) || mkBucket(key);
     bucket.tokens_7d += (rec.inputTokens || 0) + (rec.outputTokens || 0);
+    bump(bucket, rec.lastActiveAt || rec.startedAt);
     byPath.set(key, bucket);
   }
 
   for (const p of projects) {
-    const existing = byPath.get(p.path) || { cwd: p.path, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
+    const existing = byPath.get(p.path) || mkBucket(p.path);
     existing.name = p.name;
     existing.avatar = p.avatar;
     existing.projectId = p.id;
     existing.anyAutomated = existing.anyAutomated || !!p.automation?.enabled;
+    bump(existing, p.last_active_at);
     byPath.set(p.path, existing);
   }
 
   for (const inst of liveInstances) {
     const key = inst.cwd;
-    const existing = byPath.get(key) || { cwd: key, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
+    const existing = byPath.get(key) || mkBucket(key);
     existing.live = (existing.live || 0) + 1;
     existing.anyRemote = existing.anyRemote || inst.is_remote;
     existing.anyAutomated = existing.anyAutomated || inst.kind === "automated";
+    bump(existing, inst.started_at);
+    existing.lastActiveMs = Math.max(existing.lastActiveMs, Date.now());
     byPath.set(key, existing);
   }
 
+  const settingsForSort = (await window.electronAPI?.getSettings?.()) || {};
+  const sortBy = settingsForSort.projects_sort_by || "recent";
+  const nameOf = (e) => (e.name || basenameProj(e.cwd) || "").toLowerCase();
   const entries = [...byPath.values()].sort((a, b) => {
-    if ((b.live || 0) !== (a.live || 0)) return (b.live || 0) - (a.live || 0);
-    return (b.tokens_7d || 0) - (a.tokens_7d || 0);
+    switch (sortBy) {
+      case "name":
+        return nameOf(a).localeCompare(nameOf(b));
+      case "live":
+        if ((b.live || 0) !== (a.live || 0)) return (b.live || 0) - (a.live || 0);
+        return (b.lastActiveMs || 0) - (a.lastActiveMs || 0);
+      case "tokens":
+        return (b.tokens_7d || 0) - (a.tokens_7d || 0);
+      case "recent":
+      default:
+        return (b.lastActiveMs || 0) - (a.lastActiveMs || 0);
+    }
   });
 
   const container = document.getElementById("projects-list");
@@ -517,11 +535,6 @@ async function renderProjectsList() {
   }
   empty.style.display = "none";
 
-  const s = (await window.electronAPI?.getSettings?.()) || {};
-  const mode = s.projects_view_mode || "grid";
-  container.classList.toggle("grid-mode", mode === "grid");
-  container.classList.toggle("list-mode", mode === "list");
-
   container.innerHTML = entries.map((e) => projectCardHtml(e)).join("");
   container.querySelectorAll(".project-card").forEach((el) => {
     el.onclick = () => openProjectDetail(el.dataset.cwd);
@@ -534,6 +547,9 @@ function projectCardHtml(entry) {
   const displayName = entry.name || basenameProj(entry.cwd);
   const avatar = renderAvatar(entry.avatar);
   const tokens = formatCompactTokens(entry.tokens_7d || 0);
+  const lastSeen = entry.lastActiveMs
+    ? (typeof timeAgo === "function" ? timeAgo(new Date(entry.lastActiveMs).toISOString()) : "")
+    : "";
   const tags = [
     entry.live ? `<span class="card-tag live">● ${entry.live}</span>` : "",
     entry.anyRemote ? `<span class="card-tag remote">📱</span>` : "",
@@ -544,7 +560,7 @@ function projectCardHtml(entry) {
       <div class="avatar">${avatar}</div>
       <div class="body">
         <div class="name">${escapeProjHtml(displayName)}${tags ? ` <span class="card-tags">${tags}</span>` : ""}</div>
-        <div class="tokens">${tokens} tokens · last 7d</div>
+        <div class="tokens">${tokens} tokens${lastSeen ? ` · ${lastSeen}` : ""}</div>
       </div>
     </div>
   `;
@@ -698,8 +714,8 @@ function setRunningInstancesEmpty(count) {
 
 function instanceRowHtml(i) {
   const uptime = uptimeFrom(i.started_at);
-  const kindClass = i.kind === "external" ? "external" : "";
-  const kindTag = i.kind === "automated" ? "Automated" : "External";
+  const kindClass = i.kind === "automated" ? "" : i.kind;
+  const kindTag = i.kind.charAt(0).toUpperCase() + i.kind.slice(1);
   const kindTagClass = i.kind === "automated" ? "automated" : "";
   const remoteTag = i.is_remote ? `<span class="tag remote">📱</span>` : "";
   const phoneDisabled = i.bridge_session_id ? "" : "disabled";
