@@ -167,15 +167,23 @@ async fn on_session_start(
     let state = ctx.app.state::<AppState>();
     let registry = state.instances.clone();
 
-    // Heuristic kind: if we spawned it, it's Automated. Plan B has no
-    // channels yet, so everything is External; Plan C will set kind
-    // explicitly when registering its own child.
+    // If the PID belongs to one of our spawned channels, treat as Automated + remote.
+    let (kind, is_remote) = {
+        let pid = payload.pid.unwrap_or(0);
+        let is_ours = state.channels.list().iter().any(|c| c.pid == Some(pid));
+        if is_ours {
+            (crate::types::InstanceKind::Automated, true)
+        } else {
+            (crate::types::InstanceKind::External, false)
+        }
+    };
+
     let input = crate::instances::RegisterInput {
         session_id: payload.session_id.clone(),
         cwd: std::path::PathBuf::from(cwd),
         pid: payload.pid.unwrap_or(0),
-        kind: crate::types::InstanceKind::External,
-        is_remote: false, // refined once bridgeSessionId resolves
+        kind,
+        is_remote,
         transcript_path: payload.transcript_path.map(std::path::PathBuf::from),
         started_at: now.clone(),
     };
