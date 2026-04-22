@@ -770,7 +770,6 @@ function renderProjectDetail() {
     if (prevBtn) prevBtn.disabled = true;
     if (nextBtn) nextBtn.disabled = true;
     renderSessionsList(cwd, range);
-    renderProjectOverrides(cwd);
     return;
   }
 
@@ -784,7 +783,6 @@ function renderProjectDetail() {
 
   chartContainer.innerHTML = buildBarChartSVG(visible);
   renderSessionsList(cwd, range);
-  renderProjectOverrides(cwd);
 }
 
 function buildBarChartSVG(days) {
