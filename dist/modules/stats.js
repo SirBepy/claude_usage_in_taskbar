@@ -867,3 +867,34 @@ function renderSessionsList(cwd, range) {
     if (typeof openAllSessions === "function") openAllSessions(cwd);
   };
 }
+
+function openAllSessions(cwd) {
+  if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("allSessions");
+  renderAllSessionsList(cwd);
+  if (typeof openProjectSubview === "function") openProjectSubview("project-sessions");
+}
+
+function renderAllSessionsList(cwd) {
+  const list = document.getElementById("all-sessions-list");
+  if (!list || !lastTokenHistory) return;
+  const mergedPaths = currentSettings.projectAliases?.[cwd]?.mergedPaths || [];
+  const allCwds = new Set([cwd, ...mergedPaths]);
+  let records = lastTokenHistory.filter((r) => allCwds.has(r.cwd) && totalTok(r) > 0);
+  if (!records.length) { list.innerHTML = `<div class="no-data">No sessions.</div>`; return; }
+  const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const rowsHTML = sorted.map((r, i) => {
+    const tot = totalTok(r);
+    const eff = cacheEffPct(r);
+    return `<div class="today-row session-row" data-session-idx="${i}" style="cursor:pointer">
+      <span style="font-family:'Fira Code',monospace;font-size:0.75rem;color:var(--text-dim)">${r.date}</span>
+      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${fmtK(tot)} tok · ${r.turns || 0} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
+    </div>`;
+  }).join("");
+  list.innerHTML = rowsHTML;
+  list.querySelectorAll(".session-row").forEach((el) => {
+    el.onclick = () => {
+      const idx = Number(el.dataset.sessionIdx);
+      if (typeof openSessionDetail === "function") openSessionDetail(sorted[idx], "project-sessions");
+    };
+  });
+}
