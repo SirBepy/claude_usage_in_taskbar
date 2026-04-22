@@ -29,7 +29,6 @@ pub fn spawn(app: AppHandle) {
                         snap.five_hour.utilization,
                         snap.seven_day.utilization,
                     );
-                    let _ = app.emit("usage-updated", snap);
                     sleep_until_next_target(interval_secs as i64).await;
                 }
                 Err(PollErr::NoSession) => {
@@ -149,6 +148,9 @@ pub async fn poll_once(app: &AppHandle, trigger: PollTrigger) -> Result<UsageSna
         st.display.lock().unwrap().spin_frame = None;
     }
     crate::tray::render_tray_now(app);
+    if let Ok(snap) = &result {
+        let _ = app.emit("usage-updated", snap.clone());
+    }
     result
 }
 

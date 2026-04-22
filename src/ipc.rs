@@ -380,10 +380,7 @@ pub fn play_pack_sound_preview(app: AppHandle, pack: String, sound: String) -> R
 #[tauri::command]
 pub async fn poll_now(app: AppHandle) -> Result<UsageSnapshot, String> {
     match crate::scheduler::poll_once(&app, crate::scheduler::PollTrigger::Manual).await {
-        Ok(snap) => {
-            let _ = app.emit("usage-updated", snap.clone());
-            Ok(snap)
-        }
+        Ok(snap) => Ok(snap),
         Err(e) => Err(format!("{e:?}")),
     }
 }
