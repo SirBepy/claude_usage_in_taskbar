@@ -156,6 +156,39 @@ pub fn get_project(id: String, state: State<AppState>) -> Option<ProjectConfig> 
     projects_test_helpers::get_from(&state.settings.lock().unwrap(), &id)
 }
 
+/// Ensures a `ProjectConfig` exists for the given cwd. If one is already
+/// registered (by exact path match) it is returned as-is; otherwise a fresh
+/// entry is created via `upsert_project_for_cwd` and persisted. Exposed for
+/// dashboard surfaces like the Project Detail view, which can open on a cwd
+/// seen only via token-stats (never hooked) and thus absent from
+/// `settings.projects`.
+#[tauri::command]
+pub fn ensure_project(
+    cwd: String,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<ProjectConfig, String> {
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let (project, changed, snapshot) = {
+        let mut guard = state.settings.lock().unwrap();
+        let (id, created) = crate::settings::upsert_project_for_cwd(
+            &mut guard,
+            std::path::Path::new(&cwd),
+            &now,
+        );
+        let p = guard.projects.iter().find(|p| p.id == id)
+            .cloned()
+            .ok_or("project upsert produced no entry")?;
+        (p, created, guard.clone())
+    };
+    if changed {
+        let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+        settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
+        let _ = app.emit("settings-changed", snapshot);
+    }
+    Ok(project)
+}
+
 #[tauri::command]
 pub fn update_project(
     id: String,

@@ -99,6 +99,7 @@ pub fn run() {
             ipc::sound_pack_file_url,
             ipc::list_projects,
             ipc::get_project,
+            ipc::ensure_project,
             ipc::update_project,
             ipc::delete_project,
             ipc::set_projects_view_mode,

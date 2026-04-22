@@ -139,6 +139,7 @@
     // --- Projects (Plan A shell; populated by Plan B) ---
     listProjects: () => invoke('list_projects'),
     getProject: (id) => invoke('get_project', { id }),
+    ensureProject: (cwd) => invoke('ensure_project', { cwd }),
     updateProject: async (id, patch) => {
       try { await invoke('update_project', { id, patch }); }
       catch (e) { console.error('update_project failed', e); throw e; }

@@ -141,9 +141,9 @@ async function renderAutomationForm() {
 
 document.getElementById("automateChannelBtn").onclick = async () => {
   if (!projectDetailState.cwd) return;
-  const projects = await window.electronAPI.listProjects();
-  const proj = projects.find((p) => p.path === projectDetailState.cwd);
-  if (!proj) return showToast("Project not found.");
+  let proj;
+  try { proj = await window.electronAPI.ensureProject(projectDetailState.cwd); }
+  catch (e) { return showToast(`Could not register project: ${e}`); }
   await window.electronAPI.updateProject(proj.id, {
     automation: {
       enabled: false,
