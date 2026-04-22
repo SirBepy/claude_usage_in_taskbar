@@ -70,7 +70,20 @@
       "Bash(git checkout *)",
       "Bash(git cherry-pick *)",
       "Bash(git ls-tree *)",
-      "PowerShell(Add-Type -AssemblyName System.Drawing; $b = New-Object System.Drawing.Bitmap 1024,1024; $g = [System.Drawing.Graphics]::FromImage\\($b\\); $g.SmoothingMode = 'AntiAlias'; $g.Clear\\([System.Drawing.Color]::FromArgb\\(24,24,28\\)\\); $brush = New-Object System.Drawing.SolidBrush \\([System.Drawing.Color]::FromArgb\\(217,119,87\\)\\); $g.FillEllipse\\($brush, 128, 128, 768, 768\\); $pen = New-Object System.Drawing.Pen \\([System.Drawing.Color]::FromArgb\\(24,24,28\\)\\), 80; $g.DrawArc\\($pen, 256, 256, 512, 512, -90, 270\\); $g.Dispose\\(\\); $b.Save\\(\"$PWD\\\\icon-source.png\", [System.Drawing.Imaging.ImageFormat]::Png\\); $b.Dispose\\(\\); \"done\")"
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $b = New-Object System.Drawing.Bitmap 1024,1024; $g = [System.Drawing.Graphics]::FromImage\\($b\\); $g.SmoothingMode = 'AntiAlias'; $g.Clear\\([System.Drawing.Color]::FromArgb\\(24,24,28\\)\\); $brush = New-Object System.Drawing.SolidBrush \\([System.Drawing.Color]::FromArgb\\(217,119,87\\)\\); $g.FillEllipse\\($brush, 128, 128, 768, 768\\); $pen = New-Object System.Drawing.Pen \\([System.Drawing.Color]::FromArgb\\(24,24,28\\)\\), 80; $g.DrawArc\\($pen, 256, 256, 512, 512, -90, 270\\); $g.Dispose\\(\\); $b.Save\\(\"$PWD\\\\icon-source.png\", [System.Drawing.Imaging.ImageFormat]::Png\\); $b.Dispose\\(\\); \"done\")",
+      "Bash(C:/Users/tecno/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh *)",
+      "Bash(cargo add *)",
+      "Bash(cargo fetch *)",
+      "Bash(cargo doc *)",
+      "Bash(cargo metadata *)",
+      "Bash(cargo rustc *)",
+      "Bash(cargo tree *)",
+      "Bash(cargo clean *)",
+      "Bash(python *)",
+      "Bash(sha384sum)",
+      "Bash(openssl dgst *)",
+      "Bash(openssl base64 *)",
+      "Bash(netstat -ano)"
     ]
   }
 }
