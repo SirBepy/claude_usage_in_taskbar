@@ -479,7 +479,7 @@ async function renderProjectsList() {
   for (const rec of tokenHistory) {
     const key = rec.cwd || "(unknown)";
     const bucket = byPath.get(key) || { cwd: key, tokens_7d: 0, live: 0, anyRemote: false, anyAutomated: false };
-    bucket.tokens_7d += (rec.input_tokens || 0) + (rec.output_tokens || 0);
+    bucket.tokens_7d += (rec.inputTokens || 0) + (rec.outputTokens || 0);
     byPath.set(key, bucket);
   }
 
@@ -512,6 +512,7 @@ async function renderProjectsList() {
   if (entries.length === 0) {
     container.innerHTML = "";
     empty.style.display = "block";
+    if (typeof setupBackfillBtn === "function") setupBackfillBtn();
     return;
   }
   empty.style.display = "none";
@@ -525,6 +526,8 @@ async function renderProjectsList() {
   container.querySelectorAll(".project-card").forEach((el) => {
     el.onclick = () => openProjectDetail(el.dataset.cwd);
   });
+
+  if (typeof setupBackfillBtn === "function") setupBackfillBtn();
 }
 
 function projectCardHtml(entry) {
