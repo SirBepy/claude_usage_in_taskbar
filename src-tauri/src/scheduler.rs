@@ -182,7 +182,7 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
     {
         let new_snap = app.state::<crate::state::AppState>().current_usage.lock().unwrap().clone();
         if let (Some(prev), Some(new)) = (prev_snap.as_ref(), new_snap.as_ref()) {
-            let icon_s = crate::icon_settings::IconSettings::try_from(
+            let icon_s = crate::tray::IconSettings::try_from(
                 &*app.state::<crate::state::AppState>().settings.lock().unwrap()
             ).unwrap_or_default();
             let prev_sess = Some(crate::usage_parser::session_pct(prev));

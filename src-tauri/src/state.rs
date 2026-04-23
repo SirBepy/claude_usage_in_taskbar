@@ -1,7 +1,7 @@
 //! Runtime app state shared across Tauri commands and background tasks.
 
 use crate::channels::Manager as ChannelsManager;
-use crate::display_state::TrayDisplayState;
+use crate::tray::TrayDisplayState;
 use crate::instances::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
 use std::sync::{Arc, Mutex};

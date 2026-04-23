@@ -4,7 +4,7 @@
 //! icon range gets a soft alpha based on distance from the ring's boundary,
 //! then blended over whatever is already in the buffer (pre-multiplied).
 
-use crate::icon_settings::{ColorMode, IconSettings, IconStyle};
+use crate::tray::threshold::{ColorMode, IconSettings, IconStyle};
 use image::{ImageBuffer, ImageEncoder, Rgba, RgbaImage};
 
 pub const SIZE: u32 = 22;
@@ -67,11 +67,11 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
             let val = (pct.round() as i32).clamp(0, 99) as u32;
             let text = val.to_string();
             let size_px = overlay_size_px(&text);
-            let (tw, th) = crate::fonts::measure_text(&text, size_px);
+            let (tw, th) = crate::tray::fonts::measure_text(&text, size_px);
             let x = ((SIZE as i32 - tw as i32) / 2).max(0);
             let y = ((SIZE as i32 - th as i32) / 2).max(0);
             let color = color_for(Some(pct), ctx, safe, /*is_icon=*/false);
-            crate::fonts::draw_text(&mut img, &text, x, y, color, size_px);
+            crate::tray::fonts::draw_text(&mut img, &text, x, y, color, size_px);
         }
     }
     encode_png(&img)
@@ -251,7 +251,7 @@ pub fn render_rings(sess: Option<f32>, weekly: Option<f32>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icon_settings::{ColorApplyTo, ColorMode, ColorStop, IconSettings, IconStyle, PaceColors, DefaultDisplay};
+    use crate::tray::threshold::{ColorApplyTo, ColorMode, ColorStop, IconSettings, IconStyle, PaceColors, DefaultDisplay};
     use image::GenericImageView;
 
     fn test_settings() -> IconSettings {

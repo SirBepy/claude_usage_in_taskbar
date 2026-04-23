@@ -5,7 +5,7 @@ use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use image::{Rgba, RgbaImage};
 use std::sync::OnceLock;
 
-const FONT_BYTES: &[u8] = include_bytes!("../assets/Inter-SemiBold.ttf");
+const FONT_BYTES: &[u8] = include_bytes!("../../assets/Inter-SemiBold.ttf");
 
 fn font() -> &'static FontRef<'static> {
     static FONT: OnceLock<FontRef<'static>> = OnceLock::new();

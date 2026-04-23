@@ -1,7 +1,7 @@
 //! Pure math + formatting helpers. No Tauri deps. `now` is always injected
 //! so tests stay deterministic.
 
-use crate::icon_settings::{ColorMode, ColorStop, IconSettings, TimeStyle, TooltipLayout, TooltipSettings};
+use crate::tray::{ColorMode, ColorStop, IconSettings, TimeStyle, TooltipLayout, TooltipSettings};
 use crate::types::UsageSnapshot;
 use chrono::{DateTime, Duration, Utc};
 
@@ -177,7 +177,7 @@ fn pace_summary(pct: f32, safe: Option<f32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icon_settings::ColorStop;
+    use crate::tray::ColorStop;
     use chrono::TimeZone;
 
     fn snap(five: f64, five_resets: &str, weekly: f64, weekly_resets: &str) -> UsageSnapshot {

@@ -14,7 +14,7 @@
 //! override is active", not "the notification itself fires". When `enabled`
 //! is false, we treat the whole rule as absent (inherit default).
 
-use crate::icon_settings::NotificationRule;
+use crate::tray::NotificationRule;
 use crate::types::Settings;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -30,12 +30,12 @@ fn parse_rule(v: &Value, defaults: NotificationRule) -> Option<NotificationRule>
     let m = v.as_object()?;
     let enabled = m.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
     if !enabled { return None; }
-    let rule = crate::icon_settings::rule_from_public(m, defaults);
+    let rule = crate::tray::rule_from_public(m, defaults);
     Some(rule)
 }
 
 pub fn parse(s: &Settings) -> HashMap<String, ProjectOverrides> {
-    let defaults = crate::icon_settings::NotificationsConfig::default();
+    let defaults = crate::tray::NotificationsConfig::default();
     let Some(obj) = s.extra.get("projectNotifOverrides").and_then(|v| v.as_object()) else {
         return HashMap::new();
     };

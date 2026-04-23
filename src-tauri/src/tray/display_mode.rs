@@ -1,7 +1,7 @@
 //! Display-cycle state for the tray. Pure logic — no Tauri deps.
 
-use crate::icon::DisplayMode;
-use crate::icon_settings::DefaultDisplay;
+use crate::tray::icon_render::DisplayMode;
+use crate::tray::threshold::DefaultDisplay;
 use std::time::{Duration, Instant};
 
 pub const RESET_AFTER: Duration = Duration::from_secs(60);

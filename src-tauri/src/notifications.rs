@@ -1,7 +1,7 @@
 //! Notification firing: workFinished / questionAsked / thresholdCrossed.
 
 use crate::audio;
-use crate::icon_settings::NotifMode;
+use crate::tray::NotifMode;
 use crate::project_overrides::{self, ProjectOverrides};
 use crate::state::AppState;
 use crate::types::Settings;
@@ -19,11 +19,11 @@ pub struct NotifContext {
 /// Resolves the active notification rule for this event + project.
 /// Returns the project-specific override if one is enabled, else the global default.
 pub fn resolve_notif_config(
-    cfg: &crate::icon_settings::NotificationsConfig,
+    cfg: &crate::tray::NotificationsConfig,
     overrides: &std::collections::HashMap<String, ProjectOverrides>,
     kind: NotifKind,
     cwd_key: Option<&str>,
-) -> crate::icon_settings::NotificationRule {
+) -> crate::tray::NotificationRule {
     let default_rule = match kind {
         NotifKind::WorkFinished     => cfg.work_finished.clone(),
         NotifKind::QuestionAsked    => cfg.question_asked.clone(),
@@ -51,7 +51,7 @@ pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option
     let state = app.state::<AppState>();
     let settings_snapshot = state.settings.lock().unwrap().clone();
 
-    let cfg: crate::icon_settings::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
+    let cfg: crate::tray::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
     let overrides = project_overrides::parse(&settings_snapshot);
     let rule = resolve_notif_config(&cfg, &overrides, kind, cwd_key);
     if !rule.enabled { return; }
@@ -122,7 +122,7 @@ pub fn speak_public(app: &AppHandle, text: &str, voice: Option<&str>) { speak(ap
 mod tests {
     use super::*;
 
-    use crate::icon_settings::NotifMode;
+    use crate::tray::NotifMode;
     use crate::types::Settings;
 
     fn settings_with(key: &str, val: bool) -> Settings {
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn resolver_returns_default_when_no_cwd() {
-        use crate::icon_settings::NotificationsConfig;
+        use crate::tray::NotificationsConfig;
         use std::collections::HashMap;
         let cfg = NotificationsConfig::default();
         let rule = resolve_notif_config(&cfg, &HashMap::new(), NotifKind::WorkFinished, None);
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn resolver_returns_default_when_project_has_no_override() {
-        use crate::icon_settings::NotificationsConfig;
+        use crate::tray::NotificationsConfig;
         use std::collections::HashMap;
         let cfg = NotificationsConfig::default();
         let rule = resolve_notif_config(&cfg, &HashMap::new(), NotifKind::WorkFinished, Some("C:/x"));
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn resolver_returns_override_when_enabled() {
-        use crate::icon_settings::{NotificationsConfig, NotifMode, NotificationRule};
+        use crate::tray::{NotificationsConfig, NotifMode, NotificationRule};
         use crate::project_overrides::ProjectOverrides;
         use std::collections::HashMap;
         let cfg = NotificationsConfig::default();
