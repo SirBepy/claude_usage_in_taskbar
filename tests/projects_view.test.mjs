@@ -32,6 +32,10 @@ const sessionsListTs = readFileSync(
   join(distDir, "views", "project-detail", "subviews", "sessions-list", "sessions-list.ts"),
   "utf8",
 );
+const sessionDetailTs = readFileSync(
+  join(distDir, "views", "session-detail", "session-detail.ts"),
+  "utf8",
+);
 
 describe("Projects view DOM", () => {
   it("has a projects-list container in the migrated view", () => {
@@ -64,7 +68,7 @@ describe("Projects view DOM", () => {
     expect(automationTs).toMatch(/view-project-automation/);
     expect(folderMappingTs).toMatch(/view-project-folder-mapping/);
     expect(sessionsListTs).toMatch(/view-project-sessions/);
-    expect(html).toMatch(/id="view-session-detail"/);
+    expect(sessionDetailTs).toMatch(/view-session-detail/);
   });
 
   it("each project subview has a back button", () => {
@@ -72,7 +76,7 @@ describe("Projects view DOM", () => {
     expect(automationTs).toMatch(/id="automationBackBtn"/);
     expect(folderMappingTs).toMatch(/id="folderMappingBackBtn"/);
     expect(sessionsListTs).toMatch(/id="allSessionsBackBtn"/);
-    expect(html).toMatch(/id="sessionDetailBackBtn"/);
+    expect(sessionDetailTs).toMatch(/id="sessionDetailBackBtn"/);
   });
 
   it("automation + notif-override + path-editor DOM moved out of project-detail view", () => {

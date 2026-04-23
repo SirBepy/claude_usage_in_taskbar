@@ -837,142 +837,28 @@ function renderAllSessionsList(cwd) {
   });
 }
 
+// Session-detail DOM rendering + live polling live in
+// src/views/session-detail/session-detail.ts. The view reads
+// `window.currentSessionRecord` on mount and cleans up its own interval
+// in the teardown returned to the router, so stopLiveSessionPolling is a
+// no-op but kept for compatibility with showView's defensive call.
 let currentSessionRecord = null;
-let liveSessionTimer = null;
-let liveSessionId = null;
+Object.defineProperty(window, "currentSessionRecord", {
+  configurable: true,
+  get() { return currentSessionRecord; },
+  set(v) { currentSessionRecord = v; },
+});
 
 function isLiveInstance(record) {
   return !!(record && record.session_id && record.kind);
 }
 
-function stopLiveSessionPolling() {
-  if (liveSessionTimer) { clearInterval(liveSessionTimer); liveSessionTimer = null; }
-  liveSessionId = null;
-}
+function stopLiveSessionPolling() { /* owned by the migrated view */ }
 
 function openSessionDetail(record, originView) {
   if (!record) return;
-  stopLiveSessionPolling();
   currentSessionRecord = record;
-  const cwd = projectDetailState.cwd;
-  const configuredProject = (currentSettings.projects || []).find((p) => p.path === cwd);
-  const avatar = configuredProject?.avatar || { kind: "emoji", value: (configuredProject?.name || cwd || "?").charAt(0) };
-  const avatarEl = document.getElementById("sessionDetailAvatar");
-  const titleEl = document.getElementById("sessionDetailTitle");
-  const pathEl = document.getElementById("sessionDetailPath");
-  if (avatarEl) avatarEl.innerHTML = (typeof renderAvatar === "function") ? renderAvatar(avatar) : "?";
-
-  const live = isLiveInstance(record);
-  if (titleEl) {
-    titleEl.textContent = live
-      ? `Live session - pid ${record.pid > 0 ? record.pid : "?"}`
-      : `Session - ${record.date || "unknown date"}`;
-  }
-  if (pathEl) pathEl.textContent = cwd || "";
-
-  renderSessionDetailChrome(record);
-  renderSessionDetail(record);
-
-  if (live) {
-    liveSessionId = record.session_id;
-    liveSessionTimer = setInterval(() => refreshLiveSession(record), 2500);
-  }
-
   const origin = originView || "project-detail";
   if (typeof openSessionDetailView === "function") openSessionDetailView(origin);
   else showView("session-detail");
-}
-
-function renderSessionDetailChrome(record) {
-  const chips = document.getElementById("session-detail-chips");
-  const actions = document.getElementById("session-detail-actions");
-  const live = isLiveInstance(record);
-  if (!live) {
-    if (chips) { chips.style.display = "none"; chips.innerHTML = ""; }
-    if (actions) { actions.style.display = "none"; actions.innerHTML = ""; }
-    return;
-  }
-
-  if (chips) {
-    const parts = [`<span class="chip active">● Active</span>`];
-    if (record.kind === "automated") parts.push(`<span class="chip automated">⚙ Automated</span>`);
-    if (record.is_remote) parts.push(`<span class="chip remote">📱 Remote</span>`);
-    chips.innerHTML = parts.join("");
-    chips.style.display = "flex";
-  }
-
-  if (actions) {
-    const isAutomated = record.kind === "automated";
-    const projectId = record.project_id;
-    const buttons = [];
-    if (isAutomated) buttons.push(`<button class="act-btn" data-act="term">term</button>`);
-    if (record.bridge_session_id) buttons.push(`<button class="act-btn" data-act="phone">phone</button>`);
-    if (isAutomated) {
-      buttons.push(`<button class="act-btn" data-act="restart">restart</button>`);
-      buttons.push(`<button class="act-btn" data-act="stop">stop</button>`);
-    }
-    if (!buttons.length) {
-      actions.style.display = "none"; actions.innerHTML = "";
-    } else {
-      actions.innerHTML = buttons.join("");
-      actions.style.display = "flex";
-      actions.querySelectorAll(".act-btn").forEach((btn) => {
-        btn.onclick = async () => {
-          const act = btn.dataset.act;
-          try {
-            if (act === "term") await window.electronAPI.showTerminal(projectId);
-            else if (act === "restart") { await window.electronAPI.restartChannel(projectId); showToast("Restarting…"); }
-            else if (act === "stop") { await window.electronAPI.stopChannel(projectId); showToast("Stopped."); }
-            else if (act === "phone") {
-              const url = await window.electronAPI.phoneLink(record.session_id);
-              if (!url) return showToast("Phone link not available yet.");
-              await navigator.clipboard.writeText(url);
-              showToast(`Copied: ${url}`);
-            }
-          } catch (e) { showToast(`${act} failed: ${e}`); }
-        };
-      });
-    }
-  }
-}
-
-async function refreshLiveSession(record) {
-  if (liveSessionId !== record.session_id) return;
-  try {
-    const stats = await window.electronAPI.instanceTokenStats(record.session_id);
-    if (liveSessionId !== record.session_id) return;
-    renderSessionDetail(record, stats);
-  } catch (e) { /* ignore transient */ }
-}
-
-function renderSessionDetail(r, liveStats) {
-  const body = document.getElementById("session-detail-body");
-  if (!body) return;
-  const live = isLiveInstance(r);
-  let rows;
-  if (live) {
-    const s = liveStats || {};
-    rows = [
-      ["Started", r.started_at || "-"],
-      ["Uptime", typeof uptimeFrom === "function" ? uptimeFrom(r.started_at) : "-"],
-      ["Prompts", String(s.prompts ?? 0)],
-      ["Turns", String(s.turns ?? 0)],
-      ["Tokens", fmtK(s.tokens ?? 0)],
-      ["Session id", r.session_id || "-"],
-    ];
-  } else {
-    rows = [
-      ["Date", r.date || "-"],
-      ["Turns", String(r.turns ?? 0)],
-      ["Total tokens", fmtK(totalTok(r))],
-      ["Input", fmtK(r.inputTokens ?? 0)],
-      ["Output", fmtK(r.outputTokens ?? 0)],
-      ["Cache read", fmtK(r.cacheReadTokens ?? 0)],
-      ["Cache create", fmtK(r.cacheCreationTokens ?? 0)],
-      ["Cache efficiency", `${cacheEffPct(r)}%`],
-    ];
-  }
-  body.innerHTML = `<div class="session-detail-list">${rows.map(([k, v]) => `
-    <div class="session-detail-row"><span class="label">${k}</span><span>${v}</span></div>
-  `).join("")}</div>`;
 }

@@ -997,31 +997,8 @@ input:checked+.slider:before {
 /* Running-instances rules (.instance-row and its descendants) moved to
  * src/views/project-detail/project-detail.css. */
 
-/* ── Session detail chip + action bar ───────────────────────────────────── */
-.chip-bar {
-  display: flex; gap: 6px; flex-wrap: wrap;
-  padding: 8px 14px 0;
-}
-.chip {
-  background: var(--surface-alt, #2a2a3a);
-  color: var(--text-dim, #8a8aa0);
-  padding: 3px 9px; border-radius: 12px;
-  font-size: 0.7rem; font-weight: 500;
-}
-.chip.active { background: #1d3a23; color: #6ad98a; }
-.chip.automated { background: #3a2a1d; color: #f2b457; }
-.chip.remote { background: #2a2845; color: #8a9eff; }
-.session-detail-actions {
-  display: flex; gap: 6px; flex-wrap: wrap;
-  padding: 8px 14px 0;
-}
-.session-detail-actions .act-btn {
-  padding: 5px 10px; font-size: 0.72rem;
-  background: var(--surface-alt, #2a2a3a);
-  border: 0; border-radius: 4px;
-  color: var(--text, #c5c5d6);
-  cursor: pointer;
-}
+/* Session-detail chip + action bar rules moved to
+ * src/views/session-detail/session-detail.css. */
 
 /* ── Project card tags ───────────────────────────────────────────────────── */
 .card-tags { margin-left: 6px; }
@@ -1083,7 +1060,5 @@ input:checked+.slider:before {
 }
 .see-all-link:hover { text-decoration: underline; }
 
-/* Session detail definition list */
-.session-detail-list { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
-.session-detail-row { display: flex; justify-content: space-between; font-family: 'Fira Code', monospace; font-size: 0.78rem; }
-.session-detail-row .label { color: var(--text-dim); }
+/* Session detail definition list rules moved to
+ * src/views/session-detail/session-detail.css. */
