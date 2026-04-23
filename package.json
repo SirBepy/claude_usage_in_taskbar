@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "cargo test --manifest-path src-tauri/Cargo.toml --test export_types",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
