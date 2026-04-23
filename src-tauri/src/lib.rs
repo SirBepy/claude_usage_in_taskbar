@@ -27,7 +27,6 @@ pub mod state;
 pub mod tokens;
 pub mod tray;
 pub mod types;
-pub mod vault_detector;
 
 use crate::state::AppState;
 use crate::types::AuthState;

@@ -299,7 +299,7 @@ pub fn check_paths_exist(paths: Vec<String>) -> std::collections::HashMap<String
 
 #[tauri::command]
 pub fn detect_obsidian_vaults() -> Vec<std::path::PathBuf> {
-    crate::vault_detector::detect().unwrap_or_default()
+    crate::channels::vault_detector::detect().unwrap_or_default()
 }
 
 // --- Instances ---
