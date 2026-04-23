@@ -1,0 +1,5 @@
+/* Global design tokens (spacing scales, radii, z-index tiers).
+ * Currently empty: the legacy dashboard.css relies only on theme-scoped
+ * variables declared in themes.css. Adding shared tokens here is a
+ * Phase 4 concern.
+ */
