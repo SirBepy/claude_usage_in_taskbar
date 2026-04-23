@@ -65,7 +65,7 @@ function installTauriStub(window, history) {
 }
 
 async function bootDashboard(history) {
-  const rawHtml = readFileSync(join(distDir, "dashboard.html"), "utf8");
+  const rawHtml = readFileSync(join(distDir, "index.html"), "utf8");
   // Strip <script src="..."> tags so jsdom doesn't try to fetch them (it
   // has no base URL for file:// serving). We re-append them manually once
   // the __TAURI__ stub is in place.
@@ -157,7 +157,7 @@ describe("dashboard project-list wiring (sort + row click reach openProjectDetai
   // does this in getUsageHistory). We feed the legacy shape directly because
   // this test bypasses the shim for speed.
   async function boot() {
-    const rawHtml = readFileSync(join(distDir, "dashboard.html"), "utf8");
+    const rawHtml = readFileSync(join(distDir, "index.html"), "utf8");
     const scriptSrcs = [...rawHtml.matchAll(/<script\s+src="([^"]+)"[^>]*><\/script>/g)].map((m) => m[1]);
     const html = rawHtml.replace(/<script\s+src="[^"]+"[^>]*><\/script>/g, "");
     const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });

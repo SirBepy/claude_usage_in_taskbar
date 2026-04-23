@@ -75,7 +75,7 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `src-tauri/src/types/project.rs` | Project-related structs |
 | `src-tauri/src/types/automation.rs` | Automation config, InstanceKind |
 | `src-tauri/src/types/notifications.rs` | Notif event kinds + overrides |
-| `src/dashboard.html` | Dashboard + settings UI (single-file SPA) |
+| `src/index.html` | Dashboard + settings UI (single-file SPA) |
 | `src/dashboard.css` | Dashboard styles |
 | `src/dashboard.js` | Dashboard renderer logic |
 | `src/modules/*.js` | Chart, formatters, settings, sound-packs, stats, speech-fallback |

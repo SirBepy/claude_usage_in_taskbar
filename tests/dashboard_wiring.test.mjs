@@ -20,7 +20,7 @@ import vm from "node:vm";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "src");
 
-const html = readFileSync(join(distDir, "dashboard.html"), "utf8");
+const html = readFileSync(join(distDir, "index.html"), "utf8");
 
 describe("dashboard.html CSP", () => {
   const cspMatch = html.match(

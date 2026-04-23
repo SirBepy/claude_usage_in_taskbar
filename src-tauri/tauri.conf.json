@@ -15,7 +15,7 @@
       {
         "label": "main",
         "title": "Claude Usage",
-        "url": "dashboard.html",
+        "url": "index.html",
         "width": 520,
         "height": 720,
         "minWidth": 360,
