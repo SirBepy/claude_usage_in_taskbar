@@ -7,13 +7,15 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct PackSound {
     pub id: String,
     pub label: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct SoundPack {
     pub id: String,
     pub label: String,

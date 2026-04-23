@@ -4,14 +4,16 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct VoiceEntry {
     pub id: String,
     pub label: String,
     pub installed: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct PiperStatus {
     pub installed: bool,
     pub voices: Vec<VoiceEntry>,

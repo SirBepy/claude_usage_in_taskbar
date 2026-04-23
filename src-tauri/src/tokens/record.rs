@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 /// One session's aggregated token counts, as persisted and returned to the UI.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TokenRecord {
     pub session_id: String,
@@ -54,7 +55,8 @@ pub struct TokenTotals {
 
 /// Result of a `backfill_all()` run — reported back to the renderer so it can
 /// render "Done — X new, Y skipped".
-#[derive(Serialize, Clone, Debug, Default)]
+#[derive(Serialize, Clone, Debug, Default, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct BackfillResult {
     pub processed: u32,

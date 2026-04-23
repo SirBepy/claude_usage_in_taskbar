@@ -5,6 +5,9 @@
 //! file. Instead, we drop `export` from the derives and write the file
 //! ourselves by composing each type's `decl()` into a single output.
 
+use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
+use claude_usage_tauri_lib::notifications::soundpacks::{PackSound, SoundPack};
+use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
 use std::fs;
 use std::path::PathBuf;
@@ -48,6 +51,18 @@ fn emit_ipc_types() {
     // notifications (settings module)
     out.push_str(&decl::<DisplayMode>());
     out.push_str(&decl::<Settings>());
+
+    // tokens
+    out.push_str(&decl::<TokenRecord>());
+    out.push_str(&decl::<BackfillResult>());
+
+    // sound packs
+    out.push_str(&decl::<PackSound>());
+    out.push_str(&decl::<SoundPack>());
+
+    // piper
+    out.push_str(&decl::<VoiceEntry>());
+    out.push_str(&decl::<PiperStatus>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {
