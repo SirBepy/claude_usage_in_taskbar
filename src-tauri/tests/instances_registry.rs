@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::instances::{Registry, RegisterInput};
+use claude_usage_tauri_lib::hooks::instances::{Registry, RegisterInput};
 use claude_usage_tauri_lib::types::{EndReason, Instance, InstanceKind, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;

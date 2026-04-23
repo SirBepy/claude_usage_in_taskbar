@@ -365,13 +365,13 @@ pub fn register_hooks_globally(
         let s = state.settings.lock().unwrap();
         s.hook_port.ok_or_else(|| "hook server not started yet".to_string())?
     };
-    crate::hook_installer::install(crate::hook_installer::HookConfig { port })
+    crate::hooks::install(crate::hooks::HookConfig { port })
         .map_err(|e| e.to_string())?;
     let snapshot = {
         let mut g = state.settings.lock().unwrap();
         g.hooks_registered = true;
         g.hook_registration_declined = false;
-        g.hook_install_version = crate::hook_installer::CURRENT_INSTALL_VERSION;
+        g.hook_install_version = crate::hooks::CURRENT_INSTALL_VERSION;
         g.clone()
     };
     let path = paths::settings_file().map_err(|e| e.to_string())?;

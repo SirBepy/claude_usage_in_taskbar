@@ -3,7 +3,7 @@
 //! test doesn't boot Tauri; integration-testing a tauri::command is out of
 //! scope. This test talks to the raw Registry through a minimal mock.
 
-use claude_usage_tauri_lib::instances::{Registry, RegisterInput};
+use claude_usage_tauri_lib::hooks::instances::{Registry, RegisterInput};
 use claude_usage_tauri_lib::types::{EndReason, InstanceKind, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;

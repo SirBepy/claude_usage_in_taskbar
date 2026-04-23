@@ -1,5 +1,5 @@
-use claude_usage_tauri_lib::detector::{ReconcileInput, reconcile};
-use claude_usage_tauri_lib::instances::{Registry, RegisterInput};
+use claude_usage_tauri_lib::hooks::detector::{ReconcileInput, reconcile};
+use claude_usage_tauri_lib::hooks::instances::{Registry, RegisterInput};
 use claude_usage_tauri_lib::types::{EndReason, InstanceKind, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;

@@ -178,7 +178,7 @@ async fn on_session_start(
         }
     };
 
-    let input = crate::instances::RegisterInput {
+    let input = crate::hooks::RegisterInput {
         session_id: payload.session_id.clone(),
         cwd: std::path::PathBuf::from(cwd),
         pid: payload.pid.unwrap_or(0),
@@ -206,7 +206,7 @@ async fn on_session_start(
     let pid_opt = payload.pid;
     tauri::async_runtime::spawn(async move {
         let Some(pid) = pid_opt else { return };
-        if let Some(bridge) = crate::session_files::resolve_bridge_session_id(pid).await {
+        if let Some(bridge) = crate::hooks::resolve_bridge_session_id(pid).await {
             let s = h.state::<AppState>();
             s.instances.set_bridge_session_id(&sid, bridge);
             let _ = h.emit("instances-changed", s.instances.list());

@@ -1,21 +1,17 @@
 pub mod audio;
 pub mod channels;
-pub mod hook_installer;
 pub mod auth;
-pub mod detector;
+pub mod hooks;
 pub mod project_overrides;
 pub mod notifications;
 pub mod soundpacks;
 pub mod piper;
 pub mod usage_parser;
 pub mod history;
-pub mod hook_server;
-pub mod instances;
 pub mod ipc;
 pub mod paths;
 pub mod scheduler;
 pub mod scraper;
-pub mod session_files;
 pub mod settings;
 pub mod state;
 pub mod tokens;
@@ -184,7 +180,7 @@ pub fn run() {
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::hook_server::spawn(handle.clone()).await {
+                if let Err(e) = crate::hooks::spawn(handle.clone()).await {
                     log::error!("hook server spawn failed: {e}");
                     return;
                 }
@@ -194,7 +190,7 @@ pub fn run() {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     rehydrate_instances_from_session_files(&h);
-                    crate::detector::run(h).await
+                    crate::hooks::run(h).await
                 });
             }
             {
@@ -259,18 +255,18 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
     let (should_run, port) = {
         let s = state.settings.lock().unwrap();
         let stale = s.hooks_registered
-            && s.hook_install_version < crate::hook_installer::CURRENT_INSTALL_VERSION;
+            && s.hook_install_version < crate::hooks::CURRENT_INSTALL_VERSION;
         (stale, s.hook_port)
     };
     if !should_run { return; }
     let Some(port) = port else { return };
-    if let Err(e) = crate::hook_installer::install(crate::hook_installer::HookConfig { port }) {
+    if let Err(e) = crate::hooks::install(crate::hooks::HookConfig { port }) {
         log::warn!("hook install migration failed: {e}");
         return;
     }
     let snapshot = {
         let mut g = state.settings.lock().unwrap();
-        g.hook_install_version = crate::hook_installer::CURRENT_INSTALL_VERSION;
+        g.hook_install_version = crate::hooks::CURRENT_INSTALL_VERSION;
         g.clone()
     };
     if let Ok(path) = paths::settings_file() {
@@ -279,7 +275,7 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
     let _ = app.emit("settings-changed", snapshot);
     log::info!(
         "hook install migrated to v{}",
-        crate::hook_installer::CURRENT_INSTALL_VERSION
+        crate::hooks::CURRENT_INSTALL_VERSION
     );
 }
 
@@ -303,7 +299,7 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         .map(|(p, proc)| (p.as_u32(), proc.start_time()))
         .collect();
 
-    let scanned = crate::session_files::scan_live_sessions(&live_processes);
+    let scanned = crate::hooks::scan_live_sessions(&live_processes);
     if scanned.is_empty() { return; }
 
     let mut added = 0usize;
@@ -319,7 +315,7 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
             (crate::types::InstanceKind::External, false)
         };
         let transcript_path = crate::tokens::latest_transcript_for_cwd(&s.cwd);
-        let input = crate::instances::RegisterInput {
+        let input = crate::hooks::RegisterInput {
             session_id: s.session_id.clone(),
             cwd: s.cwd,
             pid: s.pid,
