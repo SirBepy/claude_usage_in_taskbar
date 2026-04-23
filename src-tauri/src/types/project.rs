@@ -64,3 +64,53 @@ pub struct Instance {
 /// distinct type so future payload tweaks don't require a registry-wide
 /// schema change.
 pub type InstanceSummary = Instance;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_config_roundtrips_json() {
+        let p = ProjectConfig {
+            id: "abc".into(),
+            path: std::path::PathBuf::from("C:/x/y"),
+            name: "YProject".into(),
+            avatar: Avatar::Emoji("🪶".into()),
+            automation: None,
+            created_at: "2026-04-21T00:00:00Z".into(),
+            last_active_at: None,
+        };
+        let raw = serde_json::to_string(&p).unwrap();
+        let back: ProjectConfig = serde_json::from_str(&raw).unwrap();
+        assert_eq!(p, back);
+    }
+
+    #[test]
+    fn avatar_serializes_as_tagged_enum() {
+        let a = Avatar::Emoji("🦊".into());
+        let raw = serde_json::to_string(&a).unwrap();
+        assert_eq!(raw, r#"{"kind":"emoji","value":"🦊"}"#);
+        let back: Avatar = serde_json::from_str(&raw).unwrap();
+        assert_eq!(a, back);
+    }
+
+    #[test]
+    fn instance_roundtrips_json() {
+        let i = Instance {
+            session_id: "s1".into(),
+            pid: 1234,
+            cwd: std::path::PathBuf::from("C:/x"),
+            project_id: "proj-a".into(),
+            kind: InstanceKind::External,
+            is_remote: false,
+            started_at: "2026-04-21T10:00:00Z".into(),
+            transcript_path: Some(std::path::PathBuf::from("C:/t/abc.jsonl")),
+            bridge_session_id: None,
+            ended_at: None,
+            end_reason: None,
+        };
+        let raw = serde_json::to_string(&i).unwrap();
+        let back: Instance = serde_json::from_str(&raw).unwrap();
+        assert_eq!(i, back);
+    }
+}

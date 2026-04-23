@@ -44,3 +44,37 @@ pub enum ChannelStatus {
     /// Crashed and backoff has exhausted; no automatic restart.
     Crashed,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn instance_kind_serializes_lowercase() {
+        let a = InstanceKind::Automated;
+        let e = InstanceKind::External;
+        assert_eq!(serde_json::to_string(&a).unwrap(), "\"automated\"");
+        assert_eq!(serde_json::to_string(&e).unwrap(), "\"external\"");
+    }
+
+    #[test]
+    fn end_reason_serializes_kebab_case() {
+        let cases: Vec<(EndReason, &str)> = vec![
+            (EndReason::HookSessionEnd, "\"hook-session-end\""),
+            (EndReason::ProcessGone, "\"process-gone\""),
+            (EndReason::ChildExit, "\"child-exit\""),
+            (EndReason::Manual, "\"manual\""),
+        ];
+        for (r, expected) in cases {
+            assert_eq!(serde_json::to_string(&r).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn channel_status_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&ChannelStatus::Running).unwrap(),
+            "\"running\""
+        );
+    }
+}
