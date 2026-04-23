@@ -1,6 +1,8 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import "./dashboard.css";
+import { fmtPct, fmtResetTime, valueColor } from "../../shared/formatters";
+import { getSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
 
 type LegacyRecord = {
   hour: string;
@@ -19,9 +21,6 @@ interface ElectronAPI {
 
 interface LegacyGlobals {
   electronAPI?: ElectronAPI;
-  fmtPct(v: number | null | undefined): string;
-  fmtResetTime(iso: string | null): string;
-  valueColor(pct: number, safePace: number | null): string;
   buildPinnedCardsHTML(history: LegacyRecord[]): string;
   setupPaginationButtons(container?: HTMLElement): void;
   setupLegendToggles(): void;
@@ -36,7 +35,10 @@ function g(): LegacyGlobals {
 }
 
 let refreshBusy = false;
-let lastHistory: LegacyRecord[] | null = null;
+
+function getHistory(): LegacyRecord[] | null {
+  return getUsageHistory() as LegacyRecord[] | null;
+}
 
 export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   render(template(), root);
@@ -44,9 +46,9 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   if (content) drawInto(content);
 
   const api = g().electronAPI;
-  if (api && !lastHistory) {
+  if (api && !getHistory()) {
     try {
-      lastHistory = await api.getUsageHistory();
+      setUsageHistory(await api.getUsageHistory());
       if (content) drawInto(content);
     } catch (e) {
       console.error("[dashboard] initial history fetch failed", e);
@@ -54,7 +56,7 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   }
 
   const unlisten = api?.onHistoryUpdated((h) => {
-    lastHistory = h;
+    setUsageHistory(h);
     const el = root.querySelector<HTMLElement>("#stats-content");
     if (el) drawInto(el);
   });
@@ -118,7 +120,7 @@ async function onRefreshClick(e: Event) {
 }
 
 function drawInto(container: HTMLElement): void {
-  const history = lastHistory;
+  const history = getHistory();
   if (!history || history.length === 0) {
     container.innerHTML = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
     return;
@@ -126,8 +128,9 @@ function drawInto(container: HTMLElement): void {
 
   const latest = history[history.length - 1]!;
   const gl = g();
-  const sessionReset = gl.fmtResetTime(latest.session_resets_at);
-  const weeklyReset = gl.fmtResetTime(latest.weekly_resets_at);
+  const settings = getSettings();
+  const sessionReset = fmtResetTime(latest.session_resets_at);
+  const weeklyReset = fmtResetTime(latest.weekly_resets_at);
 
   const weeklyEndMs = latest.weekly_resets_at
     ? new Date(latest.weekly_resets_at).getTime()
@@ -168,11 +171,11 @@ function drawInto(container: HTMLElement): void {
         <div class="ring-wrap">
           <div class="stat-values-row">
             <div class="stat-col">
-              <div class="stat-value pct" style="color:${gl.valueColor(latest.session_pct, sessionSafePct)}">${gl.fmtPct(latest.session_pct)}</div>
+              <div class="stat-value pct" style="color:${valueColor(latest.session_pct, sessionSafePct, settings)}">${fmtPct(latest.session_pct)}</div>
               <div class="stat-sublabel">current</div>
             </div>
             <div class="stat-col">
-              <div class="stat-value stat-value-dim">${gl.fmtPct(sessionSafePct as number)}</div>
+              <div class="stat-value stat-value-dim">${fmtPct(sessionSafePct as number)}</div>
               <div class="stat-sublabel">safe pace</div>
             </div>
           </div>
@@ -184,11 +187,11 @@ function drawInto(container: HTMLElement): void {
         <div class="ring-wrap">
           <div class="stat-values-row">
             <div class="stat-col">
-              <div class="stat-value pct" style="color:${gl.valueColor(latest.weekly_pct, weeklySafePct)}">${gl.fmtPct(latest.weekly_pct)}</div>
+              <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct, weeklySafePct, settings)}">${fmtPct(latest.weekly_pct)}</div>
               <div class="stat-sublabel">current</div>
             </div>
             <div class="stat-col">
-              <div class="stat-value stat-value-dim">${gl.fmtPct(weeklySafePct)}</div>
+              <div class="stat-value stat-value-dim">${fmtPct(weeklySafePct)}</div>
               <div class="stat-sublabel">safe pace</div>
             </div>
           </div>

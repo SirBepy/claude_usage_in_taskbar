@@ -44,3 +44,88 @@ export function formatBytes(n: number): string {
 export function formatCompactNumber(n: number): string {
   return formatTokens(n);
 }
+
+// ── Percentage / reset-time / color helpers (ported from modules/formatters.js) ──
+
+export function fmtPct(v: number | null | undefined): string {
+  return v !== null && v !== undefined ? v + "%" : "--";
+}
+
+export function fmtResetTime(isoStr: string | null | undefined): string | null {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return null;
+  const now = Date.now();
+  const diffMs = d.getTime() - now;
+  if (diffMs <= 0) return "now";
+  const h = Math.floor(diffMs / 3_600_000);
+  const m = Math.floor((diffMs % 3_600_000) / 60_000);
+  if (h > 12) {
+    const day = d.toLocaleDateString("en-US", { weekday: "short" });
+    const opts: Intl.DateTimeFormatOptions = d.getMinutes() === 0
+      ? { hour: "numeric", hour12: true }
+      : { hour: "numeric", minute: "2-digit", hour12: true };
+    const hour = d.toLocaleTimeString("en-US", opts);
+    return `resets ${day}<br>${hour}`;
+  }
+  if (h > 0) return `resets in ${h}h ${m}m`;
+  return `resets in ${m}m`;
+}
+
+export function pctColor(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "var(--text-dim)";
+  if (v >= 80) return "#e74c3c";
+  if (v >= 50) return "#e67e22";
+  return "#27ae60";
+}
+
+export interface ColorThreshold {
+  min: number;
+  color: string;
+}
+
+export function getThresholdColor(
+  value: number | null | undefined,
+  thresholds: ColorThreshold[] | undefined,
+): string | null {
+  if (value == null || !thresholds || thresholds.length === 0) return null;
+  const sorted = [...thresholds].sort((a, b) => b.min - a.min);
+  for (const t of sorted) {
+    if (value >= t.min) return t.color;
+  }
+  return null;
+}
+
+export interface PaceColorSettings {
+  paceBand?: number;
+  paceColors?: { under?: string; nearSafe?: string; nearOver?: string; over?: string };
+}
+
+export function getPaceColor(pct: number, safePace: number, settings: PaceColorSettings): string {
+  const band = settings.paceBand ?? 10;
+  const pc = settings.paceColors || {};
+  if (pct < safePace - band) return pc.under || "#27ae60";
+  if (pct < safePace) return pc.nearSafe || "#f1c40f";
+  if (pct < safePace + band) return pc.nearOver || "#e67e22";
+  return pc.over || "#e74c3c";
+}
+
+export interface ValueColorSettings extends PaceColorSettings {
+  colorApplyTo?: Record<string, boolean | undefined>;
+  colorMode?: "threshold" | "pace";
+  colorThresholds?: ColorThreshold[];
+}
+
+export function valueColor(
+  pct: number,
+  safePace: number | null | undefined,
+  settings: ValueColorSettings,
+  target: string = "dashboard",
+): string {
+  if (settings.colorApplyTo?.[target] === false) return "var(--text)";
+  if (settings.colorMode === "pace" && safePace != null) {
+    return getPaceColor(pct, safePace, settings);
+  }
+  const c = getThresholdColor(pct, settings.colorThresholds);
+  return c || pctColor(pct);
+}
