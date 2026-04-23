@@ -235,32 +235,6 @@
 
             </div>
 
-            <!-- DASHBOARD -->
-            <div class="section">
-                <div class="section-title">DASHBOARD</div>
-                <div class="option">
-                    <span class="option-label">Show Session Graph</span>
-                    <label class="switch">
-                        <input type="checkbox" id="dashboardShowSession">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="option">
-                    <span class="option-label">Show Weekly Graph</span>
-                    <label class="switch">
-                        <input type="checkbox" id="dashboardShowWeekly">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="option">
-                    <span class="option-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">?</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
-                    <label class="switch">
-                        <input type="checkbox" id="dashboardShowSafePace">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
             <!-- COLORS -->
             <div class="section">
                 <div class="section-title">COLORS</div>
@@ -826,6 +800,9 @@
         <button class="btn-primary" id="legacyImportAccept">Import</button>
         <button class="btn-secondary" id="legacyImportDismiss">No thanks</button>
     </div>
+
+    <!-- Toast container -->
+    <div id="toastStack" class="toast-stack"></div>
 
     <script src="debug-overlay.js"></script>
     <script src="modules/formatters.js"></script>

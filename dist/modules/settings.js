@@ -85,9 +85,6 @@ const colorApplyIcon = document.getElementById("colorApplyIcon");
 const colorApplyNumber = document.getElementById("colorApplyNumber");
 const colorApplyDashboard = document.getElementById("colorApplyDashboard");
 const colorApplyTooltip = document.getElementById("colorApplyTooltip");
-const dashboardShowSession = document.getElementById("dashboardShowSession");
-const dashboardShowWeekly = document.getElementById("dashboardShowWeekly");
-const dashboardShowSafePace = document.getElementById("dashboardShowSafePace");
 const colorContainer = document.getElementById("colorContainer");
 const colorMode = document.getElementById("colorMode");
 const thresholdSection = document.getElementById("thresholdSection");
@@ -339,9 +336,7 @@ function saveSettings() {
     tooltipShowSafePace: tooltipShowSafePace.checked,
     launchAtLogin: launchAtLogin.checked,
     autoUpdate: autoUpdate.checked,
-    dashboardShowSession: dashboardShowSession.checked,
-    dashboardShowWeekly: dashboardShowWeekly.checked,
-    dashboardShowSafePace: dashboardShowSafePace.checked,
+    pinnedCards: Array.isArray(currentSettings.pinnedCards) ? currentSettings.pinnedCards : [],
     colorApplyTo: {
       icon: colorApplyIcon.checked,
       number: colorApplyNumber.checked,
@@ -496,9 +491,7 @@ window.onload = async () => {
     tooltipShowSafePace.checked = settings.tooltipShowSafePace !== false;
     launchAtLogin.checked = settings.launchAtLogin || false;
     autoUpdate.checked = settings.autoUpdate || false;
-    dashboardShowSession.checked = settings.dashboardShowSession !== false;
-    dashboardShowWeekly.checked = settings.dashboardShowWeekly !== false;
-    dashboardShowSafePace.checked = settings.dashboardShowSafePace ?? settings.showSafePace ?? true;
+    if (!Array.isArray(settings.pinnedCards)) settings.pinnedCards = [];
     // Normalize colorApplyTo so every key has an explicit boolean. Keys added
     // after the field shipped (dashboard, tooltip) may be missing on stale
     // settings files; without this migration, valueColor sees undefined and
@@ -559,7 +552,7 @@ window.onload = async () => {
   for (const el of [iconStyle, timeStyle, tooltipLayout]) {
     el.addEventListener("change", saveSettings);
   }
-  for (const el of [launchAtLogin, autoUpdate, tooltipShowSafePace, dashboardShowSession, dashboardShowWeekly, dashboardShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
+  for (const el of [launchAtLogin, autoUpdate, tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
     el.addEventListener("change", saveSettings);
   }
 

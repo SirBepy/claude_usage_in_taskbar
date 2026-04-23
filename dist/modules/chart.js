@@ -63,7 +63,7 @@ function buildChart(history, weeklyStartMs, weeklyEndMs, lineKey, svgId) {
 
   // Reference diagonal: (weeklyStart, 0%) → (weeklyEnd, 100%)
   const refLine =
-    `<line id="line-expected"` +
+    `<line data-line="expected"` +
     ` x1="${px(minT).toFixed(1)}" y1="${py(0).toFixed(1)}"` +
     ` x2="${px(maxT).toFixed(1)}" y2="${py(100).toFixed(1)}"` +
     ` stroke="#6b6990" stroke-width="1.5" stroke-dasharray="5,4"/>`;
@@ -79,14 +79,14 @@ function buildChart(history, weeklyStartMs, weeklyEndMs, lineKey, svgId) {
     pts.unshift({ t: minT, s: 0, w: 0 });
   }
 
-  function makeLine(key, color, id) {
+  function makeLine(key, color, lineName) {
     const f = pts.filter((p) => p[key] !== null && p[key] !== undefined);
-    if (f.length === 0) return `<g id="${id}"></g>`;
+    if (f.length === 0) return `<g data-line="${lineName}"></g>`;
     if (f.length === 1) {
-      return `<circle id="${id}" cx="${px(f[0].t).toFixed(1)}" cy="${py(f[0][key]).toFixed(1)}" r="2.5" fill="${color}"/>`;
+      return `<circle data-line="${lineName}" cx="${px(f[0].t).toFixed(1)}" cy="${py(f[0][key]).toFixed(1)}" r="2.5" fill="${color}"/>`;
     }
     const d = f.map((p, i) => `${i === 0 ? "M" : "L"}${px(p.t).toFixed(1)},${py(p[key]).toFixed(1)}`).join(" ");
-    return `<path id="${id}" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    return `<path data-line="${lineName}" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
   }
 
   return (
@@ -95,7 +95,7 @@ function buildChart(history, weeklyStartMs, weeklyEndMs, lineKey, svgId) {
     `<line x1="${ML}" x2="${ML}" y1="${MT}" y2="${MT + PH}" stroke="#2d2c44" stroke-width="1"/>` +
     tickItems.join("") +
     refLine +
-    (lineKey === "s" ? makeLine("s", "#9d7dfc", "line-session") : makeLine("w", "#6e8fff", "line-weekly")) +
+    (lineKey === "s" ? makeLine("s", "#9d7dfc", "session") : makeLine("w", "#6e8fff", "weekly")) +
     `</svg>`
   );
 }
@@ -103,33 +103,43 @@ function buildChart(history, weeklyStartMs, weeklyEndMs, lineKey, svgId) {
 // ── Line visibility ───────────────────────────────────────────────────────────
 function applyLineVisibility() {
   for (const key of ["session", "weekly", "expected"]) {
-    const el = document.getElementById(`line-${key}`);
-    if (el) el.style.display = lineVisible[key] ? "" : "none";
-    const leg = document.getElementById(`legend-${key}`);
-    if (leg) leg.style.opacity = lineVisible[key] ? "1" : "0.35";
+    document.querySelectorAll(`[data-line="${key}"]`).forEach((el) => {
+      el.style.display = lineVisible[key] ? "" : "none";
+    });
+    document.querySelectorAll(`[data-legend="${key}"]`).forEach((leg) => {
+      leg.style.opacity = lineVisible[key] ? "1" : "0.35";
+    });
   }
 }
 
 function setupLegendToggles() {
-  for (const key of ["session", "weekly", "expected"]) {
-    const el = document.getElementById(`legend-${key}`);
-    if (!el) continue;
+  document.querySelectorAll("[data-legend]").forEach((el) => {
+    if (el._legWired) return;
+    el._legWired = true;
     el.onclick = () => {
+      const key = el.dataset.legend;
       lineVisible[key] = !lineVisible[key];
       applyLineVisibility();
     };
-  }
+  });
 }
 
-function setupPaginationButtons() {
-  const prevSession = document.getElementById("prev-session");
-  const nextSession = document.getElementById("next-session");
-  const prevWeekly = document.getElementById("prev-weekly");
-  const nextWeekly = document.getElementById("next-weekly");
-  if (prevSession) prevSession.onclick = () => { sessionPageOffset++; refreshDashboard(); };
-  if (nextSession) nextSession.onclick = () => { sessionPageOffset = Math.max(0, sessionPageOffset - 1); refreshDashboard(); };
-  if (prevWeekly) prevWeekly.onclick = () => { weeklyPageOffset++; refreshDashboard(); };
-  if (nextWeekly) nextWeekly.onclick = () => { weeklyPageOffset = Math.max(0, weeklyPageOffset - 1); refreshDashboard(); };
+function setupPaginationButtons(container) {
+  const root = container || document;
+  root.querySelectorAll("[data-page-nav]").forEach((btn) => {
+    if (btn._pageWired) return;
+    btn._pageWired = true;
+    const graph = btn.dataset.pageGraph;
+    const dir = btn.dataset.pageNav;
+    btn.onclick = () => {
+      if (graph === "session") {
+        sessionPageOffset = dir === "prev" ? sessionPageOffset + 1 : Math.max(0, sessionPageOffset - 1);
+      } else if (graph === "weekly") {
+        weeklyPageOffset = dir === "prev" ? weeklyPageOffset + 1 : Math.max(0, weeklyPageOffset - 1);
+      }
+      refreshDashboard();
+    };
+  });
 }
 
 // ── Project bars view (alternative to chart) ─────────────────────────────────
@@ -247,7 +257,7 @@ const graphDetailConfigs = {};
  * @returns {string} HTML
  */
 function buildGraphCard(opts) {
-  const { id, history, startMs, endMs, lineKey, pctKey, pageOffset, hasPrev, prevId, nextId, pageLabel, legends, maxItems } = opts;
+  const { id, history, startMs, endMs, lineKey, pctKey, pageOffset, hasPrev, prevId, nextId, pageLabel, legends, maxItems, pinnable, showPin } = opts;
   const svgId = `chart-${id}`;
   const projectListId = `window-${id}-${startMs}`;
   const mode = chartMode[id] || "chart";
@@ -258,23 +268,31 @@ function buildGraphCard(opts) {
   const chartActive = mode === "chart" ? " active" : "";
   const barsActive = mode === "bars" ? " active" : "";
 
+  const legendHtml = mode === "chart" ? legends.join("") : "";
+  const legendRow = `<div class="chart-legend-row">
+      <div class="chart-legend">${legendHtml}</div>
+      <div class="chart-mode-toggle">
+        <button class="chart-mode-btn${chartActive}" data-mode="chart" data-graph="${id}" aria-label="Chart view" title="Chart"><i class="ph ph-chart-line-up"></i></button>
+        <button class="chart-mode-btn${barsActive}" data-mode="bars" data-graph="${id}" aria-label="Bars view" title="Bars"><i class="ph ph-chart-bar"></i></button>
+      </div>
+    </div>`;
+
   const chartContent = mode === "chart"
-    ? `<div class="chart-legend">${legends.join("")}</div>
+    ? `${legendRow}
        ${buildChart(history, startMs, endMs, lineKey, svgId)}
        ${buildWindowProjectsHTML(startMs, endMs, history, pctKey, maxItems, projectListId)}`
-    : buildProjectBarsView(startMs, endMs, history, pctKey, maxItems, projectListId);
+    : `${legendRow}${buildProjectBarsView(startMs, endMs, history, pctKey, maxItems, projectListId)}`;
+
+  const pinBtn = (pinnable && showPin !== false)
+    ? `<button class="pin-btn${isPinned(id) ? ' pinned' : ''}" data-pin-id="${id}" title="${isPinned(id) ? 'Unpin from Home' : 'Pin to Home'}" aria-label="Pin toggle"><i class="ph ph-push-pin${isPinned(id) ? '-fill' : ''}"></i></button>`
+    : "";
 
   return `<div class="chart-container"${id === "session" ? ' style="margin-bottom:12px"' : ""}>
+    ${pinBtn}
     <div class="chart-pagination">
+      <button id="${prevId}" data-page-nav="prev" data-page-graph="${id}" class="btn-secondary nav-arrow left" ${hasPrev ? "" : "disabled"}>◀</button>
       <span class="chart-pagination-label">${pageLabel}</span>
-      <div class="chart-pagination-right">
-        <button id="${prevId}" class="btn-secondary" ${hasPrev ? "" : "disabled"}>◀</button>
-        <button id="${nextId}" class="btn-secondary" ${pageOffset === 0 ? "disabled" : ""}>▶</button>
-        <div class="chart-mode-toggle">
-          <button class="chart-mode-btn${chartActive}" data-mode="chart" data-graph="${id}" aria-label="Chart view" title="Chart"><i class="ph ph-chart-line-up"></i></button>
-          <button class="chart-mode-btn${barsActive}" data-mode="bars" data-graph="${id}" aria-label="Bars view" title="Bars"><i class="ph ph-chart-bar"></i></button>
-        </div>
-      </div>
+      <button id="${nextId}" data-page-nav="next" data-page-graph="${id}" class="btn-secondary nav-arrow right" ${pageOffset === 0 ? "disabled" : ""}>▶</button>
     </div>
     ${chartContent}
   </div>`;
@@ -318,10 +336,11 @@ function renderGraphDetailFromCurrent(type) {
   const WEEK_MS = 7 * 24 * 3_600_000;
 
   const legendItem = (elId, color, isDashed, label) => {
+    const key = elId.replace(/^legend-/, "");
     const dot = isDashed
       ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
       : `<span class="legend-dot" style="background:${color}"></span>`;
-    return `<span id="${elId}" style="cursor:pointer">${dot}${label}</span>`;
+    return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
   };
 
   let config;

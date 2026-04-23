@@ -344,7 +344,7 @@ function renderHistory(history) {
   renderStatistics(history);
 }
 
-/** Home view: ONLY the two big session + weekly cards. */
+/** Home view: big session + weekly cards, plus any pinned statistics cards. */
 function renderHomeCards(history) {
   const latest = history[history.length - 1];
   const sessionReset = fmtResetTime(latest.session_resets_at);
@@ -359,7 +359,7 @@ function renderHomeCards(history) {
     : null;
   const weeklySafePct = Math.max(0, Math.min(100, Math.round((7 * 24 * 3_600_000 - (weeklyEndMs - Date.now())) / (7 * 24 * 3_600_000) * 100)));
 
-  const showSafePace = currentSettings.dashboardShowSafePace !== false;
+  const showSafePace = true;
 
   statsContent.innerHTML = `
     <div class="stat-cards">
@@ -400,7 +400,141 @@ function renderHomeCards(history) {
         ${weeklyReset ? `<div class="stat-sublabel sub">${weeklyReset}</div>` : ""}
       </div>
     </div>
+    ${buildPinnedCardsHTML(history)}
   `;
+
+  setupPaginationButtons();
+  setupLegendToggles();
+  applyLineVisibility();
+  wireChartModeToggles(statsContent);
+  wirePinButtons(statsContent, { onHomeUnpin: true });
+  wireProjectListClicks(statsContent, refreshDashboard);
+}
+
+/** Pin state helpers ─────────────────────────────────────────────────────── */
+function getPinnedSet() {
+  const arr = (currentSettings && Array.isArray(currentSettings.pinnedCards))
+    ? currentSettings.pinnedCards : [];
+  return new Set(arr);
+}
+function isPinned(id) { return getPinnedSet().has(id); }
+function setPinned(id, on) {
+  const set = getPinnedSet();
+  if (on) set.add(id); else set.delete(id);
+  currentSettings.pinnedCards = Array.from(set);
+  window.electronAPI?.saveSettings(currentSettings);
+}
+function togglePin(id) { setPinned(id, !isPinned(id)); refreshDashboard(); }
+
+/** Build the pinned cards block for the Home view. */
+function buildPinnedCardsHTML(history) {
+  const pinned = getPinnedSet();
+  if (!pinned.size) return "";
+
+  const latest = history[history.length - 1];
+  const SESSION_MS = 5 * 3_600_000;
+  const WEEK_MS = 7 * 24 * 3_600_000;
+
+  const sessionEndMs = latest.session_resets_at
+    ? new Date(latest.session_resets_at).getTime()
+    : Date.now() + 3_600_000;
+  const weeklyEndMs = latest.weekly_resets_at
+    ? new Date(latest.weekly_resets_at).getTime()
+    : Date.now() + 3_600_000;
+  const weeklyStartMs = weeklyEndMs - WEEK_MS;
+
+  const shiftedSessionEndMs = sessionEndMs - sessionPageOffset * SESSION_MS;
+  const shiftedSessionStartMs = shiftedSessionEndMs - SESSION_MS;
+  const hasSessionPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedSessionStartMs - SESSION_MS && t < shiftedSessionStartMs; });
+
+  const shiftedWeeklyEndMs = weeklyEndMs - weeklyPageOffset * WEEK_MS;
+  const shiftedWeeklyStartMs = weeklyStartMs - weeklyPageOffset * WEEK_MS;
+  const hasWeeklyPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedWeeklyStartMs - WEEK_MS && t < shiftedWeeklyStartMs; });
+
+  const legendItem = (elId, color, isDashed, label) => {
+    const key = elId.replace(/^legend-/, "");
+    const dot = isDashed
+      ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
+      : `<span class="legend-dot" style="background:${color}"></span>`;
+    return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
+  };
+
+  const parts = [];
+  if (pinned.has("today")) {
+    parts.push(buildTodaySectionHTML(lastTokenHistory, { pinnable: true }));
+  }
+  if (pinned.has("session")) {
+    parts.push(buildGraphCard({
+      id: "session", history, startMs: shiftedSessionStartMs, endMs: shiftedSessionEndMs,
+      lineKey: "s", pctKey: "s",
+      pageOffset: sessionPageOffset, hasPrev: hasSessionPrev,
+      prevId: "prev-session", nextId: "next-session",
+      pageLabel: sessionPageOffset === 0 ? "This session" : `${sessionPageOffset} session${sessionPageOffset > 1 ? "s" : ""} ago`,
+      legends: [legendItem("legend-session", "#9d7dfc", false, "Session"), legendItem("legend-expected", "#6b6990", true, "Expected")],
+      maxItems: 5, pinnable: true,
+    }));
+  }
+  if (pinned.has("weekly")) {
+    parts.push(buildGraphCard({
+      id: "weekly", history, startMs: shiftedWeeklyStartMs, endMs: shiftedWeeklyEndMs,
+      lineKey: "w", pctKey: "w",
+      pageOffset: weeklyPageOffset, hasPrev: hasWeeklyPrev,
+      prevId: "prev-weekly", nextId: "next-weekly",
+      pageLabel: weeklyPageOffset === 0 ? "This week" : `${weeklyPageOffset}w ago`,
+      legends: [legendItem("legend-weekly", "#6e8fff", false, "Weekly"), legendItem("legend-expected", "#6b6990", true, "Expected")],
+      maxItems: 5, pinnable: true,
+    }));
+  }
+  if (!parts.length) return "";
+  return `<div class="pinned-cards">${parts.join("")}</div>`;
+}
+
+/** Wire pin buttons inside a container. onHomeUnpin=true shows undo toast on unpin. */
+function wirePinButtons(container, opts = {}) {
+  if (!container) return;
+  container.querySelectorAll(".pin-btn").forEach((btn) => {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.pinId;
+      if (!id) return;
+      const wasPinned = isPinned(id);
+      setPinned(id, !wasPinned);
+      if (opts.onHomeUnpin && wasPinned) {
+        showUndoToast(`Unpinned ${pinLabel(id)}`, () => { setPinned(id, true); refreshDashboard(); });
+      }
+      refreshDashboard();
+    };
+  });
+}
+
+function pinLabel(id) {
+  if (id === "session") return "Session graph";
+  if (id === "weekly") return "Weekly graph";
+  if (id === "today") return "Today";
+  return id;
+}
+
+/** Toast with undo button. Auto-dismiss after 5s. */
+function showUndoToast(message, onUndo) {
+  const stack = document.getElementById("toastStack");
+  if (!stack) return;
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `<span class="toast-msg"></span><button class="toast-undo btn-secondary">Undo</button>`;
+  toast.querySelector(".toast-msg").textContent = message;
+  const undoBtn = toast.querySelector(".toast-undo");
+  let done = false;
+  const finish = () => {
+    if (done) return; done = true;
+    toast.classList.add("leaving");
+    setTimeout(() => toast.remove(), 250);
+  };
+  undoBtn.onclick = () => { onUndo && onUndo(); finish(); };
+  stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("show"));
+  setTimeout(finish, 5000);
 }
 
 /** Statistics view: today section + session graph + weekly graph (everything else). */
@@ -433,19 +567,17 @@ function renderStatistics(history) {
   const shiftedWeeklyStartMs = weeklyStartMs - weeklyShiftMs;
   const hasWeeklyPrev = history.some((r) => { const t = hourToMs(r.hour); return t >= shiftedWeeklyStartMs - WEEK_MS && t < shiftedWeeklyStartMs; });
 
-  const showSessionGraph = currentSettings.dashboardShowSession !== false;
-  const showWeeklyGraph = currentSettings.dashboardShowWeekly !== false;
-
   const legendItem = (id, color, isDashed, label) => {
+    const key = id.replace(/^legend-/, "");
     const dot = isDashed
       ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
       : `<span class="legend-dot" style="background:${color}"></span>`;
-    return `<span id="${id}" style="cursor:pointer">${dot}${label}</span>`;
+    return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
   };
 
   statisticsContent.innerHTML = `
-    ${buildTodaySectionHTML(lastTokenHistory)}
-    ${showSessionGraph ? buildGraphCard({
+    ${buildTodaySectionHTML(lastTokenHistory, { pinnable: true })}
+    ${buildGraphCard({
       id: "session",
       history,
       startMs: shiftedSessionStartMs,
@@ -459,8 +591,9 @@ function renderStatistics(history) {
       pageLabel: sessionPageOffset === 0 ? "This session" : `${sessionPageOffset} session${sessionPageOffset > 1 ? "s" : ""} ago`,
       legends: [legendItem("legend-session", "#9d7dfc", false, "Session"), legendItem("legend-expected", "#6b6990", true, "Expected")],
       maxItems: 5,
-    }) : ""}
-    ${showWeeklyGraph ? buildGraphCard({
+      pinnable: true,
+    })}
+    ${buildGraphCard({
       id: "weekly",
       history,
       startMs: shiftedWeeklyStartMs,
@@ -474,13 +607,15 @@ function renderStatistics(history) {
       pageLabel: weeklyPageOffset === 0 ? "This week" : `${weeklyPageOffset}w ago`,
       legends: [legendItem("legend-weekly", "#6e8fff", false, "Weekly"), legendItem("legend-expected", "#6b6990", true, "Expected")],
       maxItems: 5,
-    }) : ""}
+      pinnable: true,
+    })}
   `;
 
   setupLegendToggles();
   applyLineVisibility();
   setupPaginationButtons();
   wireChartModeToggles(statisticsContent);
+  wirePinButtons(statisticsContent, { onHomeUnpin: false });
 }
 
 // Merge active (live) sessions into token history so project lists show ongoing work.
@@ -513,6 +648,7 @@ window.electronAPI?.getSettings().then((s) => {
       dashboard: s.colorApplyTo?.dashboard !== false,
       tooltip: s.colorApplyTo?.tooltip !== false,
     };
+    if (!Array.isArray(s.pinnedCards)) s.pinnedCards = [];
     currentSettings = s;
   }
   _initSettings = true;

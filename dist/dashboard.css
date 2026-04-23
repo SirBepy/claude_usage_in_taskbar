@@ -263,29 +263,20 @@ body {
 /* ── Chart pagination ── */
 .chart-pagination {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     margin-bottom: 10px;
 }
 
 .chart-pagination-label {
-    grid-column: 2;
     font-size: 0.75rem;
     color: var(--text-dim);
     font-family: 'DM Sans', system-ui, sans-serif;
     text-align: center;
 }
 
-.chart-pagination-right {
-    grid-column: 3;
-    justify-self: end;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.chart-pagination button {
+.chart-pagination .nav-arrow {
     padding: 3px 10px;
     font-size: 0.75rem;
 }
@@ -296,8 +287,93 @@ body {
     pointer-events: none;
 }
 
+/* ── Legend + chart-mode toggle row ── */
+.chart-legend-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.chart-legend-row .chart-legend { margin-bottom: 0; }
+
+/* ── Pin button (top-right of pinnable cards) ── */
+.pin-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+    z-index: 2;
+}
+.pin-btn i { font-size: 1rem; }
+.pin-btn:hover { background: var(--surface-alt); color: var(--text); }
+.pin-btn.pinned { color: var(--primary); }
+.pinnable-wrap { position: relative; }
+.pinnable-wrap .pin-btn { top: 6px; right: 6px; }
+
+/* Reserve space on the right so the pin button doesn't overlap the pagination arrow */
+.chart-container .chart-pagination { padding-right: 34px; padding-left: 34px; }
+
+/* ── Pinned cards block on Home ── */
+.pinned-cards {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ── Toast ── */
+.toast-stack {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 3000;
+    pointer-events: none;
+}
+.toast {
+    pointer-events: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px 8px 14px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    font-size: 0.82rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 240px;
+    max-width: 320px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.leaving { opacity: 0; transform: translateY(8px); }
+.toast-msg { flex: 1; }
+.toast-undo {
+    padding: 4px 10px;
+    font-size: 0.76rem;
+}
+
 /* ── Chart ── */
 .chart-container {
+    position: relative;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;

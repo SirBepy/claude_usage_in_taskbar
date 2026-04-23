@@ -223,7 +223,7 @@ function wireProjectListClicks(container, onSort) {
 }
 
 // ── Today summary ──────────────────────────────────────────────────────────────
-function buildTodaySectionHTML(tokenHistory) {
+function buildTodaySectionHTML(tokenHistory, opts = {}) {
   if (!tokenHistory || !tokenHistory.length) return "";
   const today = new Date().toISOString().slice(0, 10);
   const todayRecords = tokenHistory.filter((r) => r.date === today);
@@ -240,13 +240,19 @@ function buildTodaySectionHTML(tokenHistory) {
     if (ts > p.lastActiveAt) p.lastActiveAt = ts;
   }
 
-  return buildProjectListHTML({
+  const showPin = opts.pinnable !== false;
+  const pinned = typeof isPinned === "function" && isPinned("today");
+  const pinBtn = showPin
+    ? `<button class="pin-btn${pinned ? ' pinned' : ''}" data-pin-id="today" title="${pinned ? 'Unpin from Home' : 'Pin to Home'}" aria-label="Pin toggle"><i class="ph ph-push-pin${pinned ? '-fill' : ''}"></i></button>`
+    : "";
+
+  return `<div class="pinnable-wrap">${pinBtn}${buildProjectListHTML({
     title: "Today",
     projects: Array.from(byProject.values()),
     sortable: true,
     defaultSort: "lastActiveAt",
     id: "today-projects",
-  });
+  })}</div>`;
 }
 
 /**
