@@ -1,4 +1,6 @@
 import { html, render } from "lit-html";
+import { saveSettings } from "../../../../shared/settings-save";
+import { getSettings } from "../../../../shared/state";
 import "./visuals.css";
 
 interface LegacyGlobals {
@@ -10,6 +12,134 @@ function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
+function $(id: string): HTMLElement | null {
+  return document.getElementById(id);
+}
+
+function createColorRow(min = 0, color = "#ffffff"): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "option color-row";
+  row.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+      <input type="number" class="color-min" value="${min}" min="0" max="100" style="width:50px">
+      <span style="font-size: 0.8rem; color: var(--text-dim);">%</span>
+      <input type="color" class="color-val" value="${color}">
+    </div>
+    <button class="btn-secondary remove-color-btn" style="padding: 2px 8px; font-size: 0.7rem;">Remove</button>
+  `;
+  const removeBtn = row.querySelector<HTMLButtonElement>(".remove-color-btn");
+  if (removeBtn) removeBtn.onclick = () => { row.remove(); saveSettings(); };
+  row.querySelector(".color-min")?.addEventListener("change", saveSettings);
+  row.querySelector(".color-val")?.addEventListener("change", saveSettings);
+  return row;
+}
+
+function updateColorModeVisibility(): void {
+  const colorMode = $("colorMode") as HTMLSelectElement | null;
+  const thresholdSection = $("thresholdSection");
+  const paceSection = $("paceSection");
+  if (!colorMode || !thresholdSection || !paceSection) return;
+  const isPace = colorMode.value === "pace";
+  thresholdSection.style.display = isPace ? "none" : "block";
+  paceSection.style.display = isPace ? "block" : "none";
+}
+
+function wireInfoTooltips(root: HTMLElement | Document): void {
+  for (const wrap of root.querySelectorAll<HTMLElement>(".info-wrap")) {
+    const icon = wrap.querySelector<HTMLElement>(".info-icon");
+    const tip = wrap.querySelector<HTMLElement>(".info-tooltip");
+    if (!icon || !tip) continue;
+    icon.addEventListener("mouseenter", () => {
+      tip.style.display = "block";
+      const iconRect = icon.getBoundingClientRect();
+      const tipRect = tip.getBoundingClientRect();
+      const pad = 8;
+      let top = iconRect.top - tipRect.height - pad;
+      let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+      if (left < pad) left = pad;
+      if (left + tipRect.width > window.innerWidth - pad) left = window.innerWidth - pad - tipRect.width;
+      if (top < pad) top = iconRect.bottom + pad;
+      tip.style.top = top + "px";
+      tip.style.left = left + "px";
+    });
+    icon.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  }
+}
+
+function hydrateVisuals(): void {
+  const s = getSettings();
+  const defaultDisplay = $("defaultDisplay") as HTMLSelectElement | null;
+  const iconStyle = $("iconStyle") as HTMLSelectElement | null;
+  const timeStyle = $("timeStyle") as HTMLSelectElement | null;
+  const tooltipLayout = $("tooltipLayout") as HTMLSelectElement | null;
+  const tooltipShowSafePace = $("tooltipShowSafePace") as HTMLInputElement | null;
+  const colorApplyIcon = $("colorApplyIcon") as HTMLInputElement | null;
+  const colorApplyNumber = $("colorApplyNumber") as HTMLInputElement | null;
+  const colorApplyDashboard = $("colorApplyDashboard") as HTMLInputElement | null;
+  const colorApplyTooltip = $("colorApplyTooltip") as HTMLInputElement | null;
+  const colorContainer = $("colorContainer");
+  const colorMode = $("colorMode") as HTMLSelectElement | null;
+  const paceBand = $("paceBand") as HTMLInputElement | null;
+  const paceColorUnder = $("paceColorUnder") as HTMLInputElement | null;
+  const paceColorNearSafe = $("paceColorNearSafe") as HTMLInputElement | null;
+  const paceColorNearOver = $("paceColorNearOver") as HTMLInputElement | null;
+  const paceColorOver = $("paceColorOver") as HTMLInputElement | null;
+  const addColorBtn = $("addColorBtn") as HTMLButtonElement | null;
+  const iconStyleSection = $("iconStyleSection");
+  if (!defaultDisplay || !iconStyle || !timeStyle || !tooltipLayout || !tooltipShowSafePace) return;
+  if (!colorApplyIcon || !colorApplyNumber || !colorApplyDashboard || !colorApplyTooltip) return;
+  if (!colorContainer || !colorMode || !paceBand || !addColorBtn) return;
+  if (!paceColorUnder || !paceColorNearSafe || !paceColorNearOver || !paceColorOver) return;
+
+  defaultDisplay.value = (s.defaultDisplay as string) || "icon";
+  iconStyle.value = (s.iconStyle as string) || "rings";
+  timeStyle.value = (s.timeStyle as string) || "absolute";
+  tooltipLayout.value = (s.tooltipLayout as string) || "rows";
+  tooltipShowSafePace.checked = s.tooltipShowSafePace !== false;
+  const cat = (s.colorApplyTo as Record<string, boolean | undefined>) || {};
+  colorApplyIcon.checked = cat.icon !== false;
+  colorApplyNumber.checked = cat.number !== false;
+  colorApplyDashboard.checked = cat.dashboard !== false;
+  colorApplyTooltip.checked = cat.tooltip !== false;
+  colorMode.value = (s.colorMode as string) || "threshold";
+  paceBand.value = String(s.paceBand ?? 10);
+  const pc = (s.paceColors as Record<string, string | undefined>) || {};
+  paceColorUnder.value = pc.under || "#27ae60";
+  paceColorNearSafe.value = pc.nearSafe || "#f1c40f";
+  paceColorNearOver.value = pc.nearOver || "#e67e22";
+  paceColorOver.value = pc.over || "#e74c3c";
+
+  const DEFAULT_THRESHOLDS = [
+    { min: 0,  color: "#27ae60" },
+    { min: 50, color: "#e67e22" },
+    { min: 80, color: "#e74c3c" },
+  ];
+  const thresholds = (s.colorThresholds && s.colorThresholds.length) ? s.colorThresholds : DEFAULT_THRESHOLDS;
+  colorContainer.innerHTML = "";
+  thresholds.forEach((t) => colorContainer.appendChild(createColorRow(t.min, t.color)));
+
+  updateColorModeVisibility();
+  if (iconStyleSection) iconStyleSection.style.display = "flex";
+
+  for (const el of [iconStyle, timeStyle, tooltipLayout]) el.addEventListener("change", saveSettings);
+  for (const el of [tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
+    el.addEventListener("change", saveSettings);
+  }
+  defaultDisplay.addEventListener("change", saveSettings);
+  colorMode.addEventListener("change", () => { updateColorModeVisibility(); saveSettings(); });
+  paceBand.addEventListener("change", saveSettings);
+  paceColorUnder.addEventListener("change", saveSettings);
+  paceColorNearSafe.addEventListener("change", saveSettings);
+  paceColorNearOver.addEventListener("change", saveSettings);
+  paceColorOver.addEventListener("change", saveSettings);
+  addColorBtn.onclick = () => { colorContainer.appendChild(createColorRow(0, "#9d7dfc")); saveSettings(); };
+
+  wireInfoTooltips(document.getElementById("app") || document);
+}
+
+// Back-compat window binding (legacy boot code calls this by name).
+(window as unknown as { renderVisualsSettings?: () => void }).renderVisualsSettings = hydrateVisuals;
+
 export async function renderVisualsView(
   root: HTMLElement,
 ): Promise<() => void> {
@@ -18,7 +148,7 @@ export async function renderVisualsView(
   const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
   if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
 
-  try { g().renderVisualsSettings?.(); }
+  try { hydrateVisuals(); }
   catch (e) { console.error("[visuals] render failed", e); }
 
   return () => { /* no teardown */ };

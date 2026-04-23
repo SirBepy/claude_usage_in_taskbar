@@ -1,16 +1,171 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
+import { saveSettings } from "../../shared/settings-save";
+import { getSettings } from "../../shared/state";
 import "./settings.css";
 
+export { saveSettings };
+
+interface UpdateState {
+  state: "idle" | "checking" | "available" | "downloading" | "downloaded" | "error" | string;
+  version?: string;
+  [k: string]: unknown;
+}
+
+interface ElectronAPIShape {
+  logout(): Promise<unknown>;
+  getPlatform(): Promise<string>;
+  getAppVersion(): Promise<string>;
+  getUpdateState(): Promise<UpdateState>;
+  onUpdateStateChange(cb: (s: UpdateState) => void): unknown;
+  checkForUpdates(): Promise<unknown>;
+  downloadAndInstall(): Promise<unknown>;
+  installUpdate(): Promise<unknown>;
+  openExternal(url: string): Promise<unknown>;
+  copyLogs(): Promise<unknown>;
+}
+
 interface LegacyGlobals {
-  electronAPI?: { logout(): Promise<unknown> };
+  electronAPI?: ElectronAPIShape;
   navigateTo(name: string): Promise<void>;
-  renderSettingsRoot?(): Promise<void> | void;
+  renderUpdateState?: (s: UpdateState) => void;
+  renderSettingsRoot?: () => Promise<void> | void;
+  saveSettings?: () => void;
 }
 
 function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
+
+let isMac = false;
+let _isMacResolved = false;
+
+function $(id: string): HTMLElement | null {
+  return document.getElementById(id);
+}
+
+function renderUpdateState(updateState: UpdateState): void {
+  const updateStateLabel = $("updateStateLabel");
+  const updateBtn = $("updateBtn") as HTMLButtonElement | null;
+  const macUpdateNotice = $("macUpdateNotice");
+  const macReleasesBtn = $("macReleasesBtn") as HTMLButtonElement | null;
+  if (!updateStateLabel || !updateBtn) return;
+
+  const hasUpdate = updateState.state === "available" ||
+    updateState.state === "downloaded" ||
+    updateState.state === "downloading" ||
+    updateState.state === "error";
+
+  if (isMac && hasUpdate) {
+    updateStateLabel.innerText = `v${updateState.version} available`;
+    updateStateLabel.style.color = "var(--text)";
+    updateBtn.style.display = "none";
+    if (macUpdateNotice) macUpdateNotice.style.display = "block";
+    if (macReleasesBtn) {
+      macReleasesBtn.onclick = () => {
+        void g().electronAPI?.openExternal(
+          `https://github.com/SirBepy/claude_usage_in_taskbar/releases/tag/v${updateState.version}`,
+        );
+      };
+    }
+    return;
+  }
+
+  if (macUpdateNotice) macUpdateNotice.style.display = "none";
+
+  if (updateState.state === "downloaded") {
+    updateStateLabel.innerText = "Ready to install";
+    updateStateLabel.style.color = "var(--primary)";
+    updateBtn.style.display = "block";
+    updateBtn.disabled = false;
+    updateBtn.innerText = `Install v${updateState.version}`;
+    updateBtn.onclick = () => { void g().electronAPI?.installUpdate(); };
+  } else if (updateState.state === "available") {
+    updateStateLabel.innerText = `v${updateState.version} available`;
+    updateStateLabel.style.color = "var(--text)";
+    updateBtn.style.display = "block";
+    updateBtn.disabled = false;
+    updateBtn.innerText = `Download & Install v${updateState.version}`;
+    updateBtn.onclick = () => {
+      updateBtn.disabled = true;
+      updateBtn.innerText = "Downloading...";
+      void g().electronAPI?.downloadAndInstall();
+    };
+  } else if (updateState.state === "downloading") {
+    updateStateLabel.innerText = "Downloading...";
+    updateStateLabel.style.color = "var(--text-dim)";
+    updateBtn.style.display = "block";
+    updateBtn.disabled = true;
+    updateBtn.innerText = "Downloading...";
+  } else if (updateState.state === "error") {
+    updateStateLabel.innerText = "Error";
+    updateStateLabel.style.color = "#ff4444";
+    updateBtn.style.display = "block";
+    updateBtn.disabled = false;
+    updateBtn.innerText = "Retry";
+    updateBtn.onclick = () => { void g().electronAPI?.checkForUpdates(); };
+  } else {
+    updateStateLabel.innerText = "Up to date";
+    updateStateLabel.style.color = "var(--text-dim)";
+    updateBtn.style.display = "none";
+  }
+}
+
+async function hydrateSettingsRoot(): Promise<void> {
+  const s = getSettings();
+  const launchAtLogin = $("launchAtLogin") as HTMLInputElement | null;
+  const autoUpdate = $("autoUpdate") as HTMLInputElement | null;
+  const refreshUpdateBtn = $("refreshUpdateBtn") as HTMLButtonElement | null;
+  const copyLogsBtn = $("copyLogsBtn") as HTMLButtonElement | null;
+  const appVersionLabel = $("appVersionLabel");
+  const autoUpdateRow = $("autoUpdateRow");
+  if (!launchAtLogin || !autoUpdate || !refreshUpdateBtn || !copyLogsBtn) return;
+
+  if (!_isMacResolved) {
+    const platform = await g().electronAPI?.getPlatform();
+    isMac = platform === "darwin";
+    _isMacResolved = true;
+  }
+  if (isMac && autoUpdateRow) autoUpdateRow.style.display = "none";
+
+  launchAtLogin.checked = !!s.launchAtLogin;
+  autoUpdate.checked = !!s.autoUpdate;
+  launchAtLogin.addEventListener("change", saveSettings);
+  autoUpdate.addEventListener("change", saveSettings);
+
+  refreshUpdateBtn.addEventListener("click", () => {
+    void g().electronAPI?.checkForUpdates();
+    const updateStateLabel = $("updateStateLabel");
+    const updateBtn = $("updateBtn") as HTMLButtonElement | null;
+    if (updateStateLabel) {
+      updateStateLabel.innerText = "Checking...";
+      updateStateLabel.style.color = "var(--text-dim)";
+    }
+    if (updateBtn) updateBtn.style.display = "none";
+  });
+
+  copyLogsBtn.addEventListener("click", () => {
+    void g().electronAPI?.copyLogs();
+    const originalText = copyLogsBtn.textContent;
+    copyLogsBtn.textContent = "Copied to Clipboard!";
+    copyLogsBtn.classList.replace("btn-secondary", "btn-primary");
+    setTimeout(() => {
+      copyLogsBtn.textContent = originalText;
+      copyLogsBtn.classList.replace("btn-primary", "btn-secondary");
+    }, 2000);
+  });
+
+  const version = await g().electronAPI?.getAppVersion();
+  if (version && appVersionLabel) appVersionLabel.innerText = `Version: ${version}`;
+
+  const initialState = await g().electronAPI?.getUpdateState();
+  if (initialState) renderUpdateState(initialState);
+  g().electronAPI?.onUpdateStateChange(renderUpdateState);
+}
+
+// Back-compat window bindings (legacy dashboard.js/stats.js/boot modals still reference these).
+(window as unknown as { renderSettingsRoot?: () => Promise<void> }).renderSettingsRoot = hydrateSettingsRoot;
+(window as unknown as { renderUpdateState?: (s: UpdateState) => void }).renderUpdateState = renderUpdateState;
 
 export async function renderSettingsView(
   root: HTMLElement,
@@ -30,7 +185,7 @@ export async function renderSettingsView(
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
   if (logoutBtn) logoutBtn.onclick = () => { void g().electronAPI?.logout(); };
 
-  try { await g().renderSettingsRoot?.(); }
+  try { await hydrateSettingsRoot(); }
   catch (e) { console.error("[settings root] render failed", e); }
 
   return () => { /* no teardown */ };
