@@ -2,13 +2,19 @@
   "name": "claude-usage-tauri-tests",
   "private": true,
   "version": "0.0.1",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/node": "20.19.39",
     "jsdom": "^29.0.2",
+    "typescript": "5.9.3",
+    "vite": "5.4.21",
     "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "lit-html": "3.3.2"
   }
 }
