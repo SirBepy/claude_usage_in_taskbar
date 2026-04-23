@@ -98,7 +98,7 @@ pub fn play_sound_file(app: &AppHandle, filename: &str) {
 /// `sounds_dir()`, all others use `sound_packs_dir()/<pack>/`.
 /// Falls back silently if the file is missing (pack uninstalled).
 pub fn play_pack_sound(app: &AppHandle, pack: &str, file: &str) {
-    let Some(path) = crate::soundpacks::sound_path(pack, file) else {
+    let Some(path) = crate::notifications::soundpacks::sound_path(pack, file) else {
         log::warn!("play_pack_sound: unknown pack {pack}");
         return;
     };

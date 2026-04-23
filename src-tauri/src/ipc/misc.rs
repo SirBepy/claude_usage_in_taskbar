@@ -100,28 +100,28 @@ pub fn get_update_state() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub fn list_sound_packs() -> Vec<crate::soundpacks::SoundPack> {
-    crate::soundpacks::list_with_installed_state()
+pub fn list_sound_packs() -> Vec<crate::notifications::soundpacks::SoundPack> {
+    crate::notifications::soundpacks::list_with_installed_state()
 }
 
 #[tauri::command]
 pub async fn install_sound_pack(pack_id: String) -> Result<(), String> {
-    crate::soundpacks::install(&pack_id).await.map_err(|e| e.to_string())
+    crate::notifications::soundpacks::install(&pack_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn sound_pack_file_url(pack: String, sound: String) -> Option<String> {
-    crate::soundpacks::file_data_url(&pack, &sound)
+    crate::notifications::soundpacks::file_data_url(&pack, &sound)
 }
 
 #[tauri::command]
-pub fn piper_status() -> crate::piper::PiperStatus {
-    crate::piper::status()
+pub fn piper_status() -> crate::notifications::piper::PiperStatus {
+    crate::notifications::piper::status()
 }
 
 #[tauri::command]
 pub async fn piper_install_voice(id: String) -> Result<(), String> {
-    crate::piper::install_voice(&id).await.map_err(|e| e.to_string())
+    crate::notifications::piper::install_voice(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -139,7 +139,7 @@ pub fn play_sound_preview(app: AppHandle, filename: String) -> Result<(), String
     {
         return Err("invalid sound filename".into());
     }
-    crate::audio::play_sound_file(&app, &filename);
+    crate::notifications::audio::play_sound_file(&app, &filename);
     Ok(())
 }
 
@@ -149,7 +149,7 @@ pub fn play_pack_sound_preview(app: AppHandle, pack: String, sound: String) -> R
     if invalid(&pack) || invalid(&sound) {
         return Err("invalid pack or sound".into());
     }
-    crate::audio::play_pack_sound(&app, &pack, &sound);
+    crate::notifications::audio::play_pack_sound(&app, &pack, &sound);
     Ok(())
 }
 
