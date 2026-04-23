@@ -3,31 +3,25 @@ import { openSidemenu } from "../../shared/sidemenu";
 import "./dashboard.css";
 import { fmtPct, fmtResetTime, valueColor } from "../../shared/formatters";
 import { getSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
-
-type LegacyRecord = {
-  hour: string;
-  session_pct: number;
-  weekly_pct: number;
-  session_resets_at: string | null;
-  weekly_resets_at: string | null;
-  extra_usage: unknown;
-};
+import {
+  buildPinnedCardsHTML,
+  setupPaginationButtons,
+  setupLegendToggles,
+  applyLineVisibility,
+  wireChartModeToggles,
+  wirePinButtons,
+  wireProjectListClicks,
+} from "../statistics/statistics";
+import type { UsageRecord } from "../statistics/statistics";
 
 interface ElectronAPI {
-  getUsageHistory(): Promise<LegacyRecord[]>;
+  getUsageHistory(): Promise<UsageRecord[]>;
   pollNow(): Promise<unknown>;
-  onHistoryUpdated(cb: (h: LegacyRecord[]) => void): () => void;
+  onHistoryUpdated(cb: (h: UsageRecord[]) => void): () => void;
 }
 
 interface LegacyGlobals {
   electronAPI?: ElectronAPI;
-  buildPinnedCardsHTML(history: LegacyRecord[]): string;
-  setupPaginationButtons(container?: HTMLElement): void;
-  setupLegendToggles(): void;
-  applyLineVisibility(): void;
-  wireChartModeToggles(container: HTMLElement): void;
-  wirePinButtons(container: HTMLElement, opts?: { onHomeUnpin?: boolean }): void;
-  wireProjectListClicks(container: HTMLElement, onSort: () => void): void;
 }
 
 function g(): LegacyGlobals {
@@ -36,8 +30,8 @@ function g(): LegacyGlobals {
 
 let refreshBusy = false;
 
-function getHistory(): LegacyRecord[] | null {
-  return getUsageHistory() as LegacyRecord[] | null;
+function getHistory(): UsageRecord[] | null {
+  return getUsageHistory() as UsageRecord[] | null;
 }
 
 export async function renderDashboard(root: HTMLElement): Promise<() => void> {
@@ -127,7 +121,6 @@ function drawInto(container: HTMLElement): void {
   }
 
   const latest = history[history.length - 1]!;
-  const gl = g();
   const settings = getSettings();
   const sessionReset = fmtResetTime(latest.session_resets_at);
   const weeklyReset = fmtResetTime(latest.weekly_resets_at);
@@ -171,7 +164,7 @@ function drawInto(container: HTMLElement): void {
         <div class="ring-wrap">
           <div class="stat-values-row">
             <div class="stat-col">
-              <div class="stat-value pct" style="color:${valueColor(latest.session_pct, sessionSafePct, settings)}">${fmtPct(latest.session_pct)}</div>
+              <div class="stat-value pct" style="color:${valueColor(latest.session_pct as number, sessionSafePct, settings)}">${fmtPct(latest.session_pct)}</div>
               <div class="stat-sublabel">current</div>
             </div>
             <div class="stat-col">
@@ -187,7 +180,7 @@ function drawInto(container: HTMLElement): void {
         <div class="ring-wrap">
           <div class="stat-values-row">
             <div class="stat-col">
-              <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct, weeklySafePct, settings)}">${fmtPct(latest.weekly_pct)}</div>
+              <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct as number, weeklySafePct, settings)}">${fmtPct(latest.weekly_pct)}</div>
               <div class="stat-sublabel">current</div>
             </div>
             <div class="stat-col">
@@ -199,13 +192,13 @@ function drawInto(container: HTMLElement): void {
         ${weeklyReset ? `<div class="stat-sublabel sub">${weeklyReset}</div>` : ""}
       </div>
     </div>
-    ${gl.buildPinnedCardsHTML(history)}
+    ${buildPinnedCardsHTML(history)}
   `;
 
-  gl.setupPaginationButtons();
-  gl.setupLegendToggles();
-  gl.applyLineVisibility();
-  gl.wireChartModeToggles(container);
-  gl.wirePinButtons(container, { onHomeUnpin: true });
-  gl.wireProjectListClicks(container, () => drawInto(container));
+  setupPaginationButtons();
+  setupLegendToggles();
+  applyLineVisibility();
+  wireChartModeToggles(container);
+  wirePinButtons(container, { onHomeUnpin: true });
+  wireProjectListClicks(container, () => drawInto(container));
 }
