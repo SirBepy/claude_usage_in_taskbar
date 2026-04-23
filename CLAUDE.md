@@ -53,10 +53,10 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `src-tauri/src/piper.rs` | Piper TTS integration (binary resolution; port WIP) |
 | `src-tauri/src/token_stats.rs` | Token stats scaffolding (JSONL walker pending) |
 | `src-tauri/src/types.rs` | Shared data structures |
-| `dist/dashboard.html` | Dashboard + settings UI (single-file SPA) |
-| `dist/dashboard.css` | Dashboard styles |
-| `dist/dashboard.js` | Dashboard renderer logic |
-| `dist/modules/*.js` | Chart, formatters, settings, sound-packs, stats, speech-fallback |
+| `src/dashboard.html` | Dashboard + settings UI (single-file SPA) |
+| `src/dashboard.css` | Dashboard styles |
+| `src/dashboard.js` | Dashboard renderer logic |
+| `src/modules/*.js` | Chart, formatters, settings, sound-packs, stats, speech-fallback |
 | `src-tauri/capabilities/default.json` | Tauri 2 IPC permission allowlist |
 | `src-tauri/icons/` | Build-time tray + installer icons (committed; regenerate via `cargo tauri icon <source.png>` if logo changes) |
 | `src-tauri/assets/` | Bundled fonts + default notification sounds |

@@ -4,7 +4,7 @@
   "version": "0.1.6",
   "identifier": "com.aiusage.taskbar.tauri",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../src",
     "devUrl": null,
     "beforeDevCommand": null,
     "beforeBuildCommand": null
