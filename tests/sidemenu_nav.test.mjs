@@ -1,6 +1,6 @@
 // Static analysis + lightweight DOM checks for the sidemenu wiring.
-// Verifies the sidemenu markup is present and the JS references the
-// expected IDs. Full behavioural testing happens in the manual QA pass.
+// Rewired from the deleted src/dashboard.js to read from src/main.ts and
+// src/shared/sidemenu.ts where the logic now lives.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -10,7 +10,9 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "src");
 const html = readFileSync(join(distDir, "index.html"), "utf8");
-const js = readFileSync(join(distDir, "dashboard.js"), "utf8");
+const mainTs = readFileSync(join(distDir, "main.ts"), "utf8");
+const sidemenuTs = readFileSync(join(distDir, "shared", "sidemenu.ts"), "utf8");
+const combinedJs = `${mainTs}\n${sidemenuTs}`;
 
 describe("sidemenu markup", () => {
   it("includes a backdrop and an aside element", () => {
@@ -37,12 +39,12 @@ describe("sidemenu markup", () => {
 });
 
 describe("sidemenu wiring", () => {
-  it("JS references sidemenu IDs and attaches a backdrop click handler", () => {
-    expect(js).toMatch(/sidemenuBackdrop/);
-    expect(js).toMatch(/sidemenu(?!Backdrop)/);
+  it("TS references sidemenu IDs and attaches a backdrop click handler", () => {
+    expect(combinedJs).toMatch(/sidemenuBackdrop/);
+    expect(combinedJs).toMatch(/sidemenu(?!Backdrop)/);
   });
 
-  it("JS iterates over .sidemenu-nav-item elements", () => {
-    expect(js).toMatch(/\.sidemenu-nav-item/);
+  it("TS iterates over .sidemenu-nav-item elements", () => {
+    expect(combinedJs).toMatch(/\.sidemenu-nav-item/);
   });
 });

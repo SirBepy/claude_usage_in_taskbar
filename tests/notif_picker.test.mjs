@@ -1,32 +1,29 @@
+// Rewired from the deleted src/modules/sound-packs.js — imports directly from
+// src/shared/sound-packs.ts. We stub window + electronAPI globals before the
+// module registers itself.
+
 import { describe, it, expect, beforeEach } from "vitest";
 import { JSDOM } from "jsdom";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// The module reads window at import time (attaches SoundPacks global). We must
+// stub window/document BEFORE importing. A single global JSDOM is fine; each
+// test replaces window.electronAPI and calls invalidateCache() to reset.
+const bootstrapDom = new JSDOM(`<!DOCTYPE html>`);
+globalThis.window = bootstrapDom.window;
+globalThis.document = bootstrapDom.window.document;
 
-const moduleSrc = fs.readFileSync(
-  path.resolve(__dirname, "../src/modules/sound-packs.js"),
-  "utf8",
-);
-
-function loadModuleIntoDom(dom) {
-  // Inject the IIFE as a <script> tag so JSDOM runs it in its own window
-  // context, giving the IIFE access to the JSDOM window global.
-  const s = dom.window.document.createElement("script");
-  s.textContent = moduleSrc;
-  dom.window.document.body.appendChild(s);
-}
+const SP = await import("../src/shared/sound-packs.ts");
 
 describe("two-step picker populates from pack catalog", () => {
   let dom;
+
   beforeEach(() => {
     dom = new JSDOM(`
       <select id="pack"></select>
       <select id="sound"></select>
-    `, { runScripts: "dangerously" });
-    // Stub electronAPI before loading module
+    `);
+    globalThis.window = dom.window;
+    globalThis.document = dom.window.document;
     dom.window.electronAPI = {
       listSoundPacks: async () => ([
         { id: "default", label: "Default", installed: true,
@@ -35,19 +32,16 @@ describe("two-step picker populates from pack catalog", () => {
           sounds: [{ id: "work.mp3", label: "Work work" }] },
       ]),
     };
-    loadModuleIntoDom(dom);
+    SP.invalidateCache();
   });
 
-  it("exposes window.SoundPacks with the expected API", () => {
-    const SP = dom.window.SoundPacks;
-    expect(SP).toBeDefined();
+  it("exposes the expected API", () => {
     for (const fn of ["loadPacks", "findPack", "populatePackSelect", "populateSoundSelect", "installPack"]) {
       expect(typeof SP[fn]).toBe("function");
     }
   });
 
   it("populatePackSelect shows installed/not-installed label", async () => {
-    const SP = dom.window.SoundPacks;
     const packs = await SP.loadPacks();
     const packEl = dom.window.document.getElementById("pack");
     SP.populatePackSelect(packEl, packs, "default");
@@ -57,7 +51,6 @@ describe("two-step picker populates from pack catalog", () => {
   });
 
   it("changing pack swaps sound options", async () => {
-    const SP = dom.window.SoundPacks;
     const packs = await SP.loadPacks();
     const packEl = dom.window.document.getElementById("pack");
     const soundEl = dom.window.document.getElementById("sound");

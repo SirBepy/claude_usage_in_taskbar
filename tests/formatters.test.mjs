@@ -1,24 +1,9 @@
-// Unit tests for pure helpers in tauri/dist/modules/formatters.js.
-//
-// formatters.js is a plain <script>-style file (no exports) because the
-// renderer loads it via <script src> in dashboard.html. To test it in Node
-// we eval the source into an isolated vm sandbox and pull the functions off
-// the sandbox's globals. That keeps formatters.js unmodified.
+// Unit tests for pure helpers in src/shared/formatters.ts + src/shared/time.ts.
+// Rewired from the deleted src/modules/formatters.js — vitest imports TS directly.
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import vm from "node:vm";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(__dirname, "..", "src", "modules", "formatters.js"), "utf8");
-
-// Sandbox: give it a stub `currentSettings` since valueColor() reads it.
-const sandbox = { currentSettings: {}, console };
-vm.createContext(sandbox);
-vm.runInContext(src, sandbox);
-const { hourToMs, pctColor, getThresholdColor, getPaceColor, fmtPct } = sandbox;
+import { pctColor, getThresholdColor, getPaceColor, fmtPct } from "../src/shared/formatters.ts";
+import { hourToMs } from "../src/shared/time.ts";
 
 describe("pctColor", () => {
   it("returns dim for null/undefined", () => {
