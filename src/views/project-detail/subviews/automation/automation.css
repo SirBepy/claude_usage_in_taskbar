@@ -1,0 +1,27 @@
+/* Automation subview styles. Moved from src/dashboard.css. */
+
+.automate-cta {
+  background: var(--primary, #2c5fd6);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+.automate-cta:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.automation-section { margin-top: 16px; }
+.automation-section .inline-input {
+  background: var(--bg, #16151f);
+  border: 1px solid var(--border, #2a2a3a);
+  color: var(--text, #e4e4ee);
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  width: 160px;
+}

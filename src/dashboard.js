@@ -34,7 +34,9 @@ function showView(name) {
 }
 
 // Stack of subview origins so Session detail knows where "back" goes.
+// Assigned to window so migrated TS views can reach it.
 const projectSubviewStack = [];
+window.projectSubviewStack = projectSubviewStack;
 
 function openProjectSubview(subview) {
   // subview: "project-notif-overrides" | "project-automation" | "project-folder-mapping" | "project-sessions"
@@ -104,51 +106,10 @@ document.querySelectorAll(".back-to-settings").forEach((btn) => {
   btn.onclick = () => showView("settings");
 });
 
-// Stats navigation
-document.getElementById("projectDetailBackBtn").onclick = () => {
-  projectSubviewStack.length = 0;
-  showView("projects");
-};
+// Project-detail back btn, 3-dot menu, subview back buttons, range buttons,
+// chart prev/next buttons are owned by
+// src/views/project-detail/project-detail.ts and its subview modules.
 
-// Project-detail 3-dot menu
-const projectDetailMenuBtn = document.getElementById("projectDetailMenuBtn");
-const projectDetailMenu = document.getElementById("projectDetailMenu");
-if (projectDetailMenuBtn && projectDetailMenu) {
-  projectDetailMenuBtn.onclick = (e) => {
-    e.stopPropagation();
-    projectDetailMenu.classList.toggle("hidden");
-  };
-  projectDetailMenu.querySelectorAll(".menu-item").forEach((btn) => {
-    btn.onclick = () => {
-      projectDetailMenu.classList.add("hidden");
-      const kind = btn.dataset.menuItem;
-      if (kind === "notif-overrides") {
-        if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("notifOverrides");
-        if (typeof renderProjectOverrides === "function") renderProjectOverrides(projectDetailState.cwd);
-        openProjectSubview("project-notif-overrides");
-      } else if (kind === "automation") {
-        if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("automation");
-        if (typeof renderAutomationForm === "function") renderAutomationForm();
-        openProjectSubview("project-automation");
-      } else if (kind === "folder-mapping") {
-        if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("folderMapping");
-        if (typeof wireFolderMappingSubview === "function") wireFolderMappingSubview(projectDetailState.cwd);
-        openProjectSubview("project-folder-mapping");
-      }
-    };
-  });
-  document.addEventListener("click", (e) => {
-    if (projectDetailMenu.classList.contains("hidden")) return;
-    if (projectDetailMenu.contains(e.target) || projectDetailMenuBtn.contains(e.target)) return;
-    projectDetailMenu.classList.add("hidden");
-  });
-}
-
-// Back buttons on project subviews
-["notifOverridesBackBtn", "automationBackBtn", "folderMappingBackBtn", "allSessionsBackBtn"].forEach((id) => {
-  const btn = document.getElementById(id);
-  if (btn) btn.onclick = () => backFromSubview();
-});
 const sessionDetailBackBtn = document.getElementById("sessionDetailBackBtn");
 if (sessionDetailBackBtn) sessionDetailBackBtn.onclick = () => backFromSubview();
 document.getElementById("graphDetailBackBtn").onclick = () => showView("dashboard");
@@ -167,99 +128,25 @@ function showToast(msg) {
   t.__timer = setTimeout(() => { t.style.opacity = "0"; }, 2200);
 }
 
-// ── Automation form ──────────────────────────────────────────────────────────
-
-async function renderAutomationForm() {
-  if (!projectDetailState.cwd) return;
-  const projects = await window.electronAPI.listProjects();
-  const proj = projects.find((p) => p.path === projectDetailState.cwd);
-  const empty = document.getElementById("automationEmpty");
-  const form = document.getElementById("automationForm");
-  if (!empty || !form) return;
-  if (!proj || !proj.automation) {
-    empty.style.display = "";
-    form.style.display = "none";
-    return;
-  }
-  empty.style.display = "none";
-  form.style.display = "block";
-  document.getElementById("automationEnabled").checked = !!proj.automation.enabled;
-  document.getElementById("automationAutostart").checked = !!proj.automation.autostart_on_boot;
-  document.getElementById("automationContinue").checked = !!proj.automation.continue_flag;
-  document.getElementById("automationPrefix").value = proj.automation.session_name_prefix || "";
-  form.dataset.projectId = proj.id;
-}
-
-document.getElementById("automateChannelBtn").onclick = async () => {
-  if (!projectDetailState.cwd) return;
-  let proj;
-  try { proj = await window.electronAPI.ensureProject(projectDetailState.cwd); }
-  catch (e) { return showToast(`Could not register project: ${e}`); }
-  await window.electronAPI.updateProject(proj.id, {
-    automation: {
-      enabled: false,
-      autostart_on_boot: true,
-      session_name_prefix: null,
-      continue_flag: true,
-    },
-  });
-  await renderAutomationForm();
-  showToast("Automation added. Flip Enabled to start it.");
-};
-
-document.getElementById("automationApplyBtn").onclick = async () => {
-  const projectId = document.getElementById("automationForm").dataset.projectId;
-  if (!projectId) return;
-  const enabled = document.getElementById("automationEnabled").checked;
-  const autostart = document.getElementById("automationAutostart").checked;
-  const cont = document.getElementById("automationContinue").checked;
-  const prefix = document.getElementById("automationPrefix").value.trim() || null;
-  await window.electronAPI.updateProject(projectId, {
-    automation: {
-      enabled, autostart_on_boot: autostart,
-      session_name_prefix: prefix, continue_flag: cont,
-    },
-  });
-  if (enabled) {
-    try { await window.electronAPI.spawnChannel(projectId); }
-    catch (e) { showToast(`Spawn failed: ${e}`); }
-  } else {
-    try { await window.electronAPI.stopChannel(projectId); } catch (_) {}
-  }
-  showToast("Automation updated.");
-};
-
-document.getElementById("automationRemoveBtn").onclick = async () => {
-  const projectId = document.getElementById("automationForm").dataset.projectId;
-  if (!projectId) return;
-  try { await window.electronAPI.stopChannel(projectId); } catch (_) {}
-  await window.electronAPI.updateProject(projectId, { automation: null });
-  await renderAutomationForm();
-  showToast("Automation removed.");
-};
-
-// Stats-project range + scroll buttons
-document.querySelectorAll(".range-btn").forEach((btn) => {
-  btn.onclick = () => {
-    projectDetailState.range = btn.dataset.range;
-    projectDetailState.offset = 0;
-    renderProjectDetail();
-  };
-});
-document.getElementById("chartPrevBtn").onclick = () => {
-  projectDetailState.offset++;
-  renderProjectDetail();
-};
-document.getElementById("chartNextBtn").onclick = () => {
-  projectDetailState.offset = Math.max(0, projectDetailState.offset - 1);
-  renderProjectDetail();
-};
+// renderAutomationForm + its automate/apply/remove handlers and the
+// project-detail range + chart prev/next button handlers are owned by
+// src/views/project-detail/project-detail.ts and
+// src/views/project-detail/subviews/automation/automation.ts.
 
 // ── State (shared as window globals with extracted modules) ──────────────────
 let lastHistory = null;
 let lastTokenHistory = null;
 let currentSettings = {};
 let projectDetailState = { cwd: null, range: "30d", offset: 0 };
+
+// Expose to window so migrated TS views (ES modules) can reach them.
+window.projectDetailState = projectDetailState;
+Object.defineProperty(window, "lastTokenHistory", {
+  configurable: true, get() { return lastTokenHistory; },
+});
+Object.defineProperty(window, "currentSettings", {
+  configurable: true, get() { return currentSettings; }, set(v) { currentSettings = v; },
+});
 
 // Dead paths: cwds whose folders no longer exist and couldn't be auto-merged
 const _deadPaths = new Set();
@@ -783,87 +670,14 @@ document.getElementById("hookModalNever").onclick = async () => {
   hideHookModal();
 };
 
-// ── Running instances ────────────────────────────────────────────────────────
+// renderRunningInstances, setRunningInstancesEmpty, instanceRowHtml, uptimeFrom,
+// fmtTokens are owned by src/views/project-detail/project-detail.ts. Its own
+// onInstancesChanged subscription keeps the running-instances list live.
 
-async function renderRunningInstances() {
-  if (!projectDetailState.cwd) return;
-
-  const projects = await window.electronAPI.listProjects();
-  const proj = projects.find((p) => p.path === projectDetailState.cwd);
-  if (!proj) {
-    setRunningInstancesEmpty(0);
-    return;
-  }
-  const instances = (await window.electronAPI.listInstancesForProject(proj.id))
-    .filter((i) => !i.end_reason);
-  const count = instances.length;
-
-  document.getElementById("runningInstancesCount").textContent = count;
-  const listEl = document.getElementById("runningInstancesList");
-  const emptyEl = document.getElementById("runningInstancesEmpty");
-  if (count === 0) {
-    listEl.style.display = "none";
-    emptyEl.style.display = "block";
-    return;
-  }
-  emptyEl.style.display = "none";
-  listEl.style.display = "block";
-
-  const stats = await Promise.all(
-    instances.map((i) => window.electronAPI.instanceTokenStats(i.session_id)),
-  );
-  listEl.innerHTML = instances.map((i, idx) => instanceRowHtml(i, stats[idx])).join("");
-  listEl.querySelectorAll(".instance-row").forEach((row) => {
-    const sid = row.dataset.sessionId;
-    const inst = instances.find((x) => x.session_id === sid);
-    if (!inst) return;
-    row.onclick = () => {
-      if (typeof openSessionDetail === "function") openSessionDetail(inst, "project-detail");
-    };
-  });
-}
-
-function setRunningInstancesEmpty(count) {
-  document.getElementById("runningInstancesCount").textContent = count;
-  document.getElementById("runningInstancesList").style.display = "none";
-  document.getElementById("runningInstancesEmpty").style.display = "block";
-}
-
-function fmtTokens(n) {
-  if (!n) return "0";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
-  return String(n);
-}
-
-function instanceRowHtml(i, stats) {
-  const uptime = uptimeFrom(i.started_at);
-  const tokens = stats?.tokens ?? 0;
-  const turns = stats?.turns ?? 0;
-  const prompts = stats?.prompts ?? 0;
-  const pidPart = i.pid > 0 ? `pid ${i.pid}` : "no pid";
-
-  return `
-    <div class="instance-row clickable" data-session-id="${i.session_id}">
-      <div class="status-dot"></div>
-      <div class="row-line">${pidPart} · up ${uptime} · ${prompts} ${prompts === 1 ? "msg" : "msgs"} · ${fmtTokens(tokens)} tokens · ${turns} ${turns === 1 ? "turn" : "turns"}</div>
-      <span class="chev">›</span>
-    </div>
-  `;
-}
-
-function uptimeFrom(iso) {
-  const start = new Date(iso).getTime();
-  const delta = Math.max(0, Date.now() - start);
-  const s = Math.floor(delta / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-}
-
-// Subscribe to live updates.
+// Keep the Projects-list live subscription here; projects.ts subscribes for its
+// own mount but the Projects view is not always mounted while other views
+// listen for instance changes.
 window.electronAPI.onInstancesChanged(() => {
-  if (activeView === "project-detail") renderRunningInstances();
   if (activeView === "projects") renderProjectsList();
 });
 

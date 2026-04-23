@@ -461,85 +461,13 @@ function renderMergedPathsSection(cwd) {
 }
 
 // ── Project detail ──────────────────────────────────────────────────────────────
+// DOM wiring lives in src/views/project-detail/project-detail.ts. This helper
+// just updates state and navigates; the migrated view wires everything on
+// mount (title, rename, explorer/vscode, running instances, automation form).
 function openProjectDetail(cwd) {
   projectDetailState.cwd = cwd;
   projectDetailState.offset = 0;
-  const title = document.getElementById("projectDetailTitle");
-  const titleInput = document.getElementById("projectDetailTitleInput");
-  if (title) title.textContent = projectLabel(cwd);
-
-  // Inline rename: click title to edit
-  if (title && titleInput) {
-    title.onclick = () => {
-      titleInput.value = projectLabel(cwd);
-      title.style.display = "none";
-      titleInput.style.display = "";
-      titleInput.focus();
-      titleInput.select();
-    };
-    const commitRename = () => {
-      const name = titleInput.value.trim();
-      titleInput.style.display = "none";
-      title.style.display = "";
-      if (!name) return;
-      if (!currentSettings.projectAliases) currentSettings.projectAliases = {};
-      const aliases = currentSettings.projectAliases;
-      // Build set of all primary cwds (from token history resolved to primaries + alias-only primaries)
-      const primaryCwds = new Set();
-      if (lastTokenHistory) {
-        for (const r of lastTokenHistory) {
-          if (!r.cwd) continue;
-          primaryCwds.add(resolveMergeChain(r.cwd, aliases));
-        }
-      }
-      for (const [c, a] of Object.entries(aliases)) {
-        if (a && !a.mergedInto) primaryCwds.add(c);
-      }
-      // Check for name collision with another primary project
-      let collisionCwd = null;
-      for (const existingCwd of primaryCwds) {
-        if (existingCwd === cwd) continue;
-        if (projectLabel(existingCwd) === name) { collisionCwd = existingCwd; break; }
-      }
-      if (collisionCwd) {
-        showMergeModal(
-          `"${name}" already exists. Merge this project into it?`,
-          () => {
-            doMerge(cwd, collisionCwd);
-            refreshProjectsUI();
-            openProjectDetail(collisionCwd);
-          },
-          () => {
-            title.style.display = "none";
-            titleInput.style.display = "";
-            titleInput.focus();
-            titleInput.select();
-          }
-        );
-      } else {
-        aliases[cwd] = { ...aliases[cwd], name };
-        saveSettings();
-        title.textContent = projectLabel(cwd);
-        refreshProjectsUI();
-      }
-    };
-    titleInput.onblur = commitRename;
-    titleInput.onkeydown = (e) => {
-      if (e.key === "Enter") { e.preventDefault(); titleInput.blur(); }
-      if (e.key === "Escape") { titleInput.value = projectLabel(cwd); titleInput.blur(); }
-    };
-  }
-
-  // Open project buttons
-  const explorerBtn = document.getElementById("openExplorerBtn");
-  const vscodeBtn = document.getElementById("openVSCodeBtn");
-  if (explorerBtn) explorerBtn.onclick = () => window.electronAPI.openInExplorer(cwd);
-  if (vscodeBtn) vscodeBtn.onclick = () => window.electronAPI.openInVSCode(cwd);
-
-  renderProjectDetail();
   showView("project-detail");
-  if (typeof renderRunningInstances === "function") renderRunningInstances();
-  if (typeof renderAutomationForm === "function") renderAutomationForm();
 }
 
 async function renderProjectOverrides(cwdKey) {
@@ -875,9 +803,13 @@ function renderSessionsList(cwd, range) {
 }
 
 function openAllSessions(cwd) {
-  if (typeof populateProjectSubviewHeader === "function") populateProjectSubviewHeader("allSessions");
-  renderAllSessionsList(cwd);
+  // DOM wiring lives in
+  // src/views/project-detail/subviews/sessions-list/sessions-list.ts. The
+  // subview stack is pushed by the menu handler in project-detail.ts; this
+  // helper is called from the Recent sessions "See all" button, so push here.
+  projectDetailState.cwd = cwd;
   if (typeof openProjectSubview === "function") openProjectSubview("project-sessions");
+  else showView("project-sessions");
 }
 
 function renderAllSessionsList(cwd) {

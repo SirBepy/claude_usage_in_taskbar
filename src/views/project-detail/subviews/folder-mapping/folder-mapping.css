@@ -1,0 +1,18 @@
+/* Folder mapping subview styles. Moved from src/dashboard.css. */
+
+.merged-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.merged-path-text {
+  flex: 1;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-family: 'Fira Code', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,153 @@
+/* Project detail view styles. Rules moved from src/dashboard.css. */
+
+.project-detail-header { align-items: flex-start; padding: 10px 12px; }
+.project-detail-heading {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+.project-detail-heading .avatar-mini {
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  background: var(--surface-alt, #3a3a52);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+.project-detail-titles {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; flex: 1;
+}
+.project-detail-path {
+  font-size: 0.66rem;
+  color: var(--text-dim, #8a8aa0);
+  font-family: 'Fira Code', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Instances section */
+.instances-section {
+  margin-bottom: 16px;
+}
+.instances-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim, #9a9ab0);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.instances-section .no-data {
+  font-size: 0.78rem;
+  color: var(--text-dim, #8a8aa0);
+  padding: 10px 0;
+}
+
+/* Running instances rows */
+.instance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface, #1f1f2c);
+  border: 1px solid var(--border, #2e2e40);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.instance-row .status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #6ad98a;
+  flex-shrink: 0;
+}
+.instance-row.external .status-dot { background: #8a9eff; }
+.instance-row.ending .status-dot { background: var(--text-dim, #8a8aa0); }
+.instance-row .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.instance-row .meta .top {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.78rem; font-weight: 500;
+}
+.instance-row .meta .sub {
+  font-size: 0.68rem; color: var(--text-dim, #8a8aa0);
+  font-family: 'Fira Code', monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.instance-row .tag {
+  background: var(--surface-alt, #2a2a3a);
+  padding: 1px 6px; border-radius: 3px;
+  font-size: 0.64rem; font-weight: 500;
+  color: var(--text-dim, #8a8aa0);
+}
+.instance-row .tag.automated { background: #3a2a1d; color: #f2b457; }
+.instance-row .tag.remote { background: #2a2845; color: #8a9eff; }
+.instance-row .actions { display: flex; gap: 4px; }
+.instance-row .actions .act-btn {
+  padding: 4px 8px; font-size: 0.7rem;
+  background: var(--surface-alt, #2a2a3a);
+  border: 0; border-radius: 4px;
+  color: var(--text, #c5c5d6);
+  cursor: pointer;
+}
+.instance-row .actions .act-btn:disabled {
+  opacity: 0.4; cursor: not-allowed;
+}
+.instance-row.clickable { cursor: pointer; }
+.instance-row.clickable:hover { background: var(--surface-alt, #2a2a3a); }
+.instance-row .row-line {
+  flex: 1; min-width: 0;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.74rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.instance-row .chev {
+  color: var(--text-dim, #8a8aa0);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+/* Range toggle */
+.range-toggle { display: flex; gap: 4px; }
+.range-btn {
+  padding: 3px 10px; font-size: 0.75rem; border-radius: 6px;
+  background: var(--surface-alt); color: var(--text-dim);
+  border: 1px solid var(--border); cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif; font-weight: 600;
+  transition: all 0.15s;
+}
+.range-btn.active { background: var(--primary); color: var(--bg); border-color: var(--primary); }
+.range-btn:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+
+/* Project detail menu popover */
+.menu-anchor { position: relative; display: inline-block; }
+.menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface, #1f1d2e);
+  border: 1px solid var(--border, #2d2c44);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  z-index: 1400;
+}
+.menu-popover.hidden { display: none; }
+.menu-popover .menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.menu-popover .menu-item:hover { background: var(--surface-alt, #2a2840); }
