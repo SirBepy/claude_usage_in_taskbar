@@ -95,6 +95,16 @@ body {
     display: none;
 }
 
+/* Router mount point for migrated views (src/views/<name>/...). When a
+ * migrated view is active this hosts the `.view` template; when a legacy
+ * view is active the router sets display:none inline. */
+#app {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
 .view-body {
     flex: 1;
     overflow-y: auto;

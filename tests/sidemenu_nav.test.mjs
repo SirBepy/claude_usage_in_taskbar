@@ -24,8 +24,15 @@ describe("sidemenu markup", () => {
     }
   });
 
-  it("has a burger button on the Home view", () => {
-    expect(html).toMatch(/id="burgerBtn-home"/);
+  it("home view template declares a burger button", () => {
+    // Home view migrated to src/views/dashboard; burger lives in the lit-html
+    // template there rather than in index.html.
+    const dashTs = readFileSync(
+      join(distDir, "views", "dashboard", "dashboard.ts"),
+      "utf8",
+    );
+    expect(dashTs).toMatch(/class="icon-btn burger"/);
+    expect(dashTs).toMatch(/data-burger="true"/);
   });
 });
 

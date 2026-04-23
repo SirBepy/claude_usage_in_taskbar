@@ -872,39 +872,7 @@ input:checked+.slider:before {
   text-align: center;
 }
 
-/* ── Home (dashboard view): enlarged cards ────────────────────────────── */
-#view-dashboard .view-body { padding: 20px 16px; }
-#view-dashboard .home-card {
-  background: var(--surface, #1f1f2c);
-  border: 1px solid var(--border, #2e2e40);
-  border-radius: 10px;
-  padding: 22px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 14px;
-  min-height: 170px;
-}
-#view-dashboard .home-card .label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim, #8a8aa0);
-}
-#view-dashboard .home-card .ring-wrap {
-  align-self: center;
-  margin: 4px 0;
-}
-#view-dashboard .home-card .pct {
-  font-size: 1.75rem;
-  font-weight: 600;
-  align-self: center;
-}
-#view-dashboard .home-card .sub {
-  font-size: 0.72rem;
-  color: var(--text-dim, #8a8aa0);
-  text-align: center;
-}
+/* Home (dashboard) view styles moved to src/views/dashboard/dashboard.css. */
 
 .projects-sort {
   display: inline-flex;

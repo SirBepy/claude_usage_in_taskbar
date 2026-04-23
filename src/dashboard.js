@@ -1,8 +1,10 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
+// Dashboard is migrated to src/views/dashboard. All other views still render
+// from the `#view-<name>` divs in index.html.
 const VIEWS = [
-  "dashboard", "settings", "settings-visuals", "settings-themes",
+  "settings", "settings-visuals", "settings-themes",
   "settings-notifications", "settings-sync", "statistics", "projects",
   "project-detail", "graph-detail",
   "project-notif-overrides", "project-automation", "project-folder-mapping",
@@ -18,8 +20,15 @@ function showView(name) {
   if (name !== "session-detail" && typeof stopLiveSessionPolling === "function") {
     stopLiveSessionPolling();
   }
-  for (const id of VIEWS) {
-    document.getElementById(`view-${id}`).classList.toggle("hidden", id !== name);
+  if (typeof window.navigateTo === "function") {
+    // Router takes over: hides legacy .view divs, shows #app for migrated
+    // views, or unhides the matching legacy div for non-migrated ones.
+    window.navigateTo(name);
+  } else {
+    for (const id of VIEWS) {
+      const el = document.getElementById(`view-${id}`);
+      if (el) el.classList.toggle("hidden", id !== name);
+    }
   }
   updateSidemenuActive(name);
 }
@@ -65,21 +74,7 @@ document.querySelectorAll("[data-burger]").forEach((btn) => {
 
 document.getElementById("sidemenuBackdrop").onclick = closeSidemenu;
 
-// Manual refresh button on the Home view header.
-const refreshNowBtn = document.getElementById("refreshNowBtn");
-if (refreshNowBtn) {
-  refreshNowBtn.onclick = async () => {
-    if (refreshNowBtn.dataset.busy === "1") return;
-    refreshNowBtn.dataset.busy = "1";
-    refreshNowBtn.classList.add("spinning");
-    try { await window.electronAPI.pollNow(); }
-    catch (e) { console.error("pollNow failed", e); }
-    finally {
-      refreshNowBtn.classList.remove("spinning");
-      delete refreshNowBtn.dataset.busy;
-    }
-  };
-}
+// Home view's refresh button is owned by src/views/dashboard/dashboard.ts.
 
 // Projects sort dropdown
 const projectsSortSelect = document.getElementById("projectsSortSelect");
@@ -320,95 +315,28 @@ async function runDeadPathCheck() {
 }
 
 // ── Stats rendering ───────────────────────────────────────────────────────────
-const statsContent = document.getElementById("stats-content");
+// `statsContent` (home view's container) is owned by src/views/dashboard now.
 const statisticsContent = document.getElementById("statistics-content");
 
-/** Re-render the main dashboard and wire all interactive elements. */
+/** Re-render the statistics view and nudge the migrated home view. */
 function refreshDashboard() {
   if (!lastHistory) return;
   renderHistory(lastHistory);
-  wireProjectListClicks(statisticsContent, refreshDashboard);
+  if (statisticsContent) {
+    wireProjectListClicks(statisticsContent, refreshDashboard);
+  }
+  window.dispatchEvent(new CustomEvent("refresh-dashboard-home"));
 }
 
 
 function renderHistory(history) {
   lastHistory = history;
+  if (!statisticsContent) return;
   if (!history || history.length === 0) {
-    const emptyHtml = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
-    statsContent.innerHTML = emptyHtml;
-    statisticsContent.innerHTML = emptyHtml;
+    statisticsContent.innerHTML = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
     return;
   }
-
-  renderHomeCards(history);
   renderStatistics(history);
-}
-
-/** Home view: big session + weekly cards, plus any pinned statistics cards. */
-function renderHomeCards(history) {
-  const latest = history[history.length - 1];
-  const sessionReset = fmtResetTime(latest.session_resets_at);
-  const weeklyReset = fmtResetTime(latest.weekly_resets_at);
-
-  const weeklyEndMs = latest.weekly_resets_at
-    ? new Date(latest.weekly_resets_at).getTime()
-    : Date.now() + 3_600_000;
-  const sessionResetMs = latest.session_resets_at ? new Date(latest.session_resets_at).getTime() : null;
-  const sessionSafePct = sessionResetMs !== null
-    ? Math.max(0, Math.min(100, Math.round((5 * 3_600_000 - (sessionResetMs - Date.now())) / (5 * 3_600_000) * 100)))
-    : null;
-  const weeklySafePct = Math.max(0, Math.min(100, Math.round((7 * 24 * 3_600_000 - (weeklyEndMs - Date.now())) / (7 * 24 * 3_600_000) * 100)));
-
-  const showSafePace = true;
-
-  statsContent.innerHTML = `
-    <div class="stat-cards">
-      <div class="stat-card home-card">
-        <div class="stat-label label">Session (5h)</div>
-        <div class="ring-wrap">
-          ${showSafePace ? `
-          <div class="stat-values-row">
-            <div class="stat-col">
-              <div class="stat-value pct" style="color:${valueColor(latest.session_pct, sessionSafePct)}">${fmtPct(latest.session_pct)}</div>
-              <div class="stat-sublabel">current</div>
-            </div>
-            <div class="stat-col">
-              <div class="stat-value stat-value-dim">${fmtPct(sessionSafePct)}</div>
-              <div class="stat-sublabel">safe pace</div>
-            </div>
-          </div>` : `
-          <div class="stat-value pct" style="color:${valueColor(latest.session_pct, sessionSafePct)}">${fmtPct(latest.session_pct)}</div>`}
-        </div>
-        ${sessionReset ? `<div class="stat-sublabel sub">${sessionReset}</div>` : ""}
-      </div>
-      <div class="stat-card home-card">
-        <div class="stat-label label">Weekly (7d)</div>
-        <div class="ring-wrap">
-          ${showSafePace ? `
-          <div class="stat-values-row">
-            <div class="stat-col">
-              <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct, weeklySafePct)}">${fmtPct(latest.weekly_pct)}</div>
-              <div class="stat-sublabel">current</div>
-            </div>
-            <div class="stat-col">
-              <div class="stat-value stat-value-dim">${fmtPct(weeklySafePct)}</div>
-              <div class="stat-sublabel">safe pace</div>
-            </div>
-          </div>` : `
-          <div class="stat-value pct" style="color:${valueColor(latest.weekly_pct, weeklySafePct)}">${fmtPct(latest.weekly_pct)}</div>`}
-        </div>
-        ${weeklyReset ? `<div class="stat-sublabel sub">${weeklyReset}</div>` : ""}
-      </div>
-    </div>
-    ${buildPinnedCardsHTML(history)}
-  `;
-
-  setupPaginationButtons();
-  setupLegendToggles();
-  applyLineVisibility();
-  wireChartModeToggles(statsContent);
-  wirePinButtons(statsContent, { onHomeUnpin: true });
-  wireProjectListClicks(statsContent, refreshDashboard);
 }
 
 /** Pin state helpers ─────────────────────────────────────────────────────── */

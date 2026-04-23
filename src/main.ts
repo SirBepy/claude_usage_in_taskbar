@@ -2,7 +2,10 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/themes.css";
 
-import { mountRouter } from "./router";
+import { mountRouter, registerView } from "./router";
+import { renderDashboard } from "./views/dashboard/dashboard";
+
+registerView("dashboard", renderDashboard);
 
 const app = document.getElementById("app");
 if (!app) {
