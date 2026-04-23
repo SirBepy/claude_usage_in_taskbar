@@ -4,7 +4,8 @@ use crate::auth;
 use crate::scraper::{fetch_usage, ScrapeError};
 use crate::state::AppState;
 use crate::types::{AuthState, UsageSnapshot};
-use crate::{history, paths, session};
+use crate::{history, paths};
+use crate::auth::session;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 

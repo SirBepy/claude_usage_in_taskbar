@@ -11,7 +11,6 @@ pub mod notifications;
 pub mod soundpacks;
 pub mod piper;
 pub mod usage_parser;
-pub mod cdp;
 pub mod history;
 pub mod hook_server;
 pub mod instances;
@@ -20,7 +19,6 @@ pub mod ipc;
 pub mod paths;
 pub mod scheduler;
 pub mod scraper;
-pub mod session;
 pub mod session_files;
 pub mod settings;
 pub mod state;
@@ -30,6 +28,7 @@ pub mod types;
 
 use crate::state::AppState;
 use crate::types::AuthState;
+use crate::auth::session;
 use tauri::Emitter;
 use tauri::Manager;
 

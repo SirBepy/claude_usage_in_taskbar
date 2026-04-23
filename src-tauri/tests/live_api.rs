@@ -15,7 +15,7 @@
 
 use claude_usage_tauri_lib::paths;
 use claude_usage_tauri_lib::scraper::{self, ScrapeError};
-use claude_usage_tauri_lib::session;
+use claude_usage_tauri_lib::auth::session;
 
 const CLAUDE_BASE: &str = "https://claude.ai";
 
