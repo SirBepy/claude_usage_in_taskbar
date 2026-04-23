@@ -807,6 +807,11 @@
     <!-- Toast container -->
     <div id="toastStack" class="toast-stack"></div>
 
+    <!-- Mount point for migrated views (router renders into here). Legacy
+         views remain as static siblings above until their migration task. -->
+    <div id="app"></div>
+
+    <script type="module" src="./main.ts"></script>
     <script src="debug-overlay.js"></script>
     <script src="modules/formatters.js"></script>
     <script src="modules/stats.js"></script>
