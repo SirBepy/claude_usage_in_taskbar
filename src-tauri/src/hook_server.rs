@@ -4,7 +4,7 @@
 use crate::paths;
 use crate::settings;
 use crate::state::AppState;
-use crate::token_stats;
+use crate::tokens as token_stats;
 use anyhow::Result;
 use axum::{
     extract::State as AxState,

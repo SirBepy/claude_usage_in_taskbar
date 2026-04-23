@@ -24,7 +24,7 @@ pub mod session;
 pub mod session_files;
 pub mod settings;
 pub mod state;
-pub mod token_stats;
+pub mod tokens;
 pub mod tray;
 pub mod types;
 pub mod vault_detector;
@@ -171,7 +171,7 @@ pub fn run() {
                     let Ok(path) = paths::token_history_file() else { return };
                     let path_clone = path.clone();
                     match tauri::async_runtime::spawn_blocking(move || {
-                        crate::token_stats::backfill_all(&path_clone)
+                        crate::tokens::backfill_all(&path_clone)
                     })
                     .await
                     {
@@ -180,7 +180,7 @@ pub fn run() {
                                 "startup backfill: {} new, {} skipped (sub: {} new, {} skipped)",
                                 r.processed, r.skipped, r.sub_processed, r.sub_skipped
                             );
-                            let history = crate::token_stats::load_history(&path);
+                            let history = crate::tokens::load_history(&path);
                             let _ = h.emit("token-history-updated", history);
                         }
                         Ok(Err(e)) => log::warn!("startup backfill failed: {e:?}"),
@@ -324,7 +324,7 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         } else {
             (crate::types::InstanceKind::External, false)
         };
-        let transcript_path = crate::token_stats::latest_transcript_for_cwd(&s.cwd);
+        let transcript_path = crate::tokens::latest_transcript_for_cwd(&s.cwd);
         let input = crate::instances::RegisterInput {
             session_id: s.session_id.clone(),
             cwd: s.cwd,

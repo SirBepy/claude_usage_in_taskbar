@@ -330,12 +330,12 @@ pub fn instance_token_stats(session_id: String, state: State<AppState>) -> serde
     let Some(inst) = state.instances.get(&session_id) else { return empty };
     let path = match inst.transcript_path.as_ref() {
         Some(p) if p.exists() => p.clone(),
-        _ => match crate::token_stats::latest_transcript_for_cwd(&inst.cwd) {
+        _ => match crate::tokens::latest_transcript_for_cwd(&inst.cwd) {
             Some(p) => p,
             None => return empty,
         },
     };
-    let t = crate::token_stats::parse_transcript(&path);
+    let t = crate::tokens::parse_transcript(&path);
     let total = t.input_tokens + t.output_tokens + t.cache_read_tokens + t.cache_creation_tokens;
     serde_json::json!({
         "tokens": total,
