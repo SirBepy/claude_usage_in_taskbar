@@ -8,11 +8,6 @@ const THEMES = [
   { id: "cosmo",   label: "Cosmo",   darkColors: ["#1a0a1e", "#241430", "#f472b6", "#fb923c", "#f0e4f5"], lightColors: ["#faf0f4", "#ffffff", "#db2777", "#ea580c", "#2a1030"] },
 ];
 
-const themeGrid = document.getElementById("themeGrid");
-const themeModToggle = document.getElementById("themeModToggle");
-const modeLabelDark = document.getElementById("modeLabelDark");
-const modeLabelLight = document.getElementById("modeLabelLight");
-
 function resolveThemeId(baseId, isLight) {
   return isLight ? baseId + "-light" : baseId;
 }
@@ -22,104 +17,21 @@ function parseThemeId(fullId) {
   return { baseId: isLight ? fullId.replace("-light", "") : fullId, isLight };
 }
 
-function applyTheme(baseId) {
-  const isLight = themeModToggle.checked;
-  const fullId = resolveThemeId(baseId, isLight);
-  document.documentElement.dataset.theme = fullId;
-  currentSettings.theme = fullId;
-  saveSettings();
-
-  // Update active card highlight (no DOM rebuild)
-  for (const card of themeGrid.querySelectorAll(".theme-card")) {
-    card.classList.toggle("active", card.dataset.themeId === baseId);
-  }
-
-  // Update mode label colors (they use --primary which just changed)
-  modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
-  modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
-}
-
-function renderThemeCards(activeTheme) {
-  const { baseId: activeBase, isLight } = parseThemeId(activeTheme);
-  const colorKey = isLight ? "lightColors" : "darkColors";
-  themeGrid.innerHTML = "";
-  for (const t of THEMES) {
-    const card = document.createElement("div");
-    card.className = "theme-card" + (t.id === activeBase ? " active" : "");
-    card.dataset.themeId = t.id;
-    card.innerHTML = `
-      <div class="theme-swatch">${t[colorKey].map(c => `<span style="background:${c}"></span>`).join("")}</div>
-      <span class="theme-card-label">${t.label}</span>
-    `;
-    card.onclick = () => applyTheme(t.id);
-    themeGrid.appendChild(card);
-  }
-
-  modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
-  modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
-}
-
-themeModToggle.addEventListener("change", () => {
-  const { baseId } = parseThemeId(currentSettings.theme || "void");
-  const isLight = themeModToggle.checked;
-  const fullId = resolveThemeId(baseId, isLight);
-
-  // Apply theme + save
-  document.documentElement.dataset.theme = fullId;
-  currentSettings.theme = fullId;
-  saveSettings();
-
-  // Rebuild cards to show correct color swatches for the new mode
-  renderThemeCards(fullId);
-});
-
-// ── Settings ───────────────────────────────────────────────────────────────────
-const defaultDisplay = document.getElementById("defaultDisplay");
-const iconStyle = document.getElementById("iconStyle");
-const timeStyle = document.getElementById("timeStyle");
-const iconStyleSection = document.getElementById("iconStyleSection");
-const launchAtLogin = document.getElementById("launchAtLogin");
-const tooltipLayout = document.getElementById("tooltipLayout");
-const tooltipShowSafePace = document.getElementById("tooltipShowSafePace");
-const colorApplyIcon = document.getElementById("colorApplyIcon");
-const colorApplyNumber = document.getElementById("colorApplyNumber");
-const colorApplyDashboard = document.getElementById("colorApplyDashboard");
-const colorApplyTooltip = document.getElementById("colorApplyTooltip");
-const colorContainer = document.getElementById("colorContainer");
-const colorMode = document.getElementById("colorMode");
-const thresholdSection = document.getElementById("thresholdSection");
-const paceSection = document.getElementById("paceSection");
-const paceBand = document.getElementById("paceBand");
-const paceColorUnder = document.getElementById("paceColorUnder");
-const paceColorNearSafe = document.getElementById("paceColorNearSafe");
-const paceColorNearOver = document.getElementById("paceColorNearOver");
-const paceColorOver = document.getElementById("paceColorOver");
-const addColorBtn = document.getElementById("addColorBtn");
-const muteAllSwitch = document.getElementById("muteAllSwitch");
-const muteSoundsSwitch = document.getElementById("muteSoundsSwitch");
-const muteSystemSwitch = document.getElementById("muteSystemSwitch");
-const muteSection = document.getElementById("muteSection");
-
-function applyMuteAllVisual() {
-  const dimmed = muteAllSwitch.checked;
-  muteSection.classList.toggle("mute-all-on", dimmed);
-}
-
-muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
-muteSoundsSwitch.addEventListener("change", saveSettings);
-// system switch stays disabled; no listener.
-
+// ── Notification types ────────────────────────────────────────────────────────
 const NOTIF_TYPES = [
   { key: "workFinished",     title: "Done (Work Finished)",     hint: "Supports {name}",    defaultSound: "sound1.mp3", defaultTemplate: "{name} is done" },
   { key: "questionAsked",    title: "Waiting (Question Asked)", hint: "Supports {name}",    defaultSound: "sound3.mp3", defaultTemplate: "{name} is waiting" },
   { key: "thresholdCrossed", title: "Threshold Reached",        hint: "Supports {percent}", defaultSound: "sound6.mp3", defaultTemplate: "{percent} threshold reached" },
 ];
-const notifCardsRoot = document.getElementById("notifCards");
-const notifCardTemplate = document.getElementById("notifCardTemplate");
-const voicePreviewProject = document.getElementById("voicePreviewProject");
-const voicePreviewProjectRow = document.getElementById("voicePreviewProjectRow");
+
+// ── Module state ──────────────────────────────────────────────────────────────
 const notifCards = {};
 let piperStatusCache = null;
+let isMac = false;
+let _isMacResolved = false;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
 
 function getInstalledPiperVoices() {
   return (piperStatusCache?.voices || []).filter(v => v.installed);
@@ -226,7 +138,8 @@ function wireNotifCard(type) {
     });
   };
   c.voicePreview.onclick = () => {
-    const cwd = voicePreviewProject.value || "";
+    const voicePreviewProject = $("voicePreviewProject");
+    const cwd = voicePreviewProject?.value || "";
     const rawName = cwd ? cwd.split(/[\\/]/).pop() : "Project";
     const name = rawName.replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
     const text = (c.template.value || def.defaultTemplate)
@@ -241,10 +154,14 @@ function wireNotifCard(type) {
 }
 
 function buildNotifCards() {
+  const notifCardsRoot = $("notifCards");
+  const notifCardTemplate = $("notifCardTemplate");
   if (!notifCardsRoot || !notifCardTemplate) {
     console.error("[notif] template or root missing");
     return;
   }
+  // Reset state for fresh mount
+  for (const k of Object.keys(notifCards)) delete notifCards[k];
   notifCardsRoot.innerHTML = "";
   for (const t of NOTIF_TYPES) {
     const node = notifCardTemplate.content.firstElementChild.cloneNode(true);
@@ -272,6 +189,10 @@ function buildNotifCards() {
 }
 
 function gatherNotifSettings() {
+  // If notif UI isn't mounted, preserve whatever is already in currentSettings.
+  if (!Object.keys(notifCards).length) {
+    return currentSettings.notifications || {};
+  }
   const out = {};
   for (const t of NOTIF_TYPES) {
     const c = notifCards[t.key];
@@ -302,8 +223,6 @@ async function loadPiperVoices() {
   }
 }
 
-// Electron quirk: speechSynthesis.getVoices() often returns [] initially.
-// Poll for ~3s and also subscribe to onvoiceschanged.
 function primeWebVoices() {
   if (!window.speechSynthesis) return;
   let tries = 0;
@@ -316,64 +235,65 @@ function primeWebVoices() {
   speechSynthesis.addEventListener?.("voiceschanged", refreshAllVoiceSelects);
   speechSynthesis.onvoiceschanged = refreshAllVoiceSelects;
 }
-const autoUpdate = document.getElementById("autoUpdate");
-const refreshUpdateBtn = document.getElementById("refreshUpdateBtn");
-const copyLogsBtn = document.getElementById("copyLogsBtn");
-const appVersionLabel = document.getElementById("appVersionLabel");
-const updateBtn = document.getElementById("updateBtn");
-const updateStateLabel = document.getElementById("updateStateLabel");
-const macUpdateNotice = document.getElementById("macUpdateNotice");
-const macReleasesBtn = document.getElementById("macReleasesBtn");
-let isMac = false;
 
+// ── Save ──────────────────────────────────────────────────────────────────────
+// Reads every DOM field defensively. When a settings subview isn't mounted, we
+// fall back to whatever is already in currentSettings so save round-trips
+// don't drop data.
 function saveSettings() {
-  const settings = {
-    theme: document.documentElement.dataset.theme || "void",
-    defaultDisplay: defaultDisplay.value,
-    iconStyle: iconStyle.value,
-    timeStyle: timeStyle.value,
-    tooltipLayout: tooltipLayout.value,
-    tooltipShowSafePace: tooltipShowSafePace.checked,
-    launchAtLogin: launchAtLogin.checked,
-    autoUpdate: autoUpdate.checked,
-    pinnedCards: Array.isArray(currentSettings.pinnedCards) ? currentSettings.pinnedCards : [],
-    colorApplyTo: {
-      icon: colorApplyIcon.checked,
-      number: colorApplyNumber.checked,
-      dashboard: colorApplyDashboard.checked,
-      tooltip: colorApplyTooltip.checked,
-    },
-    colorMode: colorMode.value,
-    paceBand: parseInt(paceBand.value, 10) || 10,
-    paceColors: {
-      under: paceColorUnder.value,
-      nearSafe: paceColorNearSafe.value,
-      nearOver: paceColorNearOver.value,
-      over: paceColorOver.value,
-    },
-    colorThresholds: Array.from(colorContainer.querySelectorAll(".color-row"))
-      .map((row) => ({
+  const prev = currentSettings || {};
+  const valOr = (id, fallback) => { const el = $(id); return el ? el.value : fallback; };
+  const chkOr = (id, fallback) => { const el = $(id); return el ? el.checked : fallback; };
+
+  const colorContainer = $("colorContainer");
+  const thresholds = colorContainer
+    ? Array.from(colorContainer.querySelectorAll(".color-row")).map((row) => ({
         min: parseInt(row.querySelector(".color-min").value, 10),
         color: row.querySelector(".color-val").value,
-      }))
-      .sort((a, b) => a.min - b.min),
-    muteAll: muteAllSwitch.checked,
-    muteSounds: muteSoundsSwitch.checked,
-    muteSystemNotifications: muteSystemSwitch.checked,
+      })).sort((a, b) => a.min - b.min)
+    : (prev.colorThresholds || []);
+
+  const settings = {
+    theme: document.documentElement.dataset.theme || prev.theme || "void",
+    defaultDisplay: valOr("defaultDisplay", prev.defaultDisplay || "icon"),
+    iconStyle: valOr("iconStyle", prev.iconStyle || "rings"),
+    timeStyle: valOr("timeStyle", prev.timeStyle || "absolute"),
+    tooltipLayout: valOr("tooltipLayout", prev.tooltipLayout || "rows"),
+    tooltipShowSafePace: chkOr("tooltipShowSafePace", prev.tooltipShowSafePace !== false),
+    launchAtLogin: chkOr("launchAtLogin", prev.launchAtLogin || false),
+    autoUpdate: chkOr("autoUpdate", prev.autoUpdate || false),
+    pinnedCards: Array.isArray(prev.pinnedCards) ? prev.pinnedCards : [],
+    colorApplyTo: {
+      icon: chkOr("colorApplyIcon", prev.colorApplyTo?.icon !== false),
+      number: chkOr("colorApplyNumber", prev.colorApplyTo?.number !== false),
+      dashboard: chkOr("colorApplyDashboard", prev.colorApplyTo?.dashboard !== false),
+      tooltip: chkOr("colorApplyTooltip", prev.colorApplyTo?.tooltip !== false),
+    },
+    colorMode: valOr("colorMode", prev.colorMode || "threshold"),
+    paceBand: parseInt(valOr("paceBand", prev.paceBand ?? 10), 10) || 10,
+    paceColors: {
+      under: valOr("paceColorUnder", prev.paceColors?.under || "#27ae60"),
+      nearSafe: valOr("paceColorNearSafe", prev.paceColors?.nearSafe || "#f1c40f"),
+      nearOver: valOr("paceColorNearOver", prev.paceColors?.nearOver || "#e67e22"),
+      over: valOr("paceColorOver", prev.paceColors?.over || "#e74c3c"),
+    },
+    colorThresholds: thresholds,
+    muteAll: chkOr("muteAllSwitch", prev.muteAll || false),
+    muteSounds: chkOr("muteSoundsSwitch", prev.muteSounds || false),
+    muteSystemNotifications: chkOr("muteSystemSwitch", prev.muteSystemNotifications || false),
     notifications: gatherNotifSettings(),
-    projectAliases: currentSettings.projectAliases || {},
-    // stats.js mutates projectBlacklist directly on currentSettings. If we
-    // don't persist it here, each save round-trip drops any project the
-    // user just hid.
-    projectBlacklist: currentSettings.projectBlacklist || [],
-    projectNotifOverrides: currentSettings.projectNotifOverrides || {},
-    sync: currentSettings.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
+    projectAliases: prev.projectAliases || {},
+    projectBlacklist: prev.projectBlacklist || [],
+    projectNotifOverrides: prev.projectNotifOverrides || {},
+    sync: prev.sync || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" },
   };
   currentSettings = settings;
   window.electronAPI?.saveSettings(settings);
-  renderHistory(lastHistory);
+  if (typeof renderHistory === "function") renderHistory(lastHistory);
 }
+window.saveSettings = saveSettings;
 
+// ── Visuals subview ───────────────────────────────────────────────────────────
 function createColorRow(min = 0, color = "#ffffff") {
   const row = document.createElement("div");
   row.className = "option color-row";
@@ -391,26 +311,228 @@ function createColorRow(min = 0, color = "#ffffff") {
   return row;
 }
 
-function updateVisibilities() {
-  // Icon style always visible (icon is always one of the 3 cycle states)
-  iconStyleSection.style.display = "flex";
-}
-
 function updateColorModeVisibility() {
+  const colorMode = $("colorMode");
+  const thresholdSection = $("thresholdSection");
+  const paceSection = $("paceSection");
+  if (!colorMode || !thresholdSection || !paceSection) return;
   const isPace = colorMode.value === "pace";
   thresholdSection.style.display = isPace ? "none" : "block";
   paceSection.style.display = isPace ? "block" : "none";
 }
 
-defaultDisplay.addEventListener("change", () => { updateVisibilities(); saveSettings(); });
-colorMode.addEventListener("change", () => { updateColorModeVisibility(); saveSettings(); });
-paceBand.addEventListener("change", saveSettings);
-paceColorUnder.addEventListener("change", saveSettings);
-paceColorNearSafe.addEventListener("change", saveSettings);
-paceColorNearOver.addEventListener("change", saveSettings);
-paceColorOver.addEventListener("change", saveSettings);
+function wireInfoTooltips(root) {
+  for (const wrap of root.querySelectorAll(".info-wrap")) {
+    const icon = wrap.querySelector(".info-icon");
+    const tip = wrap.querySelector(".info-tooltip");
+    if (!icon || !tip) continue;
+    icon.addEventListener("mouseenter", () => {
+      tip.style.display = "block";
+      const iconRect = icon.getBoundingClientRect();
+      const tipRect = tip.getBoundingClientRect();
+      const pad = 8;
+      let top = iconRect.top - tipRect.height - pad;
+      let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+      if (left < pad) left = pad;
+      if (left + tipRect.width > window.innerWidth - pad) left = window.innerWidth - pad - tipRect.width;
+      if (top < pad) top = iconRect.bottom + pad;
+      tip.style.top = top + "px";
+      tip.style.left = left + "px";
+    });
+    icon.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  }
+}
 
+window.renderVisualsSettings = function () {
+  const s = currentSettings || {};
+  const defaultDisplay = $("defaultDisplay");
+  const iconStyle = $("iconStyle");
+  const timeStyle = $("timeStyle");
+  const tooltipLayout = $("tooltipLayout");
+  const tooltipShowSafePace = $("tooltipShowSafePace");
+  const colorApplyIcon = $("colorApplyIcon");
+  const colorApplyNumber = $("colorApplyNumber");
+  const colorApplyDashboard = $("colorApplyDashboard");
+  const colorApplyTooltip = $("colorApplyTooltip");
+  const colorContainer = $("colorContainer");
+  const colorMode = $("colorMode");
+  const paceBand = $("paceBand");
+  const paceColorUnder = $("paceColorUnder");
+  const paceColorNearSafe = $("paceColorNearSafe");
+  const paceColorNearOver = $("paceColorNearOver");
+  const paceColorOver = $("paceColorOver");
+  const addColorBtn = $("addColorBtn");
+  const iconStyleSection = $("iconStyleSection");
+  if (!defaultDisplay) return;
+
+  defaultDisplay.value = s.defaultDisplay || "icon";
+  iconStyle.value = s.iconStyle || "rings";
+  timeStyle.value = s.timeStyle || "absolute";
+  tooltipLayout.value = s.tooltipLayout || "rows";
+  tooltipShowSafePace.checked = s.tooltipShowSafePace !== false;
+  const cat = s.colorApplyTo || {};
+  colorApplyIcon.checked = cat.icon !== false;
+  colorApplyNumber.checked = cat.number !== false;
+  colorApplyDashboard.checked = cat.dashboard !== false;
+  colorApplyTooltip.checked = cat.tooltip !== false;
+  colorMode.value = s.colorMode || "threshold";
+  paceBand.value = s.paceBand ?? 10;
+  const pc = s.paceColors || {};
+  paceColorUnder.value = pc.under || "#27ae60";
+  paceColorNearSafe.value = pc.nearSafe || "#f1c40f";
+  paceColorNearOver.value = pc.nearOver || "#e67e22";
+  paceColorOver.value = pc.over || "#e74c3c";
+
+  const DEFAULT_THRESHOLDS = [
+    { min: 0,  color: "#27ae60" },
+    { min: 50, color: "#e67e22" },
+    { min: 80, color: "#e74c3c" },
+  ];
+  const thresholds = (s.colorThresholds && s.colorThresholds.length) ? s.colorThresholds : DEFAULT_THRESHOLDS;
+  colorContainer.innerHTML = "";
+  thresholds.forEach((t) => colorContainer.appendChild(createColorRow(t.min, t.color)));
+
+  updateColorModeVisibility();
+  if (iconStyleSection) iconStyleSection.style.display = "flex";
+
+  for (const el of [iconStyle, timeStyle, tooltipLayout]) el.addEventListener("change", saveSettings);
+  for (const el of [tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
+    el.addEventListener("change", saveSettings);
+  }
+  defaultDisplay.addEventListener("change", saveSettings);
+  colorMode.addEventListener("change", () => { updateColorModeVisibility(); saveSettings(); });
+  paceBand.addEventListener("change", saveSettings);
+  paceColorUnder.addEventListener("change", saveSettings);
+  paceColorNearSafe.addEventListener("change", saveSettings);
+  paceColorNearOver.addEventListener("change", saveSettings);
+  paceColorOver.addEventListener("change", saveSettings);
+  addColorBtn.onclick = () => { colorContainer.appendChild(createColorRow(0, "#9d7dfc")); saveSettings(); };
+
+  wireInfoTooltips(document.getElementById("app") || document);
+};
+
+// ── Themes subview ────────────────────────────────────────────────────────────
+function renderThemeCards(activeTheme) {
+  const themeGrid = $("themeGrid");
+  const modeLabelDark = $("modeLabelDark");
+  const modeLabelLight = $("modeLabelLight");
+  if (!themeGrid) return;
+  const { baseId: activeBase, isLight } = parseThemeId(activeTheme);
+  const colorKey = isLight ? "lightColors" : "darkColors";
+  themeGrid.innerHTML = "";
+  for (const t of THEMES) {
+    const card = document.createElement("div");
+    card.className = "theme-card" + (t.id === activeBase ? " active" : "");
+    card.dataset.themeId = t.id;
+    card.innerHTML = `
+      <div class="theme-swatch">${t[colorKey].map(c => `<span style="background:${c}"></span>`).join("")}</div>
+      <span class="theme-card-label">${t.label}</span>
+    `;
+    card.onclick = () => applyTheme(t.id);
+    themeGrid.appendChild(card);
+  }
+
+  if (modeLabelDark) modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
+  if (modeLabelLight) modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
+}
+
+function applyTheme(baseId) {
+  const themeModToggle = $("themeModToggle");
+  const isLight = themeModToggle ? themeModToggle.checked : false;
+  const fullId = resolveThemeId(baseId, isLight);
+  document.documentElement.dataset.theme = fullId;
+  currentSettings.theme = fullId;
+  saveSettings();
+
+  const themeGrid = $("themeGrid");
+  if (themeGrid) {
+    for (const card of themeGrid.querySelectorAll(".theme-card")) {
+      card.classList.toggle("active", card.dataset.themeId === baseId);
+    }
+  }
+  const modeLabelDark = $("modeLabelDark");
+  const modeLabelLight = $("modeLabelLight");
+  if (modeLabelDark) modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
+  if (modeLabelLight) modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
+}
+
+window.renderThemesSettings = function () {
+  const themeModToggle = $("themeModToggle");
+  if (!themeModToggle) return;
+  const savedTheme = (currentSettings && currentSettings.theme) || document.documentElement.dataset.theme || "void";
+  themeModToggle.checked = savedTheme.endsWith("-light");
+  renderThemeCards(savedTheme);
+
+  themeModToggle.onchange = () => {
+    const { baseId } = parseThemeId(currentSettings.theme || "void");
+    const isLight = themeModToggle.checked;
+    const fullId = resolveThemeId(baseId, isLight);
+    document.documentElement.dataset.theme = fullId;
+    currentSettings.theme = fullId;
+    saveSettings();
+    renderThemeCards(fullId);
+  };
+};
+
+// ── Notifications subview ─────────────────────────────────────────────────────
+function applyMuteAllVisual() {
+  const muteAllSwitch = $("muteAllSwitch");
+  const muteSection = $("muteSection");
+  if (!muteAllSwitch || !muteSection) return;
+  muteSection.classList.toggle("mute-all-on", muteAllSwitch.checked);
+}
+
+async function populateVoicePreview() {
+  const voicePreviewProject = $("voicePreviewProject");
+  if (!voicePreviewProject) return;
+  const history = await window.electronAPI.getTokenHistory();
+  const seen = new Set();
+  const projects = [];
+  for (let i = history.length - 1; i >= 0 && projects.length < 5; i--) {
+    const cwd = history[i].cwd;
+    if (!cwd || seen.has(cwd)) continue;
+    seen.add(cwd);
+    projects.push(cwd);
+  }
+  voicePreviewProject.innerHTML = projects.length
+    ? projects.map(p => `<option value="${p}">${p.split(/[\\/]/).pop()}</option>`).join("")
+    : `<option value="">No projects yet</option>`;
+}
+
+window.renderNotificationSettings = async function () {
+  const s = currentSettings || {};
+  const muteAllSwitch = $("muteAllSwitch");
+  const muteSoundsSwitch = $("muteSoundsSwitch");
+  const muteSystemSwitch = $("muteSystemSwitch");
+  const voicePreviewProjectRow = $("voicePreviewProjectRow");
+  if (!muteAllSwitch) return;
+
+  muteAllSwitch.checked = !!s.muteAll;
+  muteSoundsSwitch.checked = !!s.muteSounds;
+  muteSystemSwitch.checked = !!s.muteSystemNotifications;
+  applyMuteAllVisual();
+
+  muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
+  muteSoundsSwitch.addEventListener("change", saveSettings);
+
+  buildNotifCards();
+  const notifs = s.notifications || {};
+  await Promise.all(NOTIF_TYPES.map(t => renderNotifCard(t.key, notifs[t.key] || {})));
+  populateVoicePreview();
+  loadPiperVoices();
+  primeWebVoices();
+
+  if (voicePreviewProjectRow) voicePreviewProjectRow.style.display = "flex";
+};
+
+// ── Update state (version row on Settings root) ──────────────────────────────
 function renderUpdateState(updateState) {
+  const updateStateLabel = $("updateStateLabel");
+  const updateBtn = $("updateBtn");
+  const macUpdateNotice = $("macUpdateNotice");
+  const macReleasesBtn = $("macReleasesBtn");
+  if (!updateStateLabel || !updateBtn) return;
+
   const hasUpdate = updateState.state === "available" ||
     updateState.state === "downloaded" ||
     updateState.state === "downloading" ||
@@ -420,16 +542,18 @@ function renderUpdateState(updateState) {
     updateStateLabel.innerText = `v${updateState.version} available`;
     updateStateLabel.style.color = "var(--text)";
     updateBtn.style.display = "none";
-    macUpdateNotice.style.display = "block";
-    macReleasesBtn.onclick = () => {
-      window.electronAPI?.openExternal(
-        `https://github.com/SirBepy/claude_usage_in_taskbar/releases/tag/v${updateState.version}`
-      );
-    };
+    if (macUpdateNotice) macUpdateNotice.style.display = "block";
+    if (macReleasesBtn) {
+      macReleasesBtn.onclick = () => {
+        window.electronAPI?.openExternal(
+          `https://github.com/SirBepy/claude_usage_in_taskbar/releases/tag/v${updateState.version}`
+        );
+      };
+    }
     return;
   }
 
-  macUpdateNotice.style.display = "none";
+  if (macUpdateNotice) macUpdateNotice.style.display = "none";
 
   if (updateState.state === "downloaded") {
     updateStateLabel.innerText = "Ready to install";
@@ -468,172 +592,72 @@ function renderUpdateState(updateState) {
     updateBtn.style.display = "none";
   }
 }
+window.renderUpdateState = renderUpdateState;
 
-window.onload = async () => {
-  const platform = await window.electronAPI?.getPlatform();
-  isMac = platform === "darwin";
-  if (isMac) {
-    const row = document.getElementById("autoUpdateRow");
-    if (row) row.style.display = "none";
+window.renderSettingsRoot = async function () {
+  const s = currentSettings || {};
+  const launchAtLogin = $("launchAtLogin");
+  const autoUpdate = $("autoUpdate");
+  const refreshUpdateBtn = $("refreshUpdateBtn");
+  const copyLogsBtn = $("copyLogsBtn");
+  const appVersionLabel = $("appVersionLabel");
+  const autoUpdateRow = $("autoUpdateRow");
+  if (!launchAtLogin) return;
+
+  if (!_isMacResolved) {
+    const platform = await window.electronAPI?.getPlatform();
+    isMac = platform === "darwin";
+    _isMacResolved = true;
   }
+  if (isMac && autoUpdateRow) autoUpdateRow.style.display = "none";
 
-  const settings = await window.electronAPI?.getSettings();
-  if (settings) {
-    const savedTheme = settings.theme || "void";
-    document.documentElement.dataset.theme = savedTheme;
-    themeModToggle.checked = savedTheme.endsWith("-light");
-    renderThemeCards(savedTheme);
+  launchAtLogin.checked = !!s.launchAtLogin;
+  autoUpdate.checked = !!s.autoUpdate;
+  launchAtLogin.addEventListener("change", saveSettings);
+  autoUpdate.addEventListener("change", saveSettings);
 
-    defaultDisplay.value = settings.defaultDisplay || "icon";
-    iconStyle.value = settings.iconStyle || "rings";
-    timeStyle.value = settings.timeStyle || "absolute";
-    tooltipLayout.value = settings.tooltipLayout || "rows";
-    tooltipShowSafePace.checked = settings.tooltipShowSafePace !== false;
-    launchAtLogin.checked = settings.launchAtLogin || false;
-    autoUpdate.checked = settings.autoUpdate || false;
-    if (!Array.isArray(settings.pinnedCards)) settings.pinnedCards = [];
-    // Normalize colorApplyTo so every key has an explicit boolean. Keys added
-    // after the field shipped (dashboard, tooltip) may be missing on stale
-    // settings files; without this migration, valueColor sees undefined and
-    // the read-side check still falls through, but anything that copies the
-    // object loses the implicit-true default.
-    const cat = {
-      icon: settings.colorApplyTo?.icon !== false,
-      number: settings.colorApplyTo?.number !== false,
-      dashboard: settings.colorApplyTo?.dashboard !== false,
-      tooltip: settings.colorApplyTo?.tooltip !== false,
-    };
-    settings.colorApplyTo = cat;
-    colorApplyIcon.checked = cat.icon;
-    colorApplyNumber.checked = cat.number;
-    colorApplyDashboard.checked = cat.dashboard;
-    colorApplyTooltip.checked = cat.tooltip;
-    colorMode.value = settings.colorMode || "threshold";
-    paceBand.value = settings.paceBand ?? 10;
-    const pc = settings.paceColors || {};
-    paceColorUnder.value = pc.under || "#27ae60";
-    paceColorNearSafe.value = pc.nearSafe || "#f1c40f";
-    paceColorNearOver.value = pc.nearOver || "#e67e22";
-    paceColorOver.value = pc.over || "#e74c3c";
-    updateColorModeVisibility();
-    currentSettings = settings;
-    if (settings.projectAliases) currentSettings.projectAliases = settings.projectAliases;
-    const DEFAULT_THRESHOLDS = [
-      { min: 0,  color: "#27ae60" },
-      { min: 50, color: "#e67e22" },
-      { min: 80, color: "#e74c3c" },
-    ];
-    const thresholds = (settings.colorThresholds && settings.colorThresholds.length)
-      ? settings.colorThresholds
-      : DEFAULT_THRESHOLDS;
-    settings.colorThresholds = thresholds;
-    thresholds.forEach((t) =>
-      colorContainer.appendChild(createColorRow(t.min, t.color))
-    );
-
-    muteAllSwitch.checked = !!settings.muteAll;
-    muteSoundsSwitch.checked = !!settings.muteSounds;
-    muteSystemSwitch.checked = !!settings.muteSystemNotifications;
-    applyMuteAllVisual();
-
-    buildNotifCards();
-    const notifs = settings.notifications || {};
-    await Promise.all(NOTIF_TYPES.map(t => renderNotifCard(t.key, notifs[t.key] || {})));
-    populateVoicePreview();
-    loadPiperVoices();
-
-    // Initialize sync settings (defined in sync-settings.js)
-    if (typeof initSyncSettings === "function") initSyncSettings(settings);
-  }
-
-  updateVisibilities();
-
-  // Auto-save on any input change
-  for (const el of [iconStyle, timeStyle, tooltipLayout]) {
-    el.addEventListener("change", saveSettings);
-  }
-  for (const el of [launchAtLogin, autoUpdate, tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
-    el.addEventListener("change", saveSettings);
-  }
-
-  addColorBtn.onclick = () => {
-    colorContainer.appendChild(createColorRow(0, "#9d7dfc"));
-    saveSettings();
-  };
-
-  primeWebVoices();
-
-  async function populateVoicePreview() {
-    const history = await window.electronAPI.getTokenHistory();
-    const seen = new Set();
-    const projects = [];
-    for (let i = history.length - 1; i >= 0 && projects.length < 5; i--) {
-      const cwd = history[i].cwd;
-      if (!cwd || seen.has(cwd)) continue;
-      seen.add(cwd);
-      projects.push(cwd);
+  refreshUpdateBtn.addEventListener("click", () => {
+    window.electronAPI?.checkForUpdates();
+    const updateStateLabel = $("updateStateLabel");
+    const updateBtn = $("updateBtn");
+    if (updateStateLabel) {
+      updateStateLabel.innerText = "Checking...";
+      updateStateLabel.style.color = "var(--text-dim)";
     }
-    voicePreviewProject.innerHTML = projects.length
-      ? projects.map(p => `<option value="${p}">${p.split(/[\\/]/).pop()}</option>`).join("")
-      : `<option value="">No projects yet</option>`;
-  }
+    if (updateBtn) updateBtn.style.display = "none";
+  });
 
-  voicePreviewProjectRow.style.display = "flex";
+  copyLogsBtn.addEventListener("click", () => {
+    window.electronAPI?.copyLogs();
+    const originalText = copyLogsBtn.textContent;
+    copyLogsBtn.textContent = "Copied to Clipboard!";
+    copyLogsBtn.classList.replace("btn-secondary", "btn-primary");
+    setTimeout(() => {
+      copyLogsBtn.textContent = originalText;
+      copyLogsBtn.classList.replace("btn-primary", "btn-secondary");
+    }, 2000);
+  });
 
   const version = await window.electronAPI?.getAppVersion();
-  if (version) appVersionLabel.innerText = `Version: ${version}`;
+  if (version && appVersionLabel) appVersionLabel.innerText = `Version: ${version}`;
 
   const initialState = await window.electronAPI?.getUpdateState();
   if (initialState) renderUpdateState(initialState);
-
   window.electronAPI?.onUpdateStateChange(renderUpdateState);
 };
 
-refreshUpdateBtn.addEventListener("click", () => {
-  window.electronAPI?.checkForUpdates();
-  updateStateLabel.innerText = "Checking...";
-  updateStateLabel.style.color = "var(--text-dim)";
-  updateBtn.style.display = "none";
+// ── Initial settings load (runs once at script start, no DOM access) ─────────
+window.addEventListener("load", async () => {
+  const settings = await window.electronAPI?.getSettings();
+  if (!settings) return;
+  settings.colorApplyTo = {
+    icon: settings.colorApplyTo?.icon !== false,
+    number: settings.colorApplyTo?.number !== false,
+    dashboard: settings.colorApplyTo?.dashboard !== false,
+    tooltip: settings.colorApplyTo?.tooltip !== false,
+  };
+  if (!Array.isArray(settings.pinnedCards)) settings.pinnedCards = [];
+  currentSettings = settings;
+  const savedTheme = settings.theme || "void";
+  document.documentElement.dataset.theme = savedTheme;
 });
-
-copyLogsBtn.addEventListener("click", () => {
-  window.electronAPI?.copyLogs();
-  const originalText = copyLogsBtn.textContent;
-  copyLogsBtn.textContent = "Copied to Clipboard!";
-  copyLogsBtn.classList.replace("btn-secondary", "btn-primary");
-  setTimeout(() => {
-    copyLogsBtn.textContent = originalText;
-    copyLogsBtn.classList.replace("btn-primary", "btn-secondary");
-  }, 2000);
-});
-
-// ── Info tooltip positioning (fixed, viewport-clamped) ───────────────────────
-for (const wrap of document.querySelectorAll(".info-wrap")) {
-  const icon = wrap.querySelector(".info-icon");
-  const tip = wrap.querySelector(".info-tooltip");
-  if (!icon || !tip) continue;
-
-  icon.addEventListener("mouseenter", () => {
-    tip.style.display = "block";
-    const iconRect = icon.getBoundingClientRect();
-    const tipRect = tip.getBoundingClientRect();
-    const pad = 8;
-
-    let top = iconRect.top - tipRect.height - pad;
-    let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
-
-    // clamp horizontal
-    if (left < pad) left = pad;
-    if (left + tipRect.width > window.innerWidth - pad) left = window.innerWidth - pad - tipRect.width;
-
-    // flip below if no room above
-    if (top < pad) top = iconRect.bottom + pad;
-
-    tip.style.top = top + "px";
-    tip.style.left = left + "px";
-  });
-
-  icon.addEventListener("mouseleave", () => {
-    tip.style.display = "none";
-  });
-}

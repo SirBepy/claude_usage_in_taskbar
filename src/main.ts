@@ -12,6 +12,10 @@ import { renderAutomationView } from "./views/project-detail/subviews/automation
 import { renderFolderMappingView } from "./views/project-detail/subviews/folder-mapping/folder-mapping";
 import { renderSessionsListView } from "./views/project-detail/subviews/sessions-list/sessions-list";
 import { renderSessionDetailView } from "./views/session-detail/session-detail";
+import { renderSettingsView } from "./views/settings/settings";
+import { renderVisualsView } from "./views/settings/subviews/visuals/visuals";
+import { renderThemesView } from "./views/settings/subviews/themes/themes";
+import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
 
 registerView("dashboard", renderDashboard);
 registerView("statistics", renderStatisticsView);
@@ -22,6 +26,10 @@ registerView("project-automation", renderAutomationView);
 registerView("project-folder-mapping", renderFolderMappingView);
 registerView("project-sessions", renderSessionsListView);
 registerView("session-detail", renderSessionDetailView);
+registerView("settings", renderSettingsView);
+registerView("settings-visuals", renderVisualsView);
+registerView("settings-themes", renderThemesView);
+registerView("settings-notifications", renderNotificationsView);
 
 const app = document.getElementById("app");
 if (!app) {

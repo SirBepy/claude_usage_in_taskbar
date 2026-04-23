@@ -92,17 +92,10 @@ document.querySelectorAll(".sidemenu-nav-item").forEach((item) => {
   };
 });
 
-document.getElementById("logoutBtn").onclick = () => window.electronAPI?.logout();
-
-// Settings subpage nav
-document.getElementById("nav-visuals").onclick = () => showView("settings-visuals");
-document.getElementById("nav-themes").onclick = () => showView("settings-themes");
-document.getElementById("nav-notifications").onclick = () => showView("settings-notifications");
-// TODO: re-enable when Sync feature resumes.
-// document.getElementById("nav-sync").onclick = () => showView("settings-sync");
-
-// Back buttons on all subpages
-document.querySelectorAll(".back-to-settings").forEach((btn) => {
+// Settings root + subviews (logout, nav-visuals/themes/notifications, back
+// buttons) are owned by src/views/settings/. The Sync subview is legacy-only;
+// its back button still lives in index.html + is wired below.
+document.querySelectorAll("#view-settings-sync .back-to-settings").forEach((btn) => {
   btn.onclick = () => showView("settings");
 });
 

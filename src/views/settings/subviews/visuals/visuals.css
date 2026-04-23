@@ -1,0 +1,3 @@
+/* Visuals subview - no subview-specific styles yet. Shared rules (.section,
+ * .option, .switch, .info-wrap, .info-icon, .info-tooltip, .btn-secondary,
+ * input[type=color], input[type=number], select) live in src/dashboard.css. */
