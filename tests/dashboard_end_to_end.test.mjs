@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { JSDOM } from "jsdom";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const distDir = join(__dirname, "..", "dist");
+const distDir = join(__dirname, "..", "src");
 
 function installTauriStub(window, history) {
   window.__TAURI__ = {

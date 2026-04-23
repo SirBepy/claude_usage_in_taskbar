@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(join(__dirname, "..", "dist", "modules", "formatters.js"), "utf8");
+const src = readFileSync(join(__dirname, "..", "src", "modules", "formatters.js"), "utf8");
 
 // Sandbox: give it a stub `currentSettings` since valueColor() reads it.
 const sandbox = { currentSettings: {}, console };

@@ -11,7 +11,7 @@ import { JSDOM } from "jsdom";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const statsSrc = readFileSync(
-  join(__dirname, "..", "dist", "modules", "stats.js"),
+  join(__dirname, "..", "src", "modules", "stats.js"),
   "utf8"
 );
 

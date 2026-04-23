@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const moduleSrc = fs.readFileSync(
-  path.resolve(__dirname, "../dist/modules/sound-packs.js"),
+  path.resolve(__dirname, "../src/modules/sound-packs.js"),
   "utf8",
 );
 

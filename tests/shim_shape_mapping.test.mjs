@@ -14,7 +14,7 @@ import vm from "node:vm";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const shimSrc = readFileSync(
-  join(__dirname, "..", "dist", "electron-api-shim.js"),
+  join(__dirname, "..", "src", "electron-api-shim.js"),
   "utf8"
 );
 

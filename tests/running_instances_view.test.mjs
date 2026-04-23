@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const distDir = join(__dirname, "..", "dist");
+const distDir = join(__dirname, "..", "src");
 const html = readFileSync(join(distDir, "dashboard.html"), "utf8");
 const js = readFileSync(join(distDir, "dashboard.js"), "utf8");
 
