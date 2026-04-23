@@ -13,6 +13,7 @@ import type { TokenRecord, AliasMap } from "../../shared/tokens";
 import { fmtK, totalTok, cacheEffPct } from "../../shared/tokens";
 import { hourToMs, timeAgo } from "../../shared/time";
 import { projectLabel, isBlacklisted } from "../../shared/projects";
+import { showView, openProjectDetail } from "../../shared/navigation";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -680,7 +681,7 @@ function openGraphDetail(listId: string): void {
 
   wireProjectListClicks(container, refreshDashboard);
   wireChartModeToggles(container);
-  g().showView?.("graph-detail");
+  showView("graph-detail");
 }
 
 function renderGraphDetailFromCurrent(type: "session" | "weekly"): void {
@@ -790,7 +791,7 @@ export function wireProjectListClicks(
       row.onclick = () => {
         const cwd = row.dataset["cwd"];
         if (!cwd) return;
-        g().openProjectDetail?.(cwd);
+        openProjectDetail(cwd);
       };
     }
   });

@@ -1,11 +1,11 @@
 import { html, render } from "lit-html";
 import { showToast } from "../../shared/toast";
+import { backFromSubview } from "../../shared/navigation";
+import { getCurrentSessionRecord, getProjectDetailState, getSettings } from "../../shared/state";
+import { renderAvatar as renderAvatarHtml } from "../../shared/projects";
 import "./session-detail.css";
 
-interface Avatar {
-  kind?: string;
-  value?: string;
-}
+import type { Avatar } from "../../shared/projects";
 
 interface ProjectCfg {
   path: string;
@@ -43,11 +43,6 @@ interface LegacyGlobals {
     stopChannel(projectId: string): Promise<unknown>;
     phoneLink(sessionId: string): Promise<string | null>;
   };
-  projectDetailState: { cwd: string | null };
-  currentSettings: { projects?: ProjectCfg[] };
-  currentSessionRecord: SessionRecord | null;
-  backFromSubview(): void;
-  renderAvatar(a: Avatar | undefined): string;
 }
 
 function g(): LegacyGlobals {
@@ -177,20 +172,20 @@ export async function renderSessionDetailView(
 ): Promise<() => void> {
   render(template(), root);
 
-  const r = g().currentSessionRecord;
+  const r = getCurrentSessionRecord() as SessionRecord | null;
   if (!r) return () => { /* nothing */ };
 
-  const cwd = g().projectDetailState?.cwd || "";
-  const settings = g().currentSettings || {};
-  const configured = (settings.projects || []).find((p) => p.path === cwd);
+  const cwd = getProjectDetailState().cwd || "";
+  const settings = getSettings();
+  const configured = ((settings.projects as ProjectCfg[] | undefined) || []).find((p) => p.path === cwd);
   const avatar = configured?.avatar || {
-    kind: "emoji",
+    kind: "emoji" as const,
     value: (configured?.name || cwd || "?").charAt(0),
   };
   const avatarEl = document.getElementById("sessionDetailAvatar");
   const titleEl = document.getElementById("sessionDetailTitle");
   const pathEl = document.getElementById("sessionDetailPath");
-  if (avatarEl) avatarEl.innerHTML = g().renderAvatar(avatar);
+  if (avatarEl) avatarEl.innerHTML = renderAvatarHtml(avatar);
   if (titleEl) {
     titleEl.textContent = isLive(r)
       ? `Live session - pid ${(r.pid ?? 0) > 0 ? r.pid : "?"}`
@@ -199,7 +194,7 @@ export async function renderSessionDetailView(
   if (pathEl) pathEl.textContent = cwd;
 
   const backBtn = root.querySelector<HTMLButtonElement>("#sessionDetailBackBtn");
-  if (backBtn) backBtn.onclick = () => g().backFromSubview();
+  if (backBtn) backBtn.onclick = () => backFromSubview();
 
   renderChrome(r);
   renderBody(r);
@@ -212,7 +207,7 @@ export async function renderSessionDetailView(
       if (!api) return;
       try {
         const stats = await api.instanceTokenStats(sid);
-        if (g().currentSessionRecord?.session_id !== sid) return;
+        if ((getCurrentSessionRecord() as SessionRecord | null)?.session_id !== sid) return;
         renderBody(r, stats);
       } catch { /* ignore transient */ }
     };

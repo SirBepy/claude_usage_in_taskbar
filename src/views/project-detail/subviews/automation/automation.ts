@@ -1,5 +1,8 @@
 import { html, render } from "lit-html";
 import { showToast } from "../../../../shared/toast";
+import { backFromSubview } from "../../../../shared/navigation";
+import { getProjectDetailState } from "../../../../shared/state";
+import { populateProjectSubviewHeader } from "../sessions-list/sessions-list";
 import "./automation.css";
 
 interface Automation {
@@ -23,9 +26,6 @@ interface LegacyGlobals {
     spawnChannel(id: string): Promise<unknown>;
     stopChannel(id: string): Promise<unknown>;
   };
-  projectDetailState: { cwd: string | null };
-  backFromSubview(): void;
-  populateProjectSubviewHeader(prefix: string): void;
 }
 
 function g(): LegacyGlobals {
@@ -33,7 +33,7 @@ function g(): LegacyGlobals {
 }
 
 async function renderAutomationForm(): Promise<void> {
-  const cwd = g().projectDetailState?.cwd;
+  const cwd = getProjectDetailState().cwd;
   if (!cwd) return;
   const api = g().electronAPI;
   if (!api) return;
@@ -65,15 +65,15 @@ export async function renderAutomationView(
 ): Promise<() => void> {
   render(template(), root);
 
-  g().populateProjectSubviewHeader("automation");
+  populateProjectSubviewHeader("automation");
 
   const backBtn = root.querySelector<HTMLButtonElement>("#automationBackBtn");
-  if (backBtn) backBtn.onclick = () => g().backFromSubview();
+  if (backBtn) backBtn.onclick = () => backFromSubview();
 
   const automate = root.querySelector<HTMLButtonElement>("#automateChannelBtn");
   if (automate) {
     automate.onclick = async () => {
-      const cwd = g().projectDetailState?.cwd;
+      const cwd = getProjectDetailState().cwd;
       if (!cwd) return;
       const api = g().electronAPI;
       if (!api) return;

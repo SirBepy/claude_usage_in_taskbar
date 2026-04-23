@@ -13,3 +13,6 @@ export function updateSidemenuActive(viewName: string): void {
     el.classList.toggle("active", el.dataset.view === viewName);
   });
 }
+
+// Back-compat: router.ts reads window.updateSidemenuActive to sync highlight.
+(window as unknown as { updateSidemenuActive?: (n: string) => void }).updateSidemenuActive = updateSidemenuActive;

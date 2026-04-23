@@ -4,15 +4,7 @@ import { fmtK, totalTok, cacheEffPct } from "../../../../shared/tokens";
 import type { TokenRecord } from "../../../../shared/tokens";
 import { renderAvatar, projectLabel } from "../../../../shared/projects";
 import { getProjectDetailState, getSettings, getTokenHistory } from "../../../../shared/state";
-
-interface LegacyGlobals {
-  backFromSubview(): void;
-  openSessionDetail?(rec: unknown, origin?: string): void;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
+import { backFromSubview, openSessionDetail } from "../../../../shared/navigation";
 
 export function populateProjectSubviewHeader(prefix: string): void {
   const cwd = getProjectDetailState().cwd || "";
@@ -60,7 +52,7 @@ export function renderAllSessionsList(cwd: string): void {
   list.querySelectorAll<HTMLElement>(".session-row").forEach((el) => {
     el.onclick = () => {
       const idx = Number(el.dataset.sessionIdx);
-      g().openSessionDetail?.(sorted[idx], "project-sessions");
+      openSessionDetail(sorted[idx], "project-sessions");
     };
   });
 }
@@ -76,7 +68,7 @@ export async function renderSessionsListView(
   populateProjectSubviewHeader("allSessions");
 
   const backBtn = root.querySelector<HTMLButtonElement>("#allSessionsBackBtn");
-  if (backBtn) backBtn.onclick = () => g().backFromSubview();
+  if (backBtn) backBtn.onclick = () => backFromSubview();
 
   const cwd = getProjectDetailState().cwd;
   if (cwd) {

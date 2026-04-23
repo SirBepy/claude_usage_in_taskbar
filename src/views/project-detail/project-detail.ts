@@ -12,6 +12,15 @@ import {
   getProjectSubviewStack,
 } from "../../shared/state";
 import type { ProjectConfig } from "../../shared/state";
+import {
+  showView,
+  openProjectSubview,
+  openSessionDetail,
+  openAllSessions,
+  showMergeModal,
+} from "../../shared/navigation";
+import { saveSettings } from "../../shared/settings-save";
+import { refreshProjectsUI } from "../projects/projects";
 
 interface Instance {
   session_id: string;
@@ -39,18 +48,6 @@ interface LegacyGlobals {
     saveSettings(s: unknown): Promise<unknown>;
     onInstancesChanged(cb: () => void): () => void;
   };
-  showView(name: string): void;
-  openProjectSubview(name: string): void;
-  openSessionDetail?(rec: unknown, origin?: string): void;
-  openAllSessions?(cwd: string): void;
-  saveSettings?(): void;
-  showMergeModal(
-    msg: string,
-    onOk: () => void,
-    onCancel?: (() => void) | null,
-    okLabel?: string,
-  ): void;
-  refreshProjectsUI?(): void;
 }
 
 function g(): LegacyGlobals {
@@ -122,8 +119,7 @@ async function renderRunningInstances(): Promise<void> {
     const inst = instances.find((x) => x.session_id === sid);
     if (!inst) return;
     row.onclick = () => {
-      const fn = g().openSessionDetail;
-      if (typeof fn === "function") fn(inst, "project-detail");
+      openSessionDetail(inst, "project-detail");
     };
   });
 }
@@ -185,12 +181,12 @@ function wireTitleRename(cwd: string): void {
       }
     }
     if (collisionCwd) {
-      g().showMergeModal(
+      showMergeModal(
         `"${name}" already exists. Merge this project into it?`,
         () => {
           doMerge(aliases, cwd, collisionCwd as string);
-          g().saveSettings?.();
-          g().refreshProjectsUI?.();
+          saveSettings();
+          refreshProjectsUI();
           openProjectDetailAgain(collisionCwd as string);
         },
         () => {
@@ -202,9 +198,9 @@ function wireTitleRename(cwd: string): void {
       );
     } else {
       aliases[cwd] = { ...aliases[cwd], name };
-      g().saveSettings?.();
+      saveSettings();
       title.textContent = projectLabel(cwd, aliases);
-      g().refreshProjectsUI?.();
+      refreshProjectsUI();
     }
   };
 
@@ -225,7 +221,7 @@ function openProjectDetailAgain(cwd: string): void {
   const s = getProjectDetailState();
   s.cwd = cwd;
   s.offset = 0;
-  g().showView("project-detail");
+  showView("project-detail");
 }
 
 export async function renderProjectDetailView(
@@ -246,7 +242,7 @@ export async function renderProjectDetailView(
   if (backBtn) {
     backBtn.onclick = () => {
       getProjectSubviewStack().length = 0;
-      g().showView("projects");
+      showView("projects");
     };
   }
 
@@ -269,9 +265,9 @@ export async function renderProjectDetailView(
       btn.onclick = () => {
         menu.classList.add("hidden");
         const kind = btn.dataset.menuItem;
-        if (kind === "notif-overrides") g().openProjectSubview("project-notif-overrides");
-        else if (kind === "automation") g().openProjectSubview("project-automation");
-        else if (kind === "folder-mapping") g().openProjectSubview("project-folder-mapping");
+        if (kind === "notif-overrides") openProjectSubview("project-notif-overrides");
+        else if (kind === "automation") openProjectSubview("project-automation");
+        else if (kind === "folder-mapping") openProjectSubview("project-folder-mapping");
       };
     });
     document.addEventListener("click", onDocClick);
@@ -476,12 +472,12 @@ function renderSessionsList(cwd: string, range: string): void {
   list.querySelectorAll<HTMLElement>(".session-row").forEach((el) => {
     el.onclick = () => {
       const idx = Number(el.dataset.sessionIdx);
-      g().openSessionDetail?.(top[idx]);
+      openSessionDetail(top[idx]);
     };
   });
   const seeAllBtn = list.querySelector<HTMLButtonElement>("#seeAllSessionsBtn");
   if (seeAllBtn) seeAllBtn.onclick = () => {
-    g().openAllSessions?.(cwd);
+    openAllSessions(cwd);
   };
 }
 

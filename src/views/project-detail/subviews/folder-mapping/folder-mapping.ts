@@ -5,6 +5,9 @@ import { projectLabel } from "../../../../shared/projects";
 import { doRepoint, doUnmerge, resolveMergeChain } from "../../../../shared/merges";
 import { populateProjectSubviewHeader } from "../sessions-list/sessions-list";
 import { renderProjectDetailContent } from "../../project-detail";
+import { showView, backFromSubview, showMergeModal, openProjectDetail } from "../../../../shared/navigation";
+import { saveSettings } from "../../../../shared/settings-save";
+import { refreshProjectsUI } from "../../../projects/projects";
 
 interface ElectronAPIShape {
   checkPathsExist(paths: string[]): Promise<Record<string, boolean>>;
@@ -13,33 +16,10 @@ interface ElectronAPIShape {
 
 interface LegacyGlobals {
   electronAPI?: ElectronAPIShape;
-  showView(name: string): void;
-  backFromSubview(): void;
-  showMergeModal(
-    msg: string,
-    onOk: () => void,
-    onCancel?: (() => void) | null,
-    okLabel?: string,
-  ): void;
-  saveSettings?(): void;
-  refreshProjectsUI?(): void;
-  openProjectDetail?(cwd: string): void;
 }
 
 function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
-}
-
-function openProjectDetail(cwd: string): void {
-  const fn = g().openProjectDetail;
-  if (typeof fn === "function") {
-    fn(cwd);
-    return;
-  }
-  const s = getProjectDetailState();
-  s.cwd = cwd;
-  s.offset = 0;
-  g().showView("project-detail");
 }
 
 function doHideProject(cwd: string): void {
@@ -50,7 +30,7 @@ function doHideProject(cwd: string): void {
   if (!settings.projectBlacklist.includes(resolved)) {
     settings.projectBlacklist.push(resolved);
   }
-  g().saveSettings?.();
+  saveSettings();
 }
 
 export function renderMergedPathsSection(cwd: string): void {
@@ -73,10 +53,10 @@ export function renderMergedPathsSection(cwd: string): void {
       const path = btn.dataset.path;
       if (!path) return;
       doUnmerge(aliases, path, cwd);
-      g().saveSettings?.();
+      saveSettings();
       renderMergedPathsSection(cwd);
       renderProjectDetailContent();
-      g().refreshProjectsUI?.();
+      refreshProjectsUI();
     };
   });
 }
@@ -129,8 +109,8 @@ export function wireFolderMappingSubview(cwd: string): void {
       } catch (e) { showErr("Could not verify folder: " + (e as Error).message); return; }
       if (!settings.projectAliases) settings.projectAliases = {};
       doRepoint(settings.projectAliases, cwd, newCwd);
-      g().saveSettings?.();
-      g().refreshProjectsUI?.();
+      saveSettings();
+      refreshProjectsUI();
       getProjectSubviewStack().length = 0;
       openProjectDetail(newCwd);
     };
@@ -146,15 +126,15 @@ export function wireFolderMappingSubview(cwd: string): void {
   if (hideBtn) {
     hideBtn.onclick = () => {
       const aliases = getSettings().projectAliases || {};
-      g().showMergeModal(
+      showMergeModal(
         `Hide "${projectLabel(cwd, aliases)}" from the list? You can unhide it later in settings.`,
         () => {
           doHideProject(cwd);
-          g().refreshProjectsUI?.();
+          refreshProjectsUI();
           getProjectSubviewStack().length = 0;
-          g().showView("projects");
+          showView("projects");
         },
-        null,
+        undefined,
         "Hide",
       );
     };
@@ -174,7 +154,7 @@ export async function renderFolderMappingView(
   populateProjectSubviewHeader("folderMapping");
 
   const backBtn = root.querySelector<HTMLButtonElement>("#folderMappingBackBtn");
-  if (backBtn) backBtn.onclick = () => g().backFromSubview();
+  if (backBtn) backBtn.onclick = () => backFromSubview();
 
   const cwd = getProjectDetailState().cwd;
   if (cwd) {

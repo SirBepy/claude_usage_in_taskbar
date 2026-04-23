@@ -2,6 +2,7 @@ import { html, render } from "lit-html";
 import "./notif-overrides.css";
 import { getProjectDetailState, getSettings } from "../../../../shared/state";
 import { populateProjectSubviewHeader } from "../sessions-list/sessions-list";
+import { backFromSubview } from "../../../../shared/navigation";
 import {
   loadPacks,
   findPack,
@@ -33,7 +34,6 @@ interface ElectronAPIShape {
 
 interface LegacyGlobals {
   electronAPI?: ElectronAPIShape;
-  backFromSubview(): void;
 }
 
 function g(): LegacyGlobals {
@@ -152,7 +152,7 @@ export async function renderNotifOverridesView(
   populateProjectSubviewHeader("notifOverrides");
 
   const backBtn = root.querySelector<HTMLButtonElement>("#notifOverridesBackBtn");
-  if (backBtn) backBtn.onclick = () => g().backFromSubview();
+  if (backBtn) backBtn.onclick = () => backFromSubview();
 
   const cwd = getProjectDetailState().cwd;
   if (cwd) {

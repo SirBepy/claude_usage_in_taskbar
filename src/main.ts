@@ -1,6 +1,7 @@
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/themes.css";
+import "./styles/widgets.css";
 
 import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
@@ -17,6 +18,8 @@ import { renderVisualsView } from "./views/settings/subviews/visuals/visuals";
 import { renderThemesView } from "./views/settings/subviews/themes/themes";
 import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
 import { initBoot } from "./shared/boot";
+import { showView } from "./shared/navigation";
+import { closeSidemenu } from "./shared/sidemenu";
 
 registerView("dashboard", renderDashboard);
 registerView("statistics", renderStatisticsView);
@@ -39,3 +42,25 @@ if (!app) {
 
 mountRouter(app);
 initBoot();
+
+// Sidemenu wiring (ported from legacy dashboard.js). Burger buttons inside
+// migrated views wire openSidemenu on render; these bindings cover the
+// backdrop + nav-item clicks which live in the static index.html.
+const backdrop = document.getElementById("sidemenuBackdrop");
+if (backdrop) backdrop.onclick = closeSidemenu;
+
+document.querySelectorAll<HTMLElement>(".sidemenu-nav-item").forEach((item) => {
+  item.onclick = () => {
+    const view = item.dataset.view;
+    if (view) showView(view);
+    closeSidemenu();
+  };
+});
+
+// Static legacy back buttons still present in index.html.
+const graphBackBtn = document.getElementById("graphDetailBackBtn");
+if (graphBackBtn) graphBackBtn.onclick = () => showView("dashboard");
+
+document.querySelectorAll<HTMLElement>("#view-settings-sync .back-to-settings").forEach((btn) => {
+  btn.onclick = () => showView("settings");
+});

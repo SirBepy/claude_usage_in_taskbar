@@ -1,7 +1,8 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import "./projects.css";
-import { getTokenHistory, setTokenHistory, getProjectDetailState } from "../../shared/state";
+import { getTokenHistory, setTokenHistory } from "../../shared/state";
+import { openProjectDetail } from "../../shared/navigation";
 import { basenameProj, renderAvatar, escapeProjHtml, type Avatar } from "../../shared/projects";
 import { formatCompactTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
@@ -133,12 +134,7 @@ function setupBackfillBtn(): void {
   };
 }
 
-function openProjectDetail(cwd: string): void {
-  const s = getProjectDetailState();
-  s.cwd = cwd;
-  s.offset = 0;
-  g().showView?.("project-detail");
-}
+// Re-exported from shared/navigation — imported at top of file.
 
 export async function renderProjectsList(): Promise<void> {
   const api = g().electronAPI;
@@ -222,11 +218,13 @@ export async function renderProjectsList(): Promise<void> {
   setupBackfillBtn();
 }
 
-// Legacy shim so dashboard.js's refreshProjectsUI + other call sites hit our logic.
-(window as unknown as { renderProjectsList?: () => Promise<void> }).renderProjectsList = renderProjectsList;
-(window as unknown as { refreshProjectsUI?: () => void }).refreshProjectsUI = () => {
+export function refreshProjectsUI(): void {
   void renderProjectsList();
-};
+}
+
+// Back-compat window bindings for any remaining legacy callers.
+(window as unknown as { renderProjectsList?: () => Promise<void> }).renderProjectsList = renderProjectsList;
+(window as unknown as { refreshProjectsUI?: () => void }).refreshProjectsUI = refreshProjectsUI;
 
 export async function renderProjectsView(
   root: HTMLElement,
