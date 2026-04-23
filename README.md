@@ -4,13 +4,15 @@ Tauri 2.x rewrite of the Claude Usage Taskbar Tool. Windows MVP.
 
 ## Dev
 
+    cd src-tauri
     cargo tauri dev
 
 ## Build
 
+    cd src-tauri
     cargo tauri build
 
-Produces an NSIS installer in `target/release/bundle/nsis/`.
+Produces an NSIS installer in `src-tauri/target/release/bundle/nsis/`.
 
 ## Channel management
 

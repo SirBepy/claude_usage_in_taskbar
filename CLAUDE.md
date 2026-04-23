@@ -7,12 +7,14 @@ hour. macOS + Linux builds deferred.
 ## Running
 
 ```bash
+cd src-tauri
 cargo tauri dev
 ```
 
 Production build:
 
 ```bash
+cd src-tauri
 cargo tauri build
 ```
 
@@ -25,43 +27,43 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 
 | File | Role |
 |---|---|
-| `src/main.rs` | App entry - builds Tauri app, wires plugins, kicks off scheduler |
-| `src/lib.rs` | Module root |
-| `src/auth.rs` | Native browser sign-in - spawns Chrome with CDP, extracts sessionKey |
-| `src/cdp.rs` | Chrome DevTools Protocol client (WebSocket, Fetch domain) |
-| `src/scraper.rs` | Fetches usage JSON via hidden Chrome tab + CDP Fetch interception |
-| `src/session.rs` | Loads/saves sessionKey cookie, verifies it against the API |
-| `src/scheduler.rs` | Hourly poll loop, retry/backoff, triggers tray updates |
-| `src/hook_server.rs` | HTTP hook server for Claude Code stop/notify hooks |
-| `src/ipc.rs` | Tauri command handlers exposed to the webview |
-| `src/state.rs` | Shared app state across threads |
-| `src/tray.rs` | Tray icon menu, display mode cycling, threshold checking |
-| `src/icon.rs` | Tray icon rendering (rings; Bars + Digits + spin anim pending) |
-| `src/icon_settings.rs` | Icon color/threshold logic |
-| `src/display_state.rs` | Tracks which display mode is currently shown |
-| `src/fonts.rs` | Pixel font definitions for future Digits mode |
-| `src/usage_parser.rs` | Parses `five_hour` / `seven_day` fields from API response |
-| `src/history.rs` | Snapshot persistence (history.jsonl read/write/prune) |
-| `src/settings.rs` | Load/save user settings to disk |
-| `src/paths.rs` | App data / session / sound-pack / piper path helpers |
-| `src/notifications.rs` | Notification rule resolution + event firing + mute gating |
-| `src/project_overrides.rs` | Per-project notification override parser |
-| `src/soundpacks.rs` | Sound pack catalog, install (download+unzip), path resolution |
-| `src/audio.rs` | Base64 data URL serving of pack audio files to the webview |
-| `src/piper.rs` | Piper TTS integration (binary resolution; port WIP) |
-| `src/token_stats.rs` | Token stats scaffolding (JSONL walker pending) |
-| `src/types.rs` | Shared data structures |
+| `src-tauri/src/main.rs` | App entry - builds Tauri app, wires plugins, kicks off scheduler |
+| `src-tauri/src/lib.rs` | Module root |
+| `src-tauri/src/auth.rs` | Native browser sign-in - spawns Chrome with CDP, extracts sessionKey |
+| `src-tauri/src/cdp.rs` | Chrome DevTools Protocol client (WebSocket, Fetch domain) |
+| `src-tauri/src/scraper.rs` | Fetches usage JSON via hidden Chrome tab + CDP Fetch interception |
+| `src-tauri/src/session.rs` | Loads/saves sessionKey cookie, verifies it against the API |
+| `src-tauri/src/scheduler.rs` | Hourly poll loop, retry/backoff, triggers tray updates |
+| `src-tauri/src/hook_server.rs` | HTTP hook server for Claude Code stop/notify hooks |
+| `src-tauri/src/ipc.rs` | Tauri command handlers exposed to the webview |
+| `src-tauri/src/state.rs` | Shared app state across threads |
+| `src-tauri/src/tray.rs` | Tray icon menu, display mode cycling, threshold checking |
+| `src-tauri/src/icon.rs` | Tray icon rendering (rings; Bars + Digits + spin anim pending) |
+| `src-tauri/src/icon_settings.rs` | Icon color/threshold logic |
+| `src-tauri/src/display_state.rs` | Tracks which display mode is currently shown |
+| `src-tauri/src/fonts.rs` | Pixel font definitions for future Digits mode |
+| `src-tauri/src/usage_parser.rs` | Parses `five_hour` / `seven_day` fields from API response |
+| `src-tauri/src/history.rs` | Snapshot persistence (history.jsonl read/write/prune) |
+| `src-tauri/src/settings.rs` | Load/save user settings to disk |
+| `src-tauri/src/paths.rs` | App data / session / sound-pack / piper path helpers |
+| `src-tauri/src/notifications.rs` | Notification rule resolution + event firing + mute gating |
+| `src-tauri/src/project_overrides.rs` | Per-project notification override parser |
+| `src-tauri/src/soundpacks.rs` | Sound pack catalog, install (download+unzip), path resolution |
+| `src-tauri/src/audio.rs` | Base64 data URL serving of pack audio files to the webview |
+| `src-tauri/src/piper.rs` | Piper TTS integration (binary resolution; port WIP) |
+| `src-tauri/src/token_stats.rs` | Token stats scaffolding (JSONL walker pending) |
+| `src-tauri/src/types.rs` | Shared data structures |
 | `dist/dashboard.html` | Dashboard + settings UI (single-file SPA) |
 | `dist/dashboard.css` | Dashboard styles |
 | `dist/dashboard.js` | Dashboard renderer logic |
 | `dist/modules/*.js` | Chart, formatters, settings, sound-packs, stats, speech-fallback |
-| `capabilities/default.json` | Tauri 2 IPC permission allowlist |
-| `icons/` | Build-time tray + installer icons (committed; regenerate via `cargo tauri icon <source.png>` if logo changes) |
-| `assets/` | Bundled fonts + default notification sounds |
-| `binaries/piper/` | Sidecar Piper TTS binary (per-target-triple name) |
-| `tauri.conf.json` | Tauri config - bundle, updater, windows, frontend path |
-| `Cargo.toml` | Rust deps |
-| `build.rs` | Build-time asset/icon checks |
+| `src-tauri/capabilities/default.json` | Tauri 2 IPC permission allowlist |
+| `src-tauri/icons/` | Build-time tray + installer icons (committed; regenerate via `cargo tauri icon <source.png>` if logo changes) |
+| `src-tauri/assets/` | Bundled fonts + default notification sounds |
+| `src-tauri/binaries/piper/` | Sidecar Piper TTS binary (per-target-triple name) |
+| `src-tauri/tauri.conf.json` | Tauri config - bundle, updater, windows, frontend path |
+| `src-tauri/Cargo.toml` | Rust deps |
+| `src-tauri/build.rs` | Build-time asset/icon checks |
 
 ## Authentication flow
 
@@ -110,7 +112,7 @@ triggers re-auth.
 
 ## Tray icon
 
-Generated at runtime as a 22x22 RGBA PNG. Rendered in `src/icon.rs`.
+Generated at runtime as a 22x22 RGBA PNG. Rendered in `src-tauri/src/icon.rs`.
 
 **Rings mode (currently implemented):** dual concentric rings
 - Outer: session utilisation
@@ -128,7 +130,7 @@ demand via the `install_sound_pack` Tauri command and land in
 `<app-data>/sound-packs/<packId>/`. Per-project overrides live under
 `settings.projectNotifOverrides[cwdKey][eventKey]`, gated by an `enabled`
 flag; when off the event falls back to the default rule. Resolver in
-`notifications::resolve_notif_config` (`src/notifications.rs`). Sound files
+`notifications::resolve_notif_config` (`src-tauri/src/notifications.rs`). Sound files
 served to the frontend as base64 data URLs via `sound_pack_file_url`.
 
 ## Keeping README up to date
@@ -162,22 +164,22 @@ The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every t
 
 ## Instance detection (Plan B)
 
-- `src/instances.rs` — in-memory registry keyed by `session_id`. Emits `instances-changed` Tauri events on every mutation.
-- `src/hook_server.rs` — `/hooks/session-start` and `/hooks/session-end` endpoints populate the registry.
-- `src/detector.rs` — 5s reconciliation loop using `sysinfo`. Marks instances as ended after 2 consecutive missing-pid ticks.
-- `src/session_files.rs` — resolves `bridgeSessionId` from `~/.claude/sessions/<pid>.json` for phone-link URLs.
-- `src/hook_installer.rs` — merges our SessionStart/SessionEnd entries into `~/.claude/settings.json`. Preserves every unrelated field, idempotent.
+- `src-tauri/src/instances.rs` — in-memory registry keyed by `session_id`. Emits `instances-changed` Tauri events on every mutation.
+- `src-tauri/src/hook_server.rs` — `/hooks/session-start` and `/hooks/session-end` endpoints populate the registry.
+- `src-tauri/src/detector.rs` — 5s reconciliation loop using `sysinfo`. Marks instances as ended after 2 consecutive missing-pid ticks.
+- `src-tauri/src/session_files.rs` — resolves `bridgeSessionId` from `~/.claude/sessions/<pid>.json` for phone-link URLs.
+- `src-tauri/src/hook_installer.rs` — merges our SessionStart/SessionEnd entries into `~/.claude/settings.json`. Preserves every unrelated field, idempotent.
 - First-run modal in `dashboard.html` asks the user to allow the global hook install; "Never" button declines permanently.
 - Project cards on the Projects view surface live-instance count and remote/automated tags.
 - Running-instances list on the Project detail view shows per-instance actions. Terminal/restart/stop are automated-only; phone-link requires a resolved `bridgeSessionId`.
 
 ## Channel management (Plan C)
 
-- `src/channels.rs` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console. Windows-only.
+- `src-tauri/src/channels.rs` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console. Windows-only.
 - Spawn uses raw `CreateProcessW` with `STARTF_USESHOWWINDOW | SW_HIDE` in `STARTUPINFOW` so the new console is born invisible (no flash) and `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP`. Command line: `cmd.exe /C claude --remote-control --remote-control-session-name-prefix "<prefix>" [--continue]`.
 - After spawn, hwnd resolved via `EnumWindows` by owning pid, then `strip_console_chrome` removes `WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME` so the console is frameless when shown. No X button: user can't kill the process by closing the window; only the dashboard's Stop action does. Hide/Stop/Restart live in the Project detail view.
 - Watchdog blocks on `WaitForSingleObject` via `tokio::task::spawn_blocking` (SpawnOutput now exposes a raw `process_handle: isize`, no tokio `Child`). Drives `next_restart_delay` (stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed).
 - Kill on shutdown uses `taskkill /T /F /PID <pid>` — claude spawns node subprocesses so tree-kill is required.
-- `src/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` for the automation picker.
+- `src-tauri/src/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` for the automation picker.
 - `ipc::import_legacy_obsidian_config` maps the old Python app's config.json into a new ProjectConfig with an auto-configured automation.
 - The `obsidian_claude_remote` repo is archived on GitHub as of 2026-04-21; see its README.

@@ -24,7 +24,7 @@ jobs:
         id: check
         shell: bash
         run: |
-          VERSION=$(jq -r .version tauri.conf.json)
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
           TAG="tauri-v$VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -67,15 +67,17 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        working-directory: src-tauri
         run: cargo tauri build
 
       - name: Upload installer
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/bundle/nsis/*.exe
-            target/release/bundle/nsis/*.nsis.zip
-            target/release/bundle/nsis/latest.json
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.nsis.zip
+            src-tauri/target/release/bundle/nsis/latest.json
           tag_name: ${{ needs.check.outputs.tag }}
           name: Tauri ${{ needs.check.outputs.tag }}
-          draft: true
+          draft: false
+          make_latest: "true"
