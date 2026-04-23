@@ -85,7 +85,7 @@ fn play_file_internal(app: &AppHandle, path: &Path) {
 
 /// Resolve `sounds_dir()/name` -> absolute path, skipping if not found.
 pub fn play_sound_file(app: &AppHandle, filename: &str) {
-    let Ok(dir) = crate::paths::sounds_dir() else { return; };
+    let Ok(dir) = crate::settings::paths::sounds_dir() else { return; };
     let path = dir.join(filename);
     if !path.exists() {
         log::warn!("sound file missing: {path:?}");

@@ -1,11 +1,9 @@
 pub mod channels;
 pub mod auth;
 pub mod hooks;
-pub mod project_overrides;
 pub mod notifications;
 pub mod history;
 pub mod ipc;
-pub mod paths;
 pub mod scheduler;
 pub mod scraping;
 pub mod settings;
@@ -14,6 +12,7 @@ pub mod tokens;
 pub mod tray;
 pub mod types;
 
+use crate::settings::paths;
 use crate::state::AppState;
 use crate::types::AuthState;
 use crate::auth::session;

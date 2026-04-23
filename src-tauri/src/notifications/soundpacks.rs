@@ -95,16 +95,16 @@ pub fn catalog() -> Vec<SoundPack> {
 /// is unknown.
 pub fn sound_path(pack_id: &str, sound_id: &str) -> Option<PathBuf> {
     if pack_id == "default" {
-        return crate::paths::sounds_dir().ok().map(|d| d.join(sound_id));
+        return crate::settings::paths::sounds_dir().ok().map(|d| d.join(sound_id));
     }
     let catalog = catalog();
     catalog.iter().find(|p| p.id == pack_id)?;
-    crate::paths::sound_packs_dir().ok().map(|d| d.join(pack_id).join(sound_id))
+    crate::settings::paths::sound_packs_dir().ok().map(|d| d.join(pack_id).join(sound_id))
 }
 
 pub fn is_installed(pack_id: &str) -> bool {
     if pack_id == "default" { return true; }
-    let Ok(dir) = crate::paths::sound_packs_dir() else { return false; };
+    let Ok(dir) = crate::settings::paths::sound_packs_dir() else { return false; };
     let p = dir.join(pack_id);
     p.is_dir() && std::fs::read_dir(&p).map(|mut i| i.next().is_some()).unwrap_or(false)
 }
@@ -123,7 +123,7 @@ pub async fn install(pack_id: &str) -> Result<()> {
     let pack = catalog().into_iter().find(|p| p.id == pack_id)
         .ok_or_else(|| anyhow!("unknown pack id: {pack_id}"))?;
     let url = pack.download_url.ok_or_else(|| anyhow!("pack {pack_id} has no download_url"))?;
-    let dest = crate::paths::sound_packs_dir()?.join(pack_id);
+    let dest = crate::settings::paths::sound_packs_dir()?.join(pack_id);
     std::fs::create_dir_all(&dest).context("create pack dir")?;
     let bytes = reqwest::get(&url).await?.error_for_status()?.bytes().await?;
     let cursor = std::io::Cursor::new(bytes);

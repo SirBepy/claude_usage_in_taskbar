@@ -2,7 +2,7 @@
 //! We don't hit the network; we simulate "already installed" by creating
 //! the expected dir+file and confirm install() is a no-op.
 
-use claude_usage_tauri_lib::paths;
+use claude_usage_tauri_lib::settings::paths;
 use claude_usage_tauri_lib::notifications::soundpacks;
 use std::fs;
 

@@ -3,7 +3,7 @@
 
 use super::cdp;
 use super::session;
-use crate::paths;
+use crate::settings::paths;
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -64,7 +64,7 @@ pub async fn run(app: AppHandle) -> Result<()> {
         .ok_or_else(|| anyhow!("Chrome/Edge not found in standard install locations"))?;
     log::info!("launching browser: {}", bin.display());
 
-    let profile = crate::paths::data_dir()
+    let profile = crate::settings::paths::data_dir()
         .context("data dir")?
         .join("chrome-login-profile");
     std::fs::create_dir_all(&profile).context("create profile dir")?;

@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use crate::types::Settings;
-use crate::{paths, settings};
+use crate::settings::{self, paths};
 use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]

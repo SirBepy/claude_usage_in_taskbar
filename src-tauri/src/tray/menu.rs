@@ -177,7 +177,7 @@ fn build_menu(app: &AppHandle, mute_all: bool) -> Result<Menu<tauri::Wry>> {
 }
 
 fn toggle_mute_all(app: AppHandle) {
-    use crate::paths;
+    use crate::settings::paths;
     use tauri::Emitter;
     let state = app.state::<AppState>();
     let updated = {

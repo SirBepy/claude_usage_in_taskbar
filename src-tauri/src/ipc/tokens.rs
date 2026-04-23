@@ -1,5 +1,5 @@
 use crate::tokens::{self, BackfillResult, TokenRecord};
-use crate::paths;
+use crate::settings::paths;
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]

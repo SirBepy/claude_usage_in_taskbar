@@ -13,7 +13,7 @@
 //!   3. Setting env var `CLAUDE_LIVE_TESTS_STRICT=1` flips the skip into a
 //!      hard fail. Useful for CI once auth is wired up there.
 
-use claude_usage_tauri_lib::paths;
+use claude_usage_tauri_lib::settings::paths;
 use claude_usage_tauri_lib::scraping::{self as scraper, ScrapeError};
 use claude_usage_tauri_lib::auth::session;
 

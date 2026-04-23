@@ -1,7 +1,7 @@
 //! Local HTTP server that accepts Claude Code CLI stop/notify/quit hook pings
 //! and records token stats into `token-history.json`.
 
-use crate::paths;
+use crate::settings::paths;
 use crate::settings;
 use crate::state::AppState;
 use crate::tokens as token_stats;

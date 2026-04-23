@@ -56,11 +56,11 @@ pub fn scan_voices(voices_dir: &Path) -> Vec<VoiceEntry> {
 
 pub fn piper_binary_exists() -> bool {
     which::which("piper").is_ok()
-        || crate::paths::piper_binary_path().ok().map(|p| p.exists()).unwrap_or(false)
+        || crate::settings::paths::piper_binary_path().ok().map(|p| p.exists()).unwrap_or(false)
 }
 
 pub fn status() -> PiperStatus {
-    let Ok(voices_dir) = crate::paths::piper_voices_dir() else {
+    let Ok(voices_dir) = crate::settings::paths::piper_voices_dir() else {
         return PiperStatus { installed: false, voices: vec![] };
     };
     PiperStatus {
@@ -72,7 +72,7 @@ pub fn status() -> PiperStatus {
 pub async fn install_voice(id: &str) -> Result<()> {
     let entry = CATALOG.iter().find(|(i, _, _, _)| *i == id)
         .context("unknown voice id")?;
-    let dir = crate::paths::piper_voices_dir()?.join(id);
+    let dir = crate::settings::paths::piper_voices_dir()?.join(id);
     std::fs::create_dir_all(&dir).context("create voice dir")?;
     download_to(entry.2, &dir.join("model.onnx")).await?;
     download_to(entry.3, &dir.join("model.onnx.json")).await?;
@@ -86,11 +86,11 @@ async fn download_to(url: &str, path: &Path) -> Result<()> {
 }
 
 pub async fn synthesize(text: &str, voice_id: &str) -> Result<PathBuf> {
-    let voices_dir = crate::paths::piper_voices_dir()?;
+    let voices_dir = crate::settings::paths::piper_voices_dir()?;
     let model = voices_dir.join(voice_id).join("model.onnx");
     if !model.exists() { anyhow::bail!("voice not installed: {voice_id}"); }
     let out = std::env::temp_dir().join(format!("piper-{}.wav", rand::random::<u64>()));
-    let binary = crate::paths::piper_binary_path()?;
+    let binary = crate::settings::paths::piper_binary_path()?;
     use tokio::io::AsyncWriteExt;
     let mut child = tokio::process::Command::new(binary)
         .args(["--model", model.to_str().unwrap(),

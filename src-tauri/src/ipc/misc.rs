@@ -1,4 +1,4 @@
-use crate::paths;
+use crate::settings::paths;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]

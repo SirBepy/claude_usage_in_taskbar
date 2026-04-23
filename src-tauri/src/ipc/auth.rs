@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use crate::types::AuthState;
-use crate::{paths};
+use crate::settings::paths;
 use crate::auth::session;
 use tauri::{AppHandle, Emitter, Manager, State};
 

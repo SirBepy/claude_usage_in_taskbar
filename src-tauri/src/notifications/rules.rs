@@ -2,7 +2,7 @@
 
 use crate::notifications::audio;
 use crate::tray::NotifMode;
-use crate::project_overrides::{self, ProjectOverrides};
+use crate::settings::overrides::{self, ProjectOverrides};
 use crate::state::AppState;
 use crate::types::Settings;
 use tauri::{AppHandle, Emitter, Manager};
@@ -52,7 +52,7 @@ pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option
     let settings_snapshot = state.settings.lock().unwrap().clone();
 
     let cfg: crate::tray::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
-    let overrides = project_overrides::parse(&settings_snapshot);
+    let overrides = overrides::parse(&settings_snapshot);
     let rule = resolve_notif_config(&cfg, &overrides, kind, cwd_key);
     if !rule.enabled { return; }
 
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn resolver_returns_override_when_enabled() {
         use crate::tray::{NotificationsConfig, NotifMode, NotificationRule};
-        use crate::project_overrides::ProjectOverrides;
+        use crate::settings::overrides::ProjectOverrides;
         use std::collections::HashMap;
         let cfg = NotificationsConfig::default();
         let mut map = HashMap::new();

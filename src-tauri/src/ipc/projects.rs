@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use crate::types::{ProjectConfig, ProjectsSortBy};
-use crate::{paths, settings};
+use crate::settings::{self, paths};
 use tauri::{AppHandle, Emitter, State};
 
 /// Pure helpers extracted from the Tauri command wrappers so they can be
