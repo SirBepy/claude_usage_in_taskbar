@@ -1,11 +1,11 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
-// Dashboard is migrated to src/views/dashboard. All other views still render
-// from the `#view-<name>` divs in index.html.
+// Dashboard + Statistics are migrated to src/views/. All other views still
+// render from the `#view-<name>` divs in index.html.
 const VIEWS = [
   "settings", "settings-visuals", "settings-themes",
-  "settings-notifications", "settings-sync", "statistics", "projects",
+  "settings-notifications", "settings-sync", "projects",
   "project-detail", "graph-detail",
   "project-notif-overrides", "project-automation", "project-folder-mapping",
   "project-sessions", "session-detail",
@@ -315,25 +315,29 @@ async function runDeadPathCheck() {
 }
 
 // ── Stats rendering ───────────────────────────────────────────────────────────
-// `statsContent` (home view's container) is owned by src/views/dashboard now.
-const statisticsContent = document.getElementById("statistics-content");
+// Home + Statistics views are migrated to src/views/. Their DOM containers
+// (#stats-content / #statistics-content) only exist while the respective view
+// is mounted, so we re-query on every call.
+function getStatisticsContent() {
+  return document.getElementById("statistics-content");
+}
 
 /** Re-render the statistics view and nudge the migrated home view. */
 function refreshDashboard() {
   if (!lastHistory) return;
   renderHistory(lastHistory);
-  if (statisticsContent) {
-    wireProjectListClicks(statisticsContent, refreshDashboard);
-  }
+  const c = getStatisticsContent();
+  if (c) wireProjectListClicks(c, refreshDashboard);
   window.dispatchEvent(new CustomEvent("refresh-dashboard-home"));
 }
 
 
 function renderHistory(history) {
   lastHistory = history;
-  if (!statisticsContent) return;
+  const c = getStatisticsContent();
+  if (!c) return;
   if (!history || history.length === 0) {
-    statisticsContent.innerHTML = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
+    c.innerHTML = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
     return;
   }
   renderStatistics(history);
@@ -503,6 +507,8 @@ function renderStatistics(history) {
     return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
   };
 
+  const statisticsContent = getStatisticsContent();
+  if (!statisticsContent) return;
   statisticsContent.innerHTML = `
     ${buildTodaySectionHTML(lastTokenHistory, { pinnable: true })}
     ${buildGraphCard({
