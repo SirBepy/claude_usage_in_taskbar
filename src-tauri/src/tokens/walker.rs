@@ -168,3 +168,75 @@ pub fn parse_transcript(path: &Path) -> TokenTotals {
     }
     acc
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[test]
+    fn walk_jsonl_finds_nested_files() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        std::fs::write(dir.path().join("a/one.jsonl"), "").unwrap();
+        std::fs::write(dir.path().join("a/b/two.jsonl"), "").unwrap();
+        std::fs::write(dir.path().join("a/ignore.txt"), "").unwrap();
+        let mut found = walk_jsonl(dir.path());
+        found.sort();
+        assert_eq!(found.len(), 2);
+        assert!(found[0].ends_with("one.jsonl") || found[1].ends_with("one.jsonl"));
+    }
+
+    #[test]
+    fn encode_cwd_matches_claude_cli_layout() {
+        assert_eq!(
+            encode_cwd_as_project_dir(Path::new("c:\\Users\\tecno\\Desktop\\Projects\\claude_usage_in_taskbar")),
+            "c--Users-tecno-Desktop-Projects-claude-usage-in-taskbar",
+        );
+        assert_eq!(
+            encode_cwd_as_project_dir(Path::new("C:\\Users\\tecno\\.claude")),
+            "C--Users-tecno--claude",
+        );
+    }
+
+    #[test]
+    fn latest_transcript_for_cwd_returns_none_when_dir_missing() {
+        let out = latest_transcript_for_cwd(Path::new("Z:\\does\\not\\exist"));
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn parse_transcript_sums_assistant_usages() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let content = [
+            r#"{"type":"user","message":{"content":"hi"}}"#,
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":5,"cache_creation_input_tokens":3}}}"#,
+            r#""#,
+            r#"{"type":"assistant","usage":{"input_tokens":100,"output_tokens":50}}"#,
+            r#"not json at all"#,
+        ].join("\n");
+        std::fs::write(&path, content).unwrap();
+        let totals = parse_transcript(&path);
+        assert_eq!(totals.input_tokens, 110);
+        assert_eq!(totals.output_tokens, 70);
+        assert_eq!(totals.cache_read_tokens, 5);
+        assert_eq!(totals.cache_creation_tokens, 3);
+        assert_eq!(totals.turns, 2);
+    }
+
+    #[test]
+    fn parse_transcript_missing_file_returns_zero() {
+        let totals = parse_transcript(Path::new("definitely-not-a-real-file.jsonl"));
+        assert_eq!(totals.turns, 0);
+        assert_eq!(totals.input_tokens, 0);
+    }
+
+    #[test]
+    fn decode_cwd_returns_original_when_no_drive_marker_on_windows() {
+        if cfg!(windows) {
+            assert_eq!(decode_cwd("just-some-name"), "just-some-name");
+        }
+    }
+}

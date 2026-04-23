@@ -164,3 +164,132 @@ pub fn backfill_all(history_path: &Path) -> Result<BackfillResult> {
     save_history(history_path, &history)?;
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::aggregate::{load_history, save_history};
+    use super::super::walker::{walk_jsonl, parse_transcript};
+    use tempfile::tempdir;
+
+    /// A `backfill_all`-style helper that takes an explicit projects dir so
+    /// we can unit-test the aggregation without reaching out to `~/.claude`.
+    fn backfill_from(projects_dir: &Path, history_path: &Path) -> BackfillResult {
+        let files = walk_jsonl(projects_dir);
+        let mut regular = Vec::new();
+        let mut subagent = Vec::new();
+        for p in files {
+            let in_sub = p.parent().and_then(|d| d.file_name()).and_then(|n| n.to_str())
+                == Some("subagents");
+            if in_sub { subagent.push(p) } else { regular.push(p) }
+        }
+
+        let mut history = load_history(history_path);
+        let mut known: HashSet<String> = history.iter().map(|r| r.session_id.clone()).collect();
+        let mut result = BackfillResult::default();
+
+        for file in &regular {
+            let sid = file.file_stem().and_then(|s| s.to_str()).unwrap().to_string();
+            if known.contains(&sid) { result.skipped += 1; continue }
+            let totals = parse_transcript(file);
+            history.push(TokenRecord {
+                session_id: sid.clone(),
+                cwd: Some("C:\\fake".into()),
+                date: "2026-04-20".into(),
+                input_tokens: totals.input_tokens,
+                output_tokens: totals.output_tokens,
+                cache_read_tokens: totals.cache_read_tokens,
+                cache_creation_tokens: totals.cache_creation_tokens,
+                turns: totals.turns,
+                started_at: "2026-04-20T10:00:00Z".into(),
+                last_active_at: "2026-04-20T10:30:00Z".into(),
+                recorded_at: "2026-04-20T10:31:00Z".into(),
+                live: None,
+                merged_subagents: None,
+            });
+            known.insert(sid);
+            result.processed += 1;
+        }
+
+        let mut merged_ids: HashSet<String> = HashSet::new();
+        for r in &history {
+            if let Some(l) = &r.merged_subagents { for id in l { merged_ids.insert(id.clone()); } }
+        }
+        for file in &subagent {
+            let agent_id = file.file_stem().and_then(|s| s.to_str()).unwrap().to_string();
+            if merged_ids.contains(&agent_id) { result.sub_skipped += 1; continue }
+            let parent_sid = file
+                .parent().and_then(|d| d.parent())
+                .and_then(|d| d.file_name()).and_then(|n| n.to_str()).unwrap().to_string();
+            let totals = parse_transcript(file);
+            let idx = history.iter().position(|r| r.session_id == parent_sid);
+            let idx = idx.unwrap_or_else(|| {
+                history.push(TokenRecord {
+                    session_id: parent_sid.clone(),
+                    cwd: Some("C:\\fake".into()),
+                    date: "2026-04-20".into(),
+                    started_at: "2026-04-20T09:00:00Z".into(),
+                    last_active_at: "2026-04-20T09:00:00Z".into(),
+                    recorded_at: "2026-04-20T09:00:00Z".into(),
+                    merged_subagents: Some(Vec::new()),
+                    ..Default::default()
+                });
+                history.len() - 1
+            });
+            let p = &mut history[idx];
+            p.input_tokens += totals.input_tokens;
+            p.output_tokens += totals.output_tokens;
+            p.cache_read_tokens += totals.cache_read_tokens;
+            p.cache_creation_tokens += totals.cache_creation_tokens;
+            p.turns += totals.turns;
+            p.merged_subagents.get_or_insert_with(Vec::new).push(agent_id.clone());
+            merged_ids.insert(agent_id);
+            result.sub_processed += 1;
+        }
+
+        save_history(history_path, &history).unwrap();
+        result
+    }
+
+    #[test]
+    fn backfill_aggregates_and_merges_subagents() {
+        let dir = tempdir().unwrap();
+        let projects = dir.path().join("projects");
+        let history_path = dir.path().join("token-history.json");
+
+        let proj_a = projects.join("proj-a");
+        std::fs::create_dir_all(&proj_a).unwrap();
+        std::fs::write(
+            proj_a.join("SESSION-1.jsonl"),
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":20}}}"#,
+        ).unwrap();
+
+        let sub_dir = proj_a.join("SESSION-1").join("subagents");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        std::fs::write(
+            sub_dir.join("AGENT-X.jsonl"),
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":5,"output_tokens":1}}}"#,
+        ).unwrap();
+
+        let r = backfill_from(&projects, &history_path);
+        assert_eq!(r.processed, 1);
+        assert_eq!(r.sub_processed, 1);
+
+        let history = load_history(&history_path);
+        assert_eq!(history.len(), 1, "subagent should be merged into parent");
+        let s1 = history.iter().find(|r| r.session_id == "SESSION-1").unwrap();
+        assert_eq!(s1.input_tokens, 15, "10 (main) + 5 (sub) input tokens");
+        assert_eq!(s1.output_tokens, 21, "20 (main) + 1 (sub) output tokens");
+        assert_eq!(s1.merged_subagents.as_ref().unwrap(), &vec!["AGENT-X".to_string()]);
+
+        let r2 = backfill_from(&projects, &history_path);
+        assert_eq!(r2.processed, 0);
+        assert_eq!(r2.skipped, 1);
+        assert_eq!(r2.sub_processed, 0);
+        assert_eq!(r2.sub_skipped, 1);
+        let history2 = load_history(&history_path);
+        assert_eq!(history2.len(), 1, "re-backfill must not duplicate");
+        let s1b = history2.iter().find(|r| r.session_id == "SESSION-1").unwrap();
+        assert_eq!(s1b.input_tokens, 15, "tokens stable across re-backfill");
+    }
+}

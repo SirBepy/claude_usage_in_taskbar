@@ -34,3 +34,63 @@ pub fn append_session(path: &Path, mut record: TokenRecord) -> Result<Vec<TokenR
     save_history(path, &history)?;
     Ok(history)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::record::TokenRecord;
+    use tempfile::tempdir;
+
+    #[test]
+    fn load_save_history_roundtrips() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("token-history.json");
+        let rec = TokenRecord {
+            session_id: "S1".into(),
+            cwd: Some("C:\\proj".into()),
+            date: "2026-04-20".into(),
+            input_tokens: 1,
+            output_tokens: 2,
+            cache_read_tokens: 3,
+            cache_creation_tokens: 4,
+            turns: 5,
+            started_at: "2026-04-20T10:00:00Z".into(),
+            last_active_at: "2026-04-20T10:30:00Z".into(),
+            recorded_at: "2026-04-20T10:31:00Z".into(),
+            live: None,
+            merged_subagents: None,
+        };
+        save_history(&path, std::slice::from_ref(&rec)).unwrap();
+        let back = load_history(&path);
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].session_id, "S1");
+        assert_eq!(back[0].turns, 5);
+    }
+
+    #[test]
+    fn load_history_returns_empty_for_missing_or_corrupt() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("nope.json");
+        assert!(load_history(&missing).is_empty());
+
+        let corrupt = dir.path().join("c.json");
+        std::fs::write(&corrupt, "{ this is not valid json").unwrap();
+        assert!(load_history(&corrupt).is_empty());
+    }
+
+    #[test]
+    fn append_session_is_idempotent_on_session_id() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("h.json");
+        let rec = TokenRecord {
+            session_id: "S1".into(),
+            date: "2026-04-20".into(),
+            input_tokens: 1,
+            ..Default::default()
+        };
+        append_session(&path, rec.clone()).unwrap();
+        append_session(&path, rec.clone()).unwrap();
+        let h = load_history(&path);
+        assert_eq!(h.len(), 1, "duplicate append should be a no-op");
+    }
+}
