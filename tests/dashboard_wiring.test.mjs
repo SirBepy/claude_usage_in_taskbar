@@ -154,18 +154,17 @@ describe("electron-api-shim.js stub shapes", () => {
     expect(call.args).toEqual({ paths: ["C:/real", "C:/fake"] });
   });
 
-  it("copyLogs invokes read_log_file and writes to clipboard", async () => {
-    let clipboardText = null;
-    sandbox.navigator.clipboard.writeText = async (t) => { clipboardText = t; };
+  it("copyLogs delegates to backend copy_logs command", async () => {
+    // Clipboard writing moved from the frontend shim to the backend Rust
+    // command so permissions and error reporting live in one place.
+    const seen = [];
     sandbox.window.__TAURI__.core.invoke = async (cmd) => {
-      if (cmd === "read_log_file") return "hello logs";
+      seen.push(cmd);
       return null;
     };
-
-    // Re-run the shim to pick up the new invoke mock (IIFE captures `invoke` by ref at import time).
     vm.runInContext(shimSrc, sandbox);
     const api2 = sandbox.window.electronAPI;
     await api2.copyLogs();
-    expect(clipboardText).toBe("hello logs");
+    expect(seen).toContain("copy_logs");
   });
 });
