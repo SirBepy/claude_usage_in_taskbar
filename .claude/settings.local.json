@@ -83,7 +83,12 @@
       "Bash(sha384sum)",
       "Bash(openssl dgst *)",
       "Bash(openssl base64 *)",
-      "Bash(netstat -ano)"
+      "Bash(netstat -ano)",
+      "PowerShell(npm test *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(awk '{sum+=$4} END {print \"TOTAL PASSED:\", sum}')",
+      "Bash(awk -F'[:;]' '{gsub\\(/[^0-9]/, \"\", $2\\); s+=$2} END {print \"Total passed:\", s}')",
+      "Bash(awk '{sum += $4} END {print sum, \"passed total\"}')"
     ]
   }
 }
