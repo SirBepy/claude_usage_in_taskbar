@@ -1,7 +1,7 @@
 //! Background task that polls usage on an interval and broadcasts results.
 
 use crate::auth;
-use crate::scraper::{fetch_usage, ScrapeError};
+use crate::scraping::{fetch_usage, ScrapeError};
 use crate::state::AppState;
 use crate::types::{AuthState, UsageSnapshot};
 use crate::{history, paths};
@@ -185,13 +185,13 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
             let icon_s = crate::tray::IconSettings::try_from(
                 &*app.state::<crate::state::AppState>().settings.lock().unwrap()
             ).unwrap_or_default();
-            let prev_sess = Some(crate::usage_parser::session_pct(prev));
-            let new_sess = Some(crate::usage_parser::session_pct(new));
-            let prev_wk = Some(crate::usage_parser::weekly_pct(prev));
-            let new_wk = Some(crate::usage_parser::weekly_pct(new));
+            let prev_sess = Some(crate::scraping::session_pct(prev));
+            let new_sess = Some(crate::scraping::session_pct(new));
+            let prev_wk = Some(crate::scraping::weekly_pct(prev));
+            let new_wk = Some(crate::scraping::weekly_pct(new));
             let crossed =
-                crate::usage_parser::threshold_crossed(prev_sess, new_sess, &icon_s.color_thresholds) ||
-                crate::usage_parser::threshold_crossed(prev_wk, new_wk, &icon_s.color_thresholds);
+                crate::scraping::threshold_crossed(prev_sess, new_sess, &icon_s.color_thresholds) ||
+                crate::scraping::threshold_crossed(prev_wk, new_wk, &icon_s.color_thresholds);
             if crossed {
                 let pct = new_sess.unwrap_or(0.0).max(new_wk.unwrap_or(0.0)).round() as u32;
                 crate::notifications::fire(

@@ -14,7 +14,7 @@
 //!      hard fail. Useful for CI once auth is wired up there.
 
 use claude_usage_tauri_lib::paths;
-use claude_usage_tauri_lib::scraper::{self, ScrapeError};
+use claude_usage_tauri_lib::scraping::{self as scraper, ScrapeError};
 use claude_usage_tauri_lib::auth::session;
 
 const CLAUDE_BASE: &str = "https://claude.ai";

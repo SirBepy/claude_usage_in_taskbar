@@ -5,7 +5,7 @@ use crate::tray::icon_render::{self as icon, DisplayMode, IconCtx};
 use crate::tray::threshold::{IconSettings, TooltipSettings};
 use crate::state::AppState;
 use crate::types::{AuthState, UsageSnapshot};
-use crate::usage_parser::{self, FIVE_HOUR_MS, SEVEN_DAY_MS};
+use crate::scraping::{self as usage_parser, FIVE_HOUR_MS, SEVEN_DAY_MS};
 use anyhow::Result;
 use chrono::Utc;
 use std::time::{Duration, Instant};
