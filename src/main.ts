@@ -16,6 +16,7 @@ import { renderSettingsView } from "./views/settings/settings";
 import { renderVisualsView } from "./views/settings/subviews/visuals/visuals";
 import { renderThemesView } from "./views/settings/subviews/themes/themes";
 import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
+import { initBoot } from "./shared/boot";
 
 registerView("dashboard", renderDashboard);
 registerView("statistics", renderStatisticsView);
@@ -37,3 +38,4 @@ if (!app) {
 }
 
 mountRouter(app);
+initBoot();
