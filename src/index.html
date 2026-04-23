@@ -471,36 +471,10 @@
         </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════════════════
-         View: Projects
-    ═══════════════════════════════════════════════════════════════════════ -->
-    <div id="view-projects" class="view hidden">
-        <div class="view-header">
-            <button class="icon-btn burger" id="burgerBtn-projects" title="Menu" data-burger="true">
-                <i class="ph ph-list"></i>
-            </button>
-            <h2>Projects</h2>
-            <div class="projects-sort">
-                <label for="projectsSortSelect" class="projects-sort-label">Sort by</label>
-                <select id="projectsSortSelect" class="projects-sort-select">
-                    <option value="recent">Recently used</option>
-                    <option value="live">Running instances</option>
-                    <option value="name">Name</option>
-                    <option value="tokens">Tokens used</option>
-                </select>
-            </div>
-        </div>
-        <div class="view-body">
-            <div id="projects-empty" class="no-data" style="display:none">No projects yet.</div>
-            <div id="projects-list" class="projects-list"></div>
-            <div style="margin-top:14px">
-                <button class="btn-secondary" id="backfillBtn" style="width:100%;font-size:0.8rem">↺ Rebuild History</button>
-                <div id="backfill-status" style="text-align:center;font-size:0.72rem;color:var(--text-dim);margin-top:6px;display:none"></div>
-            </div>
-        </div>
-    </div>
+    <!-- Projects view migrated to src/views/projects; rendered by router
+         into the #app container below. -->
 
-    <!-- ══════════════════════════════════════════════════════════════════════
+<!-- ══════════════════════════════════════════════════════════════════════
          View: Graph Detail
     ═══════════════════════════════════════════════════════════════════════ -->
     <div id="view-graph-detail" class="view hidden">

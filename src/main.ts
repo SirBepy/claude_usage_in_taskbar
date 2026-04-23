@@ -5,9 +5,11 @@ import "./styles/themes.css";
 import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
 import { renderStatisticsView } from "./views/statistics/statistics";
+import { renderProjectsView } from "./views/projects/projects";
 
 registerView("dashboard", renderDashboard);
 registerView("statistics", renderStatisticsView);
+registerView("projects", renderProjectsView);
 
 const app = document.getElementById("app");
 if (!app) {

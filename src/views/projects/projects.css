@@ -1,0 +1,3 @@
+/* Projects view inherits .project-card / .projects-sort / .projects-list
+ * rules from src/dashboard.css for now. Phase-4 extracts project-card into
+ * src/components/project-card/. */

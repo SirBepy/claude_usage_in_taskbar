@@ -1,11 +1,11 @@
 "use strict";
 
 // ── View navigation ────────────────────────────────────────────────────────────
-// Dashboard + Statistics are migrated to src/views/. All other views still
-// render from the `#view-<name>` divs in index.html.
+// Dashboard + Statistics + Projects are migrated to src/views/. All other
+// views still render from the `#view-<name>` divs in index.html.
 const VIEWS = [
   "settings", "settings-visuals", "settings-themes",
-  "settings-notifications", "settings-sync", "projects",
+  "settings-notifications", "settings-sync",
   "project-detail", "graph-detail",
   "project-notif-overrides", "project-automation", "project-folder-mapping",
   "project-sessions", "session-detail",
@@ -76,20 +76,9 @@ document.getElementById("sidemenuBackdrop").onclick = closeSidemenu;
 
 // Home view's refresh button is owned by src/views/dashboard/dashboard.ts.
 
-// Projects sort dropdown
-const projectsSortSelect = document.getElementById("projectsSortSelect");
-if (projectsSortSelect) {
-  projectsSortSelect.onchange = async () => {
-    await window.electronAPI.setProjectsSortBy(projectsSortSelect.value);
-    if (typeof renderProjectsList === "function") renderProjectsList();
-  };
-}
-
-async function syncProjectsSortFromSettings() {
-  const s = await window.electronAPI.getSettings();
-  const sortBy = s.projects_sort_by || "recent";
-  if (projectsSortSelect) projectsSortSelect.value = sortBy;
-}
+// Projects-sort dropdown + select-value sync are owned by
+// src/views/projects/projects.ts.
+async function syncProjectsSortFromSettings() { /* no-op (migrated) */ }
 
 // Nav item click → navigate + close.
 document.querySelectorAll(".sidemenu-nav-item").forEach((item) => {

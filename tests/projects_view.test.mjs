@@ -8,22 +8,26 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distDir = join(__dirname, "..", "src");
 const html = readFileSync(join(distDir, "index.html"), "utf8");
+const projectsTs = readFileSync(
+  join(distDir, "views", "projects", "projects.ts"),
+  "utf8",
+);
 
 describe("Projects view DOM", () => {
-  it("has a projects-list container inside view-projects", () => {
-    expect(html).toMatch(/id="projects-list"/);
+  it("has a projects-list container in the migrated view", () => {
+    expect(projectsTs).toMatch(/id="projects-list"/);
   });
 
   it("includes a sort-by dropdown with expected options", () => {
-    expect(html).toMatch(/id="projectsSortSelect"/);
-    expect(html).toMatch(/value="recent"/);
-    expect(html).toMatch(/value="live"/);
-    expect(html).toMatch(/value="name"/);
-    expect(html).toMatch(/value="tokens"/);
+    expect(projectsTs).toMatch(/id="projectsSortSelect"/);
+    expect(projectsTs).toMatch(/value="recent"/);
+    expect(projectsTs).toMatch(/value="live"/);
+    expect(projectsTs).toMatch(/value="name"/);
+    expect(projectsTs).toMatch(/value="tokens"/);
   });
 
   it("has an empty-state element", () => {
-    expect(html).toMatch(/id="projects-empty"/);
+    expect(projectsTs).toMatch(/id="projects-empty"/);
   });
 
   it("has project-detail menu button + popover container", () => {
