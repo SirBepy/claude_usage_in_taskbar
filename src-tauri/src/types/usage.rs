@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 /// A single usage poll result, captured at a point in time.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct UsageSnapshot {
     pub captured_at: String,           // RFC3339 / ISO8601
     pub five_hour: WindowUsage,
@@ -10,13 +11,15 @@ pub struct UsageSnapshot {
     pub extra_usage: Option<ExtraUsage>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct WindowUsage {
     pub utilization: f64,
     pub resets_at: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct ExtraUsage {
     pub is_enabled: bool,
     pub monthly_limit: f64,

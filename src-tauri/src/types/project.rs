@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use super::automation::{AutomationConfig, InstanceKind, EndReason};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(tag = "kind", content = "value", rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum Avatar {
     None,
     Emoji(String),
@@ -13,8 +14,9 @@ impl Default for Avatar {
     fn default() -> Self { Avatar::None }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum ProjectsSortBy {
     Recent,
     Live,
@@ -26,7 +28,8 @@ impl Default for ProjectsSortBy {
     fn default() -> Self { ProjectsSortBy::Recent }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct ProjectConfig {
     pub id: String,
     pub path: std::path::PathBuf,
@@ -40,7 +43,8 @@ pub struct ProjectConfig {
     pub last_active_at: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct Instance {
     pub session_id: String,
     pub pid: u32,

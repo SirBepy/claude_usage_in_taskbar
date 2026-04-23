@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use super::project::{ProjectConfig, ProjectsSortBy};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum DisplayMode {
     Rings,
     Bars,
@@ -16,8 +17,9 @@ pub enum DisplayMode {
 /// reason to inspect. `extra` catches every field the dashboard sends that
 /// isn't named below, so a save→load round-trip preserves them verbatim.
 /// Without this, each `saveSettings` would silently drop ~25 fields.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
 #[serde(default)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct Settings {
     pub poll_interval_secs: u64,
     pub display_mode: DisplayMode,
@@ -40,6 +42,7 @@ pub struct Settings {
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
     #[serde(flatten, default)]
+    #[ts(skip)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
 

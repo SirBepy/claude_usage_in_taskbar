@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct AutomationConfig {
     pub enabled: bool,
     pub autostart_on_boot: bool,
@@ -8,15 +9,17 @@ pub struct AutomationConfig {
     pub continue_flag: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum InstanceKind {
     Automated,
     External,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum EndReason {
     HookSessionEnd,
     ProcessGone,
@@ -24,16 +27,18 @@ pub enum EndReason {
     Manual,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum AuthState {
     LoggedIn,
     NeedsLogin,
     InProgress,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum ChannelStatus {
     /// Starting but no child or hwnd yet.
     Starting,
