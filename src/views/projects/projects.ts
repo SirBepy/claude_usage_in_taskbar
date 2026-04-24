@@ -4,7 +4,7 @@ import "./projects.css";
 import { getTokenHistory, setTokenHistory } from "../../shared/state";
 import { openProjectDetail } from "../../shared/navigation";
 import { basenameProj, renderAvatar, escapeProjHtml, type Avatar } from "../../shared/projects";
-import { formatCompactTokens } from "../../shared/tokens";
+import { formatTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
 
 interface ProjectRecord {
@@ -90,7 +90,7 @@ function bump(bucket: ProjectEntry, iso?: string): void {
 export function projectCardHtml(entry: ProjectEntry): string {
   const displayName = entry.name || basenameProj(entry.cwd);
   const avatar = renderAvatar(entry.avatar);
-  const tokens = formatCompactTokens(entry.tokens_7d || 0);
+  const tokens = formatTokens(entry.tokens_7d || 0);
   const lastSeen = entry.lastActiveMs ? timeAgo(new Date(entry.lastActiveMs).toISOString()) : "";
   const tags = [
     entry.live ? `<span class="card-tag live">● ${entry.live}</span>` : "",

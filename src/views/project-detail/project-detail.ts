@@ -1,6 +1,6 @@
 import { html, render } from "lit-html";
 import "./project-detail.css";
-import { fmtK, totalTok, cacheEffPct, formatCompactTokens } from "../../shared/tokens";
+import { formatTokens, totalTok, cacheEffPct } from "../../shared/tokens";
 import type { TokenRecord } from "../../shared/tokens";
 import { projectLabel, renderAvatar } from "../../shared/projects";
 import { resolveMergeChain, doMerge } from "../../shared/merges";
@@ -54,10 +54,6 @@ function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
-function fmtTokens(n: number): string {
-  return formatCompactTokens(n);
-}
-
 function instanceRowHtml(i: Instance, stats: InstanceStats | undefined): string {
   const uptime = uptimeFrom(i.started_at);
   const tokens = stats?.tokens ?? 0;
@@ -67,7 +63,7 @@ function instanceRowHtml(i: Instance, stats: InstanceStats | undefined): string 
   return `
     <div class="instance-row clickable" data-session-id="${i.session_id}">
       <div class="status-dot"></div>
-      <div class="row-line">${pidPart} · up ${uptime} · ${prompts} ${prompts === 1 ? "msg" : "msgs"} · ${fmtTokens(tokens)} tokens · ${turns} ${turns === 1 ? "turn" : "turns"}</div>
+      <div class="row-line">${pidPart} · up ${uptime} · ${prompts} ${prompts === 1 ? "msg" : "msgs"} · ${formatTokens(tokens)} tokens · ${turns} ${turns === 1 ? "turn" : "turns"}</div>
       <span class="chev">›</span>
     </div>
   `;
@@ -407,7 +403,7 @@ export function buildBarChartSVG(days: Array<{ date: string; tokens: number }>):
     const val = frac * maxTok;
     const y = MT + (1 - frac) * PH;
     return `<line x1="${ML}" x2="${W - MR}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#2d2c44" stroke-width="1"/>
-      <text x="${ML - 4}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" fill="#6b6990" font-size="9" font-family="Fira Code,monospace">${fmtK(Math.round(val))}</text>`;
+      <text x="${ML - 4}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" fill="#6b6990" font-size="9" font-family="Fira Code,monospace">${formatTokens(Math.round(val))}</text>`;
   }).join("");
 
   const bars = days.map((d, i) => {
@@ -457,7 +453,7 @@ function renderSessionsList(cwd: string, range: string): void {
     const turns = (r as TokenRecord).turns || 0;
     return `<div class="today-row session-row" data-session-idx="${i}" style="cursor:pointer">
       <span style="font-family:'Fira Code',monospace;font-size:0.75rem;color:var(--text-dim)">${date}</span>
-      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${fmtK(tot)} tok · ${turns} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
+      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${formatTokens(tot)} tok · ${turns} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
     </div>`;
   }).join("");
   const seeAll = sorted.length > 5

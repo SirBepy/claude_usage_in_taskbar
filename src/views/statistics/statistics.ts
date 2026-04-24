@@ -10,7 +10,7 @@ import {
 } from "../../shared/state";
 import type { SettingsShape } from "../../shared/state";
 import type { TokenRecord, AliasMap } from "../../shared/tokens";
-import { fmtK, totalTok, cacheEffPct } from "../../shared/tokens";
+import { formatTokens, totalTok, cacheEffPct } from "../../shared/tokens";
 import { hourToMs, timeAgo } from "../../shared/time";
 import { projectLabel, isBlacklisted } from "../../shared/projects";
 import { showView, openProjectDetail } from "../../shared/navigation";
@@ -215,7 +215,7 @@ function buildProjectListHTML(opts: BuildListOpts): string {
     const deadIcon = isDead ? `<span class="dead-path-warning" title="Folder no longer exists">⚠</span> ` : "";
     return `<tr class="proj-row" data-cwd="${p.cwd}">
       <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${deadIcon}${plabel(p.cwd)}</td>
-      <td class="mono">${fmtK(p.tokens)}</td>
+      <td class="mono">${formatTokens(p.tokens)}</td>
       ${showPct ? `<td class="mono">${p.sessionPct != null ? p.sessionPct + "%" : "-"}</td>` : ""}
       ${showTime ? `<td class="mono">${timeAgo(p.lastActiveAt)}</td>` : ""}
     </tr>`;
@@ -567,7 +567,7 @@ function buildProjectBarsView(
       <div class="project-bar-track">
         <div class="project-bar-fill" style="width:${barWidth}%;background:${color}"></div>
       </div>
-      <span class="project-bar-value">${pct !== null ? pct + "%" : fmtK(p.tokens)}</span>
+      <span class="project-bar-value">${pct !== null ? pct + "%" : formatTokens(p.tokens)}</span>
     </div>`;
   });
 
@@ -579,14 +579,14 @@ function buildProjectBarsView(
       <div class="project-bar-track">
         <div class="project-bar-fill" style="width:${barWidth}%;background:var(--text-dim)"></div>
       </div>
-      <span class="project-bar-value">${pct !== null ? pct + "%" : fmtK(otherTokens)}</span>
+      <span class="project-bar-value">${pct !== null ? pct + "%" : formatTokens(otherTokens)}</span>
     </div>`);
     if (listId) {
       rows.push(`<div class="project-bars-more" data-bars-list-id="${listId}">Show ${rest.length} more</div>`);
     }
   }
 
-  const totalLabel = totalPct !== null ? `Total: ${totalPct}%` : `Total: ${fmtK(totalTokens)} tokens`;
+  const totalLabel = totalPct !== null ? `Total: ${totalPct}%` : `Total: ${formatTokens(totalTokens)} tokens`;
   return `<div class="project-bars">
     ${rows.join("")}
     <div class="project-bars-total">${totalLabel}</div>

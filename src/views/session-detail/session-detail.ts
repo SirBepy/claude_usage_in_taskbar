@@ -3,6 +3,7 @@ import { showToast } from "../../shared/toast";
 import { backFromSubview } from "../../shared/navigation";
 import { getCurrentSessionRecord, getProjectDetailState, getSettings } from "../../shared/state";
 import { renderAvatar as renderAvatarHtml } from "../../shared/projects";
+import { formatTokens } from "../../shared/tokens";
 import "./session-detail.css";
 
 import type { Avatar } from "../../shared/projects";
@@ -53,14 +54,6 @@ function isLive(r: SessionRecord | null): boolean {
   return !!(r && r.session_id && r.kind);
 }
 
-function fmtK(n: number): string {
-  if (!n) return "0";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 10_000) return Math.round(n / 1000) + "K";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
-  return String(n);
-}
-
 function totalTok(r: SessionRecord): number {
   return (r.inputTokens || 0) + (r.outputTokens || 0) + (r.cacheReadTokens || 0) + (r.cacheCreationTokens || 0);
 }
@@ -93,18 +86,18 @@ function renderBody(r: SessionRecord, liveStats?: LiveStats): void {
       ["Uptime", uptimeFrom(r.started_at)],
       ["Prompts", String(s.prompts ?? 0)],
       ["Turns", String(s.turns ?? 0)],
-      ["Tokens", fmtK(s.tokens ?? 0)],
+      ["Tokens", formatTokens(s.tokens ?? 0)],
       ["Session id", r.session_id || "-"],
     ];
   } else {
     rows = [
       ["Date", r.date || "-"],
       ["Turns", String(r.turns ?? 0)],
-      ["Total tokens", fmtK(totalTok(r))],
-      ["Input", fmtK(r.inputTokens ?? 0)],
-      ["Output", fmtK(r.outputTokens ?? 0)],
-      ["Cache read", fmtK(r.cacheReadTokens ?? 0)],
-      ["Cache create", fmtK(r.cacheCreationTokens ?? 0)],
+      ["Total tokens", formatTokens(totalTok(r))],
+      ["Input", formatTokens(r.inputTokens ?? 0)],
+      ["Output", formatTokens(r.outputTokens ?? 0)],
+      ["Cache read", formatTokens(r.cacheReadTokens ?? 0)],
+      ["Cache create", formatTokens(r.cacheCreationTokens ?? 0)],
       ["Cache efficiency", `${cacheEffPct(r)}%`],
     ];
   }

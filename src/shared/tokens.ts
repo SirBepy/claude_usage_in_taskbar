@@ -1,6 +1,5 @@
 /**
  * Token formatting and aggregation helpers.
- * Ported from src/modules/stats.js (fmtK, totalTok, cacheEffPct, aggregateByProject).
  */
 
 export interface TokenRecord {
@@ -36,7 +35,7 @@ export interface ProjectAlias {
 
 export type AliasMap = Record<string, ProjectAlias | undefined>;
 
-export function fmtK(n: number | null | undefined): string {
+export function formatTokens(n: number | null | undefined): string {
   if (!n) return "0";
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 10_000) return Math.round(n / 1000) + "K";
@@ -52,12 +51,6 @@ export function cacheEffPct(r: TokenRecord): number {
   const denom = (r.inputTokens || 0) + (r.cacheReadTokens || 0) + (r.cacheCreationTokens || 0);
   if (!denom) return 0;
   return Math.round((r.cacheReadTokens || 0) / denom * 100);
-}
-
-export function formatCompactTokens(n: number): string {
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
-  return String(n);
 }
 
 import { resolveMergeChain } from "./merges";

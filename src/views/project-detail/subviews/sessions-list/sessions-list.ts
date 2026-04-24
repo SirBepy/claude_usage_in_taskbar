@@ -1,6 +1,6 @@
 import { html, render } from "lit-html";
 import "./sessions-list.css";
-import { fmtK, totalTok, cacheEffPct } from "../../../../shared/tokens";
+import { formatTokens, totalTok, cacheEffPct } from "../../../../shared/tokens";
 import type { TokenRecord } from "../../../../shared/tokens";
 import { renderAvatar, projectLabel } from "../../../../shared/projects";
 import { getProjectDetailState, getSettings, getTokenHistory } from "../../../../shared/state";
@@ -45,7 +45,7 @@ export function renderAllSessionsList(cwd: string): void {
     const turns = (r as TokenRecord).turns || 0;
     return `<div class="today-row session-row" data-session-idx="${i}" style="cursor:pointer">
       <span style="font-family:'Fira Code',monospace;font-size:0.75rem;color:var(--text-dim)">${date}</span>
-      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${fmtK(tot)} tok · ${turns} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
+      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${formatTokens(tot)} tok · ${turns} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
     </div>`;
   }).join("");
   list.innerHTML = rowsHTML;
