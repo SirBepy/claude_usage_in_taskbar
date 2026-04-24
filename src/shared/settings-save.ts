@@ -6,18 +6,7 @@
 
 import { getSettings, setSettings } from "./state";
 import type { SettingsShape } from "./state";
-
-interface ElectronAPIShape {
-  saveSettings(s: SettingsShape): Promise<unknown>;
-}
-interface LegacyGlobals {
-  electronAPI?: ElectronAPIShape;
-  renderHistory?: (h: unknown) => void;
-  lastHistory?: unknown;
-}
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
+import { api } from "./api";
 
 function byId<T extends HTMLElement = HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -132,9 +121,12 @@ export function saveSettings(): void {
   };
 
   setSettings(settings);
-  void g().electronAPI?.saveSettings(settings);
-  const renderHistory = g().renderHistory;
-  if (typeof renderHistory === "function") renderHistory(g().lastHistory);
+  void api.saveSettings(settings);
+  const w = window as unknown as {
+    renderHistory?: (h: unknown) => void;
+    lastHistory?: unknown;
+  };
+  if (typeof w.renderHistory === "function") w.renderHistory(w.lastHistory);
 }
 
 // Back-compat: expose on window for any legacy callers (stats.js, dashboard.js).

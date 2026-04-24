@@ -14,26 +14,14 @@ import { formatTokens, totalTok, cacheEffPct } from "../../shared/tokens";
 import { hourToMs, timeAgo } from "../../shared/time";
 import { projectLabel, isBlacklisted } from "../../shared/projects";
 import { showView, openProjectDetail } from "../../shared/navigation";
+import { api } from "../../shared/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface UsageRecord {
-  hour: string;
-  session_pct: number | null;
-  weekly_pct: number | null;
-  session_resets_at: string | null;
-  weekly_resets_at: string | null;
-  [k: string]: unknown;
-}
-
-interface ElectronAPI {
-  getUsageHistory(): Promise<UsageRecord[]>;
-  onHistoryUpdated(cb: (h: UsageRecord[]) => void): () => void;
-  saveSettings(s: SettingsShape): Promise<unknown>;
-}
+export type { UsageRecord } from "../../shared/api";
+import type { UsageRecord } from "../../shared/api";
 
 interface LegacyGlobals {
-  electronAPI?: ElectronAPI;
   openProjectDetail?(cwd: string): void;
   showView?(name: string): void;
   activeView?: string;
@@ -88,7 +76,7 @@ interface ListProject {
 
 function saveSettings(): void {
   const s = getSettings();
-  void g().electronAPI?.saveSettings(s);
+  void api.saveSettings(s);
 }
 
 // ── Pin state ─────────────────────────────────────────────────────────────
@@ -1046,8 +1034,7 @@ export async function renderStatisticsView(
 ): Promise<() => void> {
   render(template(), root);
 
-  const api = g().electronAPI;
-  if (api && !getUsageHistory()) {
+  if (!getUsageHistory()) {
     try {
       setUsageHistory(await api.getUsageHistory());
     } catch (e) {
@@ -1056,7 +1043,7 @@ export async function renderStatisticsView(
   }
   fill();
 
-  const unlisten = api?.onHistoryUpdated((h) => {
+  const unlisten = api.onHistoryUpdated((h) => {
     setUsageHistory(h);
     fill();
   });
@@ -1077,7 +1064,7 @@ export async function renderStatisticsView(
   }
 
   return () => {
-    try { unlisten?.(); } catch { /* ignore */ }
+    try { unlisten(); } catch { /* ignore */ }
     window.removeEventListener("refresh-dashboard-home", onRefresh);
   };
 }

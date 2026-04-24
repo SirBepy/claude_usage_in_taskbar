@@ -2,31 +2,13 @@ import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import { saveSettings } from "../../shared/settings-save";
 import { getSettings } from "../../shared/state";
+import { api } from "../../shared/api";
+import type { UpdateState } from "../../shared/api";
 import "./settings.css";
 
 export { saveSettings };
 
-interface UpdateState {
-  state: "idle" | "checking" | "available" | "downloading" | "downloaded" | "error" | string;
-  version?: string;
-  [k: string]: unknown;
-}
-
-interface ElectronAPIShape {
-  logout(): Promise<unknown>;
-  getPlatform(): Promise<string>;
-  getAppVersion(): Promise<string>;
-  getUpdateState(): Promise<UpdateState>;
-  onUpdateStateChange(cb: (s: UpdateState) => void): unknown;
-  checkForUpdates(): Promise<unknown>;
-  downloadAndInstall(): Promise<unknown>;
-  installUpdate(): Promise<unknown>;
-  openExternal(url: string): Promise<unknown>;
-  copyLogs(): Promise<unknown>;
-}
-
 interface LegacyGlobals {
-  electronAPI?: ElectronAPIShape;
   navigateTo(name: string): Promise<void>;
   renderUpdateState?: (s: UpdateState) => void;
   renderSettingsRoot?: () => Promise<void> | void;
@@ -63,7 +45,7 @@ function renderUpdateState(updateState: UpdateState): void {
     if (macUpdateNotice) macUpdateNotice.style.display = "block";
     if (macReleasesBtn) {
       macReleasesBtn.onclick = () => {
-        void g().electronAPI?.openExternal(
+        void api.openExternal(
           `https://github.com/SirBepy/claude_usage_in_taskbar/releases/tag/v${updateState.version}`,
         );
       };
@@ -79,7 +61,7 @@ function renderUpdateState(updateState: UpdateState): void {
     updateBtn.style.display = "block";
     updateBtn.disabled = false;
     updateBtn.innerText = `Install v${updateState.version}`;
-    updateBtn.onclick = () => { void g().electronAPI?.installUpdate(); };
+    updateBtn.onclick = () => { void api.installUpdate(); };
   } else if (updateState.state === "available") {
     updateStateLabel.innerText = `v${updateState.version} available`;
     updateStateLabel.style.color = "var(--text)";
@@ -89,7 +71,7 @@ function renderUpdateState(updateState: UpdateState): void {
     updateBtn.onclick = () => {
       updateBtn.disabled = true;
       updateBtn.innerText = "Downloading...";
-      void g().electronAPI?.downloadAndInstall();
+      void api.downloadAndInstall();
     };
   } else if (updateState.state === "downloading") {
     updateStateLabel.innerText = "Downloading...";
@@ -103,7 +85,7 @@ function renderUpdateState(updateState: UpdateState): void {
     updateBtn.style.display = "block";
     updateBtn.disabled = false;
     updateBtn.innerText = "Retry";
-    updateBtn.onclick = () => { void g().electronAPI?.checkForUpdates(); };
+    updateBtn.onclick = () => { void api.checkForUpdates(); };
   } else {
     updateStateLabel.innerText = "Up to date";
     updateStateLabel.style.color = "var(--text-dim)";
@@ -122,7 +104,7 @@ async function hydrateSettingsRoot(): Promise<void> {
   if (!launchAtLogin || !autoUpdate || !refreshUpdateBtn || !copyLogsBtn) return;
 
   if (!_isMacResolved) {
-    const platform = await g().electronAPI?.getPlatform();
+    const platform = await api.getPlatform();
     isMac = platform === "darwin";
     _isMacResolved = true;
   }
@@ -134,7 +116,7 @@ async function hydrateSettingsRoot(): Promise<void> {
   autoUpdate.addEventListener("change", saveSettings);
 
   refreshUpdateBtn.addEventListener("click", () => {
-    void g().electronAPI?.checkForUpdates();
+    void api.checkForUpdates();
     const updateStateLabel = $("updateStateLabel");
     const updateBtn = $("updateBtn") as HTMLButtonElement | null;
     if (updateStateLabel) {
@@ -145,7 +127,7 @@ async function hydrateSettingsRoot(): Promise<void> {
   });
 
   copyLogsBtn.addEventListener("click", () => {
-    void g().electronAPI?.copyLogs();
+    void api.copyLogs();
     const originalText = copyLogsBtn.textContent;
     copyLogsBtn.textContent = "Copied to Clipboard!";
     copyLogsBtn.classList.replace("btn-secondary", "btn-primary");
@@ -155,12 +137,12 @@ async function hydrateSettingsRoot(): Promise<void> {
     }, 2000);
   });
 
-  const version = await g().electronAPI?.getAppVersion();
+  const version = await api.getAppVersion();
   if (version && appVersionLabel) appVersionLabel.innerText = `Version: ${version}`;
 
-  const initialState = await g().electronAPI?.getUpdateState();
+  const initialState = await api.getUpdateState();
   if (initialState) renderUpdateState(initialState);
-  g().electronAPI?.onUpdateStateChange(renderUpdateState);
+  api.onUpdateStateChange(renderUpdateState);
 }
 
 // Back-compat window bindings (legacy dashboard.js/stats.js/boot modals still reference these).
@@ -183,7 +165,7 @@ export async function renderSettingsView(
   if (navNotifs) navNotifs.onclick = () => g().navigateTo("settings-notifications");
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
-  if (logoutBtn) logoutBtn.onclick = () => { void g().electronAPI?.logout(); };
+  if (logoutBtn) logoutBtn.onclick = () => { void api.logout(); };
 
   try { await hydrateSettingsRoot(); }
   catch (e) { console.error("[settings root] render failed", e); }

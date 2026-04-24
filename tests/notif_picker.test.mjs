@@ -1,18 +1,30 @@
 // Rewired from the deleted src/modules/sound-packs.js — imports directly from
-// src/shared/sound-packs.ts. We stub window + electronAPI globals before the
-// module registers itself.
+// src/shared/sound-packs.ts. We stub window + the Tauri runtime globals before
+// the module registers itself.
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { JSDOM } from "jsdom";
 
 // The module reads window at import time (attaches SoundPacks global). We must
 // stub window/document BEFORE importing. A single global JSDOM is fine; each
-// test replaces window.electronAPI and calls invalidateCache() to reset.
+// test replaces window.__TAURI__ and calls invalidateCache() to reset.
 const bootstrapDom = new JSDOM(`<!DOCTYPE html>`);
 globalThis.window = bootstrapDom.window;
 globalThis.document = bootstrapDom.window.document;
 
 const SP = await import("../src/shared/sound-packs.ts");
+
+function stubTauri(commands) {
+  return {
+    core: {
+      invoke: async (cmd, _args) => {
+        const handler = commands[cmd];
+        if (!handler) throw new Error(`unstubbed invoke: ${cmd}`);
+        return handler();
+      },
+    },
+  };
+}
 
 describe("two-step picker populates from pack catalog", () => {
   let dom;
@@ -24,14 +36,14 @@ describe("two-step picker populates from pack catalog", () => {
     `);
     globalThis.window = dom.window;
     globalThis.document = dom.window.document;
-    dom.window.electronAPI = {
-      listSoundPacks: async () => ([
+    dom.window.__TAURI__ = stubTauri({
+      list_sound_packs: () => ([
         { id: "default", label: "Default", installed: true,
           sounds: [{ id: "s1.mp3", label: "S1" }] },
         { id: "peon", label: "Peon", installed: false,
           sounds: [{ id: "work.mp3", label: "Work work" }] },
       ]),
-    };
+    });
     SP.invalidateCache();
   });
 

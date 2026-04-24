@@ -17,24 +17,14 @@ export interface SoundPack {
   [k: string]: unknown;
 }
 
-interface ElectronAPIShape {
-  listSoundPacks(): Promise<SoundPack[]>;
-  installSoundPack(id: string): Promise<unknown>;
-  playPackSoundPreview(packId: string, soundId: string): Promise<unknown>;
-}
-
-function api(): ElectronAPIShape | null {
-  return (window as unknown as { electronAPI?: ElectronAPIShape }).electronAPI ?? null;
-}
+import { api } from "./api";
 
 let packCache: SoundPack[] | null = null;
 
 export async function loadPacks(): Promise<SoundPack[]> {
   if (packCache) return packCache;
-  const a = api();
-  if (!a) { packCache = []; return packCache; }
   try {
-    packCache = await a.listSoundPacks();
+    packCache = (await api.listSoundPacks()) as unknown as SoundPack[];
   } catch (e) {
     console.error("[sound-packs] list failed", e);
     packCache = [];
@@ -79,9 +69,7 @@ export function populateSoundSelect(
 }
 
 export async function installPack(packId: string): Promise<SoundPack[]> {
-  const a = api();
-  if (!a) return loadPacks();
-  await a.installSoundPack(packId);
+  await api.installSoundPack(packId);
   invalidateCache();
   return loadPacks();
 }

@@ -3,6 +3,7 @@ import { showToast } from "../../../../shared/toast";
 import { backFromSubview } from "../../../../shared/navigation";
 import { getProjectDetailState } from "../../../../shared/state";
 import { populateProjectSubviewHeader } from "../sessions-list/sessions-list";
+import { api } from "../../../../shared/api";
 import "./automation.css";
 
 interface Automation {
@@ -18,26 +19,10 @@ interface ProjectCfg {
   automation?: Automation | null;
 }
 
-interface LegacyGlobals {
-  electronAPI?: {
-    listProjects(): Promise<ProjectCfg[]>;
-    ensureProject(cwd: string): Promise<ProjectCfg>;
-    updateProject(id: string, patch: unknown): Promise<unknown>;
-    spawnChannel(id: string): Promise<unknown>;
-    stopChannel(id: string): Promise<unknown>;
-  };
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
-
 async function renderAutomationForm(): Promise<void> {
   const cwd = getProjectDetailState().cwd;
   if (!cwd) return;
-  const api = g().electronAPI;
-  if (!api) return;
-  const projects = await api.listProjects();
+  const projects = (await api.listProjects()) as unknown as ProjectCfg[];
   const proj = projects.find((p) => p.path === cwd);
   const empty = document.getElementById("automationEmpty") as HTMLElement | null;
   const form = document.getElementById("automationForm") as HTMLElement | null;
@@ -75,10 +60,8 @@ export async function renderAutomationView(
     automate.onclick = async () => {
       const cwd = getProjectDetailState().cwd;
       if (!cwd) return;
-      const api = g().electronAPI;
-      if (!api) return;
       let proj: ProjectCfg;
-      try { proj = await api.ensureProject(cwd); }
+      try { proj = (await api.ensureProject(cwd)) as unknown as ProjectCfg; }
       catch (e) { return showToast(`Could not register project: ${e}`); }
       await api.updateProject(proj.id, {
         automation: {
@@ -99,8 +82,6 @@ export async function renderAutomationView(
       const form = document.getElementById("automationForm") as HTMLElement | null;
       const projectId = form?.dataset.projectId;
       if (!projectId) return;
-      const api = g().electronAPI;
-      if (!api) return;
       const enabled = (document.getElementById("automationEnabled") as HTMLInputElement).checked;
       const autostart = (document.getElementById("automationAutostart") as HTMLInputElement).checked;
       const cont = (document.getElementById("automationContinue") as HTMLInputElement).checked;
@@ -127,8 +108,6 @@ export async function renderAutomationView(
       const form = document.getElementById("automationForm") as HTMLElement | null;
       const projectId = form?.dataset.projectId;
       if (!projectId) return;
-      const api = g().electronAPI;
-      if (!api) return;
       try { await api.stopChannel(projectId); } catch { /* ignore */ }
       await api.updateProject(projectId, { automation: null });
       await renderAutomationForm();

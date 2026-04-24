@@ -14,21 +14,14 @@ import {
   populateSoundSelect,
   installPack,
 } from "../../../../shared/sound-packs";
+import { api } from "../../../../shared/api";
 import "./notifications.css";
 
 interface PiperVoice { id: string; label: string; installed: boolean; [k: string]: unknown; }
 interface PiperStatus { voices?: PiperVoice[]; [k: string]: unknown; }
 
-interface ElectronAPIShape {
-  piperStatus(): Promise<PiperStatus>;
-  playPackSoundPreview(packId: string, soundId: string): Promise<unknown>;
-  speakPreview(opts: { text: string; voiceName?: string | null }): Promise<unknown>;
-  getTokenHistory(): Promise<Array<{ cwd?: string; [k: string]: unknown }>>;
-}
-
 interface LegacyGlobals {
   navigateTo(name: string): Promise<void>;
-  electronAPI?: ElectronAPIShape;
   renderNotificationSettings?(): Promise<void> | void;
 }
 
@@ -159,7 +152,7 @@ function wireNotifCard(type: string): void {
     saveSettings();
   });
   c.soundPreview.onclick = () => {
-    g().electronAPI?.playPackSoundPreview(c.soundPack.value, c.soundFile.value).catch((e) => {
+    api.playPackSoundPreview(c.soundPack.value, c.soundFile.value).catch((e) => {
       console.error("[sound preview] failed", e);
     });
   };
@@ -175,7 +168,7 @@ function wireNotifCard(type: string): void {
       .replace(/\s+/g, " ")
       .trim();
     if (!text) return;
-    void g().electronAPI?.speakPreview({ text, voiceName: c.voiceSelect.value || null });
+    void api.speakPreview({ text, voiceName: c.voiceSelect.value || null });
   };
 }
 
@@ -229,7 +222,7 @@ function buildNotifCards(): void {
 
 async function loadPiperVoices(): Promise<void> {
   try {
-    const status = await g().electronAPI?.piperStatus();
+    const status = await api.piperStatus();
     if (status) piperStatusCache = status;
     refreshAllVoiceSelects();
   } catch (e) {
@@ -260,7 +253,7 @@ function applyMuteAllVisual(): void {
 async function populateVoicePreview(): Promise<void> {
   const voicePreviewProject = $("voicePreviewProject") as HTMLSelectElement | null;
   if (!voicePreviewProject) return;
-  const history = (await g().electronAPI?.getTokenHistory()) || [];
+  const history = (await api.getTokenHistory()) || [];
   const seen = new Set<string>();
   const projects: string[] = [];
   for (let i = history.length - 1; i >= 0 && projects.length < 5; i--) {

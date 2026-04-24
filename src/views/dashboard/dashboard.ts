@@ -4,6 +4,8 @@ import "./dashboard.css";
 import { fmtPct, fmtResetDisplay, valueColor } from "../../shared/formatters";
 import type { ResetDisplay } from "../../shared/formatters";
 import { getSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
+import { api } from "../../shared/api";
+import type { UsageRecord } from "../../shared/api";
 import {
   buildPinnedCardsHTML,
   setupPaginationButtons,
@@ -13,21 +15,6 @@ import {
   wirePinButtons,
   wireProjectListClicks,
 } from "../statistics/statistics";
-import type { UsageRecord } from "../statistics/statistics";
-
-interface ElectronAPI {
-  getUsageHistory(): Promise<UsageRecord[]>;
-  pollNow(): Promise<unknown>;
-  onHistoryUpdated(cb: (h: UsageRecord[]) => void): () => void;
-}
-
-interface LegacyGlobals {
-  electronAPI?: ElectronAPI;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
 
 let refreshBusy = false;
 let lastAutoPollMs = 0;
@@ -41,8 +28,6 @@ async function maybeAutoPoll(reason: "crossover" | "focus"): Promise<void> {
   const now = Date.now();
   // Throttle: one auto-poll per minute.
   if (now - lastAutoPollMs < 60_000) return;
-  const api = g().electronAPI;
-  if (!api) return;
   const history = getHistory();
   if (!history || history.length === 0) return;
   const latest = history[history.length - 1]!;
@@ -64,8 +49,7 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   const content = root.querySelector<HTMLElement>("#stats-content");
   if (content) drawInto(content);
 
-  const api = g().electronAPI;
-  if (api && !getHistory()) {
+  if (!getHistory()) {
     try {
       setUsageHistory(await api.getUsageHistory());
       if (content) drawInto(content);
@@ -74,7 +58,7 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
     }
   }
 
-  const unlisten = api?.onHistoryUpdated((h) => {
+  const unlisten = api.onHistoryUpdated((h) => {
     setUsageHistory(h);
     const el = root.querySelector<HTMLElement>("#stats-content");
     if (el) drawInto(el);
@@ -95,7 +79,7 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   const crossoverTimer = window.setInterval(() => void maybeAutoPoll("crossover"), 60_000);
 
   return () => {
-    try { unlisten?.(); } catch { /* ignore */ }
+    try { unlisten(); } catch { /* ignore */ }
     window.removeEventListener("refresh-dashboard-home", onRefreshEvent);
     document.removeEventListener("visibilitychange", onVisibility);
     window.clearInterval(crossoverTimer);
@@ -139,7 +123,7 @@ async function onRefreshClick(e: Event) {
   const btn = e.currentTarget as HTMLElement | null;
   btn?.classList.add("spinning");
   try {
-    await g().electronAPI?.pollNow();
+    await api.pollNow();
   } catch (err) {
     console.error("pollNow failed", err);
   } finally {

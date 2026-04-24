@@ -23,36 +23,10 @@ import type { SettingsShape } from "./state";
 import type { TokenRecord, AliasMap } from "./tokens";
 import { doMerge } from "./merges";
 import { showToast } from "./toast";
+import { api } from "./api";
 import { refreshDashboard } from "../views/statistics/statistics";
 import { renderProjectsList } from "../views/projects/projects";
 import { renderProjectDetailContent } from "../views/project-detail/project-detail";
-
-interface HookRegState {
-  registered?: boolean;
-  declined?: boolean;
-  port?: number | null;
-}
-
-interface ElectronAPIShape {
-  getUsageHistory(): Promise<unknown>;
-  getTokenHistory(): Promise<TokenRecord[]>;
-  getActiveSessions(): Promise<TokenRecord[]>;
-  getSettings(): Promise<SettingsShape | null>;
-  saveSettings(s: SettingsShape): Promise<unknown>;
-  checkPathsExist(paths: string[]): Promise<Record<string, boolean>>;
-  onHistoryUpdated(cb: (h: unknown) => void): () => void;
-  onTokenHistoryUpdated(cb: (th: TokenRecord[]) => void): () => void;
-  onInstancesChanged(cb: (list: unknown) => void): () => void;
-  getHookRegistrationState(): Promise<HookRegState>;
-  registerHooksGlobally(): Promise<void>;
-  skipHookRegistration(): Promise<void>;
-  importLegacyObsidianConfig(): Promise<unknown>;
-  confirmLegacyObsidianImport(accept: boolean): Promise<unknown>;
-}
-
-function api(): ElectronAPIShape | undefined {
-  return (window as unknown as { electronAPI?: ElectronAPIShape }).electronAPI;
-}
 
 function activeViewName(): string {
   return window.location.hash.replace(/^#/, "") || "dashboard";
@@ -60,10 +34,9 @@ function activeViewName(): string {
 
 // ── Live token history merge ───────────────────────────────────────────────
 async function fetchTokenHistoryWithLive(): Promise<TokenRecord[]> {
-  const a = api();
-  const history = (await a?.getTokenHistory()) ?? [];
+  const history = (await api.getTokenHistory()) ?? [];
   try {
-    const active = (await a?.getActiveSessions()) ?? [];
+    const active = (await api.getActiveSessions()) ?? [];
     if (active.length) return [...history, ...active];
   } catch {
     // handler may not be registered yet
@@ -91,8 +64,7 @@ async function runDeadPathCheck(): Promise<void> {
     for (const m of merged) allPathsToCheck.add(m);
   }
 
-  const existsMap = await api()?.checkPathsExist([...allPathsToCheck]);
-  if (!existsMap) return;
+  const existsMap = await api.checkPathsExist([...allPathsToCheck]);
 
   const isProjectAlive = (c: string): boolean => {
     if (existsMap[c]) return true;
@@ -117,7 +89,7 @@ async function runDeadPathCheck(): Promise<void> {
       doMerge(aliases, deadCwd, matches[0]);
       settings.projectAliases = aliases;
       setSettings(settings);
-      void api()?.saveSettings(settings);
+      void api.saveSettings(settings);
       anyMerged = true;
     } else {
       deadPaths.add(deadCwd);
@@ -133,7 +105,7 @@ async function runDeadPathCheck(): Promise<void> {
 
 // ── Hook-registration consent modal ────────────────────────────────────────
 async function renderHookModalPreview(): Promise<void> {
-  const state = await api()?.getHookRegistrationState();
+  const state = await api.getHookRegistrationState();
   const port = state?.port ?? "?";
   const preview = [
     `"hooks": {`,
@@ -165,7 +137,7 @@ function showHookModal(): void {
 }
 
 async function maybeShowHookModal(): Promise<void> {
-  const state = await api()?.getHookRegistrationState();
+  const state = await api.getHookRegistrationState();
   if (!state || state.registered || state.declined) return;
   showHookModal();
 }
@@ -178,7 +150,7 @@ function wireHookModal(): void {
   if (accept) {
     (accept as HTMLButtonElement).onclick = async () => {
       try {
-        await api()?.registerHooksGlobally();
+        await api.registerHooksGlobally();
         hideHookModal();
         showToast("Hooks enabled. Running instances will now show up.");
       } catch (e) {
@@ -193,7 +165,7 @@ function wireHookModal(): void {
   }
   if (never) {
     (never as HTMLButtonElement).onclick = async () => {
-      await api()?.skipHookRegistration();
+      await api.skipHookRegistration();
       hideHookModal();
     };
   }
@@ -203,7 +175,7 @@ function wireHookModal(): void {
 async function maybeOfferLegacyImport(): Promise<void> {
   let preview: unknown;
   try {
-    preview = await api()?.importLegacyObsidianConfig();
+    preview = await api.importLegacyObsidianConfig();
   } catch {
     return;
   }
@@ -215,7 +187,7 @@ async function maybeOfferLegacyImport(): Promise<void> {
   const finish = async (accept: boolean): Promise<void> => {
     banner.style.display = "none";
     try {
-      await api()?.confirmLegacyObsidianImport(accept);
+      await api.confirmLegacyObsidianImport(accept);
     } catch (e) {
       console.error("confirm_legacy_obsidian_import failed", e);
     }
@@ -254,10 +226,8 @@ function coerceSettings(s: SettingsShape): SettingsShape {
 
 // ── Public entrypoint ──────────────────────────────────────────────────────
 export function initBoot(): void {
-  const a = api();
-
   // Initial data fetches.
-  void a?.getUsageHistory().then((h) => {
+  void api.getUsageHistory().then((h) => {
     initUsage = h;
     setUsageHistory(h);
     tryInitialRender();
@@ -267,7 +237,7 @@ export function initBoot(): void {
     setTokenHistory(th);
     tryInitialRender();
   });
-  void a?.getSettings().then((s) => {
+  void api.getSettings().then((s) => {
     if (s) {
       const coerced = coerceSettings(s);
       setSettings(coerced);
@@ -277,15 +247,15 @@ export function initBoot(): void {
   });
 
   // Live subscriptions.
-  a?.onHistoryUpdated((h) => {
+  api.onHistoryUpdated((h) => {
     setUsageHistory(h);
     refreshDashboard();
     if (activeViewName() === "projects") void renderProjectsList();
   });
-  a?.onTokenHistoryUpdated(async (th) => {
+  api.onTokenHistoryUpdated(async (th) => {
     let active: TokenRecord[] = [];
     try {
-      active = (await a.getActiveSessions()) ?? [];
+      active = (await api.getActiveSessions()) ?? [];
     } catch {
       /* ignore */
     }
@@ -296,7 +266,7 @@ export function initBoot(): void {
     if (view === "projects") void renderProjectsList();
     if (view === "project-detail") renderProjectDetailContent();
   });
-  a?.onInstancesChanged(() => {
+  api.onInstancesChanged(() => {
     if (activeViewName() === "projects") void renderProjectsList();
   });
 

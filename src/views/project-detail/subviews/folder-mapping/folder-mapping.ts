@@ -8,19 +8,7 @@ import { renderProjectDetailContent } from "../../project-detail";
 import { showView, backFromSubview, showMergeModal, openProjectDetail } from "../../../../shared/navigation";
 import { saveSettings } from "../../../../shared/settings-save";
 import { refreshProjectsUI } from "../../../projects/projects";
-
-interface ElectronAPIShape {
-  checkPathsExist(paths: string[]): Promise<Record<string, boolean>>;
-  saveSettings(s: unknown): Promise<unknown>;
-}
-
-interface LegacyGlobals {
-  electronAPI?: ElectronAPIShape;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
+import { api } from "../../../../shared/api";
 
 function doHideProject(cwd: string): void {
   const settings = getSettings();
@@ -104,8 +92,8 @@ export function wireFolderMappingSubview(cwd: string): void {
       const targetUsed = history?.some((r) => r.cwd === newCwd);
       if (targetUsed) { showErr("Target folder is already a tracked project. Rename to merge instead."); return; }
       try {
-        const existsMap = await g().electronAPI?.checkPathsExist([newCwd]);
-        if (!existsMap || !existsMap[newCwd]) { showErr("Folder does not exist on disk."); return; }
+        const existsMap = await api.checkPathsExist([newCwd]);
+        if (!existsMap[newCwd]) { showErr("Folder does not exist on disk."); return; }
       } catch (e) { showErr("Could not verify folder: " + (e as Error).message); return; }
       if (!settings.projectAliases) settings.projectAliases = {};
       doRepoint(settings.projectAliases, cwd, newCwd);

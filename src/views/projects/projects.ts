@@ -6,6 +6,7 @@ import { openProjectDetail } from "../../shared/navigation";
 import { basenameProj, renderAvatar, escapeProjHtml, type Avatar } from "../../shared/projects";
 import { formatTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
+import { api } from "../../shared/api";
 
 interface ProjectRecord {
   id: string;
@@ -22,32 +23,6 @@ interface Instance {
   is_remote?: boolean;
   kind?: string;
   end_reason?: string | null;
-}
-
-interface BackfillResult {
-  processed: number;
-  skipped: number;
-}
-
-interface ElectronAPIShape {
-  getSettings(): Promise<{ projects_sort_by?: string } | null>;
-  setProjectsSortBy(sortBy: string): Promise<unknown>;
-  onHistoryUpdated(cb: () => void): () => void;
-  onTokenHistoryUpdated(cb: () => void): () => void;
-  onInstancesChanged(cb: () => void): () => void;
-  listProjects?(): Promise<ProjectRecord[]>;
-  listInstances?(): Promise<Instance[]>;
-  getTokenHistory?(): Promise<unknown[]>;
-  backfillTranscripts?(): Promise<BackfillResult | null>;
-}
-
-interface LegacyGlobals {
-  electronAPI?: ElectronAPIShape;
-  showView?(name: string): void;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
 }
 
 interface ProjectEntry {
@@ -114,15 +89,14 @@ function setupBackfillBtn(): void {
   if (!btn || btn._hooked) return;
   btn._hooked = true;
   btn.onclick = async () => {
-    const api = g().electronAPI;
     btn.disabled = true;
     btn.textContent = "Scanning...";
     if (status) { status.style.display = "block"; status.textContent = "This may take a while…"; }
     try {
-      const result = (await api?.backfillTranscripts?.()) ?? null;
-      const msg = result ? `Done — ${result.processed} new, ${result.skipped} skipped` : "Done";
+      const result = await api.backfillTranscripts();
+      const msg = result ? `Done - ${result.processed} new, ${result.skipped} skipped` : "Done";
       if (status) status.textContent = msg;
-      const fresh = (await api?.getTokenHistory?.()) as unknown as import("../../shared/tokens").TokenRecord[] | undefined;
+      const fresh = await api.getTokenHistory();
       setTokenHistory(fresh ?? null);
       await renderProjectsList();
     } catch (e) {
@@ -137,15 +111,14 @@ function setupBackfillBtn(): void {
 // Re-exported from shared/navigation — imported at top of file.
 
 export async function renderProjectsList(): Promise<void> {
-  const api = g().electronAPI;
   const tokenHistory = (getTokenHistory() as unknown as TokenRecordShape[] | null)
-    || ((await api?.getTokenHistory?.()) as unknown as TokenRecordShape[] | undefined)
+    || ((await api.getTokenHistory()) as unknown as TokenRecordShape[] | undefined)
     || [];
   let projects: ProjectRecord[] = [];
-  try { projects = (await api?.listProjects?.()) || []; } catch { /* ignore */ }
+  try { projects = (await api.listProjects()) as unknown as ProjectRecord[]; } catch { /* ignore */ }
   let liveInstances: Instance[] = [];
   try {
-    liveInstances = ((await api?.listInstances?.()) || []).filter((i) => !i.end_reason);
+    liveInstances = ((await api.listInstances()) as unknown as Instance[]).filter((i) => !i.end_reason);
   } catch { /* ignore */ }
 
   const byPath = new Map<string, ProjectEntry>();
@@ -178,8 +151,8 @@ export async function renderProjectsList(): Promise<void> {
     byPath.set(key, existing);
   }
 
-  const settingsForSort = (await api?.getSettings?.()) || {};
-  const sortBy = settingsForSort.projects_sort_by || "recent";
+  const settingsForSort = (await api.getSettings()) || {};
+  const sortBy = (settingsForSort as { projects_sort_by?: string }).projects_sort_by || "recent";
   const nameOf = (e: ProjectEntry): string => (e.name || basenameProj(e.cwd) || "").toLowerCase();
   const entries = [...byPath.values()].sort((a, b) => {
     switch (sortBy) {
@@ -234,26 +207,25 @@ export async function renderProjectsView(
   const select = root.querySelector<HTMLSelectElement>("#projectsSortSelect");
   if (select) {
     try {
-      const s = (await g().electronAPI?.getSettings()) || {};
-      select.value = s.projects_sort_by || "recent";
+      const s = (await api.getSettings()) || {};
+      select.value = (s as { projects_sort_by?: string }).projects_sort_by || "recent";
     } catch { /* ignore */ }
     select.addEventListener("change", async () => {
-      await g().electronAPI?.setProjectsSortBy(select.value);
+      await api.setProjectsSortBy(select.value);
       await renderProjectsList();
     });
   }
 
   await renderProjectsList();
 
-  const api = g().electronAPI;
-  const unsubHistory = api?.onHistoryUpdated(() => { void renderProjectsList(); });
-  const unsubTokens = api?.onTokenHistoryUpdated(() => { void renderProjectsList(); });
-  const unsubInstances = api?.onInstancesChanged(() => { void renderProjectsList(); });
+  const unsubHistory = api.onHistoryUpdated(() => { void renderProjectsList(); });
+  const unsubTokens = api.onTokenHistoryUpdated(() => { void renderProjectsList(); });
+  const unsubInstances = api.onInstancesChanged(() => { void renderProjectsList(); });
 
   return () => {
-    try { unsubHistory?.(); } catch { /* ignore */ }
-    try { unsubTokens?.(); } catch { /* ignore */ }
-    try { unsubInstances?.(); } catch { /* ignore */ }
+    try { unsubHistory(); } catch { /* ignore */ }
+    try { unsubTokens(); } catch { /* ignore */ }
+    try { unsubInstances(); } catch { /* ignore */ }
   };
 }
 

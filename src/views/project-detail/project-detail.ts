@@ -21,6 +21,7 @@ import {
 } from "../../shared/navigation";
 import { saveSettings } from "../../shared/settings-save";
 import { refreshProjectsUI } from "../projects/projects";
+import { api } from "../../shared/api";
 
 interface Instance {
   session_id: string;
@@ -36,22 +37,6 @@ interface InstanceStats {
   tokens?: number;
   turns?: number;
   prompts?: number;
-}
-
-interface LegacyGlobals {
-  electronAPI?: {
-    listProjects(): Promise<ProjectConfig[]>;
-    listInstancesForProject(id: string): Promise<Instance[]>;
-    instanceTokenStats(sid: string): Promise<InstanceStats>;
-    openInExplorer(p: string): Promise<unknown>;
-    openInVSCode(p: string): Promise<unknown>;
-    saveSettings(s: unknown): Promise<unknown>;
-    onInstancesChanged(cb: () => void): () => void;
-  };
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
 }
 
 function instanceRowHtml(i: Instance, stats: InstanceStats | undefined): string {
@@ -81,15 +66,13 @@ function setRunningInstancesEmpty(count: number): void {
 async function renderRunningInstances(): Promise<void> {
   const cwd = getProjectDetailState().cwd;
   if (!cwd) return;
-  const api = g().electronAPI;
-  if (!api) return;
-  const projects = await api.listProjects();
+  const projects = (await api.listProjects()) as unknown as ProjectConfig[];
   const proj = projects.find((p) => p.path === cwd);
   if (!proj) {
     setRunningInstancesEmpty(0);
     return;
   }
-  const instances = (await api.listInstancesForProject(proj.id))
+  const instances = ((await api.listInstancesForProject(proj.id)) as unknown as Instance[])
     .filter((i) => !i.end_reason);
   const count = instances.length;
 
@@ -107,7 +90,7 @@ async function renderRunningInstances(): Promise<void> {
   listEl.style.display = "block";
 
   const stats = await Promise.all(
-    instances.map((i) => api.instanceTokenStats(i.session_id)),
+    instances.map((i) => api.instanceTokenStats(i.session_id) as unknown as Promise<InstanceStats>),
   );
   listEl.innerHTML = instances.map((i, idx) => instanceRowHtml(i, stats[idx])).join("");
   listEl.querySelectorAll<HTMLElement>(".instance-row").forEach((row) => {
@@ -272,8 +255,8 @@ export async function renderProjectDetailView(
   // Explorer / VSCode
   const explorerBtn = root.querySelector<HTMLButtonElement>("#openExplorerBtn");
   const vscodeBtn = root.querySelector<HTMLButtonElement>("#openVSCodeBtn");
-  if (explorerBtn) explorerBtn.onclick = () => g().electronAPI?.openInExplorer(cwd);
-  if (vscodeBtn) vscodeBtn.onclick = () => g().electronAPI?.openInVSCode(cwd);
+  if (explorerBtn) explorerBtn.onclick = () => api.openInExplorer(cwd);
+  if (vscodeBtn) vscodeBtn.onclick = () => api.openInVSCode(cwd);
 
   // Range btns
   root.querySelectorAll<HTMLButtonElement>(".range-btn").forEach((btn) => {
@@ -304,13 +287,12 @@ export async function renderProjectDetailView(
   }
   void renderRunningInstances();
 
-  const api = g().electronAPI;
-  const unsub = api?.onInstancesChanged(() => {
+  const unsub = api.onInstancesChanged(() => {
     void renderRunningInstances();
   });
 
   return () => {
-    try { unsub?.(); } catch { /* ignore */ }
+    try { unsub(); } catch { /* ignore */ }
     document.removeEventListener("click", onDocClick);
   };
 }

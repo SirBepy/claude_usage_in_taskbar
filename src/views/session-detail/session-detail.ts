@@ -4,6 +4,7 @@ import { backFromSubview } from "../../shared/navigation";
 import { getCurrentSessionRecord, getProjectDetailState, getSettings } from "../../shared/state";
 import { renderAvatar as renderAvatarHtml } from "../../shared/projects";
 import { formatTokens } from "../../shared/tokens";
+import { api } from "../../shared/api";
 import "./session-detail.css";
 
 import type { Avatar } from "../../shared/projects";
@@ -34,20 +35,6 @@ interface LiveStats {
   tokens?: number;
   turns?: number;
   prompts?: number;
-}
-
-interface LegacyGlobals {
-  electronAPI?: {
-    instanceTokenStats(sid: string): Promise<LiveStats>;
-    showTerminal(projectId: string): Promise<unknown>;
-    restartChannel(projectId: string): Promise<unknown>;
-    stopChannel(projectId: string): Promise<unknown>;
-    phoneLink(sessionId: string): Promise<string | null>;
-  };
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
 }
 
 function isLive(r: SessionRecord | null): boolean {
@@ -141,8 +128,6 @@ function renderChrome(r: SessionRecord): void {
       actions.querySelectorAll<HTMLButtonElement>(".act-btn").forEach((btn) => {
         btn.onclick = async () => {
           const act = btn.dataset.act;
-          const api = g().electronAPI;
-          if (!api) return;
           try {
             if (act === "term" && projectId) await api.showTerminal(projectId);
             else if (act === "restart" && projectId) { await api.restartChannel(projectId); showToast("Restarting…"); }
@@ -196,10 +181,8 @@ export async function renderSessionDetailView(
   if (isLive(r) && r.session_id) {
     const sid = r.session_id;
     const tick = async () => {
-      const api = g().electronAPI;
-      if (!api) return;
       try {
-        const stats = await api.instanceTokenStats(sid);
+        const stats = (await api.instanceTokenStats(sid)) as unknown as LiveStats;
         if ((getCurrentSessionRecord() as SessionRecord | null)?.session_id !== sid) return;
         renderBody(r, stats);
       } catch { /* ignore transient */ }

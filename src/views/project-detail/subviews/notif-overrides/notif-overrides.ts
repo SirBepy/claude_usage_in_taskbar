@@ -11,6 +11,7 @@ import {
   installPack,
   type SoundPack,
 } from "../../../../shared/sound-packs";
+import { api } from "../../../../shared/api";
 
 const OVERRIDE_EVENTS: Array<{ key: string; title: string }> = [
   { key: "workFinished",     title: "Done (Work Finished)" },
@@ -25,19 +26,6 @@ interface OverrideRule {
   soundFile?: string;
   voiceName?: string | null;
   template?: string;
-}
-
-interface ElectronAPIShape {
-  saveSettings(s: unknown): Promise<unknown>;
-  playPackSoundPreview(packId: string, soundId: string): Promise<unknown>;
-}
-
-interface LegacyGlobals {
-  electronAPI?: ElectronAPIShape;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
 }
 
 export async function renderProjectOverrides(cwdKey: string): Promise<void> {
@@ -99,7 +87,7 @@ export async function renderProjectOverrides(cwdKey: string): Promise<void> {
         voiceName: voiceSel.value || null,
         template: templateInput.value || "",
       };
-      void g().electronAPI?.saveSettings(settings);
+      void api.saveSettings(settings);
     };
 
     enabledBox.addEventListener("change", () => { applyVis(); save(); });
@@ -132,7 +120,7 @@ export async function renderProjectOverrides(cwdKey: string): Promise<void> {
       }
     });
     previewBtn.addEventListener("click", () => {
-      g().electronAPI?.playPackSoundPreview(packSel.value, soundSel.value).catch((e) => {
+      api.playPackSoundPreview(packSel.value, soundSel.value).catch((e) => {
         console.error("[sound preview] failed", e);
       });
     });
