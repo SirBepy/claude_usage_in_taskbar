@@ -84,12 +84,38 @@ jobs:
         working-directory: src-tauri
         run: cargo tauri build
 
+      - name: Generate latest.json
+        shell: bash
+        working-directory: src-tauri/target/release/bundle/nsis
+        run: |
+          TAG="${{ needs.check.outputs.tag }}"
+          VERSION="${TAG#tauri-v}"
+          EXE_FILE=$(ls *_x64-setup.exe)
+          SIG=$(cat "${EXE_FILE}.sig")
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # URL-encode spaces in filename (tauri names the exe with a space).
+          EXE_URL_NAME="${EXE_FILE// /.}"
+          # Rename the file on disk too so the uploaded asset name matches the URL.
+          if [ "$EXE_FILE" != "$EXE_URL_NAME" ]; then
+            mv -- "$EXE_FILE" "$EXE_URL_NAME"
+            mv -- "${EXE_FILE}.sig" "${EXE_URL_NAME}.sig"
+          fi
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "Release $VERSION" \
+            --arg pub_date "$DATE" \
+            --arg sig "$SIG" \
+            --arg url "https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${EXE_URL_NAME}" \
+            '{version:$version, notes:$notes, pub_date:$pub_date, platforms:{"windows-x86_64":{signature:$sig, url:$url}}}' \
+            > latest.json
+          cat latest.json
+
       - name: Upload installer
         uses: softprops/action-gh-release@v2
         with:
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.nsis.zip
+            src-tauri/target/release/bundle/nsis/*.exe.sig
             src-tauri/target/release/bundle/nsis/latest.json
           tag_name: ${{ needs.check.outputs.tag }}
           name: Tauri ${{ needs.check.outputs.tag }}
