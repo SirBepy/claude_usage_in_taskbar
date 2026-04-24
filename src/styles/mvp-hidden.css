@@ -1,0 +1,18 @@
+/* MVP cut features — hidden until re-enabled in v2 */
+.sync-section,
+.sync-settings,
+[data-tab="sync"],
+[data-feature="sync"],
+.piper-section,
+.piper-settings,
+[data-tab="piper"],
+[data-feature="piper"],
+#piper-voice-picker,
+#piper-install-panel,
+.token-stats-section,
+[data-tab="token-stats"],
+[data-feature="token-stats"],
+#token-history-chart,
+#active-sessions-panel {
+  display: none !important;
+}
