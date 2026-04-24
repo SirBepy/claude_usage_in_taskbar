@@ -116,7 +116,48 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
     })
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
+    use std::os::unix::process::CommandExt;
+    use std::process::Command;
+
+    let mut cmd = Command::new("claude");
+    cmd.arg("--remote-control")
+        .arg("--remote-control-session-name-prefix")
+        .arg(&input.session_name_prefix);
+    if input.continue_flag {
+        cmd.arg("--continue");
+    }
+    cmd.current_dir(&input.cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    // Put the child in a new session + process group so killpg() can
+    // tree-kill it plus every node subprocess it spawns.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let child = cmd.spawn().map_err(SpawnError::Io)?;
+    let pid = child.id();
+    // Drop `child`: `Child::drop` on Unix does not kill or reap; it only
+    // closes stdio FDs (null stdio => nothing to close). The watchdog
+    // reaps via `waitpid` exactly once (see wait_for_child_exit).
+    drop(child);
+
+    Ok(SpawnOutput {
+        pid,
+        process_handle: 0,
+    })
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn spawn_child(_input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
     Err(SpawnError::NonWindows)
 }
