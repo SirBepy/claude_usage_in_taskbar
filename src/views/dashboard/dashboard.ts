@@ -29,9 +29,33 @@ function g(): LegacyGlobals {
 }
 
 let refreshBusy = false;
+let lastAutoPollMs = 0;
 
 function getHistory(): UsageRecord[] | null {
   return getUsageHistory() as UsageRecord[] | null;
+}
+
+async function maybeAutoPoll(reason: "crossover" | "focus"): Promise<void> {
+  if (refreshBusy) return;
+  const now = Date.now();
+  // Throttle: one auto-poll per minute.
+  if (now - lastAutoPollMs < 60_000) return;
+  const api = g().electronAPI;
+  if (!api) return;
+  const history = getHistory();
+  if (!history || history.length === 0) return;
+  const latest = history[history.length - 1]!;
+  const sessionMs = latest.session_resets_at ? new Date(latest.session_resets_at).getTime() : null;
+  const weeklyMs = latest.weekly_resets_at ? new Date(latest.weekly_resets_at).getTime() : null;
+  const sessionExpired = sessionMs !== null && now >= sessionMs;
+  const weeklyExpired = weeklyMs !== null && now >= weeklyMs;
+  if (reason === "crossover" && !sessionExpired && !weeklyExpired) return;
+  lastAutoPollMs = now;
+  try {
+    await api.pollNow();
+  } catch (err) {
+    console.error("[dashboard] auto pollNow failed", err);
+  }
 }
 
 export async function renderDashboard(root: HTMLElement): Promise<() => void> {
@@ -61,9 +85,19 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   };
   window.addEventListener("refresh-dashboard-home", onRefreshEvent);
 
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") void maybeAutoPoll("focus");
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+
+  void maybeAutoPoll("crossover");
+  const crossoverTimer = window.setInterval(() => void maybeAutoPoll("crossover"), 60_000);
+
   return () => {
     try { unlisten?.(); } catch { /* ignore */ }
     window.removeEventListener("refresh-dashboard-home", onRefreshEvent);
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.clearInterval(crossoverTimer);
   };
 }
 
