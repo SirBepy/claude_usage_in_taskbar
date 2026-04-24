@@ -30,3 +30,28 @@
   color: var(--text-dim, #8a8aa0);
   text-align: center;
 }
+.view-dashboard .home-card .reset-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-dim, #8a8aa0);
+  margin-top: auto;
+  transition: opacity 0.3s ease;
+}
+.view-dashboard .home-card .reset-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+.view-dashboard .home-card .reset-absolute {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text, #e8e8f0);
+  letter-spacing: 0.01em;
+}
+.view-dashboard .home-card .reset-relative {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}

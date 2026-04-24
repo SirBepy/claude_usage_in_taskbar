@@ -1,7 +1,8 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import "./dashboard.css";
-import { fmtPct, fmtResetTime, valueColor } from "../../shared/formatters";
+import { fmtPct, fmtResetDisplay, valueColor } from "../../shared/formatters";
+import type { ResetDisplay } from "../../shared/formatters";
 import { getSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
 import {
   buildPinnedCardsHTML,
@@ -156,8 +157,22 @@ function drawInto(container: HTMLElement): void {
 
   const latest = history[history.length - 1]!;
   const settings = getSettings();
-  const sessionReset = fmtResetTime(latest.session_resets_at);
-  const weeklyReset = fmtResetTime(latest.weekly_resets_at);
+  const sessionReset = fmtResetDisplay(latest.session_resets_at);
+  const weeklyReset = fmtResetDisplay(latest.weekly_resets_at);
+  const SESSION_WINDOW_MS = 5 * 3_600_000;
+  const WEEKLY_WINDOW_MS = 7 * 24 * 3_600_000;
+  const renderReset = (r: ResetDisplay | null, windowMs: number): string => {
+    if (!r) return "";
+    if (r.diffMs <= 0) return `<div class="reset-info"><div class="reset-relative">now</div></div>`;
+    const frac = Math.max(0, Math.min(1, r.diffMs / windowMs));
+    const opacity = (1 - frac * 0.7).toFixed(2);
+    return `
+      <div class="reset-info" style="opacity:${opacity}">
+        <div class="reset-label">resets</div>
+        <div class="reset-absolute">${r.absolute}</div>
+        <div class="reset-relative">${r.relative}</div>
+      </div>`;
+  };
 
   const weeklyEndMs = latest.weekly_resets_at
     ? new Date(latest.weekly_resets_at).getTime()
@@ -207,7 +222,7 @@ function drawInto(container: HTMLElement): void {
             </div>
           </div>
         </div>
-        ${sessionReset ? `<div class="stat-sublabel sub">${sessionReset}</div>` : ""}
+        ${renderReset(sessionReset, SESSION_WINDOW_MS)}
       </div>
       <div class="stat-card home-card">
         <div class="stat-label label">Weekly (7d)</div>
@@ -223,7 +238,7 @@ function drawInto(container: HTMLElement): void {
             </div>
           </div>
         </div>
-        ${weeklyReset ? `<div class="stat-sublabel sub">${weeklyReset}</div>` : ""}
+        ${renderReset(weeklyReset, WEEKLY_WINDOW_MS)}
       </div>
     </div>
     ${buildPinnedCardsHTML(history)}

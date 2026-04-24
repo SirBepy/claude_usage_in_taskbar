@@ -69,6 +69,27 @@ export function fmtResetTime(isoStr: string | null | undefined): string | null {
   return `resets in ${m}m`;
 }
 
+export interface ResetDisplay {
+  absolute: string;
+  relative: string;
+  diffMs: number;
+}
+
+export function fmtResetDisplay(isoStr: string | null | undefined): ResetDisplay | null {
+  if (!isoStr) return null;
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return null;
+  const diffMs = d.getTime() - Date.now();
+  if (diffMs <= 0) return { absolute: "now", relative: "", diffMs: 0 };
+  const h = Math.floor(diffMs / 3_600_000);
+  const m = Math.floor((diffMs % 3_600_000) / 60_000);
+  const day = d.toLocaleDateString("en-US", { weekday: "long" });
+  const hour = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const absolute = `${day} ${hour}`;
+  const relative = h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
+  return { absolute, relative, diffMs };
+}
+
 export function pctColor(v: number | null | undefined): string {
   if (v === null || v === undefined) return "var(--text-dim)";
   if (v >= 80) return "#e74c3c";
