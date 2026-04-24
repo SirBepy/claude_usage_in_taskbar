@@ -1,8 +1,8 @@
 # Claude AI Usage Toolbar
 
-Windows system tray app (Tauri 2) that monitors Claude AI usage by scraping
-the Claude settings/usage page via a CDP-driven hidden Chrome tab, once per
-hour. macOS + Linux builds deferred.
+Cross-platform system tray app (Tauri 2) that monitors Claude AI usage by
+scraping the Claude settings/usage page via a CDP-driven hidden Chrome
+tab, once per hour. Windows + macOS supported; Linux deferred.
 
 ## Running
 
@@ -197,11 +197,10 @@ The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every t
 
 ## Channel management (Plan C)
 
-- `src-tauri/src/channels/` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console. Windows-only.
-- Spawn uses raw `CreateProcessW` with `STARTF_USESHOWWINDOW | SW_HIDE` in `STARTUPINFOW` so the new console is born invisible (no flash) and `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP`. Command line: `cmd.exe /C claude --remote-control --remote-control-session-name-prefix "<prefix>" [--continue]`.
-- After spawn, hwnd resolved via `EnumWindows` by owning pid, then `strip_console_chrome` removes `WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME` so the console is frameless when shown. No X button: user can't kill the process by closing the window; only the dashboard's Stop action does. Hide/Stop/Restart live in the Project detail view.
-- Watchdog blocks on `WaitForSingleObject` via `tokio::task::spawn_blocking` (SpawnOutput now exposes a raw `process_handle: isize`, no tokio `Child`). Drives `next_restart_delay` (stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed).
-- Kill on shutdown uses `taskkill /T /F /PID <pid>` — claude spawns node subprocesses so tree-kill is required.
-- `src-tauri/src/channels/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` for the automation picker.
+- `src-tauri/src/channels/` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console.
+- **Windows spawn:** raw `CreateProcessW` with `STARTF_USESHOWWINDOW | SW_HIDE` in `STARTUPINFOW` so the new console is born invisible (no flash) and `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP`. Command line: `cmd.exe /C claude --remote-control --remote-control-session-name-prefix "<prefix>" [--continue]`. After spawn, hwnd resolved via `EnumWindows` by owning pid, then `strip_console_chrome` removes `WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME` so the console is frameless when shown. No X button: user can't kill the process by closing the window; only the dashboard's Stop action does. Watchdog blocks on `WaitForSingleObject`. Kill uses `taskkill /T /F /PID <pid>` (node subprocesses → tree-kill required).
+- **macOS spawn:** `std::process::Command::new("claude")` with remote-control args, null stdio, and `setsid()` in `pre_exec` so the child becomes its own process-group leader (PGID == PID). No visible console exists, so no hwnd-strip, no Show/Hide UI on mac. Watchdog blocks on `libc::waitpid` via `tokio::task::spawn_blocking`. Kill uses `libc::killpg(pid, SIGKILL)` which reaps every node subprocess that inherited the group.
+- `next_restart_delay` shared across both platforms: stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed.
+- `src-tauri/src/channels/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` on Windows and `~/Library/Application Support/{Obsidian,obsidian}/obsidian.json` on macOS (casing varies by installer version) for the automation picker.
 - `ipc::import_legacy_obsidian_config` maps the old Python app's config.json into a new ProjectConfig with an auto-configured automation.
 - The `obsidian_claude_remote` repo is archived on GitHub as of 2026-04-21; see its README.
