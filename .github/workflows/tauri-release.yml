@@ -35,13 +35,12 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
+  tag:
     needs: check
     if: needs.check.outputs.should_release == 'true'
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Create and push tag
         shell: bash
         run: |
@@ -50,13 +49,39 @@ jobs:
           git tag "${{ needs.check.outputs.tag }}"
           git push origin "${{ needs.check.outputs.tag }}"
 
+  build:
+    needs: [check, tag]
+    if: needs.check.outputs.should_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: ""
+            rust_targets: ""
+            build_args: ""
+          - os: macos-14
+            target: "aarch64-apple-darwin"
+            rust_targets: "aarch64-apple-darwin"
+            build_args: "--target aarch64-apple-darwin"
+          - os: macos-13
+            target: "x86_64-apple-darwin"
+            rust_targets: "x86_64-apple-darwin"
+            build_args: "--target x86_64-apple-darwin"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
           cache-on-failure: true
+          key: ${{ matrix.os }}-${{ matrix.target }}
 
       - name: Install Tauri CLI
         uses: taiki-e/install-action@v2
@@ -68,15 +93,30 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         working-directory: src-tauri
-        run: cargo tauri build
+        shell: bash
+        run: cargo tauri build ${{ matrix.build_args }}
 
-      - name: Upload installer
+      - name: Upload installer (Windows)
+        if: matrix.os == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.nsis.zip
             src-tauri/target/release/bundle/nsis/latest.json
+          tag_name: ${{ needs.check.outputs.tag }}
+          name: Tauri ${{ needs.check.outputs.tag }}
+          draft: false
+          make_latest: "true"
+
+      - name: Upload installer (macOS)
+        if: startsWith(matrix.os, 'macos-')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
           tag_name: ${{ needs.check.outputs.tag }}
           name: Tauri ${{ needs.check.outputs.tag }}
           draft: false
