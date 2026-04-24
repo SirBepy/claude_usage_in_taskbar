@@ -1,25 +1,50 @@
 # claude-usage-tauri
 
-Tauri 2.x rewrite of the Claude Usage Taskbar Tool. Windows MVP.
+Tauri 2.x system tray app that monitors Claude AI usage and exposes Claude Code channel management. Windows + macOS supported; Linux deferred.
+
+## Install
+
+Grab the latest build from the [Releases](https://github.com/SirBepy/claude_usage_in_taskbar/releases) page.
+
+### Windows
+
+Download `Claude-Usage-<version>-setup.exe` and run it. The NSIS installer handles autostart and desktop shortcuts.
+
+### macOS
+
+Download the `.dmg` matching your architecture:
+
+- Apple Silicon (M1/M2/M3/M4): `Claude-Usage_<version>_aarch64.dmg`
+- Intel: `Claude-Usage_<version>_x64.dmg`
+
+Mount the DMG and drag **Claude Usage** to Applications.
+
+**First launch (unsigned build workaround):** The app is not signed with an Apple Developer ID, so Gatekeeper refuses the normal double-click-open. Right-click **Claude Usage** in Applications, choose **Open**, then confirm the "unidentified developer" prompt. Only needed once; subsequent launches and auto-updates work normally.
 
 ## Dev
 
-    cd src-tauri
-    cargo tauri dev
+```bash
+cd src-tauri
+cargo tauri dev
+```
 
 ## Build
 
-    cd src-tauri
-    cargo tauri build
+```bash
+cd src-tauri
+cargo tauri build
+```
 
-Produces an NSIS installer in `src-tauri/target/release/bundle/nsis/`.
+On Windows produces an NSIS installer in `src-tauri/target/release/bundle/nsis/`; on macOS produces a DMG in `src-tauri/target/<triple>/release/bundle/dmg/`.
 
 ## Channel management
 
-Beyond tracking Claude Code usage, this app now also manages Claude Code channels per project:
+Beyond tracking Claude Code usage, this app manages Claude Code channels per project:
 
 - See every running Claude Code instance on your machine, live.
-- Configure "automated channels" per project that start at boot and stay alive. A hidden terminal is kept open for each — click **term** on its row to bring it to the foreground and type into it directly.
+- Configure "automated channels" per project that start at boot and stay alive.
+  - **Windows:** each channel runs in a hidden terminal; click **term** on its row to bring it to the foreground and type into it directly.
+  - **macOS:** channels run headless (no visible console). Stop/Restart work as on Windows; Show/Hide is not applicable.
 - Copy a phone link for any remote-control session to open it in the Claude mobile app.
 
 Replaces the previous `obsidian_claude_remote` tray app (now discontinued and archived).
