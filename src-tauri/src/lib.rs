@@ -33,7 +33,24 @@ pub fn run() {
 
     let state = AppState::new(loaded_settings, auth);
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Release-only: prevent a second instance from launching. In dev,
+    // the predev script already kills any running instance, and we want
+    // `cargo tauri dev` to proceed even if a prod build is installed.
+    #[cfg(not(debug_assertions))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)

@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/kill-stale.mjs",
     "dev": "vite",
     "prebuild": "cargo test --manifest-path src-tauri/Cargo.toml --test export_types",
     "build": "vite build",
