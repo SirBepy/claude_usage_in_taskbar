@@ -62,10 +62,7 @@ export function fmtResetTime(isoStr: string | null | undefined): string | null {
   const m = Math.floor((diffMs % 3_600_000) / 60_000);
   if (h > 12) {
     const day = d.toLocaleDateString("en-US", { weekday: "short" });
-    const opts: Intl.DateTimeFormatOptions = d.getMinutes() === 0
-      ? { hour: "numeric", hour12: true }
-      : { hour: "numeric", minute: "2-digit", hour12: true };
-    const hour = d.toLocaleTimeString("en-US", opts);
+    const hour = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
     return `resets ${day}<br>${hour}`;
   }
   if (h > 0) return `resets in ${h}h ${m}m`;
