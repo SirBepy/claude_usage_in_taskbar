@@ -110,9 +110,10 @@ pub fn start_channel(
         let app_w = app.clone();
         let proj_w = project_id.clone();
         let handle = spawn_out.process_handle;
+        let pid_for_wait = spawn_out.pid;
         tauri::async_runtime::spawn(async move {
             let started_at = std::time::Instant::now();
-            super::spawn::wait_for_child_exit(handle).await;
+            super::spawn::wait_for_child_exit(handle, pid_for_wait).await;
             let runtime = started_at.elapsed();
 
             let state = app_w.state::<crate::state::AppState>();
