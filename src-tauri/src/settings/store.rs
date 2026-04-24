@@ -23,15 +23,16 @@ pub fn load(path: &Path) -> Settings {
 }
 
 /// Canonical key used to decide whether two recorded cwds refer to the
-/// same project. On Windows, paths are case-insensitive and can arrive
-/// with either `\` or `/` separators (hook payloads, token-history, IPC
-/// all vary); without normalization the same folder registered as a
-/// different project every time the casing flipped.
+/// same project. On Windows and macOS (default APFS), paths are
+/// case-insensitive and can arrive with either `\` or `/` separators
+/// (hook payloads, token-history, IPC all vary); without normalization
+/// the same folder registered as a different project every time the
+/// casing flipped.
 pub fn normalize_cwd_key(p: &std::path::Path) -> String {
     let raw = p.to_string_lossy();
     let swapped: String = raw.chars().map(|c| if c == '/' { '\\' } else { c }).collect();
     let trimmed = swapped.trim_end_matches('\\');
-    if cfg!(windows) {
+    if cfg!(any(windows, target_os = "macos")) {
         trimmed.to_lowercase()
     } else {
         trimmed.to_string()
@@ -198,6 +199,25 @@ mod tests {
         let (id2, created) = upsert_project_for_cwd(
             &mut s,
             std::path::Path::new("c:\\users\\JOE\\proj"),
+            "t2",
+        );
+        assert!(!created, "same folder with different casing must not split");
+        assert_eq!(id1, id2);
+        assert_eq!(s.projects.len(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn upsert_merges_case_variants_on_macos() {
+        let mut s = Settings::default();
+        let (id1, _) = upsert_project_for_cwd(
+            &mut s,
+            std::path::Path::new("/Users/joe/Proj"),
+            "t1",
+        );
+        let (id2, created) = upsert_project_for_cwd(
+            &mut s,
+            std::path::Path::new("/users/JOE/proj"),
             "t2",
         );
         assert!(!created, "same folder with different casing must not split");
