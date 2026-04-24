@@ -30,6 +30,25 @@ fn find_browser() -> Option<PathBuf> {
             if p.exists() { return Some(p.to_path_buf()); }
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        let mut roots: Vec<PathBuf> = vec![PathBuf::from("/Applications")];
+        if let Some(h) = dirs::home_dir() {
+            roots.push(h.join("Applications"));
+        }
+        let apps: &[(&str, &str)] = &[
+            ("Google Chrome.app", "Google Chrome"),
+            ("Microsoft Edge.app", "Microsoft Edge"),
+            ("Brave Browser.app", "Brave Browser"),
+            ("Chromium.app", "Chromium"),
+        ];
+        for root in &roots {
+            for (bundle, bin) in apps {
+                let p = root.join(bundle).join("Contents/MacOS").join(bin);
+                if p.exists() { return Some(p); }
+            }
+        }
+    }
     None
 }
 
@@ -53,7 +72,14 @@ fn kill_browser(child: &mut Child) {
             .stdout(Stdio::null()).stderr(Stdio::null())
             .status();
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        // Mac Chrome launched with --user-data-dir does not fork a detached
+        // launcher; SIGTERM on the primary pid cleans up reliably.
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     { let _ = child.kill(); }
 }
 
@@ -61,7 +87,9 @@ pub async fn run(app: AppHandle) -> Result<()> {
     let _ = app.emit("auth-progress", json!({"stage": "waiting-for-browser"}));
 
     let bin = find_browser()
-        .ok_or_else(|| anyhow!("Chrome/Edge not found in standard install locations"))?;
+        .ok_or_else(|| anyhow!(
+            "No Chromium-based browser found. Install Google Chrome from https://www.google.com/chrome/"
+        ))?;
     log::info!("launching browser: {}", bin.display());
 
     let profile = crate::settings::paths::data_dir()
