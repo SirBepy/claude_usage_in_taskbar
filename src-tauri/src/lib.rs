@@ -33,6 +33,7 @@ pub fn run() {
 
     let state = AppState::new(loaded_settings, auth);
 
+    #[cfg_attr(debug_assertions, allow(unused_mut))]
     let mut builder = tauri::Builder::default();
 
     // Release-only: prevent a second instance from launching. In dev,

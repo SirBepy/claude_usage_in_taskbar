@@ -28,11 +28,11 @@ pub struct TokenRecord {
     pub recorded_at: String,
     /// Set on records produced by `active_sessions()` — the renderer uses
     /// this to style in-progress sessions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub live: Option<bool>,
     /// Agent IDs whose subagent transcripts have been merged into this record.
     /// Kept for idempotency of repeated backfills.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub merged_subagents: Option<Vec<String>>,
 }
 

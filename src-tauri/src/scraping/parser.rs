@@ -166,14 +166,6 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
     }
 }
 
-fn pace_summary(pct: f32, safe: Option<f32>) -> String {
-    match safe {
-        Some(s) if pct < s => format!("{pct:.0}% (under {s:.0}%)"),
-        Some(s) => format!("{pct:.0}% (over {s:.0}%)"),
-        None => format!("{pct:.0}%"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
