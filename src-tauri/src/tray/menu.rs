@@ -157,7 +157,11 @@ pub fn render_tray_now(app: &AppHandle) {
         None => icon::render(sess, weekly, &ctx),
     };
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return; };
-    if let Ok(img) = Image::from_bytes(&bytes) { let _ = tray.set_icon(Some(img)); }
+    if let Ok(img) = Image::from_bytes(&bytes) {
+        let _ = tray.set_icon(Some(img));
+        #[cfg(target_os = "macos")]
+        let _ = tray.set_icon_as_template(false);
+    }
     let _ = tray.set_tooltip(Some(usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)));
 }
 
