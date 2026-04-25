@@ -67,6 +67,9 @@ jobs:
           - os: macos-14
             target: x86_64-apple-darwin
             updater_key: darwin-x86_64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            updater_key: linux-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +81,19 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev \
+            libgtk-3-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -150,6 +166,35 @@ jobs:
           SAFE_DMG="${ARCH_DMG// /.}"
           cp "$DMG_FILE" "$GITHUB_WORKSPACE/release-staging/$SAFE_DMG"
 
+      - name: Stage Linux artifacts
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: src-tauri/target/${{ matrix.target }}/release/bundle
+        run: |
+          TAG="${{ needs.check.outputs.tag }}"
+          mkdir -p "$GITHUB_WORKSPACE/release-staging"
+          # Updater artifact: .AppImage.tar.gz + .sig (produced because createUpdaterArtifacts=true).
+          UPDATER=$(ls appimage/*.AppImage.tar.gz | head -n 1)
+          UPDATER_BASE=$(basename "$UPDATER")
+          SAFE_UPDATER="${UPDATER_BASE// /.}"
+          cp "$UPDATER" "$GITHUB_WORKSPACE/release-staging/$SAFE_UPDATER"
+          cp "${UPDATER}.sig" "$GITHUB_WORKSPACE/release-staging/${SAFE_UPDATER}.sig"
+          SIG=$(cat "${UPDATER}.sig")
+          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${SAFE_UPDATER}"
+          jq -n --arg sig "$SIG" --arg url "$URL" \
+            '{signature:$sig, url:$url}' \
+            > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
+          # AppImage for users who want a no-install run.
+          APPIMG=$(ls appimage/*.AppImage | head -n 1)
+          APPIMG_BASE=$(basename "$APPIMG")
+          SAFE_APPIMG="${APPIMG_BASE// /.}"
+          cp "$APPIMG" "$GITHUB_WORKSPACE/release-staging/$SAFE_APPIMG"
+          # DEB for Debian/Ubuntu users.
+          DEB=$(ls deb/*.deb | head -n 1)
+          DEB_BASE=$(basename "$DEB")
+          SAFE_DEB="${DEB_BASE// /.}"
+          cp "$DEB" "$GITHUB_WORKSPACE/release-staging/$SAFE_DEB"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -198,6 +243,10 @@ jobs:
             artifacts/*.app.tar.gz
             artifacts/*.app.tar.gz.sig
             artifacts/*.dmg
+            artifacts/*.deb
+            artifacts/*.AppImage
+            artifacts/*.AppImage.tar.gz
+            artifacts/*.AppImage.tar.gz.sig
             artifacts/latest.json
           tag_name: ${{ needs.check.outputs.tag }}
           name: Tauri ${{ needs.check.outputs.tag }}
