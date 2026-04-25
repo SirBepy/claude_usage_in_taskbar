@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::time::sleep;
 
 const CDP_PORT: u16 = 9242; // avoid clashes with 9222
-const LOGIN_TIMEOUT_SECS: u64 = 5 * 60;
+const LOGIN_TIMEOUT_SECS: u64 = 10 * 60;
 
 fn find_browser() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
@@ -96,6 +96,16 @@ fn spawn_browser(bin: &Path, profile: &Path, port: u16) -> std::io::Result<Child
         .arg(format!("--remote-debugging-port={port}"))
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
+        .arg("--disable-background-networking")
+        .arg("--disable-component-update")
+        .arg("--disable-features=Translate,InterestFeedContentSuggestions,PrivacySandboxSettings4,OptimizationHints,ChromeWhatsNewUI")
+        .arg("--disable-sync")
+        .arg("--disable-default-apps")
+        .arg("--disable-extensions")
+        .arg("--metrics-recording-only")
+        .arg("--no-pings")
+        .arg("--password-store=basic")
+        .arg("--use-mock-keychain")
         .arg("https://claude.ai/login")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -112,10 +122,26 @@ fn kill_browser(child: &mut Child) {
     }
     #[cfg(target_os = "macos")]
     {
-        // Mac Chrome launched with --user-data-dir does not fork a detached
-        // launcher; SIGTERM on the primary pid cleans up reliably.
-        let _ = child.kill();
-        let _ = child.wait();
+        // Send real SIGTERM (std::process::Child::kill is SIGKILL on Unix,
+        // which leaves the chrome-login-profile dirty -> next launch repeats
+        // the slow first-run bootstrap). Give Chrome up to 3s to flush, then
+        // SIGKILL as a fallback.
+        let pid = child.id() as i32;
+        unsafe { libc::kill(pid, libc::SIGTERM); }
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                _ => {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     { let _ = child.kill(); }
