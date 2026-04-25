@@ -49,6 +49,44 @@ fn find_browser() -> Option<PathBuf> {
             }
         }
     }
+    #[cfg(target_os = "linux")]
+    {
+        // PATH lookup first - covers snap/flatpak/nix shims that wrap the real binary.
+        let path_candidates = [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+            "microsoft-edge",
+        ];
+        for name in path_candidates {
+            if let Ok(out) = Command::new("which").arg(name).output() {
+                if out.status.success() {
+                    let s = String::from_utf8_lossy(&out.stdout);
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        let p = PathBuf::from(trimmed);
+                        if p.exists() { return Some(p); }
+                    }
+                }
+            }
+        }
+        let absolute_candidates = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/opt/google/chrome/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+            "/usr/bin/brave-browser",
+            "/usr/bin/microsoft-edge",
+        ];
+        for c in absolute_candidates {
+            let p = Path::new(c);
+            if p.exists() { return Some(p.to_path_buf()); }
+        }
+    }
     None
 }
 
