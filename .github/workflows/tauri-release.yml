@@ -174,23 +174,19 @@ jobs:
         run: |
           TAG="${{ needs.check.outputs.tag }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
-          # Updater artifact: .AppImage.tar.gz + .sig (produced because createUpdaterArtifacts=true).
-          UPDATER=$(ls appimage/*.AppImage.tar.gz | head -n 1)
-          UPDATER_BASE=$(basename "$UPDATER")
-          SAFE_UPDATER="${UPDATER_BASE// /.}"
-          cp "$UPDATER" "$GITHUB_WORKSPACE/release-staging/$SAFE_UPDATER"
-          cp "${UPDATER}.sig" "$GITHUB_WORKSPACE/release-staging/${SAFE_UPDATER}.sig"
-          SIG=$(cat "${UPDATER}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${SAFE_UPDATER}"
-          jq -n --arg sig "$SIG" --arg url "$URL" \
-            '{signature:$sig, url:$url}' \
-            > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
-          # AppImage for users who want a no-install run.
+          # On Linux Tauri's updater signs the AppImage directly: .AppImage + .AppImage.sig.
+          # No .tar.gz wrapping, unlike macOS .app.tar.gz.
           APPIMG=$(ls appimage/*.AppImage | head -n 1)
           APPIMG_BASE=$(basename "$APPIMG")
           SAFE_APPIMG="${APPIMG_BASE// /.}"
           cp "$APPIMG" "$GITHUB_WORKSPACE/release-staging/$SAFE_APPIMG"
-          # DEB for Debian/Ubuntu users.
+          cp "${APPIMG}.sig" "$GITHUB_WORKSPACE/release-staging/${SAFE_APPIMG}.sig"
+          SIG=$(cat "${APPIMG}.sig")
+          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${SAFE_APPIMG}"
+          jq -n --arg sig "$SIG" --arg url "$URL" \
+            '{signature:$sig, url:$url}' \
+            > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
+          # DEB for Debian/Ubuntu users (apt-managed; updater not used on this path).
           DEB=$(ls deb/*.deb | head -n 1)
           DEB_BASE=$(basename "$DEB")
           SAFE_DEB="${DEB_BASE// /.}"
@@ -246,8 +242,7 @@ jobs:
             artifacts/*.dmg
             artifacts/*.deb
             artifacts/*.AppImage
-            artifacts/*.AppImage.tar.gz
-            artifacts/*.AppImage.tar.gz.sig
+            artifacts/*.AppImage.sig
             artifacts/latest.json
           tag_name: ${{ needs.check.outputs.tag }}
           name: Tauri ${{ needs.check.outputs.tag }}
