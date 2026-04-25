@@ -6,16 +6,18 @@ Tauri 2.x system tray app that monitors Claude AI usage and exposes Claude Code 
 
 Grab the latest build from the [Releases](https://github.com/SirBepy/claude_usage_in_taskbar/releases) page.
 
+All assets follow `Claude-Usage_<version>_<os>_<arch>.<ext>`. Pick the row matching your machine.
+
 ### Windows
 
-Download `Claude-Usage-<version>-setup.exe` and run it. The NSIS installer handles autostart and desktop shortcuts.
+Download `Claude-Usage_<version>_windows_x64.exe` and run it. The NSIS installer handles autostart and desktop shortcuts.
 
 ### macOS
 
 Download the `.dmg` matching your architecture:
 
-- Apple Silicon (M1/M2/M3/M4): `Claude-Usage_<version>_aarch64.dmg`
-- Intel: `Claude-Usage_<version>_x64.dmg`
+- Apple Silicon (M1/M2/M3/M4): `Claude-Usage_<version>_macos_arm64.dmg`
+- Intel: `Claude-Usage_<version>_macos_x64.dmg`
 
 Mount the DMG and drag **Claude Usage** to Applications.
 
@@ -27,19 +29,19 @@ Two options on x86_64:
 
 **DEB (Debian/Ubuntu):**
 
-Download `Claude.Usage_<version>_amd64.deb` and install:
+Download `Claude-Usage_<version>_linux_x64.deb` and install:
 
 ```bash
-sudo apt install ./Claude.Usage_<version>_amd64.deb
+sudo apt install ./Claude-Usage_<version>_linux_x64.deb
 ```
 
 **AppImage (any distro):**
 
-Download `Claude.Usage_<version>_amd64.AppImage`, mark it executable, and run:
+Download `Claude-Usage_<version>_linux_x64.AppImage`, mark it executable, and run:
 
 ```bash
-chmod +x Claude.Usage_<version>_amd64.AppImage
-./Claude.Usage_<version>_amd64.AppImage
+chmod +x Claude-Usage_<version>_linux_x64.AppImage
+./Claude-Usage_<version>_linux_x64.AppImage
 ```
 
 The app needs a Chromium-based browser (Google Chrome, Chromium, or Brave) installed for the one-time login flow.

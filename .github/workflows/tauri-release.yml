@@ -61,15 +61,23 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             updater_key: windows-x86_64
+            os_label: windows
+            arch_label: x64
           - os: macos-14
             target: aarch64-apple-darwin
             updater_key: darwin-aarch64
+            os_label: macos
+            arch_label: arm64
           - os: macos-14
             target: x86_64-apple-darwin
             updater_key: darwin-x86_64
+            os_label: macos
+            arch_label: x64
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             updater_key: linux-x86_64
+            os_label: linux
+            arch_label: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -125,18 +133,14 @@ jobs:
         working-directory: src-tauri/target/${{ matrix.target }}/release/bundle/nsis
         run: |
           TAG="${{ needs.check.outputs.tag }}"
+          VERSION="${{ needs.check.outputs.version }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
-          EXE_FILE=$(ls *_x64-setup.exe)
-          # Tauri's NSIS exe contains spaces; rename so the release URL has no encoded chars.
-          SAFE_NAME="${EXE_FILE// /.}"
-          if [ "$EXE_FILE" != "$SAFE_NAME" ]; then
-            mv -- "$EXE_FILE" "$SAFE_NAME"
-            mv -- "${EXE_FILE}.sig" "${SAFE_NAME}.sig"
-          fi
-          SIG=$(cat "${SAFE_NAME}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${SAFE_NAME}"
-          cp "$SAFE_NAME" "$GITHUB_WORKSPACE/release-staging/"
-          cp "${SAFE_NAME}.sig" "$GITHUB_WORKSPACE/release-staging/"
+          EXE_FILE=$(ls *_x64-setup.exe | head -n 1)
+          ASSET="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.exe"
+          cp "$EXE_FILE" "$GITHUB_WORKSPACE/release-staging/$ASSET"
+          cp "${EXE_FILE}.sig" "$GITHUB_WORKSPACE/release-staging/${ASSET}.sig"
+          SIG=$(cat "${EXE_FILE}.sig")
+          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${ASSET}"
           jq -n --arg sig "$SIG" --arg url "$URL" \
             '{signature:$sig, url:$url}' \
             > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
@@ -147,25 +151,22 @@ jobs:
         working-directory: src-tauri/target/${{ matrix.target }}/release/bundle
         run: |
           TAG="${{ needs.check.outputs.tag }}"
+          VERSION="${{ needs.check.outputs.version }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
-          # Updater artifact: .app.tar.gz + .sig (produced because createUpdaterArtifacts=true).
+          # Updater payload: .app.tar.gz + .sig (createUpdaterArtifacts=true).
           APP_TGZ=$(ls macos/*.app.tar.gz | head -n 1)
-          APP_TGZ_BASE=$(basename "$APP_TGZ")
-          ARCH_BASE="${APP_TGZ_BASE%.app.tar.gz}_${{ matrix.target }}.app.tar.gz"
-          SAFE_TGZ="${ARCH_BASE// /.}"
-          cp "$APP_TGZ" "$GITHUB_WORKSPACE/release-staging/$SAFE_TGZ"
-          cp "${APP_TGZ}.sig" "$GITHUB_WORKSPACE/release-staging/${SAFE_TGZ}.sig"
+          ASSET_TGZ="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.app.tar.gz"
+          cp "$APP_TGZ" "$GITHUB_WORKSPACE/release-staging/$ASSET_TGZ"
+          cp "${APP_TGZ}.sig" "$GITHUB_WORKSPACE/release-staging/${ASSET_TGZ}.sig"
           SIG=$(cat "${APP_TGZ}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${SAFE_TGZ}"
+          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${ASSET_TGZ}"
           jq -n --arg sig "$SIG" --arg url "$URL" \
             '{signature:$sig, url:$url}' \
             > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
-          # DMG for human downloads.
+          # DMG for first-time installs.
           DMG_FILE=$(ls dmg/*.dmg | head -n 1)
-          DMG_BASE=$(basename "$DMG_FILE")
-          ARCH_DMG="${DMG_BASE%.dmg}_${{ matrix.target }}.dmg"
-          SAFE_DMG="${ARCH_DMG// /.}"
-          cp "$DMG_FILE" "$GITHUB_WORKSPACE/release-staging/$SAFE_DMG"
+          ASSET_DMG="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.dmg"
+          cp "$DMG_FILE" "$GITHUB_WORKSPACE/release-staging/$ASSET_DMG"
 
       - name: Stage Linux artifacts
         if: runner.os == 'Linux'
@@ -173,24 +174,22 @@ jobs:
         working-directory: src-tauri/target/${{ matrix.target }}/release/bundle
         run: |
           TAG="${{ needs.check.outputs.tag }}"
+          VERSION="${{ needs.check.outputs.version }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
-          # On Linux Tauri's updater signs the AppImage directly: .AppImage + .AppImage.sig.
-          # No .tar.gz wrapping, unlike macOS .app.tar.gz.
+          # AppImage doubles as updater payload + portable run; signed in place.
           APPIMG=$(ls appimage/*.AppImage | head -n 1)
-          APPIMG_BASE=$(basename "$APPIMG")
-          SAFE_APPIMG="${APPIMG_BASE// /.}"
-          cp "$APPIMG" "$GITHUB_WORKSPACE/release-staging/$SAFE_APPIMG"
-          cp "${APPIMG}.sig" "$GITHUB_WORKSPACE/release-staging/${SAFE_APPIMG}.sig"
+          ASSET_APP="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.AppImage"
+          cp "$APPIMG" "$GITHUB_WORKSPACE/release-staging/$ASSET_APP"
+          cp "${APPIMG}.sig" "$GITHUB_WORKSPACE/release-staging/${ASSET_APP}.sig"
           SIG=$(cat "${APPIMG}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${SAFE_APPIMG}"
+          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${ASSET_APP}"
           jq -n --arg sig "$SIG" --arg url "$URL" \
             '{signature:$sig, url:$url}' \
             > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
-          # DEB for Debian/Ubuntu users (apt-managed; updater not used on this path).
+          # DEB for apt-managed installs.
           DEB=$(ls deb/*.deb | head -n 1)
-          DEB_BASE=$(basename "$DEB")
-          SAFE_DEB="${DEB_BASE// /.}"
-          cp "$DEB" "$GITHUB_WORKSPACE/release-staging/$SAFE_DEB"
+          ASSET_DEB="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.deb"
+          cp "$DEB" "$GITHUB_WORKSPACE/release-staging/$ASSET_DEB"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
