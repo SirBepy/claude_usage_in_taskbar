@@ -2,7 +2,7 @@
 
 Cross-platform system tray app (Tauri 2) that monitors Claude AI usage by
 scraping the Claude settings/usage page via a CDP-driven hidden Chrome
-tab, once per hour. Windows + macOS supported; Linux deferred.
+tab, once per hour. Windows, macOS, and Linux (x86_64 DEB + AppImage) supported.
 
 ## Running
 
@@ -172,6 +172,8 @@ user-facing; CLAUDE.md is the developer reference. Both stay in sync.
 | `tokio` | Async runtime |
 | `serde` / `serde_json` | Config + API payload parsing |
 | `zip` | Sound pack extraction |
+
+**Linux build deps (CI runs `ubuntu-22.04`):** `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `patchelf`, `build-essential`, `libssl-dev`, `libgtk-3-dev`. Channel automation (Plan C) is unavailable on Linux v1: `channels::spawn_child` returns `SpawnError::NonWindows` because the headless-process / window-strip flow has no Linux equivalent yet.
 
 ## Navigation (updated by Plan A)
 
