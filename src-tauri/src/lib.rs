@@ -125,6 +125,10 @@ pub fn run() {
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
+            #[cfg(target_os = "macos")]
+            {
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
             crate::tray::setup(app.handle())?;
             {
                 use tauri_plugin_autostart::ManagerExt;
