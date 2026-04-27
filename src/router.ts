@@ -1,3 +1,5 @@
+import { html, render } from "lit-html";
+
 type RenderFn = (
   root: HTMLElement,
 ) => void | Promise<void> | (() => void) | Promise<() => void>;
@@ -43,15 +45,15 @@ export async function navigateTo(name: string): Promise<void> {
   if (!currentRoot) return;
   currentTeardown?.();
   currentTeardown = null;
-  const render = views.get(name);
-  if (render) {
+  const view = views.get(name);
+  if (view) {
     hideAllLegacyViews();
     currentRoot.style.display = "";
-    currentRoot.innerHTML = "";
-    const result = await render(currentRoot);
+    render(html``, currentRoot);
+    const result = await view(currentRoot);
     if (typeof result === "function") currentTeardown = result;
   } else {
-    currentRoot.innerHTML = "";
+    render(html``, currentRoot);
     currentRoot.style.display = "none";
     hideAllLegacyViews();
     showLegacyView(name);
