@@ -1,7 +1,7 @@
 node_modules/
 dist/
 target/
-gen/schemas/
+**/gen/schemas/
 *.log
 .DS_Store
 Thumbs.db
