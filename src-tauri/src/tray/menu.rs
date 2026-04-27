@@ -68,24 +68,30 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     {
         let h = app.clone();
         app.listen("settings-changed", move |_| {
-            {
-                let st = h.state::<AppState>();
-                st.display.lock().unwrap().invalidate_cycle();
-            }
-            let mute = h.state::<AppState>().settings.lock().unwrap().mute_all();
-            if let Ok(new_menu) = build_menu(&h, mute) {
-                if let Some(tray) = h.tray_by_id(TRAY_ID) {
-                    let _ = tray.set_menu(Some(new_menu));
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || {
+                {
+                    let st = h2.state::<AppState>();
+                    st.display.lock().unwrap().invalidate_cycle();
                 }
-            }
-            render_tray_now(&h);
+                let mute = h2.state::<AppState>().settings.lock().unwrap().mute_all();
+                if let Ok(new_menu) = build_menu(&h2, mute) {
+                    if let Some(tray) = h2.tray_by_id(TRAY_ID) {
+                        let _ = tray.set_menu(Some(new_menu));
+                    }
+                }
+                render_tray_now(&h2);
+            });
         });
     }
 
     // Listener: usage-updated -> re-render.
     {
         let h = app.clone();
-        app.listen("usage-updated", move |_| render_tray_now(&h));
+        app.listen("usage-updated", move |_| {
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || render_tray_now(&h2));
+        });
     }
 
     // Initial render from cached snapshot.
@@ -101,7 +107,10 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                 let result = s.display.lock().unwrap().tick(Instant::now());
                 result
             };
-            if changed { render_tray_now(&reset_handle); }
+            if changed {
+                let h = reset_handle.clone();
+                let _ = reset_handle.run_on_main_thread(move || render_tray_now(&h));
+            }
         }
     });
 
@@ -126,7 +135,8 @@ fn on_left_click(app: AppHandle) {
         let s = app.state::<AppState>();
         s.display.lock().unwrap().cycle_next(default, Instant::now());
     }
-    render_tray_now(&app);
+    let h = app.clone();
+    let _ = app.run_on_main_thread(move || render_tray_now(&h));
 }
 
 pub fn render_tray_now(app: &AppHandle) {
