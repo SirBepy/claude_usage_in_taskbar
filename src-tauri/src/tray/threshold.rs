@@ -18,7 +18,7 @@ impl Default for IconStyle { fn default() -> Self { Self::Rings } }
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ColorMode { Threshold, Pace }
-impl Default for ColorMode { fn default() -> Self { Self::Threshold } }
+impl Default for ColorMode { fn default() -> Self { Self::Pace } }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -306,7 +306,7 @@ mod tests {
         let icon = IconSettings::try_from(&s).unwrap();
         assert_eq!(icon.default_display, DefaultDisplay::Icon);
         assert_eq!(icon.icon_style, IconStyle::Rings);
-        assert_eq!(icon.color_mode, ColorMode::Threshold);
+        assert_eq!(icon.color_mode, ColorMode::Pace);
         assert!(icon.apply_color_to.icon);
         assert!(icon.apply_color_to.number);
         assert!(icon.apply_color_to.tooltip);

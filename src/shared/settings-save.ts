@@ -107,7 +107,7 @@ export function saveSettings(): void {
       dashboard: chkOr("colorApplyDashboard", prevColorApply.dashboard !== false),
       tooltip: chkOr("colorApplyTooltip", prevColorApply.tooltip !== false),
     },
-    colorMode: valOr("colorMode", (prev.colorMode as string) || "threshold") as "threshold" | "pace",
+    colorMode: valOr("colorMode", (prev.colorMode as string) || "pace") as "threshold" | "pace",
     paceBand: parseInt(valOr("paceBand", String(prev.paceBand ?? 10)), 10) || 10,
     paceColors: {
       under: valOr("paceColorUnder", prevPace.under || "#27ae60"),

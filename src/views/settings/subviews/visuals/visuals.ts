@@ -101,7 +101,7 @@ function hydrateVisuals(): void {
   colorApplyNumber.checked = cat.number !== false;
   colorApplyDashboard.checked = cat.dashboard !== false;
   colorApplyTooltip.checked = cat.tooltip !== false;
-  colorMode.value = (s.colorMode as string) || "threshold";
+  colorMode.value = (s.colorMode as string) || "pace";
   paceBand.value = String(s.paceBand ?? 10);
   const pc = (s.paceColors as Record<string, string | undefined>) || {};
   paceColorUnder.value = pc.under || "#27ae60";
@@ -241,8 +241,8 @@ function template() {
           <div class="option">
             <span class="option-label"><span class="info-wrap">Color Mode<span class="info-icon">?</span><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
             <select id="colorMode">
-              <option value="threshold">Threshold</option>
               <option value="pace">Safe Pace</option>
+              <option value="threshold">Threshold</option>
             </select>
           </div>
         </div>
