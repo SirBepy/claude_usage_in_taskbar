@@ -180,24 +180,12 @@ async function maybeOfferLegacyImport(): Promise<void> {
     return;
   }
   if (!preview) return;
-  const banner = document.getElementById("legacyImportBanner");
-  if (!banner) return;
-  banner.style.display = "flex";
-
-  const finish = async (accept: boolean): Promise<void> => {
-    banner.style.display = "none";
-    try {
-      await api.confirmLegacyObsidianImport(accept);
-    } catch (e) {
-      console.error("confirm_legacy_obsidian_import failed", e);
-    }
-    if (accept) showToast("Imported. See Projects.");
-  };
-
-  const acceptBtn = document.getElementById("legacyImportAccept");
-  const dismissBtn = document.getElementById("legacyImportDismiss");
-  if (acceptBtn) (acceptBtn as HTMLButtonElement).onclick = () => void finish(true);
-  if (dismissBtn) (dismissBtn as HTMLButtonElement).onclick = () => void finish(false);
+  try {
+    await api.confirmLegacyObsidianImport(true);
+    showToast("Imported Obsidian channel from old tray app. See Projects.");
+  } catch (e) {
+    console.error("confirm_legacy_obsidian_import failed", e);
+  }
 }
 
 // ── Initial-render gating ──────────────────────────────────────────────────
