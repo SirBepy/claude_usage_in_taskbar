@@ -1,4 +1,3 @@
-use crate::settings::paths;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
@@ -41,8 +40,10 @@ pub fn read_log_file(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub fn copy_logs(app: AppHandle) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    let log_path = paths::log_file().map_err(|e| e.to_string())?;
-    let contents = std::fs::read_to_string(&log_path).unwrap_or_else(|_| "<no log file>".into());
+    let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    let product = app.package_info().name.clone();
+    let log_path = log_dir.join(format!("{product}.log"));
+    let contents = read_log_contents(&log_path).unwrap_or_else(|e| format!("<error reading log: {e}>"));
     app.clipboard().write_text(contents).map_err(|e| e.to_string())
 }
 
@@ -56,8 +57,13 @@ pub fn get_platform() -> String {
 }
 
 #[tauri::command]
-pub fn get_app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+pub fn get_app_version(app: AppHandle) -> String {
+    // tauri.conf.json is the source of truth (CI bumps it). Cargo.toml is
+    // synced in CI but may lag in dev. Fall back to CARGO_PKG_VERSION just
+    // in case Tauri ever returns an empty config version.
+    let cfg = app.config().version.clone();
+    cfg.filter(|v| !v.is_empty())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
 }
 
 #[tauri::command]
@@ -67,15 +73,36 @@ pub async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     app.shell().open(url, None).map_err(|e| e.to_string())
 }
 
+/// Runs the updater check and emits an `update-state` event for every outcome
+/// so the settings UI can surface progress without polling. When `auto_install`
+/// is true and an update is available, the binary is downloaded + installed in
+/// the background; the app restarts on next launch.
+pub async fn run_update_check(app: &AppHandle, auto_install: bool) -> serde_json::Value {
+    use tauri::Emitter;
+    use tauri_plugin_updater::UpdaterExt;
+    let result = match app.updater() {
+        Ok(updater) => match updater.check().await {
+            Ok(Some(u)) => {
+                let val = serde_json::json!({ "state": "available", "version": u.version.clone() });
+                if auto_install {
+                    if let Err(e) = u.download_and_install(|_, _| {}, || {}).await {
+                        log::warn!("auto-install failed: {e}");
+                    }
+                }
+                val
+            }
+            Ok(None) => serde_json::json!({ "state": "up-to-date" }),
+            Err(e) => serde_json::json!({ "state": "error", "message": e.to_string() }),
+        },
+        Err(e) => serde_json::json!({ "state": "error", "message": e.to_string() }),
+    };
+    let _ = app.emit("update-state", &result);
+    result
+}
+
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<serde_json::Value, String> {
-    use tauri_plugin_updater::UpdaterExt;
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await {
-        Ok(Some(u)) => Ok(serde_json::json!({ "state": "available", "version": u.version })),
-        Ok(None) => Ok(serde_json::json!({ "state": "up-to-date" })),
-        Err(e) => Ok(serde_json::json!({ "state": "error", "message": e.to_string() })),
-    }
+    Ok(run_update_check(&app, false).await)
 }
 
 #[tauri::command]

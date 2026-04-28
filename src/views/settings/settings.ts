@@ -96,7 +96,7 @@ function renderUpdateState(updateState: UpdateState): void {
 async function hydrateSettingsRoot(): Promise<void> {
   const s = getSettings();
   const launchAtLogin = $("launchAtLogin") as HTMLInputElement | null;
-  const autoUpdate = $("autoUpdate") as HTMLInputElement | null;
+  const autoUpdate = $("autoUpdate") as HTMLSelectElement | null;
   const refreshUpdateBtn = $("refreshUpdateBtn") as HTMLButtonElement | null;
   const copyLogsBtn = $("copyLogsBtn") as HTMLButtonElement | null;
   const appVersionLabel = $("appVersionLabel");
@@ -111,7 +111,15 @@ async function hydrateSettingsRoot(): Promise<void> {
   if (isMac && autoUpdateRow) autoUpdateRow.style.display = "none";
 
   launchAtLogin.checked = !!s.launchAtLogin;
-  autoUpdate.checked = !!s.autoUpdate;
+  // Migrate legacy bool values silently: true → immediate, false → never.
+  const raw = s.autoUpdate;
+  const initialMode =
+    raw === true ? "immediate" :
+    raw === false ? "never" :
+    (typeof raw === "string" && (raw === "never" || raw === "onStartup" || raw === "immediate"))
+      ? raw
+      : "immediate";
+  autoUpdate.value = initialMode;
   launchAtLogin.addEventListener("change", saveSettings);
   autoUpdate.addEventListener("change", saveSettings);
 
@@ -216,10 +224,11 @@ function template() {
           <div class="section-title">Version</div>
           <div class="option" id="autoUpdateRow">
             <span class="option-label">Auto-Update</span>
-            <label class="switch">
-              <input type="checkbox" id="autoUpdate">
-              <span class="slider"></span>
-            </label>
+            <select id="autoUpdate">
+              <option value="never">Never</option>
+              <option value="onStartup">On startup only</option>
+              <option value="immediate">Immediate (auto-install)</option>
+            </select>
           </div>
           <div class="option" id="updateStatusOption">
             <span class="option-label" id="appVersionLabel">Version: ...</span>

@@ -10,6 +10,42 @@ pub enum DisplayMode {
     Digits,
 }
 
+/// How the app reacts to new releases.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub enum AutoUpdateMode {
+    Never,
+    OnStartup,
+    Immediate,
+}
+
+impl Default for AutoUpdateMode {
+    fn default() -> Self { Self::Immediate }
+}
+
+/// Accepts the new string form (`"never" | "onStartup" | "immediate"`) and the
+/// legacy bool form (`true` → Immediate, `false` → Never) so settings written
+/// by older builds still load.
+fn deserialize_auto_update<'de, D>(d: D) -> Result<AutoUpdateMode, D::Error>
+where D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let v = serde_json::Value::deserialize(d)?;
+    match v {
+        serde_json::Value::Bool(true) => Ok(AutoUpdateMode::Immediate),
+        serde_json::Value::Bool(false) => Ok(AutoUpdateMode::Never),
+        serde_json::Value::String(s) => match s.as_str() {
+            "never" => Ok(AutoUpdateMode::Never),
+            "onStartup" => Ok(AutoUpdateMode::OnStartup),
+            "immediate" => Ok(AutoUpdateMode::Immediate),
+            other => Err(D::Error::custom(format!("unknown autoUpdate value: {other}"))),
+        },
+        serde_json::Value::Null => Ok(AutoUpdateMode::default()),
+        _ => Err(D::Error::custom("autoUpdate must be bool or string")),
+    }
+}
+
 /// User-configurable app settings.
 ///
 /// The dashboard owns a LOT of UI state (theme, project aliases + blacklist,
@@ -26,7 +62,8 @@ pub struct Settings {
     pub threshold_warn: f64,
     pub threshold_crit: f64,
     pub autostart: bool,
-    pub auto_update: bool,
+    #[serde(rename = "autoUpdate", alias = "auto_update", deserialize_with = "deserialize_auto_update")]
+    pub auto_update: AutoUpdateMode,
     pub hook_port: Option<u16>,
     pub projects: Vec<ProjectConfig>,
     pub projects_sort_by: ProjectsSortBy,
@@ -54,7 +91,7 @@ impl Default for Settings {
             threshold_warn: 50.0,
             threshold_crit: 80.0,
             autostart: true,
-            auto_update: true,
+            auto_update: AutoUpdateMode::default(),
             hook_port: None,
             projects: Vec::new(),
             projects_sort_by: ProjectsSortBy::Recent,
@@ -129,7 +166,38 @@ mod tests {
         assert_eq!(parsed.extra["defaultDisplay"], "session");
         assert_eq!(parsed.poll_interval_secs, 600);
         assert!(parsed.autostart);
-        assert!(parsed.auto_update);
+        assert_eq!(parsed.auto_update, AutoUpdateMode::Immediate);
+    }
+
+    #[test]
+    fn auto_update_legacy_bool_true_maps_to_immediate() {
+        let raw = r#"{ "autoUpdate": true }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert_eq!(s.auto_update, AutoUpdateMode::Immediate);
+    }
+
+    #[test]
+    fn auto_update_legacy_bool_false_maps_to_never() {
+        let raw = r#"{ "autoUpdate": false }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert_eq!(s.auto_update, AutoUpdateMode::Never);
+    }
+
+    #[test]
+    fn auto_update_string_variants_parse() {
+        let s: Settings = serde_json::from_str(r#"{ "autoUpdate": "never" }"#).unwrap();
+        assert_eq!(s.auto_update, AutoUpdateMode::Never);
+        let s: Settings = serde_json::from_str(r#"{ "autoUpdate": "onStartup" }"#).unwrap();
+        assert_eq!(s.auto_update, AutoUpdateMode::OnStartup);
+        let s: Settings = serde_json::from_str(r#"{ "autoUpdate": "immediate" }"#).unwrap();
+        assert_eq!(s.auto_update, AutoUpdateMode::Immediate);
+    }
+
+    #[test]
+    fn auto_update_legacy_snake_case_key_still_loads() {
+        let raw = r#"{ "auto_update": false }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert_eq!(s.auto_update, AutoUpdateMode::Never);
     }
 
     #[test]

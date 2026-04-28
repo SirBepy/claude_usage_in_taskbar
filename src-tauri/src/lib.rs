@@ -152,21 +152,8 @@ pub fn run() {
                 });
             }
             {
-                use tauri::Manager;
-                let auto = app.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
-                if auto {
-                    let h = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = check_updater(&h).await;
-                        loop {
-                            tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
-                            use tauri::Manager;
-                            let still = h.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
-                            if !still { break; }
-                            let _ = check_updater(&h).await;
-                        }
-                    });
-                }
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(auto_update_loop(h));
             }
             crate::scheduler::spawn(app.handle().clone());
 
@@ -362,14 +349,30 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
     log::info!("rehydrated {added} instance(s) from ~/.claude/sessions");
 }
 
-async fn check_updater(app: &tauri::AppHandle) -> anyhow::Result<()> {
-    use tauri_plugin_updater::UpdaterExt;
-    use tauri::Emitter;
-    let updater = app.updater()?;
-    if let Some(update) = updater.check().await? {
-        let _ = app.emit("update-state", serde_json::json!({
-            "state": "available", "version": update.version
-        }));
+/// Background loop that polls for new releases every 6h, doing nothing or
+/// auto-installing depending on the current `autoUpdate` setting. Lives for the
+/// app lifetime so toggling the setting from the UI takes effect on the next
+/// tick (no restart required).
+async fn auto_update_loop(app: tauri::AppHandle) {
+    use crate::types::AutoUpdateMode;
+    use tauri::Manager;
+    // Brief warmup so we don't hammer the network before the first usage poll.
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    let mut did_startup_check = false;
+    loop {
+        let mode = app.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
+        match mode {
+            AutoUpdateMode::Never => {}
+            AutoUpdateMode::OnStartup => {
+                if !did_startup_check {
+                    let _ = crate::ipc::misc::run_update_check(&app, false).await;
+                }
+            }
+            AutoUpdateMode::Immediate => {
+                let _ = crate::ipc::misc::run_update_check(&app, true).await;
+            }
+        }
+        did_startup_check = true;
+        tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
     }
-    Ok(())
 }

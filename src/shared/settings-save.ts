@@ -91,7 +91,15 @@ export function saveSettings(): void {
     tooltipLayout: valOr("tooltipLayout", (prev.tooltipLayout as string) || "rows"),
     tooltipShowSafePace: chkOr("tooltipShowSafePace", prev.tooltipShowSafePace !== false),
     launchAtLogin: chkOr("launchAtLogin", !!prev.launchAtLogin),
-    autoUpdate: chkOr("autoUpdate", !!prev.autoUpdate),
+    autoUpdate: (() => {
+      const el = byId<HTMLSelectElement>("autoUpdate");
+      if (el && (el.value === "never" || el.value === "onStartup" || el.value === "immediate")) return el.value;
+      const p = prev.autoUpdate;
+      if (p === true) return "immediate";
+      if (p === false) return "never";
+      if (typeof p === "string" && (p === "never" || p === "onStartup" || p === "immediate")) return p;
+      return "immediate";
+    })(),
     pinnedCards: Array.isArray(prev.pinnedCards) ? prev.pinnedCards : [],
     colorApplyTo: {
       icon: chkOr("colorApplyIcon", prevColorApply.icon !== false),
