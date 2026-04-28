@@ -51,10 +51,16 @@ export function fmtPct(v: number | null | undefined): string {
   return v !== null && v !== undefined ? v + "%" : "--";
 }
 
+function roundUpTo10Min(d: Date): Date {
+  const ten = 10 * 60_000;
+  return new Date(Math.ceil(d.getTime() / ten) * ten);
+}
+
 export function fmtResetTime(isoStr: string | null | undefined): string | null {
   if (!isoStr) return null;
-  const d = new Date(isoStr);
-  if (isNaN(d.getTime())) return null;
+  const raw = new Date(isoStr);
+  if (isNaN(raw.getTime())) return null;
+  const d = roundUpTo10Min(raw);
   const now = Date.now();
   const diffMs = d.getTime() - now;
   if (diffMs <= 0) return "now";
@@ -77,8 +83,9 @@ export interface ResetDisplay {
 
 export function fmtResetDisplay(isoStr: string | null | undefined): ResetDisplay | null {
   if (!isoStr) return null;
-  const d = new Date(isoStr);
-  if (isNaN(d.getTime())) return null;
+  const raw = new Date(isoStr);
+  if (isNaN(raw.getTime())) return null;
+  const d = roundUpTo10Min(raw);
   const diffMs = d.getTime() - Date.now();
   if (diffMs <= 0) return { absolute: "now", relative: "", diffMs: 0 };
   const h = Math.floor(diffMs / 3_600_000);
