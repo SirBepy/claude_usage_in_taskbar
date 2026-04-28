@@ -4,12 +4,30 @@ use crate::types::Settings;
 use anyhow::{Context, Result};
 use std::path::Path;
 
-/// Loads settings from disk. If the file is missing or corrupt, returns defaults
-/// (and does NOT rewrite the file automatically, the caller decides when to save).
+/// Loads settings from disk. If the file is missing, returns defaults.
+/// If the file is present but unparsable, renames it to
+/// `settings.json.broken-<unix-ts>` before returning defaults so the next
+/// save can't clobber the only copy of the user's data. Recovery is then
+/// a manual rename away.
 pub fn load(path: &Path) -> Settings {
     let mut s: Settings = match std::fs::read_to_string(path) {
         Err(_) => Settings::default(),
-        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        Ok(raw) => match serde_json::from_str::<Settings>(&raw) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let backup = path.with_extension(format!("json.broken-{ts}"));
+                let _ = std::fs::rename(path, &backup);
+                eprintln!(
+                    "[settings] parse failed ({err}); preserved at {} and loaded defaults",
+                    backup.display()
+                );
+                Settings::default()
+            }
+        },
     };
     // Migrate stale default from earlier tauri-rewrite builds that shipped
     // with a 1-hour poll before the 10-minute default landed. No UI ever
@@ -151,6 +169,25 @@ mod tests {
         std::fs::write(&path, "{ not valid json").unwrap();
         let s = load(&path);
         assert_eq!(s, Settings::default());
+    }
+
+    #[test]
+    fn load_corrupt_file_preserves_original_so_save_cannot_clobber() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, "{ not valid json").unwrap();
+        let _ = load(&path);
+        assert!(!path.exists(), "broken file must be moved aside");
+        let backups: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("settings.json.broken-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1, "exactly one backup file");
     }
 
     #[test]
