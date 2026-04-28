@@ -91,6 +91,23 @@ pub fn global_settings_path() -> Result<PathBuf> {
     Ok(home.join(".claude").join("settings.json"))
 }
 
+/// Returns true if `~/.claude/settings.json` already contains our
+/// SessionStart + SessionEnd entries. Used to self-heal the local
+/// `hooks_registered` flag when app-data was wiped (reinstall, etc.)
+/// but the global hook is still in place — otherwise the consent
+/// modal would re-prompt forever.
+pub fn is_installed_globally() -> bool {
+    let Ok(path) = global_settings_path() else { return false };
+    let Ok(raw) = std::fs::read_to_string(&path) else { return false };
+    let Ok(json) = serde_json::from_str::<Value>(&raw) else { return false };
+    let Some(hooks) = json.get("hooks").and_then(|h| h.as_object()) else { return false };
+    for (event, endpoint) in [("SessionStart", "session-start"), ("SessionEnd", "session-end")] {
+        let Some(arr) = hooks.get(event).and_then(|a| a.as_array()) else { return false };
+        if !arr.iter().any(|e| is_ours(e, endpoint)) { return false; }
+    }
+    true
+}
+
 /// Reads the global settings file, merges our hooks, writes atomically.
 /// Returns `Ok(())` on success or if the file is malformed (surfaces an
 /// error the caller can show to the user, does NOT overwrite).

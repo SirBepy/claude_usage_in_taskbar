@@ -347,7 +347,30 @@ pub fn instance_token_stats(session_id: String, state: State<AppState>) -> serde
 // --- Hook registration ---
 
 #[tauri::command]
-pub fn get_hook_registration_state(state: State<AppState>) -> serde_json::Value {
+pub fn get_hook_registration_state(
+    state: State<AppState>,
+    app: AppHandle,
+) -> serde_json::Value {
+    // Self-heal: if global settings already contain our hook entries
+    // (e.g. app-data was wiped on reinstall but ~/.claude/settings.json
+    // survived), flip the local flag so the consent modal stops
+    // re-prompting forever.
+    let needs_heal = {
+        let s = state.settings.lock().unwrap();
+        !s.hooks_registered && !s.hook_registration_declined
+    };
+    if needs_heal && crate::hooks::is_installed_globally() {
+        let snapshot = {
+            let mut g = state.settings.lock().unwrap();
+            g.hooks_registered = true;
+            g.hook_install_version = crate::hooks::CURRENT_INSTALL_VERSION;
+            g.clone()
+        };
+        if let Ok(path) = paths::settings_file() {
+            let _ = settings::save(&path, &snapshot);
+        }
+        let _ = app.emit("settings-changed", snapshot);
+    }
     let s = state.settings.lock().unwrap();
     serde_json::json!({
         "registered": s.hooks_registered,

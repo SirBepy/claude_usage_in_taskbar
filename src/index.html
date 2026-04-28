@@ -158,10 +158,12 @@
             <p class="muted">Your existing hooks (from other apps) are preserved. Only our entries are added.</p>
             <div class="modal-preview" id="hookModalPreview">Loading…</div>
         </div>
-        <div class="modal-actions">
-            <button class="btn-secondary" id="hookModalSkip">Not now</button>
-            <button class="btn-danger" id="hookModalNever">Never</button>
-            <button class="btn-primary" id="hookModalAccept">Enable</button>
+        <div class="modal-actions hook-modal-actions">
+            <button class="btn-primary hook-modal-accept" id="hookModalAccept">Enable</button>
+            <div class="hook-modal-secondary-row">
+                <button class="btn-secondary" id="hookModalSkip">Not now</button>
+                <button class="btn-link-muted" id="hookModalNever">Never</button>
+            </div>
         </div>
     </div>
 
