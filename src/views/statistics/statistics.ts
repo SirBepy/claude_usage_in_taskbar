@@ -268,7 +268,7 @@ function buildTodaySectionHTML(tokenHistory: TokenRecord[] | null, opts: { pinna
   const showPin = opts.pinnable !== false;
   const pinned = isPinned("today");
   const pinBtn = showPin
-    ? `<button class="pin-btn${pinned ? " pinned" : ""}" data-pin-id="today" title="${pinned ? "Unpin from Home" : "Pin to Home"}" aria-label="Pin toggle"><i class="ph ph-push-pin${pinned ? "-fill" : ""}"></i></button>`
+    ? `<button class="pin-btn${pinned ? " pinned" : ""}" data-pin-id="today" title="${pinned ? "Unpin from Home" : "Pin to Home"}" aria-label="Pin toggle"><i class="${pinned ? "ph-fill" : "ph"} ph-push-pin"></i></button>`
     : "";
 
   return `<div class="pinnable-wrap">${pinBtn}${buildProjectListHTML({
@@ -636,7 +636,7 @@ function buildGraphCard(opts: GraphCardOpts): string {
     : buildProjectBarsView(startMs, endMs, history, pctKey, maxItems, projectListId);
 
   const pinBtn = (pinnable && showPin !== false)
-    ? `<button class="pin-btn${isPinned(cardId) ? " pinned" : ""}" data-pin-id="${cardId}" title="${isPinned(cardId) ? "Unpin from Home" : "Pin to Home"}" aria-label="Pin toggle"><i class="ph ph-push-pin${isPinned(cardId) ? "-fill" : ""}"></i></button>`
+    ? `<button class="pin-btn${isPinned(cardId) ? " pinned" : ""}" data-pin-id="${cardId}" title="${isPinned(cardId) ? "Unpin from Home" : "Pin to Home"}" aria-label="Pin toggle"><i class="${isPinned(cardId) ? "ph-fill" : "ph"} ph-push-pin"></i></button>`
     : "";
 
   return `<div class="chart-container" style="margin-bottom:12px">
