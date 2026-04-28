@@ -35,7 +35,7 @@ interface LegacyGlobals {
   setupPaginationButtons?: (container?: HTMLElement) => void;
   setupLegendToggles?: () => void;
   applyLineVisibility?: () => void;
-  wireChartModeToggles?: (container: HTMLElement) => void;
+  wireBarsMore?: (container: HTMLElement) => void;
 }
 
 function g(): LegacyGlobals {
@@ -51,10 +51,6 @@ const lineVisible: Record<"session" | "weekly" | "expected", boolean> = {
 };
 let sessionPageOffset = 0;
 let weeklyPageOffset = 0;
-const chartMode: Record<string, "chart" | "bars"> = {
-  session: "chart",
-  weekly: "chart",
-};
 
 // Element-flag shims to track wired handlers without "any" sprinkles
 type Wired = Element & { _wired?: boolean; _legWired?: boolean; _pageWired?: boolean };
@@ -83,7 +79,25 @@ function saveSettings(): void {
 
 function getPinnedSet(): Set<string> {
   const s = getSettings() as SettingsShape & { pinnedCards?: string[] };
-  return new Set(Array.isArray(s.pinnedCards) ? s.pinnedCards : []);
+  const arr = Array.isArray(s.pinnedCards) ? s.pinnedCards : [];
+  let migrated = false;
+  const out: string[] = [];
+  for (const id of arr) {
+    if (id === "session" || id === "weekly") {
+      out.push(`${id}-chart`, `${id}-bars`);
+      migrated = true;
+    } else {
+      out.push(id);
+    }
+  }
+  if (migrated) {
+    const deduped = Array.from(new Set(out));
+    s.pinnedCards = deduped;
+    setSettings(s);
+    saveSettings();
+    return new Set(deduped);
+  }
+  return new Set(out);
 }
 function isPinned(id: string): boolean { return getPinnedSet().has(id); }
 function setPinned(id: string, on: boolean): void {
@@ -96,9 +110,11 @@ function setPinned(id: string, on: boolean): void {
 }
 
 function pinLabel(id: string): string {
-  if (id === "session") return "Session graph";
-  if (id === "weekly") return "Weekly graph";
   if (id === "today") return "Today";
+  if (id === "session-chart") return "Session chart";
+  if (id === "session-bars") return "Session bars";
+  if (id === "weekly-chart") return "Weekly chart";
+  if (id === "weekly-bars") return "Weekly bars";
   return id;
 }
 
@@ -264,7 +280,7 @@ function buildTodaySectionHTML(tokenHistory: TokenRecord[] | null, opts: { pinna
   })}</div>`;
 }
 
-// ── Window projects list (used inside graph cards) ────────────────────────
+// ── Window projects list (used inside chart cards) ────────────────────────
 
 function buildWindowProjectsHTML(
   startMs: number, endMs: number,
@@ -584,7 +600,8 @@ function buildProjectBarsView(
 // ── Graph card builder ────────────────────────────────────────────────────
 
 interface GraphCardOpts {
-  id: "session" | "weekly";
+  metric: "session" | "weekly";
+  kind: "chart" | "bars";
   history: UsageRecord[];
   startMs: number;
   endMs: number;
@@ -592,8 +609,6 @@ interface GraphCardOpts {
   pctKey: "s" | "w";
   pageOffset: number;
   hasPrev: boolean;
-  prevId: string;
-  nextId: string;
   pageLabel: string;
   legends: string[];
   maxItems: number | null;
@@ -604,47 +619,44 @@ interface GraphCardOpts {
 const graphDetailConfigs: Record<string, GraphCardOpts> = {};
 
 function buildGraphCard(opts: GraphCardOpts): string {
-  const { id, history, startMs, endMs, lineKey, pctKey, pageOffset, hasPrev,
-    prevId, nextId, pageLabel, legends, maxItems, pinnable, showPin } = opts;
-  const svgId = `chart-${id}`;
-  const projectListId = `window-${id}-${startMs}`;
-  const mode = chartMode[id] || "chart";
+  const { metric, kind, history, startMs, endMs, lineKey, pctKey,
+    pageOffset, hasPrev, pageLabel, legends, maxItems, pinnable, showPin } = opts;
+  const cardId = `${metric}-${kind}`;
+  const svgId = `chart-${cardId}`;
+  const projectListId = `window-${cardId}-${startMs}`;
+  const prevId = `prev-${cardId}`;
+  const nextId = `next-${cardId}`;
 
   graphDetailConfigs[projectListId] = opts;
 
-  const chartActive = mode === "chart" ? " active" : "";
-  const barsActive = mode === "bars" ? " active" : "";
-  const legendHtml = mode === "chart" ? legends.join("") : "";
-  const legendRow = `<div class="chart-legend-row">
-      <div class="chart-legend">${legendHtml}</div>
-      <div class="chart-mode-toggle">
-        <button class="chart-mode-btn${chartActive}" data-mode="chart" data-graph="${id}" aria-label="Chart view" title="Chart"><i class="ph ph-chart-line-up"></i></button>
-        <button class="chart-mode-btn${barsActive}" data-mode="bars" data-graph="${id}" aria-label="Bars view" title="Bars"><i class="ph ph-chart-bar"></i></button>
-      </div>
-    </div>`;
-
-  const chartContent = mode === "chart"
-    ? `${legendRow}
+  const content = kind === "chart"
+    ? `<div class="chart-legend">${legends.join("")}</div>
        ${buildChart(history, startMs, endMs, lineKey, svgId)}
        ${buildWindowProjectsHTML(startMs, endMs, history, pctKey, maxItems, projectListId)}`
-    : `${legendRow}${buildProjectBarsView(startMs, endMs, history, pctKey, maxItems, projectListId)}`;
+    : buildProjectBarsView(startMs, endMs, history, pctKey, maxItems, projectListId);
 
   const pinBtn = (pinnable && showPin !== false)
-    ? `<button class="pin-btn${isPinned(id) ? " pinned" : ""}" data-pin-id="${id}" title="${isPinned(id) ? "Unpin from Home" : "Pin to Home"}" aria-label="Pin toggle"><i class="ph ph-push-pin${isPinned(id) ? "-fill" : ""}"></i></button>`
+    ? `<button class="pin-btn${isPinned(cardId) ? " pinned" : ""}" data-pin-id="${cardId}" title="${isPinned(cardId) ? "Unpin from Home" : "Pin to Home"}" aria-label="Pin toggle"><i class="ph ph-push-pin${isPinned(cardId) ? "-fill" : ""}"></i></button>`
     : "";
 
-  return `<div class="chart-container"${id === "session" ? ' style="margin-bottom:12px"' : ""}>
+  return `<div class="chart-container" style="margin-bottom:12px">
     ${pinBtn}
     <div class="chart-pagination">
-      <button id="${prevId}" data-page-nav="prev" data-page-graph="${id}" class="btn-secondary nav-arrow left" ${hasPrev ? "" : "disabled"}>◀</button>
+      <button id="${prevId}" data-page-nav="prev" data-page-graph="${metric}" class="btn-secondary nav-arrow left" ${hasPrev ? "" : "disabled"}>◀</button>
       <span class="chart-pagination-label">${pageLabel}</span>
-      <button id="${nextId}" data-page-nav="next" data-page-graph="${id}" class="btn-secondary nav-arrow right" ${pageOffset === 0 ? "disabled" : ""}>▶</button>
+      <button id="${nextId}" data-page-nav="next" data-page-graph="${metric}" class="btn-secondary nav-arrow right" ${pageOffset === 0 ? "disabled" : ""}>▶</button>
     </div>
-    ${chartContent}
+    ${content}
   </div>`;
 }
 
 // ── Graph detail view (opened via show-more button) ───────────────────────
+
+function detailTitle(opts: GraphCardOpts): string {
+  const m = opts.metric === "session" ? "Session" : "Weekly";
+  const k = opts.kind === "chart" ? "chart" : "bars";
+  return `${m} ${k}`;
+}
 
 function openGraphDetail(listId: string): void {
   const config = graphDetailConfigs[listId];
@@ -653,26 +665,29 @@ function openGraphDetail(listId: string): void {
   const container = document.getElementById("graph-detail-content");
   const title = document.getElementById("graphDetailTitle");
   if (!container) return;
-  if (title) title.textContent = config.id === "session" ? "Session" : "Weekly";
+  if (title) title.textContent = detailTitle(config);
 
   container.innerHTML = buildGraphCard({ ...config, maxItems: null });
-
-  const prevBtn = container.querySelector<HTMLButtonElement>(`#${config.prevId}`);
-  const nextBtn = container.querySelector<HTMLButtonElement>(`#${config.nextId}`);
-  if (config.id === "session") {
-    if (prevBtn) prevBtn.onclick = () => { sessionPageOffset++; renderGraphDetailFromCurrent("session"); };
-    if (nextBtn) nextBtn.onclick = () => { sessionPageOffset = Math.max(0, sessionPageOffset - 1); renderGraphDetailFromCurrent("session"); };
-  } else {
-    if (prevBtn) prevBtn.onclick = () => { weeklyPageOffset++; renderGraphDetailFromCurrent("weekly"); };
-    if (nextBtn) nextBtn.onclick = () => { weeklyPageOffset = Math.max(0, weeklyPageOffset - 1); renderGraphDetailFromCurrent("weekly"); };
-  }
-
+  wireDetailNav(container, config.metric, config.kind);
   wireProjectListClicks(container, refreshDashboard);
-  wireChartModeToggles(container);
+  wireBarsMore(container);
   showView("graph-detail");
 }
 
-function renderGraphDetailFromCurrent(type: "session" | "weekly"): void {
+function wireDetailNav(container: HTMLElement, metric: "session" | "weekly", kind: "chart" | "bars"): void {
+  const cardId = `${metric}-${kind}`;
+  const prevBtn = container.querySelector<HTMLButtonElement>(`#prev-${cardId}`);
+  const nextBtn = container.querySelector<HTMLButtonElement>(`#next-${cardId}`);
+  if (metric === "session") {
+    if (prevBtn) prevBtn.onclick = () => { sessionPageOffset++; renderGraphDetailFromCurrent(metric, kind); };
+    if (nextBtn) nextBtn.onclick = () => { sessionPageOffset = Math.max(0, sessionPageOffset - 1); renderGraphDetailFromCurrent(metric, kind); };
+  } else {
+    if (prevBtn) prevBtn.onclick = () => { weeklyPageOffset++; renderGraphDetailFromCurrent(metric, kind); };
+    if (nextBtn) nextBtn.onclick = () => { weeklyPageOffset = Math.max(0, weeklyPageOffset - 1); renderGraphDetailFromCurrent(metric, kind); };
+  }
+}
+
+function renderGraphDetailFromCurrent(metric: "session" | "weekly", kind: "chart" | "bars"): void {
   const lastHistory = (getUsageHistory() as UsageRecord[] | null) || null;
   if (!lastHistory || !lastHistory.length) return;
   const latest = lastHistory[lastHistory.length - 1]!;
@@ -688,15 +703,15 @@ function renderGraphDetailFromCurrent(type: "session" | "weekly"): void {
   };
 
   let config: GraphCardOpts;
-  if (type === "session") {
+  if (metric === "session") {
     const sessionEndMs = latest.session_resets_at ? new Date(latest.session_resets_at).getTime() : Date.now() + 3_600_000;
     const shiftMs = sessionPageOffset * SESSION_MS;
     const startMs = sessionEndMs - SESSION_MS - shiftMs;
     const endMs = sessionEndMs - shiftMs;
     const hasPrev = lastHistory.some((r) => { const t = hourToMs(r.hour); return t >= startMs - SESSION_MS && t < startMs; });
     config = {
-      id: "session", history: lastHistory, startMs, endMs, lineKey: "s", pctKey: "s",
-      pageOffset: sessionPageOffset, hasPrev, prevId: "prev-session", nextId: "next-session",
+      metric: "session", kind, history: lastHistory, startMs, endMs, lineKey: "s", pctKey: "s",
+      pageOffset: sessionPageOffset, hasPrev,
       pageLabel: sessionPageOffset === 0 ? "This session" : `${sessionPageOffset} session${sessionPageOffset > 1 ? "s" : ""} ago`,
       legends: [legendItem("legend-session", "#9d7dfc", false, "Session"), legendItem("legend-expected", "#6b6990", true, "Expected")],
       maxItems: null,
@@ -709,8 +724,8 @@ function renderGraphDetailFromCurrent(type: "session" | "weekly"): void {
     const endMs = weeklyEndMs - shiftMs;
     const hasPrev = lastHistory.some((r) => { const t = hourToMs(r.hour); return t >= startMs - WEEK_MS && t < startMs; });
     config = {
-      id: "weekly", history: lastHistory, startMs, endMs, lineKey: "w", pctKey: "w",
-      pageOffset: weeklyPageOffset, hasPrev, prevId: "prev-weekly", nextId: "next-weekly",
+      metric: "weekly", kind, history: lastHistory, startMs, endMs, lineKey: "w", pctKey: "w",
+      pageOffset: weeklyPageOffset, hasPrev,
       pageLabel: weeklyPageOffset === 0 ? "This week" : `${weeklyPageOffset}w ago`,
       legends: [legendItem("legend-weekly", "#6e8fff", false, "Weekly"), legendItem("legend-expected", "#6b6990", true, "Expected")],
       maxItems: null,
@@ -719,43 +734,18 @@ function renderGraphDetailFromCurrent(type: "session" | "weekly"): void {
 
   const container = document.getElementById("graph-detail-content");
   if (!container) return;
+  const title = document.getElementById("graphDetailTitle");
+  if (title) title.textContent = detailTitle(config);
   container.innerHTML = buildGraphCard(config);
-
-  const prevBtn = container.querySelector<HTMLButtonElement>(`#${config.prevId}`);
-  const nextBtn = container.querySelector<HTMLButtonElement>(`#${config.nextId}`);
-  if (type === "session") {
-    if (prevBtn) prevBtn.onclick = () => { sessionPageOffset++; renderGraphDetailFromCurrent("session"); };
-    if (nextBtn) nextBtn.onclick = () => { sessionPageOffset = Math.max(0, sessionPageOffset - 1); renderGraphDetailFromCurrent("session"); };
-  } else {
-    if (prevBtn) prevBtn.onclick = () => { weeklyPageOffset++; renderGraphDetailFromCurrent("weekly"); };
-    if (nextBtn) nextBtn.onclick = () => { weeklyPageOffset = Math.max(0, weeklyPageOffset - 1); renderGraphDetailFromCurrent("weekly"); };
-  }
-
+  wireDetailNav(container, metric, kind);
   wireProjectListClicks(container, refreshDashboard);
-  wireChartModeToggles(container);
+  wireBarsMore(container);
 }
 
-// ── Chart mode toggles + project-list click wiring ────────────────────────
+// ── Bars "show more" link wiring ──────────────────────────────────────────
 
-export function wireChartModeToggles(container: HTMLElement | null): void {
+export function wireBarsMore(container: HTMLElement | null): void {
   if (!container) return;
-  container.querySelectorAll<HTMLElement>(".chart-mode-btn").forEach((btn) => {
-    const w = wired(btn);
-    if (w._wired) return;
-    w._wired = true;
-    btn.onclick = () => {
-      const graphId = btn.dataset["graph"];
-      const mode = btn.dataset["mode"] as "chart" | "bars" | undefined;
-      if (!graphId || !mode) return;
-      if (chartMode[graphId] === mode) return;
-      chartMode[graphId] = mode;
-      if (g().activeView === "graph-detail") {
-        renderGraphDetailFromCurrent(graphId as "session" | "weekly");
-      } else {
-        refreshDashboard();
-      }
-    };
-  });
   container.querySelectorAll<HTMLElement>(".project-bars-more").forEach((link) => {
     const w = wired(link);
     if (w._wired) return;
@@ -834,71 +824,113 @@ export function wirePinButtons(
   });
 }
 
+// ── Per-metric window helpers ─────────────────────────────────────────────
+
+interface WindowState {
+  startMs: number;
+  endMs: number;
+  hasPrev: boolean;
+  pageLabel: string;
+  pageOffset: number;
+  legends: string[];
+  lineKey: "s" | "w";
+  pctKey: "s" | "w";
+}
+
+function legendItem(elId: string, color: string, isDashed: boolean, label: string): string {
+  const key = elId.replace(/^legend-/, "");
+  const dot = isDashed
+    ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
+    : `<span class="legend-dot" style="background:${color}"></span>`;
+  return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
+}
+
+function sessionWindow(history: UsageRecord[]): WindowState {
+  const SESSION_MS = 5 * 3_600_000;
+  const latest = history[history.length - 1]!;
+  const sessionEndMs = latest.session_resets_at
+    ? new Date(latest.session_resets_at).getTime()
+    : Date.now() + 3_600_000;
+  const shiftMs = sessionPageOffset * SESSION_MS;
+  const endMs = sessionEndMs - shiftMs;
+  const startMs = endMs - SESSION_MS;
+  const hasPrev = history.some((r) => {
+    const t = hourToMs(r.hour);
+    return t >= startMs - SESSION_MS && t < startMs;
+  });
+  return {
+    startMs, endMs, hasPrev,
+    pageLabel: sessionPageOffset === 0 ? "This session" : `${sessionPageOffset} session${sessionPageOffset > 1 ? "s" : ""} ago`,
+    pageOffset: sessionPageOffset,
+    legends: [legendItem("legend-session", "#9d7dfc", false, "Session"), legendItem("legend-expected", "#6b6990", true, "Expected")],
+    lineKey: "s", pctKey: "s",
+  };
+}
+
+function weeklyWindow(history: UsageRecord[]): WindowState {
+  const WEEK_MS = 7 * 24 * 3_600_000;
+  const latest = history[history.length - 1]!;
+  const weeklyEndMs = latest.weekly_resets_at
+    ? new Date(latest.weekly_resets_at).getTime()
+    : Date.now() + 3_600_000;
+  const shiftMs = weeklyPageOffset * WEEK_MS;
+  const endMs = weeklyEndMs - shiftMs;
+  const startMs = endMs - WEEK_MS;
+  const hasPrev = history.some((r) => {
+    const t = hourToMs(r.hour);
+    return t >= startMs - WEEK_MS && t < startMs;
+  });
+  return {
+    startMs, endMs, hasPrev,
+    pageLabel: weeklyPageOffset === 0 ? "This week" : `${weeklyPageOffset}w ago`,
+    pageOffset: weeklyPageOffset,
+    legends: [legendItem("legend-weekly", "#6e8fff", false, "Weekly"), legendItem("legend-expected", "#6b6990", true, "Expected")],
+    lineKey: "w", pctKey: "w",
+  };
+}
+
+function cardForMetric(
+  metric: "session" | "weekly",
+  kind: "chart" | "bars",
+  history: UsageRecord[],
+  win: WindowState,
+  opts: { maxItems: number | null; pinnable?: boolean },
+): string {
+  return buildGraphCard({
+    metric, kind, history,
+    startMs: win.startMs, endMs: win.endMs,
+    lineKey: win.lineKey, pctKey: win.pctKey,
+    pageOffset: win.pageOffset, hasPrev: win.hasPrev,
+    pageLabel: win.pageLabel, legends: win.legends,
+    maxItems: opts.maxItems,
+    pinnable: opts.pinnable ?? true,
+  });
+}
+
 // ── Pinned cards HTML (used by Home) ──────────────────────────────────────
 
 export function buildPinnedCardsHTML(history: UsageRecord[]): string {
   const pinned = getPinnedSet();
   if (!pinned.size) return "";
 
-  const latest = history[history.length - 1]!;
-  const SESSION_MS = 5 * 3_600_000;
-  const WEEK_MS = 7 * 24 * 3_600_000;
-
-  const sessionEndMs = latest.session_resets_at
-    ? new Date(latest.session_resets_at).getTime()
-    : Date.now() + 3_600_000;
-  const weeklyEndMs = latest.weekly_resets_at
-    ? new Date(latest.weekly_resets_at).getTime()
-    : Date.now() + 3_600_000;
-  const weeklyStartMs = weeklyEndMs - WEEK_MS;
-
-  const shiftedSessionEndMs = sessionEndMs - sessionPageOffset * SESSION_MS;
-  const shiftedSessionStartMs = shiftedSessionEndMs - SESSION_MS;
-  const hasSessionPrev = history.some((r) => {
-    const t = hourToMs(r.hour);
-    return t >= shiftedSessionStartMs - SESSION_MS && t < shiftedSessionStartMs;
-  });
-
-  const shiftedWeeklyEndMs = weeklyEndMs - weeklyPageOffset * WEEK_MS;
-  const shiftedWeeklyStartMs = weeklyStartMs - weeklyPageOffset * WEEK_MS;
-  const hasWeeklyPrev = history.some((r) => {
-    const t = hourToMs(r.hour);
-    return t >= shiftedWeeklyStartMs - WEEK_MS && t < shiftedWeeklyStartMs;
-  });
-
-  const legendItem = (elId: string, color: string, isDashed: boolean, label: string): string => {
-    const key = elId.replace(/^legend-/, "");
-    const dot = isDashed
-      ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
-      : `<span class="legend-dot" style="background:${color}"></span>`;
-    return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
-  };
+  const sw = sessionWindow(history);
+  const ww = weeklyWindow(history);
 
   const parts: string[] = [];
   if (pinned.has("today")) {
     parts.push(buildTodaySectionHTML(getTokenHistory(), { pinnable: true }));
   }
-  if (pinned.has("session")) {
-    parts.push(buildGraphCard({
-      id: "session", history, startMs: shiftedSessionStartMs, endMs: shiftedSessionEndMs,
-      lineKey: "s", pctKey: "s",
-      pageOffset: sessionPageOffset, hasPrev: hasSessionPrev,
-      prevId: "prev-session", nextId: "next-session",
-      pageLabel: sessionPageOffset === 0 ? "This session" : `${sessionPageOffset} session${sessionPageOffset > 1 ? "s" : ""} ago`,
-      legends: [legendItem("legend-session", "#9d7dfc", false, "Session"), legendItem("legend-expected", "#6b6990", true, "Expected")],
-      maxItems: 5, pinnable: true,
-    }));
+  if (pinned.has("session-chart")) {
+    parts.push(cardForMetric("session", "chart", history, sw, { maxItems: 5 }));
   }
-  if (pinned.has("weekly")) {
-    parts.push(buildGraphCard({
-      id: "weekly", history, startMs: shiftedWeeklyStartMs, endMs: shiftedWeeklyEndMs,
-      lineKey: "w", pctKey: "w",
-      pageOffset: weeklyPageOffset, hasPrev: hasWeeklyPrev,
-      prevId: "prev-weekly", nextId: "next-weekly",
-      pageLabel: weeklyPageOffset === 0 ? "This week" : `${weeklyPageOffset}w ago`,
-      legends: [legendItem("legend-weekly", "#6e8fff", false, "Weekly"), legendItem("legend-expected", "#6b6990", true, "Expected")],
-      maxItems: 5, pinnable: true,
-    }));
+  if (pinned.has("session-bars")) {
+    parts.push(cardForMetric("session", "bars", history, sw, { maxItems: 5 }));
+  }
+  if (pinned.has("weekly-chart")) {
+    parts.push(cardForMetric("weekly", "chart", history, ww, { maxItems: 5 }));
+  }
+  if (pinned.has("weekly-bars")) {
+    parts.push(cardForMetric("weekly", "bars", history, ww, { maxItems: 5 }));
   }
   if (!parts.length) return "";
   return `<div class="pinned-cards">${parts.join("")}</div>`;
@@ -911,86 +943,23 @@ function getStatisticsContent(): HTMLElement | null {
 }
 
 export function renderStatistics(history: UsageRecord[]): void {
-  const latest = history[history.length - 1]!;
-
-  const weeklyEndMs = latest.weekly_resets_at
-    ? new Date(latest.weekly_resets_at).getTime()
-    : Date.now() + 3_600_000;
-  const weeklyStartMs = weeklyEndMs - 7 * 24 * 3_600_000;
-
-  const SESSION_MS = 5 * 3_600_000;
-  const sessionEndMs = latest.session_resets_at
-    ? new Date(latest.session_resets_at).getTime()
-    : Date.now() + 3_600_000;
-  const sessionBaseStartMs = sessionEndMs - SESSION_MS;
-  const WEEK_MS = 7 * 24 * 3_600_000;
-
-  const sessionShiftMs = sessionPageOffset * SESSION_MS;
-  const shiftedSessionEndMs = sessionEndMs - sessionShiftMs;
-  const shiftedSessionStartMs = sessionBaseStartMs - sessionShiftMs;
-  const hasSessionPrev = history.some((r) => {
-    const t = hourToMs(r.hour);
-    return t >= shiftedSessionStartMs - SESSION_MS && t < shiftedSessionStartMs;
-  });
-
-  const weeklyShiftMs = weeklyPageOffset * WEEK_MS;
-  const shiftedWeeklyEndMs = weeklyEndMs - weeklyShiftMs;
-  const shiftedWeeklyStartMs = weeklyStartMs - weeklyShiftMs;
-  const hasWeeklyPrev = history.some((r) => {
-    const t = hourToMs(r.hour);
-    return t >= shiftedWeeklyStartMs - WEEK_MS && t < shiftedWeeklyStartMs;
-  });
-
-  const legendItem = (elId: string, color: string, isDashed: boolean, label: string): string => {
-    const key = elId.replace(/^legend-/, "");
-    const dot = isDashed
-      ? `<span style="display:inline-block;width:14px;height:2px;background:${color};vertical-align:middle;margin-right:4px;border-radius:1px;border-top:2px dashed ${color};"></span>`
-      : `<span class="legend-dot" style="background:${color}"></span>`;
-    return `<span data-legend="${key}" style="cursor:pointer">${dot}${label}</span>`;
-  };
+  const sw = sessionWindow(history);
+  const ww = weeklyWindow(history);
 
   const statisticsContent = getStatisticsContent();
   if (!statisticsContent) return;
   statisticsContent.innerHTML = `
     ${buildTodaySectionHTML(getTokenHistory(), { pinnable: true })}
-    ${buildGraphCard({
-      id: "session",
-      history,
-      startMs: shiftedSessionStartMs,
-      endMs: shiftedSessionEndMs,
-      lineKey: "s",
-      pctKey: "s",
-      pageOffset: sessionPageOffset,
-      hasPrev: hasSessionPrev,
-      prevId: "prev-session",
-      nextId: "next-session",
-      pageLabel: sessionPageOffset === 0 ? "This session" : `${sessionPageOffset} session${sessionPageOffset > 1 ? "s" : ""} ago`,
-      legends: [legendItem("legend-session", "#9d7dfc", false, "Session"), legendItem("legend-expected", "#6b6990", true, "Expected")],
-      maxItems: 5,
-      pinnable: true,
-    })}
-    ${buildGraphCard({
-      id: "weekly",
-      history,
-      startMs: shiftedWeeklyStartMs,
-      endMs: shiftedWeeklyEndMs,
-      lineKey: "w",
-      pctKey: "w",
-      pageOffset: weeklyPageOffset,
-      hasPrev: hasWeeklyPrev,
-      prevId: "prev-weekly",
-      nextId: "next-weekly",
-      pageLabel: weeklyPageOffset === 0 ? "This week" : `${weeklyPageOffset}w ago`,
-      legends: [legendItem("legend-weekly", "#6e8fff", false, "Weekly"), legendItem("legend-expected", "#6b6990", true, "Expected")],
-      maxItems: 5,
-      pinnable: true,
-    })}
+    ${cardForMetric("session", "chart", history, sw, { maxItems: 5 })}
+    ${cardForMetric("session", "bars", history, sw, { maxItems: 5 })}
+    ${cardForMetric("weekly", "chart", history, ww, { maxItems: 5 })}
+    ${cardForMetric("weekly", "bars", history, ww, { maxItems: 5 })}
   `;
 
   setupLegendToggles();
   applyLineVisibility();
   setupPaginationButtons();
-  wireChartModeToggles(statisticsContent);
+  wireBarsMore(statisticsContent);
   wirePinButtons(statisticsContent, { onHomeUnpin: false });
 }
 
@@ -1025,7 +994,7 @@ void cacheEffPct;
 (window as unknown as LegacyGlobals).setupPaginationButtons = setupPaginationButtons;
 (window as unknown as LegacyGlobals).setupLegendToggles = setupLegendToggles;
 (window as unknown as LegacyGlobals).applyLineVisibility = applyLineVisibility;
-(window as unknown as LegacyGlobals).wireChartModeToggles = wireChartModeToggles;
+(window as unknown as LegacyGlobals).wireBarsMore = wireBarsMore;
 
 // ── View render ───────────────────────────────────────────────────────────
 
@@ -1092,3 +1061,6 @@ function template() {
     </div>
   `;
 }
+
+// activeView reference (kept for type compat with legacy)
+void g;

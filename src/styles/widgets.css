@@ -83,16 +83,6 @@
     pointer-events: none;
 }
 
-/* ── Legend + chart-mode toggle row ── */
-.chart-legend-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 8px;
-}
-.chart-legend-row .chart-legend { margin-bottom: 0; }
-
 /* ── Pin button (top-right of pinnable cards) ── */
 .pin-btn {
     position: absolute;
@@ -605,37 +595,6 @@ input:checked+.slider:before {
 
 /* Range toggle rules (.range-toggle, .range-btn) moved to
  * src/views/project-detail/project-detail.css. */
-
-/* ── Chart/Bars toggle ── */
-.chart-mode-toggle {
-    display: flex;
-    gap: 2px;
-    background: var(--surface-alt);
-    border-radius: 6px;
-    padding: 2px;
-}
-.chart-mode-btn {
-    padding: 2px 6px;
-    font-size: 0.95rem;
-    line-height: 1;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-dim);
-    border: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s;
-}
-.chart-mode-btn i { font-size: 0.95rem; }
-.chart-mode-btn.active {
-    background: var(--border);
-    color: var(--text);
-}
-.chart-mode-btn:hover:not(.active) {
-    color: var(--text);
-}
 
 /* ── Horizontal project bars ── */
 .project-bars { margin-top: 4px; }

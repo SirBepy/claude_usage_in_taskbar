@@ -11,7 +11,7 @@ import {
   setupPaginationButtons,
   setupLegendToggles,
   applyLineVisibility,
-  wireChartModeToggles,
+  wireBarsMore,
   wirePinButtons,
   wireProjectListClicks,
 } from "../statistics/statistics";
@@ -231,7 +231,7 @@ function drawInto(container: HTMLElement): void {
   setupPaginationButtons();
   setupLegendToggles();
   applyLineVisibility();
-  wireChartModeToggles(container);
+  wireBarsMore(container);
   wirePinButtons(container, { onHomeUnpin: true });
   wireProjectListClicks(container, () => drawInto(container));
 }
