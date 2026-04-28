@@ -15,6 +15,7 @@ pub struct AppState {
     pub instances: Arc<Registry>,
     pub channels: Arc<ChannelsManager>,
     pub hook_registration_pending: Mutex<bool>,
+    pub update_state: Mutex<serde_json::Value>,
 }
 
 impl AppState {
@@ -28,6 +29,7 @@ impl AppState {
             instances: Arc::new(Registry::new()),
             channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),
+            update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
         }
     }
 }

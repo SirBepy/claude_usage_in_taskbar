@@ -35,6 +35,28 @@ pub struct IconCtx<'a> {
     pub display_mode: DisplayMode,
     pub session_safe: Option<f32>,
     pub weekly_safe: Option<f32>,
+    pub updating: bool,
+}
+
+/// Paints a small filled circle in the bottom-right corner so users can see at
+/// a glance that an update is downloading or staged.
+fn paint_update_badge(img: &mut RgbaImage) {
+    const BADGE_COLOR: [u8; 3] = [74, 144, 226];
+    let cx = SIZE as f32 - 4.0;
+    let cy = SIZE as f32 - 4.0;
+    let r = 3.0;
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - cx + 0.5;
+            let dy = y as f32 - cy + 0.5;
+            let d = (dx * dx + dy * dy).sqrt();
+            if d <= r + 0.5 {
+                let alpha = if d <= r - 0.5 { 255.0 } else { 255.0 * (r + 0.5 - d) };
+                let a = alpha.clamp(0.0, 255.0) as u8;
+                img.put_pixel(x, y, Rgba([BADGE_COLOR[0], BADGE_COLOR[1], BADGE_COLOR[2], a]));
+            }
+        }
+    }
 }
 
 pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
@@ -74,6 +96,7 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
             crate::tray::fonts::draw_text(&mut img, &text, x, y, color, size_px);
         }
     }
+    if ctx.updating { paint_update_badge(&mut img); }
     encode_png(&img)
 }
 
@@ -210,6 +233,7 @@ pub fn render_spin(frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
         draw_ring_arc(&mut img, weekly, INNER_R_OUT, INNER_R_IN,
                       color_for(weekly, ctx, ctx.weekly_safe, true));
     }
+    if ctx.updating { paint_update_badge(&mut img); }
     encode_png(&img)
 }
 
@@ -245,6 +269,7 @@ pub fn render_rings(sess: Option<f32>, weekly: Option<f32>) -> Vec<u8> {
         settings: &settings,
         display_mode: DisplayMode::Icon,
         session_safe: None, weekly_safe: None,
+        updating: false,
     })
 }
 
@@ -276,6 +301,7 @@ mod tests {
             settings: &test_settings(),
             display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
         assert_eq!(&bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     }
@@ -286,6 +312,7 @@ mod tests {
             settings: &test_settings(),
             display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
         let decoded = image::load_from_memory(&bytes).unwrap();
         assert_eq!(decoded.width(), SIZE);
@@ -298,6 +325,7 @@ mod tests {
             settings: &test_settings(),
             display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
     }
 
@@ -339,6 +367,7 @@ mod tests {
             settings: &test_settings(),
             display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
         let img = image::load_from_memory(&bytes).unwrap();
         // Sample a pixel near the outer ring's outer edge.
@@ -355,6 +384,7 @@ mod tests {
             settings: &s,
             display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
         let img = image::load_from_memory(&bytes).unwrap();
         // Scan all colored pixels; none should be red (threshold mode at 90%).
@@ -375,6 +405,7 @@ mod tests {
             settings: &s,
             display_mode: DisplayMode::NumberSession,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
         let img = image::load_from_memory(&bytes).unwrap();
         // Count lit pixels in the center band (rows 7-14)
@@ -395,6 +426,7 @@ mod tests {
             settings: &s,
             display_mode: DisplayMode::NumberWeekly,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
     }
 
@@ -404,6 +436,7 @@ mod tests {
         let ctx = IconCtx {
             settings: &s, display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         };
         let a = render(Some(50.0), Some(50.0), &ctx);
         let b = render_spin(0, Some(50.0), &ctx);
@@ -416,6 +449,7 @@ mod tests {
         let ctx = IconCtx {
             settings: &s, display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         };
         let f0 = render_spin(0, Some(50.0), &ctx);
         let f5 = render_spin(5, Some(50.0), &ctx);
@@ -430,6 +464,7 @@ mod tests {
             settings: &s,
             display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         });
         let img = image::load_from_memory(&bytes).unwrap();
         // Left bar x∈[3,8] — count fully-opaque pixels in that column range.

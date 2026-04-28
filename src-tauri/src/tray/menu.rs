@@ -18,13 +18,15 @@ pub const TRAY_ID: &str = "main-tray";
 
 pub fn setup(app: &AppHandle) -> Result<()> {
     let initial_mute = app.state::<AppState>().settings.lock().unwrap().mute_all();
-    let menu = build_menu(app, initial_mute)?;
+    let initial_update = app.state::<AppState>().update_state.lock().unwrap().clone();
+    let menu = build_menu(app, initial_mute, &initial_update)?;
 
     let idle_bytes = {
         let s = IconSettings::default();
         icon::render(None, None, &IconCtx {
             settings: &s, display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
+            updating: false,
         })
     };
     let idle_icon = Image::from_bytes(&idle_bytes)?;
@@ -51,6 +53,15 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                         toggle_mute_all(h);
                     });
                 }
+                "update-install" => {
+                    crate::ipc::install_update(app.clone());
+                }
+                "update-download" => {
+                    let h = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = crate::ipc::download_and_install_update(h).await;
+                    });
+                }
                 _ => {}
             }
         })
@@ -75,7 +86,8 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                     st.display.lock().unwrap().invalidate_cycle();
                 }
                 let mute = h2.state::<AppState>().settings.lock().unwrap().mute_all();
-                if let Ok(new_menu) = build_menu(&h2, mute) {
+                let update = h2.state::<AppState>().update_state.lock().unwrap().clone();
+                if let Ok(new_menu) = build_menu(&h2, mute, &update) {
                     if let Some(tray) = h2.tray_by_id(TRAY_ID) {
                         let _ = tray.set_menu(Some(new_menu));
                     }
@@ -91,6 +103,24 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         app.listen("usage-updated", move |_| {
             let h2 = h.clone();
             let _ = h.run_on_main_thread(move || render_tray_now(&h2));
+        });
+    }
+
+    // Listener: update-state -> rebuild menu (badge label/items) + re-render badge.
+    {
+        let h = app.clone();
+        app.listen("update-state", move |_| {
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || {
+                let mute = h2.state::<AppState>().settings.lock().unwrap().mute_all();
+                let update = h2.state::<AppState>().update_state.lock().unwrap().clone();
+                if let Ok(new_menu) = build_menu(&h2, mute, &update) {
+                    if let Some(tray) = h2.tray_by_id(TRAY_ID) {
+                        let _ = tray.set_menu(Some(new_menu));
+                    }
+                }
+                render_tray_now(&h2);
+            });
         });
     }
 
@@ -160,7 +190,11 @@ pub fn render_tray_now(app: &AppHandle) {
     let weekly_safe = snap.as_ref().and_then(|s|
         usage_parser::calc_safe_pct(&s.seven_day.resets_at, SEVEN_DAY_MS, now));
 
-    let ctx = IconCtx { settings: &icon_s, display_mode: mode, session_safe: sess_safe, weekly_safe };
+    let updating = {
+        let s = state.update_state.lock().unwrap();
+        matches!(s.get("state").and_then(|v| v.as_str()), Some("downloading") | Some("downloaded"))
+    };
+    let ctx = IconCtx { settings: &icon_s, display_mode: mode, session_safe: sess_safe, weekly_safe, updating };
 
     let bytes = match spin {
         Some(f) => icon::render_spin(f, weekly, &ctx),
@@ -175,15 +209,49 @@ pub fn render_tray_now(app: &AppHandle) {
     let _ = tray.set_tooltip(Some(usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)));
 }
 
-fn build_menu(app: &AppHandle, mute_all: bool) -> Result<Menu<tauri::Wry>> {
+fn build_menu(app: &AppHandle, mute_all: bool, update: &serde_json::Value) -> Result<Menu<tauri::Wry>> {
     let mute = CheckMenuItemBuilder::with_id("mute-all", "Mute Notifications")
         .checked(mute_all)
         .build(app)?;
-    let menu = MenuBuilder::new(app)
+    let mut builder = MenuBuilder::new(app)
         .item(&MenuItemBuilder::with_id("open", "Open Dashboard").build(app)?)
         .item(&MenuItemBuilder::with_id("refresh", "Refresh Now").build(app)?)
         .separator()
-        .item(&mute)
+        .item(&mute);
+
+    let state = update.get("state").and_then(|v| v.as_str()).unwrap_or("");
+    let version = update.get("version").and_then(|v| v.as_str()).unwrap_or("");
+    match state {
+        "downloading" => {
+            builder = builder.separator().item(
+                &MenuItemBuilder::with_id("update-downloading", format!("Downloading update v{version}..."))
+                    .enabled(false)
+                    .build(app)?,
+            );
+        }
+        "downloaded" => {
+            builder = builder.separator().item(
+                &MenuItemBuilder::with_id("update-install", format!("Install update v{version}"))
+                    .build(app)?,
+            );
+        }
+        "available" => {
+            builder = builder.separator().item(
+                &MenuItemBuilder::with_id("update-download", format!("Download update v{version}"))
+                    .build(app)?,
+            );
+        }
+        "error" => {
+            builder = builder.separator().item(
+                &MenuItemBuilder::with_id("update-error", "Update failed")
+                    .enabled(false)
+                    .build(app)?,
+            );
+        }
+        _ => {}
+    }
+
+    let menu = builder
         .separator()
         .item(&MenuItemBuilder::with_id("quit", "Quit").build(app)?)
         .build()?;
