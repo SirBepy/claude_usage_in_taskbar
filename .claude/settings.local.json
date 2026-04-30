@@ -96,7 +96,8 @@
       "Bash(kill %1)",
       "Bash(~/.cargo/bin/cargo check *)",
       "Bash(sort -u echo \"---\" grep -aoE \"\\(http[s]?://|//\\)[a-zA-Z][^\\\\\"' \\)]*\" /Users/josipmuzic/projects/claude_usage_in_taskbar/dist/assets/index-*.js)",
-      "Bash(gh run *)"
+      "Bash(gh run *)",
+      "Bash(netstat -ano -p tcp)"
     ]
   }
 }
