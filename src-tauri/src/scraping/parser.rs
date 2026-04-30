@@ -64,26 +64,47 @@ pub fn build_tooltip(
         }
         TooltipLayout::Columns => {
             // Header + pct + (optional safe pace row) + "Resets:" header + times.
-            let mut lines = vec!["Session\tWeekly".to_string()];
-            lines.push(format!("{sess_pct}\t{weekly_pct}"));
+            // Win shell tooltip mangles `\t` (clips chars in the right column),
+            // so we space-pad the left column to a uniform width instead.
+            let mut pairs: Vec<(String, String)> = vec![
+                ("Session".into(), "Weekly".into()),
+                (sess_pct, weekly_pct),
+            ];
             if s.show_safe_pace {
                 let a = sess_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
                 let b = weekly_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
                 if !a.is_empty() || !b.is_empty() {
-                    lines.push(format!("{a}\t{b}").trim_end().to_string());
+                    pairs.push((a, b));
                 }
             }
-            if !sess_reset.is_empty() || !weekly_reset.is_empty() {
+            let reset_block: Option<Vec<(String, String)>> =
+                if !sess_reset.is_empty() || !weekly_reset.is_empty() {
+                    let s_lines: Vec<&str> = sess_reset.split('\n').collect();
+                    let w_lines: Vec<&str> = weekly_reset.split('\n').collect();
+                    let rows = s_lines.len().max(w_lines.len());
+                    Some((0..rows).map(|i| (
+                        s_lines.get(i).copied().unwrap_or("").to_string(),
+                        w_lines.get(i).copied().unwrap_or("").to_string(),
+                    )).collect())
+                } else { None };
+
+            let dw = |s: &str| s.chars().count();
+            let mut max_left = pairs.iter().map(|(a, _)| dw(a)).max().unwrap_or(0);
+            if let Some(b) = &reset_block {
+                let m = b.iter().map(|(a, _)| dw(a)).max().unwrap_or(0);
+                if m > max_left { max_left = m; }
+            }
+            let pad = |left: &str, right: &str| -> String {
+                if right.is_empty() { return left.trim_end().to_string(); }
+                let n = max_left.saturating_sub(dw(left)) + 2;
+                format!("{left}{}{right}", " ".repeat(n))
+            };
+
+            let mut lines: Vec<String> = pairs.iter().map(|(a, b)| pad(a, b)).collect();
+            if let Some(block) = reset_block {
                 lines.push(String::new());
                 lines.push("Resets:".to_string());
-                let s_lines: Vec<&str> = sess_reset.split('\n').collect();
-                let w_lines: Vec<&str> = weekly_reset.split('\n').collect();
-                let rows = s_lines.len().max(w_lines.len());
-                for i in 0..rows {
-                    let a = s_lines.get(i).copied().unwrap_or("");
-                    let b = w_lines.get(i).copied().unwrap_or("");
-                    lines.push(format!("{a}\t{b}").trim_end().to_string());
-                }
+                for (a, b) in block { lines.push(pad(&a, &b)); }
             }
             lines.join("\n")
         }
@@ -254,8 +275,10 @@ mod tests {
         let u = snap(55.0, "2026-04-20T15:00:00Z", 22.0, "2026-04-23T10:00:00Z");
         let tip = build_tooltip(Some(&u), &s, &icon, now);
         let lines: Vec<&str> = tip.lines().collect();
-        assert_eq!(lines[0], "Session\tWeekly");
-        assert_eq!(lines[1], "55%\t22%");
+        // Cols are space-padded (not tab-separated) to dodge Win tooltip
+        // clipping; just check both labels/percents land on their rows.
+        assert!(lines[0].starts_with("Session") && lines[0].contains("Weekly"));
+        assert!(lines[1].starts_with("55%") && lines[1].contains("22%"));
         // Safe-pace row present (value depends on now vs resets_at)
         assert!(lines.len() >= 4);
     }
