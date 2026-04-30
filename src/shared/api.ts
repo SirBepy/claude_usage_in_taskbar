@@ -100,6 +100,19 @@ export interface InstanceTokenStats {
 export interface SoundPack { id: string; [k: string]: unknown; }
 export interface PiperStatus { [k: string]: unknown; }
 export interface ProjectConfig { id: string; path: string; [k: string]: unknown; }
+export interface ProjectGroup {
+  id: string | null;
+  path: string;
+  name: string;
+  parent_segment: string | null;
+  avatar: { kind: string; value?: unknown };
+  automation_enabled: boolean;
+  tokens_7d: number;
+  live: number;
+  any_remote: boolean;
+  any_automated: boolean;
+  last_active_at: string | null;
+}
 export interface InstanceInfo { [k: string]: unknown; }
 export interface AuthStatus { state?: string; [k: string]: unknown; }
 
@@ -193,6 +206,7 @@ export const api = {
 
   // --- Projects ---
   listProjects: (): Promise<ProjectConfig[]> => invoke("list_projects"),
+  listProjectGroups: (): Promise<ProjectGroup[]> => invoke("list_project_groups"),
   getProject: (id: string): Promise<ProjectConfig | null> =>
     invoke("get_project", { id }),
   ensureProject: (cwd: string): Promise<ProjectConfig> =>
