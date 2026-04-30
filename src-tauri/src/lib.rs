@@ -122,6 +122,7 @@ pub fn run() {
             ipc::get_hook_registration_state,
             ipc::register_hooks_globally,
             ipc::skip_hook_registration,
+            ipc::list_project_groups,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
