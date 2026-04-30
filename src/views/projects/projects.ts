@@ -1,79 +1,25 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import "./projects.css";
-import { getTokenHistory, setTokenHistory } from "../../shared/state";
+import { setTokenHistory } from "../../shared/state";
 import { openProjectDetail } from "../../shared/navigation";
-import { basenameProj, renderAvatar, escapeProjHtml, type Avatar } from "../../shared/projects";
+import { renderAvatar, escapeProjHtml, type Avatar } from "../../shared/projects";
 import { formatTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
-import { api } from "../../shared/api";
+import { api, type ProjectGroup } from "../../shared/api";
 
-interface ProjectRecord {
-  id: string;
-  path: string;
-  name?: string;
-  avatar?: Avatar;
-  automation?: { enabled?: boolean } | null;
-  last_active_at?: string;
-}
-
-interface Instance {
-  cwd: string;
-  started_at: string;
-  is_remote?: boolean;
-  kind?: string;
-  end_reason?: string | null;
-}
-
-interface ProjectEntry {
-  cwd: string;
-  tokens_7d: number;
-  live: number;
-  anyRemote: boolean;
-  anyAutomated: boolean;
-  lastActiveMs: number;
-  name?: string;
-  avatar?: Avatar;
-  projectId?: string;
-}
-
-type TokenRecordShape = {
-  cwd?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  lastActiveAt?: string;
-  startedAt?: string;
-};
-
-function mkBucket(key: string): ProjectEntry {
-  return {
-    cwd: key,
-    tokens_7d: 0,
-    live: 0,
-    anyRemote: false,
-    anyAutomated: false,
-    lastActiveMs: 0,
-  };
-}
-
-function bump(bucket: ProjectEntry, iso?: string): void {
-  if (!iso) return;
-  const ms = Date.parse(iso);
-  if (!Number.isNaN(ms) && ms > bucket.lastActiveMs) bucket.lastActiveMs = ms;
-}
-
-export function projectCardHtml(entry: ProjectEntry): string {
-  const displayName = entry.name || basenameProj(entry.cwd);
-  const avatar = renderAvatar(entry.avatar);
-  const tokens = formatTokens(entry.tokens_7d || 0);
-  const lastSeen = entry.lastActiveMs ? timeAgo(new Date(entry.lastActiveMs).toISOString()) : "";
+export function projectCardHtml(g: ProjectGroup): string {
+  const displayName = g.parent_segment ? `${g.name} · ${g.parent_segment}` : g.name;
+  const avatar = renderAvatar(g.avatar as Avatar);
+  const tokens = formatTokens(Number(g.tokens_7d) || 0);
+  const lastSeen = g.last_active_at ? timeAgo(g.last_active_at) : "";
   const tags = [
-    entry.live ? `<span class="card-tag live">● ${entry.live}</span>` : "",
-    entry.anyRemote ? `<span class="card-tag remote">📱</span>` : "",
-    entry.anyAutomated ? `<span class="card-tag automated">⚙</span>` : "",
+    g.live ? `<span class="card-tag live">● ${g.live}</span>` : "",
+    g.any_remote ? `<span class="card-tag remote">📱</span>` : "",
+    g.any_automated ? `<span class="card-tag automated">⚙</span>` : "",
   ].filter(Boolean).join(" ");
   return `
-    <div class="project-card" data-cwd="${escapeProjHtml(entry.cwd)}" data-project-id="${entry.projectId || ""}">
+    <div class="project-card" data-cwd="${escapeProjHtml(g.path)}" data-project-id="${g.id || ""}">
       <div class="avatar">${avatar}</div>
       <div class="body">
         <div class="name">${escapeProjHtml(displayName)}${tags ? ` <span class="card-tags">${tags}</span>` : ""}</div>
@@ -111,61 +57,26 @@ function setupBackfillBtn(): void {
 // Re-exported from shared/navigation — imported at top of file.
 
 export async function renderProjectsList(): Promise<void> {
-  const tokenHistory = (getTokenHistory() as unknown as TokenRecordShape[] | null)
-    || ((await api.getTokenHistory()) as unknown as TokenRecordShape[] | undefined)
-    || [];
-  let projects: ProjectRecord[] = [];
-  try { projects = (await api.listProjects()) as unknown as ProjectRecord[]; } catch { /* ignore */ }
-  let liveInstances: Instance[] = [];
+  let groups: ProjectGroup[] = [];
   try {
-    liveInstances = ((await api.listInstances()) as unknown as Instance[]).filter((i) => !i.end_reason);
-  } catch { /* ignore */ }
-
-  const byPath = new Map<string, ProjectEntry>();
-  for (const rec of tokenHistory) {
-    const key = rec.cwd || "(unknown)";
-    const bucket = byPath.get(key) || mkBucket(key);
-    bucket.tokens_7d += (rec.inputTokens || 0) + (rec.outputTokens || 0);
-    bump(bucket, rec.lastActiveAt || rec.startedAt);
-    byPath.set(key, bucket);
-  }
-
-  for (const p of projects) {
-    const existing = byPath.get(p.path) || mkBucket(p.path);
-    existing.name = p.name;
-    existing.avatar = p.avatar;
-    existing.projectId = p.id;
-    existing.anyAutomated = existing.anyAutomated || !!p.automation?.enabled;
-    bump(existing, p.last_active_at);
-    byPath.set(p.path, existing);
-  }
-
-  for (const inst of liveInstances) {
-    const key = inst.cwd;
-    const existing = byPath.get(key) || mkBucket(key);
-    existing.live = (existing.live || 0) + 1;
-    existing.anyRemote = existing.anyRemote || !!inst.is_remote;
-    existing.anyAutomated = existing.anyAutomated || inst.kind === "automated";
-    bump(existing, inst.started_at);
-    existing.lastActiveMs = Math.max(existing.lastActiveMs, Date.now());
-    byPath.set(key, existing);
+    groups = (await api.listProjectGroups()) as ProjectGroup[];
+  } catch (e) {
+    console.error("listProjectGroups failed", e);
   }
 
   const settingsForSort = (await api.getSettings()) || {};
   const sortBy = (settingsForSort as { projects_sort_by?: string }).projects_sort_by || "recent";
-  const nameOf = (e: ProjectEntry): string => (e.name || basenameProj(e.cwd) || "").toLowerCase();
-  const entries = [...byPath.values()].sort((a, b) => {
+  const lastMs = (g: ProjectGroup): number => g.last_active_at ? Date.parse(g.last_active_at) || 0 : 0;
+  const nameOf = (g: ProjectGroup): string => (g.name || "").toLowerCase();
+  const entries = [...groups].sort((a, b) => {
     switch (sortBy) {
-      case "name":
-        return nameOf(a).localeCompare(nameOf(b));
+      case "name": return nameOf(a).localeCompare(nameOf(b));
       case "live":
         if ((b.live || 0) !== (a.live || 0)) return (b.live || 0) - (a.live || 0);
-        return (b.lastActiveMs || 0) - (a.lastActiveMs || 0);
-      case "tokens":
-        return (b.tokens_7d || 0) - (a.tokens_7d || 0);
+        return lastMs(b) - lastMs(a);
+      case "tokens": return Number(b.tokens_7d || 0) - Number(a.tokens_7d || 0);
       case "recent":
-      default:
-        return (b.lastActiveMs || 0) - (a.lastActiveMs || 0);
+      default: return lastMs(b) - lastMs(a);
     }
   });
 
@@ -180,7 +91,7 @@ export async function renderProjectsList(): Promise<void> {
   }
   empty.style.display = "none";
 
-  container.innerHTML = entries.map((e) => projectCardHtml(e)).join("");
+  container.innerHTML = entries.map((g) => projectCardHtml(g)).join("");
   container.querySelectorAll<HTMLElement>(".project-card").forEach((el) => {
     el.onclick = () => {
       const cwd = el.dataset.cwd;
