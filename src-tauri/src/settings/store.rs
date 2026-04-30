@@ -109,7 +109,7 @@ fn dedupe_projects_by_path_key(projects: &mut Vec<crate::types::ProjectConfig>) 
     let mut by_key: HashMap<String, usize> = HashMap::new();
     let mut survivors: Vec<crate::types::ProjectConfig> = Vec::with_capacity(projects.len());
     for p in projects.drain(..) {
-        let key = normalize_cwd_key(&p.path);
+        let key = project_key(&p.path);
         match by_key.get(&key).copied() {
             None => {
                 by_key.insert(key, survivors.len());
@@ -436,6 +436,47 @@ mod tests {
         let (_id, created) = upsert_project_for_cwd(&mut s, &p, "t1");
         assert!(created);
         assert_eq!(s.projects[0].name, "plain");
+    }
+
+    #[test]
+    fn load_collapses_subfolder_into_repo_root_entry() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        let sub = repo.join("inner");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let path = dir.path().join("settings.json");
+        let raw = format!(
+            r#"{{
+                "projects": [
+                    {{
+                        "id": "first",
+                        "path": {repo:?},
+                        "name": "repo",
+                        "created_at": "2026-04-01T00:00:00Z",
+                        "last_active_at": "2026-04-10T00:00:00Z"
+                    }},
+                    {{
+                        "id": "second",
+                        "path": {sub:?},
+                        "name": "inner",
+                        "created_at": "2026-04-05T00:00:00Z",
+                        "last_active_at": "2026-04-20T00:00:00Z"
+                    }}
+                ]
+            }}"#,
+            repo = repo.to_string_lossy().replace('\\', "\\\\"),
+            sub = sub.to_string_lossy().replace('\\', "\\\\"),
+        );
+        std::fs::write(&path, raw).unwrap();
+        let s = load(&path);
+        assert_eq!(s.projects.len(), 1, "subfolder entry must merge into repo entry");
+        assert_eq!(s.projects[0].id, "first");
+        assert_eq!(
+            s.projects[0].last_active_at.as_deref(),
+            Some("2026-04-20T00:00:00Z"),
+            "latest last_active_at wins",
+        );
     }
 
     #[test]
