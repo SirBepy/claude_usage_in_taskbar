@@ -160,8 +160,7 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
             let ampm = if h24 < 12 { "AM" } else { "PM" };
             let min = local.minute();
             let day = local.format("%a");
-            if min == 0 { format!("{day}\n{h12} {ampm}") }
-            else { format!("{day}\n{h12}:{min:02} {ampm}") }
+            format!("{day}\n{h12}:{min:02}{ampm}")
         }
     }
 }
