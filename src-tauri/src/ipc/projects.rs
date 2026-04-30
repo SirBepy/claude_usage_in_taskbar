@@ -24,7 +24,7 @@ pub mod groups_test_helpers {
         for rec in token_history {
             let Some(cwd) = rec.cwd.as_deref() else { continue };
             let key = project_key(Path::new(cwd));
-            let entry = by_key.entry(key.clone()).or_insert_with(|| empty_group(&key, cwd));
+            let entry = by_key.entry(key.clone()).or_insert_with(|| empty_group(cwd));
             entry.tokens_7d = entry.tokens_7d.saturating_add(rec.input_tokens + rec.output_tokens);
             update_last_active(&mut entry.last_active_at, &rec.last_active_at);
             update_last_active(&mut entry.last_active_at, &rec.started_at);
@@ -35,7 +35,7 @@ pub mod groups_test_helpers {
             let key = project_key(&p.path);
             let entry = by_key
                 .entry(key.clone())
-                .or_insert_with(|| empty_group(&key, &p.path.to_string_lossy()));
+                .or_insert_with(|| empty_group(&p.path.to_string_lossy()));
             entry.id = Some(p.id.clone());
             entry.name = p.name.clone();
             entry.avatar = p.avatar.clone();
@@ -55,7 +55,7 @@ pub mod groups_test_helpers {
             let key = project_key(&inst.cwd);
             let entry = by_key
                 .entry(key.clone())
-                .or_insert_with(|| empty_group(&key, &inst.cwd.to_string_lossy()));
+                .or_insert_with(|| empty_group(&inst.cwd.to_string_lossy()));
             entry.live = entry.live.saturating_add(1);
             entry.any_remote = entry.any_remote || inst.is_remote;
             entry.any_automated = entry.any_automated
@@ -77,7 +77,7 @@ pub mod groups_test_helpers {
         out
     }
 
-    fn empty_group(_key: &str, raw_path: &str) -> ProjectGroup {
+    fn empty_group(raw_path: &str) -> ProjectGroup {
         let basename = Path::new(raw_path)
             .file_name()
             .and_then(|s| s.to_str())
