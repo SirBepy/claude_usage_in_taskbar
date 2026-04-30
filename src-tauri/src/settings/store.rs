@@ -149,24 +149,27 @@ pub fn upsert_project_for_cwd(
     cwd: &std::path::Path,
     now: &str,
 ) -> (String, bool) {
-    let key = normalize_cwd_key(cwd);
+    let key = project_key(cwd);
     if let Some(p) = settings
         .projects
         .iter_mut()
-        .find(|p| normalize_cwd_key(&p.path) == key)
+        .find(|p| project_key(&p.path) == key)
     {
         p.last_active_at = Some(now.to_string());
         return (p.id.clone(), false);
     }
+    // Store the resolved root (repo root when found, else the cwd as-is)
+    // so subfolder cwds never spawn duplicate entries.
+    let root = find_repo_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
     let id = uuid::Uuid::new_v4().to_string();
-    let name = cwd
+    let name = root
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("(unknown)")
         .to_string();
     settings.projects.push(crate::types::ProjectConfig {
         id: id.clone(),
-        path: cwd.to_path_buf(),
+        path: root,
         name,
         avatar: crate::types::Avatar::None,
         automation: None,
@@ -402,6 +405,37 @@ mod tests {
         }).collect();
         let upper = super::project_key(std::path::Path::new(&toggled));
         assert_eq!(lower, upper, "drive-letter casing must not split the key");
+    }
+
+    #[test]
+    fn upsert_rolls_subfolder_up_to_repo_root() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("myrepo");
+        let sub = repo.join("packages").join("app");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut s = Settings::default();
+        let (id1, _) = upsert_project_for_cwd(&mut s, &repo, "t1");
+        let (id2, created) = upsert_project_for_cwd(&mut s, &sub, "t2");
+
+        assert!(!created, "subfolder of a known repo must reuse the repo entry");
+        assert_eq!(id1, id2);
+        assert_eq!(s.projects.len(), 1);
+        // Path stays at the repo root regardless of which cwd was passed.
+        assert_eq!(s.projects[0].path, repo);
+        assert_eq!(s.projects[0].name, "myrepo");
+    }
+
+    #[test]
+    fn upsert_creates_subfolder_entry_when_not_in_repo() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("plain");
+        std::fs::create_dir_all(&p).unwrap();
+        let mut s = Settings::default();
+        let (_id, created) = upsert_project_for_cwd(&mut s, &p, "t1");
+        assert!(created);
+        assert_eq!(s.projects[0].name, "plain");
     }
 
     #[test]
