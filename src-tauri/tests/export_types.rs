@@ -40,6 +40,7 @@ fn emit_ipc_types() {
     out.push_str(&decl::<ProjectsSortBy>());
     out.push_str(&decl::<ProjectConfig>());
     out.push_str(&decl::<Instance>());
+    out.push_str(&decl::<ProjectGroup>());
 
     // automation
     out.push_str(&decl::<AutomationConfig>());

@@ -69,6 +69,22 @@ pub struct Instance {
 /// schema change.
 pub type InstanceSummary = Instance;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct ProjectGroup {
+    pub id: Option<String>,
+    pub path: String,
+    pub name: String,
+    pub parent_segment: Option<String>,
+    pub avatar: Avatar,
+    pub automation_enabled: bool,
+    pub tokens_7d: u64,
+    pub live: u32,
+    pub any_remote: bool,
+    pub any_automated: bool,
+    pub last_active_at: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
