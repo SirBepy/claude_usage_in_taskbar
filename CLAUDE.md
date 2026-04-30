@@ -57,7 +57,7 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `src-tauri/src/tokens/aggregate.rs` | Per-session aggregation |
 | `src-tauri/src/tokens/backfill.rs` | backfill_transcripts command body |
 | `src-tauri/src/tokens/live.rs` | active_sessions live polling |
-| `src-tauri/src/settings/store.rs` | Load/save user settings |
+| `src-tauri/src/settings/store.rs` | Load/save user settings + `project_key` (repo-root identity) |
 | `src-tauri/src/settings/overrides.rs` | Per-project notif overrides |
 | `src-tauri/src/settings/paths.rs` | App-data / session / sound-pack paths |
 | `src-tauri/src/notifications/rules.rs` | Event rule resolution + firing |
@@ -66,7 +66,7 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `src-tauri/src/notifications/piper.rs` | Piper TTS integration |
 | `src-tauri/src/ipc/usage.rs` | Usage + poll commands |
 | `src-tauri/src/ipc/settings.rs` | Settings get/save commands |
-| `src-tauri/src/ipc/projects.rs` | Project ops commands |
+| `src-tauri/src/ipc/projects.rs` | Project ops commands + `list_project_groups` (single-source dashboard list, keyed by git-repo-root) |
 | `src-tauri/src/ipc/channels.rs` | Channel spawn/stop commands |
 | `src-tauri/src/ipc/tokens.rs` | Token history + backfill commands |
 | `src-tauri/src/ipc/auth.rs` | Auth status + login/logout |
