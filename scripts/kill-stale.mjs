@@ -20,4 +20,5 @@ try {
     if (m && m[1] !== '0') pids.add(m[1]);
   }
   for (const pid of pids) quiet(`taskkill /F /PID ${pid}`);
+  if (pids.size > 0) await new Promise(r => setTimeout(r, 600));
 } catch {}
