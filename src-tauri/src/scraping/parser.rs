@@ -63,20 +63,11 @@ pub fn build_tooltip(
             lines.join("\n")
         }
         TooltipLayout::Columns => {
-            // Header + pct + (optional safe pace row) + "Resets:" header + times.
-            // Win shell tooltip mangles `\t` (clips chars in the right column),
-            // so we space-pad the left column to a uniform width instead.
-            let mut pairs: Vec<(String, String)> = vec![
-                ("Session".into(), "Weekly".into()),
-                (sess_pct, weekly_pct),
-            ];
-            if s.show_safe_pace {
-                let a = sess_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
-                let b = weekly_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
-                if !a.is_empty() || !b.is_empty() {
-                    pairs.push((a, b));
-                }
-            }
+            // Tab separator: Win tooltip control renders \t at fixed tab-stop
+            // positions, giving true visual alignment regardless of glyph
+            // width (digits, letters, emoji all snap to the same column).
+            // Space-padding the left column couldn't ever align perfectly
+            // because Segoe UI is proportional.
             let reset_block: Option<Vec<(String, String)>> =
                 if !sess_reset.is_empty() || !weekly_reset.is_empty() {
                     let s_lines: Vec<&str> = sess_reset.split('\n').collect();
@@ -88,23 +79,27 @@ pub fn build_tooltip(
                     )).collect())
                 } else { None };
 
-            let dw = |s: &str| s.chars().count();
-            let mut max_left = pairs.iter().map(|(a, _)| dw(a)).max().unwrap_or(0);
-            if let Some(b) = &reset_block {
-                let m = b.iter().map(|(a, _)| dw(a)).max().unwrap_or(0);
-                if m > max_left { max_left = m; }
+            let mut pairs: Vec<(String, String)> = vec![
+                ("Session".into(), "Weekly".into()),
+                (sess_pct, weekly_pct),
+            ];
+            if s.show_safe_pace {
+                let a = sess_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
+                let b = weekly_safe.map(|v| format!("{:.0}%", v)).unwrap_or_default();
+                if !a.is_empty() || !b.is_empty() {
+                    pairs.push((a, b));
+                }
             }
-            let pad = |left: &str, right: &str| -> String {
-                if right.is_empty() { return left.trim_end().to_string(); }
-                let n = max_left.saturating_sub(dw(left)) + 2;
-                format!("{left}{}{right}", " ".repeat(n))
+
+            let row = |left: &str, right: &str| -> String {
+                if right.is_empty() { left.trim_end().to_string() }
+                else { format!("{left}\t{right}") }
             };
 
-            let mut lines: Vec<String> = pairs.iter().map(|(a, b)| pad(a, b)).collect();
+            let mut lines: Vec<String> = pairs.iter().map(|(a, b)| row(a, b)).collect();
             if let Some(block) = reset_block {
                 lines.push(String::new());
-                lines.push("Resets:".to_string());
-                for (a, b) in block { lines.push(pad(&a, &b)); }
+                for (a, b) in block { lines.push(row(&a, &b)); }
             }
             lines.join("\n")
         }
@@ -116,7 +111,7 @@ fn fmt_pct(pct: f32, safe: Option<f32>, apply_color: bool, icon_s: &IconSettings
     if !apply_color { return base; }
     let hex = pick_color(pct, safe, icon_s);
     match hex.and_then(hex_to_emoji) {
-        Some(e) => format!("{e} {base}"),
+        Some(e) => format!("{base} {e}"),
         None => base,
     }
 }
@@ -175,13 +170,20 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
         }
         TimeStyle::Absolute => {
             use chrono::Timelike;
+            // Round UP to the next 10-minute boundary so the tooltip matches
+            // the dashboard (`roundUpTo10Min` in shared/formatters.ts).
+            const TEN_MIN_MS: i64 = 10 * 60 * 1000;
+            let ms = resets.timestamp_millis();
+            let rounded_ms = ((ms + TEN_MIN_MS - 1) / TEN_MIN_MS) * TEN_MIN_MS;
+            let resets = DateTime::<Utc>::from_timestamp_millis(rounded_ms).unwrap_or(resets);
             let local = resets.with_timezone(&chrono::Local);
             let h24 = local.hour();
-            let h12 = match h24 % 12 { 0 => 12, n => n };
-            let ampm = if h24 < 12 { "AM" } else { "PM" };
             let min = local.minute();
             let day = local.format("%a");
-            format!("{day}\n{h12}:{min:02}{ampm}")
+            // 24h format keeps the time row a uniform 5 chars (HH:MM) and
+            // dodges AM/PM ambiguity. Day on its own line — Columns layout
+            // splits this into two reset rows.
+            format!("{day}\n{h24:02}:{min:02}")
         }
     }
 }
@@ -305,8 +307,8 @@ mod tests {
         let u = snap(85.0, "2026-04-20T12:30:00Z", 30.0, "2026-04-23T10:00:00Z");
         let tip = build_tooltip(Some(&u), &s, &icon, now);
         // Red threshold -> red circle before session %, green before weekly %.
-        assert!(tip.contains("🔴 85%"), "expected red emoji for 85%, got: {tip}");
-        assert!(tip.contains("🟢 30%"), "expected green emoji for 30%, got: {tip}");
+        assert!(tip.contains("85% 🔴"), "expected red emoji after 85%, got: {tip}");
+        assert!(tip.contains("30% 🟢"), "expected green emoji after 30%, got: {tip}");
     }
 
     #[test]
