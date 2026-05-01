@@ -362,6 +362,7 @@ async fn auto_update_loop(app: tauri::AppHandle) {
     let mut did_startup_check = false;
     loop {
         let mode = app.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
+        #[cfg(not(dev))]
         match mode {
             AutoUpdateMode::Never => {}
             AutoUpdateMode::OnStartup => {

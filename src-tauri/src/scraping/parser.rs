@@ -178,12 +178,13 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
             let resets = DateTime::<Utc>::from_timestamp_millis(rounded_ms).unwrap_or(resets);
             let local = resets.with_timezone(&chrono::Local);
             let h24 = local.hour();
+            let h12 = match h24 % 12 { 0 => 12, n => n };
+            let ampm = if h24 < 12 { "AM" } else { "PM" };
             let min = local.minute();
             let day = local.format("%a");
-            // 24h format keeps the time row a uniform 5 chars (HH:MM) and
-            // dodges AM/PM ambiguity. Day on its own line — Columns layout
-            // splits this into two reset rows.
-            format!("{day}\n{h24:02}:{min:02}")
+            // 12h format with AM/PM matches the dashboard. Day on its own
+            // line — Columns layout splits this into two reset rows.
+            format!("{day}\n{h12}:{min:02}{ampm}")
         }
     }
 }
