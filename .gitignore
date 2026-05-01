@@ -12,3 +12,4 @@ Thumbs.db
 .superpowers/
 docs/superpowers/
 src/types/ipc.generated.ts
+/*.png
