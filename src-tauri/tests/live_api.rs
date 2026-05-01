@@ -118,9 +118,14 @@ async fn live_extra_usage_fields_are_floats_when_present() {
 
     let snap = scraper::fetch_usage(CLAUDE_BASE, &key).await.unwrap();
     if let Some(extra) = snap.extra_usage {
-        assert!(extra.monthly_limit >= 0.0);
-        assert!(extra.used_credits >= 0.0);
-        assert!(extra.utilization >= 0.0);
-        assert!(!extra.currency.is_empty(), "currency string empty");
+        // When extra_usage is disabled the API returns null for every
+        // field except is_enabled, so each field is optional. When it's
+        // enabled they should all be present.
+        if let Some(v) = extra.monthly_limit { assert!(v >= 0.0); }
+        if let Some(v) = extra.used_credits { assert!(v >= 0.0); }
+        if let Some(v) = extra.utilization { assert!(v >= 0.0); }
+        if let Some(c) = extra.currency.as_deref() {
+            assert!(!c.is_empty(), "currency string empty");
+        }
     }
 }
