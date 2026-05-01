@@ -124,7 +124,11 @@ pub async fn run_update_check(app: &AppHandle, auto_install: bool) -> serde_json
 
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<serde_json::Value, String> {
-    Ok(run_update_check(&app, false).await)
+    use tauri::Manager;
+    use crate::types::AutoUpdateMode;
+    let auto_install = app.state::<crate::state::AppState>()
+        .settings.lock().unwrap().auto_update == AutoUpdateMode::Immediate;
+    Ok(run_update_check(&app, auto_install).await)
 }
 
 #[tauri::command]
