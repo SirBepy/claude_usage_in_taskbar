@@ -1,0 +1,65 @@
+.view-characters .characters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.char-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--card-bg, #222);
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.char-card.active,
+.char-card:hover {
+  background: var(--card-bg-hover, #333);
+}
+
+.char-card .char-avatar {
+  width: 48px;
+  height: 48px;
+  image-rendering: pixelated;
+  border-radius: 6px;
+}
+
+.char-card .body .name {
+  font-weight: 600;
+}
+
+.char-card .body .meta {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+#character-detail {
+  margin-top: 16px;
+}
+
+#character-detail .slot-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider, #333);
+}
+
+#character-detail .slot-name {
+  width: 140px;
+  font-family: monospace;
+  opacity: 0.85;
+}
+
+#character-detail .play-btn {
+  margin: 2px;
+  font-size: 0.85em;
+}
+
+#character-detail .muted {
+  opacity: 0.6;
+  font-style: italic;
+}
