@@ -208,13 +208,8 @@ pub fn play_sound_preview(app: AppHandle, filename: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn play_pack_sound_preview(app: AppHandle, pack: String, sound: String) -> Result<(), String> {
-    let invalid = |s: &str| s.is_empty() || s.contains('/') || s.contains('\\') || s.contains("..");
-    if invalid(&pack) || invalid(&sound) {
-        return Err("invalid pack or sound".into());
-    }
-    crate::notifications::audio::play_pack_sound(&app, &pack, &sound);
-    Ok(())
+pub fn play_pack_sound_preview(_pack: String, _file: String, _app: tauri::AppHandle) {
+    // Deprecated; deleted in Task 15 along with the soundpacks module.
 }
 
 #[cfg(test)]

@@ -94,19 +94,14 @@ pub fn play_sound_file(app: &AppHandle, filename: &str) {
     play_file_internal(app, &path);
 }
 
-/// Play a sound from a named pack. Pack "default" uses the bundled
-/// `sounds_dir()`, all others use `sound_packs_dir()/<pack>/`.
-/// Falls back silently if the file is missing (pack uninstalled).
-pub fn play_pack_sound(app: &AppHandle, pack: &str, file: &str) {
-    let Some(path) = crate::notifications::soundpacks::sound_path(pack, file) else {
-        log::warn!("play_pack_sound: unknown pack {pack}");
-        return;
-    };
+/// Play a sound file at an absolute or already-resolved path. Falls back
+/// silently if the file is missing.
+pub fn play_path(app: &AppHandle, path: &Path) {
     if !path.exists() {
-        log::warn!("play_pack_sound: missing file {path:?} (pack {pack} not installed?)");
+        log::warn!("play_path: missing file {path:?}");
         return;
     }
-    play_file_internal(app, &path);
+    play_file_internal(app, path);
 }
 
 pub fn play_wav(app: &AppHandle, path: &Path) {

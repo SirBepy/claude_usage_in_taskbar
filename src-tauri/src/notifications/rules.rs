@@ -61,7 +61,8 @@ pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option
     // TODO: when OS toast channel lands, add a `NotifMode::Toast` arm here
     //       and gate it on `settings_snapshot.mute_system_notifications()`.
     match rule.mode {
-        NotifMode::Sound => audio::play_pack_sound(app, &rule.sound_pack, &rule.sound_file),
+        // TEMP: replaced by character-aware path in next task
+        NotifMode::Sound => audio::play_sound_file(app, &rule.sound_file),
         NotifMode::Voice => {
             let text = render_template(&rule.template, &ctx);
             if text.is_empty() { return; }
