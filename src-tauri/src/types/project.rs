@@ -58,6 +58,12 @@ pub struct Instance {
     pub transcript_path: Option<std::path::PathBuf>,
     #[serde(default)]
     pub bridge_session_id: Option<String>,
+    /// Short label derived from the transcript's first user prompt
+    /// (truncated). Mirrors what `/resume` shows so the user can tell
+    /// concurrent sessions apart at a glance. None until the prompt
+    /// is resolved (sessions start before the user types anything).
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub ended_at: Option<String>,
     #[serde(default)]
@@ -126,6 +132,7 @@ mod tests {
             started_at: "2026-04-21T10:00:00Z".into(),
             transcript_path: Some(std::path::PathBuf::from("C:/t/abc.jsonl")),
             bridge_session_id: None,
+            name: None,
             ended_at: None,
             end_reason: None,
         };

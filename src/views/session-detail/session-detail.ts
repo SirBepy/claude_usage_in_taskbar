@@ -22,6 +22,7 @@ interface SessionRecord {
   project_id?: string;
   is_remote?: boolean;
   bridge_session_id?: string | null;
+  name?: string | null;
   started_at?: string;
   date?: string;
   turns?: number;
@@ -74,6 +75,7 @@ function renderBody(r: SessionRecord, liveStats?: LiveStats): void {
       ["Prompts", String(s.prompts ?? 0)],
       ["Turns", String(s.turns ?? 0)],
       ["Tokens", formatTokens(s.tokens ?? 0)],
+      ["PID", (r.pid ?? 0) > 0 ? String(r.pid) : "?"],
       ["Session id", r.session_id || "-"],
     ];
   } else {
@@ -165,9 +167,12 @@ export async function renderSessionDetailView(
   const pathEl = document.getElementById("sessionDetailPath");
   if (avatarEl) avatarEl.innerHTML = renderAvatarHtml(avatar);
   if (titleEl) {
-    titleEl.textContent = isLive(r)
-      ? `Live session - pid ${(r.pid ?? 0) > 0 ? r.pid : "?"}`
-      : `Session - ${r.date || "unknown date"}`;
+    if (isLive(r)) {
+      const label = (r.name && r.name.trim()) || `Live session ${(r.session_id || "").slice(0, 8) || "?"}`;
+      titleEl.textContent = label;
+    } else {
+      titleEl.textContent = `Session - ${r.date || "unknown date"}`;
+    }
   }
   if (pathEl) pathEl.textContent = cwd;
 

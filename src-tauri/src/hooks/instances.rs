@@ -58,6 +58,7 @@ impl Registry {
             started_at: input.started_at,
             transcript_path: input.transcript_path,
             bridge_session_id: None,
+            name: None,
             ended_at: None,
             end_reason: None,
         };
@@ -81,6 +82,29 @@ impl Registry {
         if let Some(i) = guard.get_mut(session_id) {
             i.bridge_session_id = Some(bridge_id);
         }
+    }
+
+    /// Late-binding pid update. Used when the SessionStart hook
+    /// payload omitted pid (Claude Code v2.x doesn't include it) and
+    /// we resolved it later by scanning `~/.claude/sessions/*.json`
+    /// for the matching `sessionId`. Returns true if pid actually
+    /// changed (so callers can decide whether to emit an update).
+    pub fn set_pid(&self, session_id: &str, pid: u32) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(i) = guard.get_mut(session_id) else { return false };
+        if i.pid == pid { return false; }
+        i.pid = pid;
+        true
+    }
+
+    /// Late-binding name update. Resolved from the transcript's first
+    /// user prompt. Returns true if the name actually changed.
+    pub fn set_name(&self, session_id: &str, name: String) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(i) = guard.get_mut(session_id) else { return false };
+        if i.name.as_deref() == Some(name.as_str()) { return false; }
+        i.name = Some(name);
+        true
     }
 
     /// Remove ended instances whose `ended_at` is strictly before `cutoff`.

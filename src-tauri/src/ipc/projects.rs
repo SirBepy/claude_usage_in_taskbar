@@ -330,7 +330,9 @@ pub fn instance_token_stats(session_id: String, state: State<AppState>) -> serde
     let Some(inst) = state.instances.get(&session_id) else { return empty };
     let path = match inst.transcript_path.as_ref() {
         Some(p) if p.exists() => p.clone(),
-        _ => match crate::tokens::latest_transcript_for_cwd(&inst.cwd) {
+        _ => match crate::tokens::transcript_for_session(&inst.cwd, &inst.session_id)
+            .or_else(|| crate::tokens::latest_transcript_for_cwd(&inst.cwd))
+        {
             Some(p) => p,
             None => return empty,
         },

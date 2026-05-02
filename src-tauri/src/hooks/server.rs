@@ -79,6 +79,33 @@ async fn on_refresh(
         payload.cwd.as_deref(),
     );
 
+    // Backfill instance name on /refresh too — covers the case
+    // where the SessionStart-time poll missed the first prompt.
+    if let (Some(session_id), Some(transcript_path)) =
+        (payload.session_id.clone(), payload.transcript_path.clone())
+    {
+        let app = ctx.app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AppState>();
+            if let Some(inst) = state.instances.get(&session_id) {
+                if inst.name.is_some() { return }
+            } else {
+                return;
+            }
+            let path = std::path::PathBuf::from(transcript_path);
+            let Some(name) = tauri::async_runtime::spawn_blocking(move || {
+                crate::tokens::first_user_prompt(&path, 60)
+            })
+            .await
+            .ok()
+            .flatten() else { return };
+            let state = app.state::<AppState>();
+            if state.instances.set_name(&session_id, name) {
+                let _ = app.emit("instances-changed", state.instances.list());
+            }
+        });
+    }
+
     // Record token stats in the background — must not block the CLI hook.
     if let (Some(session_id), Some(transcript_path)) =
         (payload.session_id.clone(), payload.transcript_path.clone())
@@ -178,13 +205,14 @@ async fn on_session_start(
         }
     };
 
+    let transcript_path_buf = payload.transcript_path.clone().map(std::path::PathBuf::from);
     let input = crate::hooks::RegisterInput {
         session_id: payload.session_id.clone(),
         cwd: std::path::PathBuf::from(cwd),
         pid: payload.pid.unwrap_or(0),
         kind,
         is_remote,
-        transcript_path: payload.transcript_path.map(std::path::PathBuf::from),
+        transcript_path: transcript_path_buf.clone(),
         started_at: now.clone(),
     };
 
@@ -200,15 +228,40 @@ async fn on_session_start(
         let _ = ctx.app.emit("settings-changed", &snapshot);
     }
 
-    // Enrich with bridgeSessionId in the background.
+    // Background enrichment: resolve pid + bridgeSessionId via
+    // ~/.claude/sessions/*.json (Claude Code v2.x stopped sending pid
+    // in the hook payload), and pull a friendly name from the
+    // transcript's first user prompt.
     let h = ctx.app.clone();
     let sid = payload.session_id.clone();
-    let pid_opt = payload.pid;
+    let payload_pid = payload.pid;
+    let transcript_path_opt = transcript_path_buf;
     tauri::async_runtime::spawn(async move {
-        let Some(pid) = pid_opt else { return };
-        if let Some(bridge) = crate::hooks::resolve_bridge_session_id(pid).await {
-            let s = h.state::<AppState>();
-            s.instances.set_bridge_session_id(&sid, bridge);
+        let mut changed = false;
+        let s = h.state::<AppState>();
+
+        if payload_pid.is_none() || payload_pid == Some(0) {
+            if let Some(meta) = crate::hooks::resolve_session_meta(&sid).await {
+                if s.instances.set_pid(&sid, meta.pid) { changed = true; }
+                if let Some(bridge) = meta.bridge_session_id {
+                    s.instances.set_bridge_session_id(&sid, bridge);
+                    changed = true;
+                }
+            }
+        } else if let Some(pid) = payload_pid {
+            if let Some(bridge) = crate::hooks::resolve_bridge_session_id(pid).await {
+                s.instances.set_bridge_session_id(&sid, bridge);
+                changed = true;
+            }
+        }
+
+        if let Some(path) = transcript_path_opt {
+            if let Some(name) = poll_first_user_prompt(&path).await {
+                if s.instances.set_name(&sid, name) { changed = true; }
+            }
+        }
+
+        if changed {
             let _ = h.emit("instances-changed", s.instances.list());
         }
     });
@@ -233,6 +286,26 @@ async fn on_session_end(
         let _ = ctx.app.emit("instances-changed", state.instances.list());
     }
     StatusCode::NO_CONTENT
+}
+
+/// Polls the transcript for the first real user prompt. Fresh
+/// sessions start before the user types anything, so we retry up
+/// to ~30s × 1s. Returns None if the transcript never gets a real
+/// user message in that window (the next /refresh hook will retry).
+async fn poll_first_user_prompt(path: &std::path::Path) -> Option<String> {
+    let path = path.to_path_buf();
+    for _ in 0..30 {
+        let p = path.clone();
+        let found = tauri::async_runtime::spawn_blocking(move || {
+            crate::tokens::first_user_prompt(&p, 60)
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(name) = found { return Some(name); }
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    }
+    None
 }
 
 /// Fixed port matching the Electron app + README + installer + user hook scripts

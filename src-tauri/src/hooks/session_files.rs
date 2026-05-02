@@ -61,6 +61,41 @@ pub async fn resolve_bridge_session_id(pid: u32) -> Option<String> {
     None
 }
 
+/// Scans `~/.claude/sessions/*.json` once for a file whose `sessionId`
+/// matches `session_id`, returning its parsed shape. Used to resolve
+/// pid + bridgeSessionId from a SessionStart hook whose payload only
+/// gave us `session_id` (Claude Code v2.x stopped including pid).
+pub fn find_by_session_id(session_id: &str) -> Option<ScannedSession> {
+    let dir = sessions_dir()?;
+    let entries = std::fs::read_dir(&dir).ok()?;
+    for e in entries.flatten() {
+        let path = e.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("json") { continue; }
+        let Some(parsed) = parse_session_file(&path) else { continue };
+        if parsed.session_id == session_id {
+            return Some(parsed);
+        }
+    }
+    None
+}
+
+/// Polls `find_by_session_id` for up to ~15s. Claude writes the
+/// session file shortly after the SessionStart hook fires, so the
+/// first attempt usually misses.
+pub async fn resolve_session_meta(session_id: &str) -> Option<ScannedSession> {
+    let owned = session_id.to_string();
+    for _ in 0..30 {
+        let sid = owned.clone();
+        let found = tokio::task::spawn_blocking(move || find_by_session_id(&sid))
+            .await
+            .ok()
+            .flatten();
+        if let Some(s) = found { return Some(s); }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    None
+}
+
 /// Resolves the sessions directory. Returns `None` only if the user has
 /// no home directory, which would be a pathologically broken setup.
 pub fn sessions_dir() -> Option<PathBuf> {

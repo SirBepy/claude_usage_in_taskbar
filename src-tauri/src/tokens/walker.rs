@@ -18,6 +18,20 @@ pub fn encode_cwd_as_project_dir(cwd: &Path) -> String {
         .collect()
 }
 
+/// Resolves the transcript file named after a specific session id.
+/// Returns `Some(path)` only if the file actually exists. Use this
+/// in preference to `latest_transcript_for_cwd` when a session_id is
+/// known: two concurrent sessions share a cwd, so the "latest"
+/// helper would return the same file for both and the dashboard
+/// would show identical stats.
+pub fn transcript_for_session(cwd: &Path, session_id: &str) -> Option<PathBuf> {
+    let projects = claude_projects_dir()?;
+    let path = projects
+        .join(encode_cwd_as_project_dir(cwd))
+        .join(format!("{session_id}.jsonl"));
+    if path.exists() { Some(path) } else { None }
+}
+
 /// Resolves the transcript Claude CLI is writing *right now* for a
 /// given cwd. A single CLI process can rotate through multiple
 /// transcripts when the user runs `/compact` or `/clear`, and
@@ -25,6 +39,10 @@ pub fn encode_cwd_as_project_dir(cwd: &Path) -> String {
 /// so we cannot rely on sessionId to locate the file. Instead we read
 /// `~/.claude/projects/<encoded-cwd>/` and return the most recently
 /// modified `.jsonl` - that's the live transcript by construction.
+///
+/// WARNING: this returns the same path for every session that shares
+/// `cwd`. Only safe when the caller has a single session in mind.
+/// Use `transcript_for_session` when you have a session_id.
 pub fn latest_transcript_for_cwd(cwd: &Path) -> Option<PathBuf> {
     let projects = claude_projects_dir()?;
     let dir = projects.join(encode_cwd_as_project_dir(cwd));
@@ -137,6 +155,62 @@ pub fn decode_cwd(encoded: &str) -> String {
     }
 
     current_path
+}
+
+/// Scans a transcript for the first real user prompt and returns it
+/// as a short label suitable for showing as the instance "name" in
+/// the dashboard. Skips meta entries (`isMeta:true`), the
+/// local-command-caveat preamble Claude injects, and slash-command
+/// markup. Returns up to `max_chars` of the prompt with trailing
+/// whitespace collapsed and "…" appended if it was truncated.
+///
+/// Returns None if the file is missing/malformed or no real user
+/// prompt has been written yet (fresh session).
+pub fn first_user_prompt(path: &Path, max_chars: usize) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = BufReader::new(file);
+    for line in reader.lines().map_while(|r| r.ok()) {
+        if line.trim().is_empty() { continue }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        if v.get("type").and_then(|t| t.as_str()) != Some("user") { continue }
+        if v.get("isMeta").and_then(|b| b.as_bool()) == Some(true) { continue }
+        let Some(msg) = v.get("message") else { continue };
+        if msg.get("role").and_then(|r| r.as_str()) != Some("user") { continue }
+        let text = match msg.get("content") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(serde_json::Value::Array(items)) => {
+                let mut acc = String::new();
+                for it in items {
+                    if it.get("type").and_then(|t| t.as_str()) != Some("text") { continue }
+                    if let Some(t) = it.get("text").and_then(|t| t.as_str()) {
+                        if !acc.is_empty() { acc.push(' '); }
+                        acc.push_str(t);
+                    }
+                }
+                acc
+            }
+            _ => continue,
+        };
+        let trimmed = text.trim();
+        if trimmed.is_empty() { continue }
+        if trimmed.starts_with("<local-command-caveat>") { continue }
+        if trimmed.starts_with("<command-name>") { continue }
+        let normalised: String = trimmed
+            .chars()
+            .map(|c| if c.is_control() || c == '\n' || c == '\r' || c == '\t' { ' ' } else { c })
+            .collect();
+        let collapsed = normalised
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if collapsed.is_empty() { continue }
+        if collapsed.chars().count() <= max_chars {
+            return Some(collapsed);
+        }
+        let cut: String = collapsed.chars().take(max_chars).collect();
+        return Some(format!("{cut}…"));
+    }
+    None
 }
 
 /// Sum assistant-turn token counts from a Claude Code transcript.

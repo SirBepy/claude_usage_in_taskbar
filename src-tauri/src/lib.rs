@@ -320,7 +320,13 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         } else {
             (crate::types::InstanceKind::External, false)
         };
-        let transcript_path = crate::tokens::latest_transcript_for_cwd(&s.cwd);
+        // Per-session jsonl first; the cwd-wide "latest" file would
+        // be identical for every concurrent session in the project.
+        let transcript_path = crate::tokens::transcript_for_session(&s.cwd, &s.session_id)
+            .or_else(|| crate::tokens::latest_transcript_for_cwd(&s.cwd));
+        let name = transcript_path
+            .as_deref()
+            .and_then(|p| crate::tokens::first_user_prompt(p, 60));
         let input = crate::hooks::RegisterInput {
             session_id: s.session_id.clone(),
             cwd: s.cwd,
@@ -334,6 +340,9 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         if created { added += 1; }
         if let Some(bridge) = s.bridge_session_id {
             state.instances.set_bridge_session_id(&s.session_id, bridge);
+        }
+        if let Some(n) = name {
+            state.instances.set_name(&s.session_id, n);
         }
     }
 

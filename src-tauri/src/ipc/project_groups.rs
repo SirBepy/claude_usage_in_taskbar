@@ -227,6 +227,7 @@ mod build_groups_tests {
             started_at: "2026-04-29T10:00:00Z".into(),
             transcript_path: None,
             bridge_session_id: None,
+            name: None,
             ended_at: None,
             end_reason: None,
         };
@@ -249,6 +250,7 @@ mod build_groups_tests {
             started_at: "2026-04-29T10:00:00Z".into(),
             transcript_path: None,
             bridge_session_id: None,
+            name: None,
             ended_at: Some("2026-04-29T11:00:00Z".into()),
             end_reason: Some(crate::types::EndReason::Manual),
         };

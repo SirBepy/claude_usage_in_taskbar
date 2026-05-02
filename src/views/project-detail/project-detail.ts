@@ -31,6 +31,7 @@ interface Instance {
   end_reason?: string | null;
   is_remote?: boolean;
   kind?: string;
+  name?: string | null;
 }
 
 interface InstanceStats {
@@ -39,16 +40,29 @@ interface InstanceStats {
   prompts?: number;
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function instanceRowHtml(i: Instance, stats: InstanceStats | undefined): string {
   const uptime = uptimeFrom(i.started_at);
   const tokens = stats?.tokens ?? 0;
   const turns = stats?.turns ?? 0;
   const prompts = stats?.prompts ?? 0;
-  const pidPart = i.pid > 0 ? `pid ${i.pid}` : "no pid";
+  const fallback = `Session ${i.session_id.slice(0, 8)}`;
+  const label = (i.name && i.name.trim()) || fallback;
   return `
     <div class="instance-row clickable" data-session-id="${i.session_id}">
       <div class="status-dot"></div>
-      <div class="row-line">${pidPart} · up ${uptime} · ${prompts} ${prompts === 1 ? "msg" : "msgs"} · ${formatTokens(tokens)} tokens · ${turns} ${turns === 1 ? "turn" : "turns"}</div>
+      <div class="instance-row-text">
+        <div class="instance-name" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+        <div class="row-line">up ${uptime} · ${prompts} ${prompts === 1 ? "msg" : "msgs"} · ${formatTokens(tokens)} tokens · ${turns} ${turns === 1 ? "turn" : "turns"}</div>
+      </div>
       <span class="chev">›</span>
     </div>
   `;
