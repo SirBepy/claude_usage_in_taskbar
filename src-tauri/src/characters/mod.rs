@@ -2,6 +2,7 @@
 //! Replaces the old SoundPack + per-event override system.
 
 pub mod slots;
+pub mod loader;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,4 +91,14 @@ mod char_tests {
         let dir = std::path::Path::new("/tmp/chars");
         assert_eq!(c.asset_path(dir, "icon.png"), std::path::PathBuf::from("/tmp/chars/peon/icon.png"));
     }
+}
+
+/// Load all characters from the standard app-data dir. Convenience for IPC.
+pub fn list() -> Vec<Character> {
+    let Ok(dir) = crate::settings::paths::characters_dir() else { return vec![]; };
+    loader::load_all(&dir)
+}
+
+pub fn get(id: &str) -> Option<Character> {
+    list().into_iter().find(|c| c.id == id)
 }
