@@ -1,3 +1,4 @@
+pub mod identity;
 pub mod store;
 pub mod overrides;
 pub mod paths;
