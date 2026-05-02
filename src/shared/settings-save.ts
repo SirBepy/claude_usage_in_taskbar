@@ -15,7 +15,6 @@ function byId<T extends HTMLElement = HTMLElement>(id: string): T | null {
 export interface NotifCardRef {
   enabled: HTMLInputElement;
   modes: NodeListOf<HTMLInputElement>;
-  soundPack: HTMLSelectElement;
   soundFile: HTMLSelectElement;
   voiceSelect: HTMLSelectElement;
   template: HTMLInputElement;
@@ -51,7 +50,7 @@ function gatherNotifSettings(prev: SettingsShape): Record<string, unknown> {
     out[t.key] = {
       enabled: c.enabled.checked,
       mode,
-      soundPack: c.soundPack.value || "default",
+      soundPack: "default",
       soundFile: c.soundFile.value,
       voiceName: c.voiceSelect.value || c.voiceSelect.dataset.desired || null,
       template: c.template.value || t.defaultTemplate,

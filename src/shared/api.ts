@@ -97,8 +97,6 @@ export interface InstanceTokenStats {
   prompts?: number;
 }
 
-export interface SoundPack { id: string; [k: string]: unknown; }
-
 export type CharacterSlot =
   | "work_finished"
   | "question_asked"
@@ -199,11 +197,6 @@ export const api = {
     }
   },
 
-  // --- Sound packs (DEPRECATED, removed in T20 along with consumers) ---
-  listSoundPacks: (): Promise<SoundPack[]> => Promise.resolve([]),
-  installSoundPack: (_packId: string): Promise<unknown> => Promise.resolve(),
-  soundPackFileUrl: (_pack: string, _sound: string): Promise<string | null> => Promise.resolve(null),
-
   // --- Characters ---
   listCharacters: (): Promise<Character[]> => invoke("list_characters"),
   assignCharacter: (projectId: string, characterId: string | null): Promise<void> =>
@@ -222,8 +215,6 @@ export const api = {
     invoke("piper_speak_preview", { text, voiceName }),
   playSoundPreview: (filename: string): Promise<unknown> =>
     invoke("play_sound_preview", { filename }),
-  playPackSoundPreview: (pack: string, sound: string): Promise<unknown> =>
-    invoke("play_pack_sound_preview", { pack, sound }),
   piperInstallBinary: async (): Promise<{ ok: boolean; reason: string }> =>
     ({ ok: false, reason: "disabled in MVP" }),
   onPiperProgress: (_cb: (p: unknown) => void): Unlisten => () => { /* no-op */ },

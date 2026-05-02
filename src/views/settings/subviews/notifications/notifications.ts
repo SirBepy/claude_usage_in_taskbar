@@ -7,15 +7,24 @@ import {
 } from "../../../../shared/settings-save";
 import type { NotifCardRef } from "../../../../shared/settings-save";
 import { getSettings } from "../../../../shared/state";
-import {
-  loadPacks,
-  findPack,
-  populatePackSelect,
-  populateSoundSelect,
-  installPack,
-} from "../../../../shared/sound-packs";
 import { api } from "../../../../shared/api";
 import "./notifications.css";
+
+const DEFAULT_SOUNDS: { id: string; label: string }[] = [
+  { id: "sound1.mp3", label: "Sound 1" },
+  { id: "sound2.mp3", label: "Sound 2" },
+  { id: "sound3.mp3", label: "Sound 3" },
+  { id: "sound4.mp3", label: "Sound 4" },
+  { id: "sound5.mp3", label: "Sound 5" },
+  { id: "sound6.mp3", label: "Sound 6" },
+];
+
+function populateDefaultSoundSelect(sel: HTMLSelectElement, currentSoundId: string | undefined): void {
+  sel.innerHTML = DEFAULT_SOUNDS.map((s) => {
+    const selected = s.id === currentSoundId ? " selected" : "";
+    return `<option value="${s.id}"${selected}>${s.label}</option>`;
+  }).join("");
+}
 
 interface PiperVoice { id: string; label: string; installed: boolean; [k: string]: unknown; }
 interface PiperStatus { voices?: PiperVoice[]; [k: string]: unknown; }
@@ -70,7 +79,6 @@ interface FullNotifCardRef extends NotifCardRef {
   root: HTMLElement;
   body: HTMLElement;
   soundRow: HTMLElement;
-  packInstall: HTMLButtonElement;
   soundPreview: HTMLButtonElement;
   voiceRows: HTMLElement;
   voicePreview: HTMLButtonElement;
@@ -100,13 +108,8 @@ async function renderNotifCard(
   const mode = cfg.mode === "voice" ? "voice" : "sound";
   c.modes.forEach((r) => { r.checked = r.value === mode; });
 
-  const packs = await loadPacks();
-  const currentPack = (cfg.soundPack as string) || "default";
   const currentSound = (cfg.soundFile as string) || def.defaultSound;
-  populatePackSelect(c.soundPack, packs, currentPack);
-  const pack = findPack(packs, currentPack);
-  populateSoundSelect(c.soundFile, pack, currentSound);
-  c.packInstall.style.display = (pack && !pack.installed) ? "inline-block" : "none";
+  populateDefaultSoundSelect(c.soundFile, currentSound);
 
   c.template.value = (cfg.template as string) || def.defaultTemplate;
   if (cfg.voiceName) c.voiceSelect.dataset.desired = cfg.voiceName as string;
@@ -121,30 +124,6 @@ function wireNotifCard(type: string): void {
   const onToggle = () => { applyNotifCardVisibility(type); saveSettings(); };
   c.enabled.addEventListener("change", onToggle);
   c.modes.forEach((r) => r.addEventListener("change", onToggle));
-  c.soundPack.addEventListener("change", async () => {
-    const packs = await loadPacks();
-    const pack = findPack(packs, c.soundPack.value);
-    populateSoundSelect(c.soundFile, pack, pack?.sounds[0]?.id);
-    c.packInstall.style.display = (pack && !pack.installed) ? "inline-block" : "none";
-    saveSettings();
-  });
-  c.packInstall.addEventListener("click", async () => {
-    c.packInstall.disabled = true;
-    c.packInstall.textContent = "Installing...";
-    try {
-      const packs = await installPack(c.soundPack.value);
-      const pack = findPack(packs, c.soundPack.value);
-      populatePackSelect(c.soundPack, packs, c.soundPack.value);
-      populateSoundSelect(c.soundFile, pack, c.soundFile.value);
-      c.packInstall.style.display = "none";
-    } catch (e) {
-      console.error("[pack install] failed", e);
-      alert("Sound pack install failed. See console.");
-    } finally {
-      c.packInstall.disabled = false;
-      c.packInstall.textContent = "Install";
-    }
-  });
   c.soundFile.addEventListener("change", saveSettings);
   c.template.addEventListener("input", saveSettings);
   c.voiceSelect.addEventListener("change", () => {
@@ -152,7 +131,7 @@ function wireNotifCard(type: string): void {
     saveSettings();
   });
   c.soundPreview.onclick = () => {
-    api.playPackSoundPreview(c.soundPack.value, c.soundFile.value).catch((e) => {
+    api.playSoundPreview(c.soundFile.value).catch((e) => {
       console.error("[sound preview] failed", e);
     });
   };
@@ -198,8 +177,6 @@ function buildNotifCards(): void {
       body: node.querySelector<HTMLElement>(".notif-body")!,
       modes: node.querySelectorAll<HTMLInputElement>(".notif-mode"),
       soundRow: node.querySelector<HTMLElement>(".notif-sound-row")!,
-      soundPack: node.querySelector<HTMLSelectElement>(".notif-sound-pack")!,
-      packInstall: node.querySelector<HTMLButtonElement>(".notif-pack-install")!,
       soundFile: node.querySelector<HTMLSelectElement>(".notif-sound-file")!,
       soundPreview: node.querySelector<HTMLButtonElement>(".notif-sound-preview")!,
       voiceRows: node.querySelector<HTMLElement>(".notif-voice-rows")!,
@@ -211,7 +188,6 @@ function buildNotifCards(): void {
     notifCards[t.key] = {
       enabled: ref.enabled,
       modes: ref.modes,
-      soundPack: ref.soundPack,
       soundFile: ref.soundFile,
       voiceSelect: ref.voiceSelect,
       template: ref.template,
@@ -363,9 +339,7 @@ function template() {
             <div class="option notif-sound-row" style="display:none">
               <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-                <select class="notif-sound-pack"></select>
                 <select class="notif-sound-file"></select>
-                <button class="btn-secondary notif-pack-install" style="display:none;padding:3px 10px;font-size:0.8rem">Install</button>
                 <button class="btn-secondary notif-sound-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
               </div>
             </div>
