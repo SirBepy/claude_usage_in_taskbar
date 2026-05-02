@@ -94,3 +94,10 @@ pub fn sound_packs_dir() -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(&p)?;
     Ok(p)
 }
+
+pub fn characters_dir() -> anyhow::Result<std::path::PathBuf> {
+    let d = ensure_data_dir()?;
+    let p = d.join("characters");
+    std::fs::create_dir_all(&p)?;
+    Ok(p)
+}
