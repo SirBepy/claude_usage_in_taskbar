@@ -1,10 +1,9 @@
 //! Notification firing: workFinished / questionAsked / thresholdCrossed.
 
 use crate::notifications::audio;
-use crate::tray::NotifMode;
-use crate::settings::overrides::{self, ProjectOverrides};
+use crate::tray::{NotifMode, NotificationRule};
 use crate::state::AppState;
-use crate::types::Settings;
+use crate::types::{Avatar, Settings};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,32 +15,52 @@ pub struct NotifContext {
     pub percent: Option<u32>,
 }
 
-/// Resolves the active notification rule for this event + project.
-/// Returns the project-specific override if one is enabled, else the global default.
-pub fn resolve_notif_config(
+/// Sentinel used in `NotificationRule.sound_pack` to indicate that
+/// `sound_file` carries an absolute path resolved from a character slot.
+pub const CHARACTER_PACK_SENTINEL: &str = "__character__";
+
+/// Character-aware resolver. For `WorkFinished` / `QuestionAsked`, if the
+/// project at `cwd_key` has `Avatar::Character(id)` and that character has a
+/// non-empty slot, returns a synthetic rule whose `sound_file` is an absolute
+/// path. Otherwise returns the global default rule for the kind.
+/// `ThresholdCrossed` always returns the global default.
+pub fn resolve_with_character(
     cfg: &crate::tray::NotificationsConfig,
-    overrides: &std::collections::HashMap<String, ProjectOverrides>,
+    settings: &Settings,
     kind: NotifKind,
     cwd_key: Option<&str>,
-) -> crate::tray::NotificationRule {
+) -> NotificationRule {
     let default_rule = match kind {
         NotifKind::WorkFinished     => cfg.work_finished.clone(),
         NotifKind::QuestionAsked    => cfg.question_asked.clone(),
         NotifKind::ThresholdCrossed => cfg.threshold_crossed.clone(),
     };
+    if matches!(kind, NotifKind::ThresholdCrossed) { return default_rule; }
     let Some(key) = cwd_key else { return default_rule; };
-    let Some(po) = overrides.get(key) else { return default_rule; };
-    let override_rule = match kind {
-        NotifKind::WorkFinished     => po.work_finished.clone(),
-        NotifKind::QuestionAsked    => po.question_asked.clone(),
-        NotifKind::ThresholdCrossed => po.threshold_crossed.clone(),
+    let Some(proj) = settings.projects.iter().find(|p| {
+        crate::settings::store::project_key(&p.path) == key
+    }) else { return default_rule; };
+    let Avatar::Character(char_id) = &proj.avatar else { return default_rule; };
+    let Some(character) = crate::characters::get(char_id) else { return default_rule; };
+    let slot = match kind {
+        NotifKind::WorkFinished  => crate::characters::slots::Slot::WorkFinished,
+        NotifKind::QuestionAsked => crate::characters::slots::Slot::QuestionAsked,
+        NotifKind::ThresholdCrossed => unreachable!(),
     };
-    override_rule.unwrap_or(default_rule)
+    let files = character.slot_files(slot);
+    let Some(pick) = crate::characters::slots::random_pick(files) else { return default_rule; };
+    let Ok(dir) = crate::settings::paths::characters_dir() else { return default_rule; };
+    let abs = dir.join(&character.id).join(pick);
+    NotificationRule {
+        enabled: true,
+        mode: NotifMode::Sound,
+        sound_pack: CHARACTER_PACK_SENTINEL.into(),
+        sound_file: abs.to_string_lossy().into_owned(),
+        voice_name: None,
+        template: String::new(),
+    }
 }
 
-/// Pure helper: decide whether a notification of `mode` must be dropped
-/// given the current settings. Keeps `fire()` thin and testable without
-/// a live Tauri app.
 pub(crate) fn should_suppress(settings: &Settings, mode: NotifMode) -> bool {
     if settings.mute_all() { return true; }
     matches!(mode, NotifMode::Sound | NotifMode::Voice) && settings.mute_sounds()
@@ -50,19 +69,18 @@ pub(crate) fn should_suppress(settings: &Settings, mode: NotifMode) -> bool {
 pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option<&str>) {
     let state = app.state::<AppState>();
     let settings_snapshot = state.settings.lock().unwrap().clone();
-
     let cfg: crate::tray::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
-    let overrides = overrides::parse(&settings_snapshot);
-    let rule = resolve_notif_config(&cfg, &overrides, kind, cwd_key);
+    let rule = resolve_with_character(&cfg, &settings_snapshot, kind, cwd_key);
     if !rule.enabled { return; }
-
     if should_suppress(&settings_snapshot, rule.mode) { return; }
-
-    // TODO: when OS toast channel lands, add a `NotifMode::Toast` arm here
-    //       and gate it on `settings_snapshot.mute_system_notifications()`.
     match rule.mode {
-        // TEMP: replaced by character-aware path in next task
-        NotifMode::Sound => audio::play_sound_file(app, &rule.sound_file),
+        NotifMode::Sound => {
+            if rule.sound_pack == CHARACTER_PACK_SENTINEL {
+                audio::play_path(app, std::path::Path::new(&rule.sound_file));
+            } else {
+                audio::play_sound_file(app, &rule.sound_file);
+            }
+        }
         NotifMode::Voice => {
             let text = render_template(&rule.template, &ctx);
             if text.is_empty() { return; }
@@ -112,8 +130,7 @@ fn speak(app: &AppHandle, text: &str, voice: Option<&str>) {
         }
     }
     let _ = app.emit("speak-fallback", serde_json::json!({
-        "text": text,
-        "voiceName": voice,
+        "text": text, "voiceName": voice,
     }));
 }
 
@@ -122,35 +139,48 @@ pub fn speak_public(app: &AppHandle, text: &str, voice: Option<&str>) { speak(ap
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tray::NotificationsConfig;
+    use crate::types::{Avatar, ProjectConfig};
 
-    use crate::tray::NotifMode;
-    use crate::types::Settings;
-
-    fn settings_with(key: &str, val: bool) -> Settings {
+    fn settings_with_project(path: &str, character_id: Option<&str>) -> Settings {
         let mut s = Settings::default();
-        s.extra.insert(key.into(), serde_json::Value::Bool(val));
+        let avatar = match character_id {
+            Some(id) => Avatar::Character(id.into()),
+            None => Avatar::None,
+        };
+        s.projects.push(ProjectConfig {
+            id: "test-id".into(),
+            path: std::path::PathBuf::from(path),
+            name: "test".into(),
+            avatar,
+            automation: None,
+            created_at: "2026-05-02T00:00:00Z".into(),
+            last_active_at: None,
+        });
         s
     }
 
     #[test]
     fn should_suppress_returns_false_when_all_flags_off() {
         let s = Settings::default();
-        assert!(!super::should_suppress(&s, NotifMode::Sound));
-        assert!(!super::should_suppress(&s, NotifMode::Voice));
+        assert!(!should_suppress(&s, NotifMode::Sound));
+        assert!(!should_suppress(&s, NotifMode::Voice));
     }
 
     #[test]
     fn should_suppress_returns_true_when_mute_all_regardless_of_mode() {
-        let s = settings_with("muteAll", true);
-        assert!(super::should_suppress(&s, NotifMode::Sound));
-        assert!(super::should_suppress(&s, NotifMode::Voice));
+        let mut s = Settings::default();
+        s.extra.insert("muteAll".into(), serde_json::Value::Bool(true));
+        assert!(should_suppress(&s, NotifMode::Sound));
+        assert!(should_suppress(&s, NotifMode::Voice));
     }
 
     #[test]
     fn should_suppress_mutes_sound_and_voice_when_mute_sounds() {
-        let s = settings_with("muteSounds", true);
-        assert!(super::should_suppress(&s, NotifMode::Sound));
-        assert!(super::should_suppress(&s, NotifMode::Voice));
+        let mut s = Settings::default();
+        s.extra.insert("muteSounds".into(), serde_json::Value::Bool(true));
+        assert!(should_suppress(&s, NotifMode::Sound));
+        assert!(should_suppress(&s, NotifMode::Voice));
     }
 
     #[test]
@@ -182,41 +212,45 @@ mod tests {
     }
 
     #[test]
-    fn resolver_returns_default_when_no_cwd() {
-        use crate::tray::NotificationsConfig;
-        use std::collections::HashMap;
+    fn character_resolver_falls_back_to_global_when_no_cwd() {
         let cfg = NotificationsConfig::default();
-        let rule = resolve_notif_config(&cfg, &HashMap::new(), NotifKind::WorkFinished, None);
-        assert_eq!(rule.sound_file, "sound1.mp3");
+        let s = Settings::default();
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None);
         assert_eq!(rule.sound_pack, "default");
     }
 
     #[test]
-    fn resolver_returns_default_when_project_has_no_override() {
-        use crate::tray::NotificationsConfig;
-        use std::collections::HashMap;
+    fn character_resolver_falls_back_to_global_when_no_project_match() {
         let cfg = NotificationsConfig::default();
-        let rule = resolve_notif_config(&cfg, &HashMap::new(), NotifKind::WorkFinished, Some("C:/x"));
-        assert_eq!(rule.sound_file, "sound1.mp3");
+        let s = Settings::default();
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some("C:/missing"));
+        assert_eq!(rule.sound_pack, "default");
     }
 
     #[test]
-    fn resolver_returns_override_when_enabled() {
-        use crate::tray::{NotificationsConfig, NotifMode, NotificationRule};
-        use crate::settings::overrides::ProjectOverrides;
-        use std::collections::HashMap;
+    fn character_resolver_falls_back_to_global_when_avatar_is_not_character() {
         let cfg = NotificationsConfig::default();
-        let mut map = HashMap::new();
-        map.insert("C:/proj".into(), ProjectOverrides {
-            work_finished: Some(NotificationRule {
-                enabled: true, mode: NotifMode::Sound,
-                sound_pack: "peon".into(), sound_file: "work-work.mp3".into(),
-                voice_name: None, template: "".into(),
-            }),
-            ..Default::default()
-        });
-        let rule = resolve_notif_config(&cfg, &map, NotifKind::WorkFinished, Some("C:/proj"));
-        assert_eq!(rule.sound_pack, "peon");
-        assert_eq!(rule.sound_file, "work-work.mp3");
+        let s = settings_with_project("C:/proj", None);
+        let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
+        assert_eq!(rule.sound_pack, "default");
+    }
+
+    #[test]
+    fn character_resolver_returns_global_for_threshold_crossed_even_with_character() {
+        let cfg = NotificationsConfig::default();
+        let s = settings_with_project("C:/proj", Some("peon"));
+        let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::ThresholdCrossed, Some(&key));
+        assert_eq!(rule.sound_pack, "default");
+    }
+
+    #[test]
+    fn character_resolver_falls_back_to_global_when_character_not_installed() {
+        let cfg = NotificationsConfig::default();
+        let s = settings_with_project("C:/proj", Some("nonexistent-character"));
+        let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
+        assert_eq!(rule.sound_pack, "default");
     }
 }
