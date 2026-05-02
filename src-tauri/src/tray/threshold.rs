@@ -15,6 +15,13 @@ impl Default for DefaultDisplay { fn default() -> Self { Self::Icon } }
 pub enum IconStyle { Rings, Bars, FourBars }
 impl Default for IconStyle { fn default() -> Self { Self::Rings } }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SafePaceColorMode {
+    Default,           // soft blue (#6496dc)
+    Urgency,           // same as the actual urgency bar
+    Fixed([u8; 3]),    // user-picked hex
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ColorMode { Threshold, Pace }
@@ -78,6 +85,8 @@ pub struct IconSettings {
     pub pace_band: f32,
     pub pace_colors: PaceColors,
     pub apply_color_to: ColorApplyTo,
+    pub safe_sess_color: SafePaceColorMode,
+    pub safe_weekly_color: SafePaceColorMode,
 }
 
 impl Default for IconSettings {
@@ -94,6 +103,8 @@ impl Default for IconSettings {
             pace_band: 10.0,
             pace_colors: PaceColors::default(),
             apply_color_to: ColorApplyTo::default(),
+            safe_sess_color: SafePaceColorMode::Default,
+            safe_weekly_color: SafePaceColorMode::Default,
         }
     }
 }
@@ -170,6 +181,24 @@ fn parse_enum<T: Default>(raw: Option<&Value>, map: &[(&str, T)]) -> T where T: 
     T::default()
 }
 
+fn parse_safe_color(raw: Option<&Value>) -> SafePaceColorMode {
+    match val_str(raw) {
+        None | Some("") => SafePaceColorMode::Default,
+        Some("auto") => SafePaceColorMode::Urgency,
+        Some(hex) => {
+            let h = hex.trim_start_matches('#');
+            if h.len() == 6 {
+                if let (Ok(r), Ok(g), Ok(b)) = (
+                    u8::from_str_radix(&h[0..2], 16),
+                    u8::from_str_radix(&h[2..4], 16),
+                    u8::from_str_radix(&h[4..6], 16),
+                ) { return SafePaceColorMode::Fixed([r, g, b]); }
+            }
+            SafePaceColorMode::Default
+        }
+    }
+}
+
 fn parse_color_stops(raw: Option<&Value>) -> Vec<ColorStop> {
     let Some(arr) = raw.and_then(|x| x.as_array()) else { return IconSettings::default().color_thresholds; };
     let mut out: Vec<ColorStop> = arr.iter().filter_map(|item| {
@@ -229,6 +258,8 @@ impl TryFrom<&Settings> for IconSettings {
             pace_band: val_f64(e.get("paceBand")).unwrap_or(10.0) as f32,
             pace_colors: parse_pace_colors(e.get("paceColors")),
             apply_color_to: parse_apply_to(e.get("colorApplyTo")),
+            safe_sess_color: parse_safe_color(e.get("fourBarsSessionSafeColor")),
+            safe_weekly_color: parse_safe_color(e.get("fourBarsWeeklySafeColor")),
         })
     }
 }

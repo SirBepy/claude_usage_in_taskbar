@@ -116,6 +116,8 @@ export function saveSettings(): void {
       over: valOr("paceColorOver", prevPace.over || "#e74c3c"),
     },
     colorThresholds: thresholds,
+    fourBarsSessionSafeColor: valOr("fourBarsSessionSafeColor", (prev.fourBarsSessionSafeColor as string) || ""),
+    fourBarsWeeklySafeColor: valOr("fourBarsWeeklySafeColor", (prev.fourBarsWeeklySafeColor as string) || ""),
     muteAll: chkOr("muteAllSwitch", !!prev.muteAll),
     muteSounds: chkOr("muteSoundsSwitch", !!prev.muteSounds),
     muteSystemNotifications: chkOr("muteSystemSwitch", !!prev.muteSystemNotifications),

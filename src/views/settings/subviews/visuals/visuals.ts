@@ -34,6 +34,12 @@ function createColorRow(min = 0, color = "#ffffff"): HTMLElement {
   return row;
 }
 
+function updateFourBarsColorsVisibility(): void {
+  const iconStyleEl = $("iconStyle") as HTMLSelectElement | null;
+  const section = $("fourBarsSafeColorsSection");
+  if (section) section.style.display = iconStyleEl?.value === "fourbars" ? "block" : "none";
+}
+
 function updateColorModeVisibility(): void {
   const colorMode = $("colorMode") as HTMLSelectElement | null;
   const thresholdSection = $("thresholdSection");
@@ -121,7 +127,9 @@ function hydrateVisuals(): void {
   updateColorModeVisibility();
   if (iconStyleSection) iconStyleSection.style.display = "flex";
 
-  for (const el of [iconStyle, timeStyle, tooltipLayout]) el.addEventListener("change", saveSettings);
+  timeStyle.addEventListener("change", saveSettings);
+  tooltipLayout.addEventListener("change", saveSettings);
+  iconStyle.addEventListener("change", () => { updateFourBarsColorsVisibility(); saveSettings(); });
   for (const el of [tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
     el.addEventListener("change", saveSettings);
   }
@@ -133,6 +141,34 @@ function hydrateVisuals(): void {
   paceColorNearOver.addEventListener("change", saveSettings);
   paceColorOver.addEventListener("change", saveSettings);
   addColorBtn.onclick = () => { colorContainer.appendChild(createColorRow(0, "#9d7dfc")); saveSettings(); };
+
+  // 4-bars safe-pace color pickers
+  const wireSafePicker = (hiddenId: string, pickerId: string, autoBtnId: string, stored: string) => {
+    const hidden = $(hiddenId) as HTMLInputElement | null;
+    const picker = $(pickerId) as HTMLInputElement | null;
+    const autoBtn = $(autoBtnId) as HTMLButtonElement | null;
+    if (!hidden || !picker || !autoBtn) return;
+    const isAuto = stored === "auto";
+    hidden.value = stored;
+    picker.value = isAuto || !stored ? "#6496dc" : stored;
+    picker.disabled = isAuto;
+    picker.style.opacity = isAuto ? "0.4" : "";
+    autoBtn.textContent = isAuto ? "Auto (on)" : "Auto";
+    picker.addEventListener("change", () => { hidden.value = picker.value; saveSettings(); });
+    autoBtn.addEventListener("click", () => {
+      const nowAuto = hidden.value !== "auto";
+      hidden.value = nowAuto ? "auto" : picker.value;
+      picker.disabled = nowAuto;
+      picker.style.opacity = nowAuto ? "0.4" : "";
+      autoBtn.textContent = nowAuto ? "Auto (on)" : "Auto";
+      saveSettings();
+    });
+  };
+  wireSafePicker("fourBarsSessionSafeColor", "fourBarsSessionSafeColorPicker",
+                 "fourBarsSessionSafeAutoBtn", (s.fourBarsSessionSafeColor as string) || "");
+  wireSafePicker("fourBarsWeeklySafeColor", "fourBarsWeeklySafeColorPicker",
+                 "fourBarsWeeklySafeAutoBtn", (s.fourBarsWeeklySafeColor as string) || "");
+  updateFourBarsColorsVisibility();
 
   wireInfoTooltips(document.getElementById("app") || document);
 }
@@ -181,6 +217,26 @@ function template() {
               <option value="bars">Bars</option>
               <option value="fourbars">4 Bars</option>
             </select>
+          </div>
+        </div>
+
+        <div class="section" id="fourBarsSafeColorsSection" style="display:none">
+          <div class="section-title">4 BARS - SAFE PACE COLORS</div>
+          <div class="option">
+            <span class="option-label">Session safe</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="color" id="fourBarsSessionSafeColorPicker" value="#6496dc">
+              <button id="fourBarsSessionSafeAutoBtn" class="btn-secondary">Auto</button>
+            </div>
+            <input type="hidden" id="fourBarsSessionSafeColor" value="">
+          </div>
+          <div class="option">
+            <span class="option-label">Weekly safe</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input type="color" id="fourBarsWeeklySafeColorPicker" value="#6496dc">
+              <button id="fourBarsWeeklySafeAutoBtn" class="btn-secondary">Auto</button>
+            </div>
+            <input type="hidden" id="fourBarsWeeklySafeColor" value="">
           </div>
         </div>
 
