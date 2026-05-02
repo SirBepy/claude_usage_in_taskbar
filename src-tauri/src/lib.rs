@@ -23,6 +23,11 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = paths::ensure_data_dir();
+    match crate::characters::bundled::ensure_bundled() {
+        Ok(n) if n > 0 => log::info!("characters: copied {n} bundled character(s) into app-data"),
+        Ok(_) => {}
+        Err(e) => log::warn!("characters: bundled copy failed: {e:#}"),
+    }
     let settings_path = paths::settings_file().expect("settings path");
     let session_path = paths::session_file().expect("session path");
     let loaded_settings = settings::load(&settings_path);
