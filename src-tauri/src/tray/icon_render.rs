@@ -1,20 +1,20 @@
-//! Renders the 22x22 tray icon as RGBA PNG bytes.
+//! Renders the 32x32 tray icon as RGBA PNG bytes.
 //!
 //! Ports the AA blend model from `src/core/icon.js` — every pixel in the
 //! icon range gets a soft alpha based on distance from the ring's boundary,
 //! then blended over whatever is already in the buffer (pre-multiplied).
 
-use crate::tray::threshold::{ColorMode, IconSettings, IconStyle};
+use crate::tray::threshold::{ColorMode, IconSettings, IconStyle, SafePaceColorMode};
 use image::{ImageBuffer, ImageEncoder, Rgba, RgbaImage};
 
-pub const SIZE: u32 = 22;
+pub const SIZE: u32 = 32;
 const CX: f32 = SIZE as f32 / 2.0;
 const CY: f32 = SIZE as f32 / 2.0;
 
-const OUTER_R_OUT: f32 = 10.5;
-const OUTER_R_IN:  f32 = 7.5;
-const INNER_R_OUT: f32 = 5.5;
-const INNER_R_IN:  f32 = 3.5;
+const OUTER_R_OUT: f32 = 15.0;
+const OUTER_R_IN:  f32 = 11.0;
+const INNER_R_OUT: f32 = 8.0;
+const INNER_R_IN:  f32 = 5.0;
 
 const TRACK: [u8; 3] = [60, 60, 60];
 const SAFE_PACE_COLOR: [u8; 3] = [100, 150, 220];
@@ -43,9 +43,9 @@ pub struct IconCtx<'a> {
 /// a glance that an update is downloading or staged.
 fn paint_update_badge(img: &mut RgbaImage) {
     const BADGE_COLOR: [u8; 3] = [74, 144, 226];
-    let cx = SIZE as f32 - 4.0;
-    let cy = SIZE as f32 - 4.0;
-    let r = 3.0;
+    let cx = SIZE as f32 - 6.0;
+    let cy = SIZE as f32 - 6.0;
+    let r = 4.0;
     for y in 0..SIZE {
         for x in 0..SIZE {
             let dx = x as f32 - cx + 0.5;
@@ -111,9 +111,9 @@ fn color_for(pct: Option<f32>, ctx: &IconCtx, safe: Option<f32>, is_icon: bool) 
 
 fn overlay_size_px(text: &str) -> f32 {
     match text.chars().count() {
-        0 | 1 => 24.0,
-        2 => 22.0,
-        _ => 16.0,
+        0 | 1 => 34.0,
+        2 => 32.0,
+        _ => 23.0,
     }
 }
 
@@ -184,27 +184,37 @@ fn draw_ring_arc(img: &mut RgbaImage, pct: Option<f32>, r_out: f32, r_in: f32, f
     }
 }
 
+fn resolve_safe_color(mode: SafePaceColorMode, urgency: [u8; 3]) -> [u8; 3] {
+    match mode {
+        SafePaceColorMode::Default => SAFE_PACE_COLOR,
+        SafePaceColorMode::Urgency => urgency,
+        SafePaceColorMode::Fixed(rgb) => rgb,
+    }
+}
+
 fn draw_four_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
     let sess_color = color_for(sess, ctx, ctx.session_safe, true);
     let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
-    // session actual | session safe pace | weekly actual | weekly safe pace
-    draw_column(img, 1, 4, sess.unwrap_or(0.0), sess_color);
-    draw_column(img, 6, 9, ctx.session_safe.unwrap_or(0.0), SAFE_PACE_COLOR);
-    draw_column(img, 12, 15, weekly.unwrap_or(0.0), weekly_color);
-    draw_column(img, 17, 20, ctx.weekly_safe.unwrap_or(0.0), SAFE_PACE_COLOR);
+    let sess_safe_color = resolve_safe_color(ctx.settings.safe_sess_color, sess_color);
+    let weekly_safe_color = resolve_safe_color(ctx.settings.safe_weekly_color, weekly_color);
+    // [sess-actual|sess-safe] 4px gap [weekly-actual|weekly-safe] — 7px each, no intra-group gap
+    draw_column(img, 0, 6, sess.unwrap_or(0.0), sess_color);
+    draw_column(img, 7, 13, ctx.session_safe.unwrap_or(0.0), sess_safe_color);
+    draw_column(img, 18, 24, weekly.unwrap_or(0.0), weekly_color);
+    draw_column(img, 25, 31, ctx.weekly_safe.unwrap_or(0.0), weekly_safe_color);
 }
 
 fn draw_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
     let sess_color = color_for(sess, ctx, ctx.session_safe, /*is_icon=*/true);
     let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
-    draw_column(img, 3, 8, sess.unwrap_or(0.0), sess_color);
-    draw_column(img, 13, 18, weekly.unwrap_or(0.0), weekly_color);
+    draw_column(img, 4, 13, sess.unwrap_or(0.0), sess_color);
+    draw_column(img, 18, 27, weekly.unwrap_or(0.0), weekly_color);
 }
 
 fn draw_column(img: &mut RgbaImage, x0: u32, x1: u32, pct: f32, fg: [u8; 3]) {
-    let fill_h = (pct.clamp(0.0, 100.0) / 100.0) * 18.0;
-    for y in 2..=20u32 {
-        let filled = (20 - y) as f32 <= fill_h;
+    let fill_h = (pct.clamp(0.0, 100.0) / 100.0) * 28.0;
+    for y in 2..=30u32 {
+        let filled = (30 - y) as f32 <= fill_h;
         let (r, g, b, a) = if filled {
             (fg[0], fg[1], fg[2], 255)
         } else {
@@ -234,25 +244,26 @@ pub fn render_spin(frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
         let blue = [74u8, 144, 226];
         let pulse = ((frame as f32 * 0.2).sin()).abs();
         let alpha = (150.0 + pulse * 105.0).round() as u8;
-        for y in 2..=20 {
-            for x in 3..=8 {
+        for y in 2..=30 {
+            for x in 4..=13 {
                 img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha]));
             }
         }
-        draw_column(&mut img, 13, 18, weekly.unwrap_or(0.0),
+        draw_column(&mut img, 18, 27, weekly.unwrap_or(0.0),
                     color_for(weekly, ctx, ctx.weekly_safe, /*is_icon=*/true));
     } else if ctx.settings.icon_style == IconStyle::FourBars {
         // four-bars: pulse both session columns (actual + safe), weekly steady.
         let blue = [74u8, 144, 226];
         let pulse = ((frame as f32 * 0.2).sin()).abs();
         let alpha = (150.0 + pulse * 105.0).round() as u8;
-        for y in 2..=20 {
-            for x in 1..=4 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
-            for x in 6..=9 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
+        for y in 2..=30 {
+            for x in 0..=6 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
+            for x in 7..=13 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
         }
-        draw_column(&mut img, 12, 15, weekly.unwrap_or(0.0),
-                    color_for(weekly, ctx, ctx.weekly_safe, true));
-        draw_column(&mut img, 17, 20, ctx.weekly_safe.unwrap_or(0.0), SAFE_PACE_COLOR);
+        let wc = color_for(weekly, ctx, ctx.weekly_safe, true);
+        draw_column(&mut img, 18, 24, weekly.unwrap_or(0.0), wc);
+        draw_column(&mut img, 25, 31, ctx.weekly_safe.unwrap_or(0.0),
+                    resolve_safe_color(ctx.settings.safe_weekly_color, wc));
     } else {
         draw_spin_arc(&mut img, start, arc_len, OUTER_R_OUT, OUTER_R_IN, LOADING);
         draw_ring_arc(&mut img, weekly, INNER_R_OUT, INNER_R_IN,
@@ -305,6 +316,7 @@ mod tests {
     use image::GenericImageView;
 
     fn test_settings() -> IconSettings {
+        use crate::tray::threshold::SafePaceColorMode;
         IconSettings {
             default_display: DefaultDisplay::Icon,
             icon_style: IconStyle::Rings,
@@ -317,6 +329,8 @@ mod tests {
             pace_band: 10.0,
             pace_colors: PaceColors::default(),
             apply_color_to: ColorApplyTo::default(),
+            safe_sess_color: SafePaceColorMode::Default,
+            safe_weekly_color: SafePaceColorMode::Default,
         }
     }
 
@@ -332,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn decoded_dimensions_are_22x22() {
+    fn decoded_dimensions_are_32x32() {
         let bytes = render(Some(40.0), Some(80.0), &IconCtx {
             settings: &test_settings(),
             display_mode: DisplayMode::Icon,
@@ -396,8 +410,8 @@ mod tests {
         });
         let img = image::load_from_memory(&bytes).unwrap();
         // Sample a pixel near the outer ring's outer edge.
-        // center=11,11; r_out=10.5. Pixel (21, 11) is right at the outer edge.
-        let edge = img.get_pixel(21, 11);
+        // center=16,16; r_out=15.0. Pixel (31, 16) is right at the outer edge.
+        let edge = img.get_pixel(31, 16);
         assert!(edge[3] > 0 && edge[3] < 255, "expected AA alpha, got {}", edge[3]);
     }
 
@@ -433,10 +447,10 @@ mod tests {
             updating: false,
         });
         let img = image::load_from_memory(&bytes).unwrap();
-        // Count lit pixels in the center band (rows 7-14)
+        // Count lit pixels in the center band (rows 10-22)
         let mut lit_center = 0;
-        for y in 7..15 {
-            for x in 0..22 {
+        for y in 10..22 {
+            for x in 0..32 {
                 if img.get_pixel(x, y)[3] > 100 { lit_center += 1; }
             }
         }
@@ -492,14 +506,14 @@ mod tests {
             updating: false,
         });
         let img = image::load_from_memory(&bytes).unwrap();
-        // Left bar x∈[3,8] — count fully-opaque pixels in that column range.
+        // Left bar x∈[4,13] — count fully-opaque pixels in that column range.
         let mut left_filled = 0;
         let mut right_filled = 0;
-        for y in 2..=20 {
-            for x in 3..=8 {
+        for y in 2..=30 {
+            for x in 4..=13 {
                 if img.get_pixel(x, y)[3] == 255 { left_filled += 1; }
             }
-            for x in 13..=18 {
+            for x in 18..=27 {
                 if img.get_pixel(x, y)[3] == 255 { right_filled += 1; }
             }
         }
