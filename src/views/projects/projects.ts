@@ -3,7 +3,7 @@ import { openSidemenu } from "../../shared/sidemenu";
 import "./projects.css";
 import { setTokenHistory } from "../../shared/state";
 import { openProjectDetail } from "../../shared/navigation";
-import { renderAvatar, escapeProjHtml, type Avatar } from "../../shared/projects";
+import { renderAvatar, hydrateCharacterAvatars, escapeProjHtml, type Avatar } from "../../shared/projects";
 import { formatTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
 import { api, type ProjectGroup } from "../../shared/api";
@@ -110,6 +110,7 @@ export async function renderProjectsList(): Promise<void> {
       if (cwd) openProjectDetail(cwd);
     };
   });
+  void hydrateCharacterAvatars(container);
 
   setupBackfillBtn();
 }
