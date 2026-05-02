@@ -6,6 +6,7 @@ pub mod channels;
 pub mod tokens;
 pub mod auth;
 pub mod misc;
+pub mod characters;
 
 pub use usage::*;
 pub use settings::*;
@@ -15,6 +16,7 @@ pub use channels::*;
 pub use tokens::*;
 pub use auth::*;
 pub use misc::*;
+pub use characters::*;
 
 // Re-export test helper submodules so integration tests can reach them via
 // `claude_usage_tauri_lib::ipc::projects_test_helpers` and

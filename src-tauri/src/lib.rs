@@ -124,6 +124,11 @@ pub fn run() {
             ipc::register_hooks_globally,
             ipc::skip_hook_registration,
             ipc::list_project_groups,
+            ipc::list_characters,
+            ipc::assign_character,
+            ipc::play_character_slot,
+            ipc::character_asset_url,
+            ipc::get_characters_dir,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
