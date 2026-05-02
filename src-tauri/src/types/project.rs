@@ -8,6 +8,7 @@ pub enum Avatar {
     None,
     Emoji(String),
     Image(std::path::PathBuf),
+    Character(String),
 }
 
 impl Default for Avatar {
@@ -116,6 +117,15 @@ mod tests {
         let a = Avatar::Emoji("🦊".into());
         let raw = serde_json::to_string(&a).unwrap();
         assert_eq!(raw, r#"{"kind":"emoji","value":"🦊"}"#);
+        let back: Avatar = serde_json::from_str(&raw).unwrap();
+        assert_eq!(a, back);
+    }
+
+    #[test]
+    fn avatar_character_serializes_as_tagged_enum() {
+        let a = Avatar::Character("peon".into());
+        let raw = serde_json::to_string(&a).unwrap();
+        assert_eq!(raw, r#"{"kind":"character","value":"peon"}"#);
         let back: Avatar = serde_json::from_str(&raw).unwrap();
         assert_eq!(a, back);
     }
