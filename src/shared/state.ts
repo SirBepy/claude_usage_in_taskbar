@@ -22,7 +22,6 @@ export interface SettingsShape {
   projects?: ProjectConfig[];
   projectAliases?: AliasMap;
   projectBlacklist?: string[];
-  projectNotifOverrides?: Record<string, unknown>;
   colorApplyTo?: Record<string, boolean | undefined>;
   colorMode?: "threshold" | "pace";
   colorThresholds?: Array<{ min: number; color: string }>;

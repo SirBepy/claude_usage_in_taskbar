@@ -258,7 +258,7 @@ export async function renderProjectDetailView(
       btn.onclick = () => {
         menu.classList.add("hidden");
         const kind = btn.dataset.menuItem;
-        if (kind === "notif-overrides") openProjectSubview("project-notif-overrides");
+        if (kind === "character-pick") openProjectSubview("project-character-pick");
         else if (kind === "automation") openProjectSubview("project-automation");
         else if (kind === "folder-mapping") openProjectSubview("project-folder-mapping");
       };
@@ -498,7 +498,7 @@ function template() {
             <i class="ph ph-dots-three-vertical"></i>
           </button>
           <div id="projectDetailMenu" class="menu-popover hidden" role="menu">
-            <button class="menu-item" data-menu-item="notif-overrides" role="menuitem">Notification overrides</button>
+            <button class="menu-item" data-menu-item="character-pick" role="menuitem">Character</button>
             <button class="menu-item" data-menu-item="automation" role="menuitem">Automation</button>
             <button class="menu-item" data-menu-item="folder-mapping" role="menuitem">Folder mapping</button>
           </div>

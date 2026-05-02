@@ -1,0 +1,32 @@
+.view-project-character-pick .view-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.view-project-character-pick .view-body label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.view-project-character-pick .view-body select {
+  width: 100%;
+  padding: 8px;
+  font-size: 0.95rem;
+}
+
+.view-project-character-pick .muted {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.view-project-character-pick .avatar-mini {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-bg, #222);
+  border-radius: 6px;
+}

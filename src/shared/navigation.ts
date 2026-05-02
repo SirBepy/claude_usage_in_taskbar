@@ -26,7 +26,7 @@ const LEGACY_VIEWS = [
   "settings-sync",
   "project-detail",
   "graph-detail",
-  "project-notif-overrides",
+  "project-character-pick",
   "project-automation",
   "project-folder-mapping",
   "project-sessions",

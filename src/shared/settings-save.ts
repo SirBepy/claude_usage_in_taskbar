@@ -124,7 +124,6 @@ export function saveSettings(): void {
     notifications: gatherNotifSettings(prev),
     projectAliases: prev.projectAliases || {},
     projectBlacklist: prev.projectBlacklist || [],
-    projectNotifOverrides: prev.projectNotifOverrides || {},
     sync: prevSync,
     // Preserve unknown extras
     projects: prev.projects,
