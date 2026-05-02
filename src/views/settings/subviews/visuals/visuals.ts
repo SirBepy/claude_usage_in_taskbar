@@ -179,6 +179,7 @@ function template() {
             <select id="iconStyle">
               <option value="rings">Rings</option>
               <option value="bars">Bars</option>
+              <option value="fourbars">4 Bars</option>
             </select>
           </div>
         </div>

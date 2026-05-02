@@ -12,7 +12,7 @@ impl Default for DefaultDisplay { fn default() -> Self { Self::Icon } }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum IconStyle { Rings, Bars }
+pub enum IconStyle { Rings, Bars, FourBars }
 impl Default for IconStyle { fn default() -> Self { Self::Rings } }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -219,6 +219,7 @@ impl TryFrom<&Settings> for IconSettings {
             icon_style: parse_enum(e.get("iconStyle"), &[
                 ("rings", IconStyle::Rings),
                 ("bars", IconStyle::Bars),
+                ("fourbars", IconStyle::FourBars),
             ]),
             color_mode: parse_enum(e.get("colorMode"), &[
                 ("threshold", ColorMode::Threshold),

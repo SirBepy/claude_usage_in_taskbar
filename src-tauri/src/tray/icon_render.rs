@@ -17,6 +17,7 @@ const INNER_R_OUT: f32 = 5.5;
 const INNER_R_IN:  f32 = 3.5;
 
 const TRACK: [u8; 3] = [60, 60, 60];
+const SAFE_PACE_COLOR: [u8; 3] = [100, 150, 220];
 const TRACK_ALPHA: u8 = 80;
 const LOADING: [u8; 3] = [74, 144, 226];
 const NEUTRAL_GRAY: [u8; 3] = [200, 200, 200];
@@ -70,6 +71,8 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
                 draw_ring_arc(&mut img, Some(100.0), INNER_R_OUT, INNER_R_IN, IDLE_GRAY);
             } else if ctx.settings.icon_style == IconStyle::Bars {
                 draw_bars(&mut img, sess, weekly, ctx);
+            } else if ctx.settings.icon_style == IconStyle::FourBars {
+                draw_four_bars(&mut img, sess, weekly, ctx);
             } else {
                 draw_ring_arc(&mut img, sess,    OUTER_R_OUT, OUTER_R_IN, color_for(sess,   ctx, ctx.session_safe, true));
                 draw_ring_arc(&mut img, weekly,  INNER_R_OUT, INNER_R_IN, color_for(weekly, ctx, ctx.weekly_safe,  true));
@@ -181,6 +184,16 @@ fn draw_ring_arc(img: &mut RgbaImage, pct: Option<f32>, r_out: f32, r_in: f32, f
     }
 }
 
+fn draw_four_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
+    let sess_color = color_for(sess, ctx, ctx.session_safe, true);
+    let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
+    // session actual | session safe pace | weekly actual | weekly safe pace
+    draw_column(img, 1, 4, sess.unwrap_or(0.0), sess_color);
+    draw_column(img, 6, 9, ctx.session_safe.unwrap_or(0.0), SAFE_PACE_COLOR);
+    draw_column(img, 12, 15, weekly.unwrap_or(0.0), weekly_color);
+    draw_column(img, 17, 20, ctx.weekly_safe.unwrap_or(0.0), SAFE_PACE_COLOR);
+}
+
 fn draw_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
     let sess_color = color_for(sess, ctx, ctx.session_safe, /*is_icon=*/true);
     let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
@@ -228,6 +241,18 @@ pub fn render_spin(frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
         }
         draw_column(&mut img, 13, 18, weekly.unwrap_or(0.0),
                     color_for(weekly, ctx, ctx.weekly_safe, /*is_icon=*/true));
+    } else if ctx.settings.icon_style == IconStyle::FourBars {
+        // four-bars: pulse both session columns (actual + safe), weekly steady.
+        let blue = [74u8, 144, 226];
+        let pulse = ((frame as f32 * 0.2).sin()).abs();
+        let alpha = (150.0 + pulse * 105.0).round() as u8;
+        for y in 2..=20 {
+            for x in 1..=4 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
+            for x in 6..=9 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
+        }
+        draw_column(&mut img, 12, 15, weekly.unwrap_or(0.0),
+                    color_for(weekly, ctx, ctx.weekly_safe, true));
+        draw_column(&mut img, 17, 20, ctx.weekly_safe.unwrap_or(0.0), SAFE_PACE_COLOR);
     } else {
         draw_spin_arc(&mut img, start, arc_len, OUTER_R_OUT, OUTER_R_IN, LOADING);
         draw_ring_arc(&mut img, weekly, INNER_R_OUT, INNER_R_IN,
