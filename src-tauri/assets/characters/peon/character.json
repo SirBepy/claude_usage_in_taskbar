@@ -1,0 +1,14 @@
+{
+  "id": "peon",
+  "label": "Peon (Orc)",
+  "version": 1,
+  "icon": "icon.png",
+  "slots": {
+    "work_finished":  ["sounds/complete.wav"],
+    "question_asked": ["sounds/yes.wav"],
+    "ready":          ["sounds/ready.wav"],
+    "select":         ["sounds/yes.wav"],
+    "annoyed":        ["sounds/pissed.wav", "sounds/not-that-kind.wav"],
+    "death":          []
+  }
+}

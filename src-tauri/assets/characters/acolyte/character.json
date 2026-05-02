@@ -1,0 +1,14 @@
+{
+  "id": "acolyte",
+  "label": "Acolyte (Undead)",
+  "version": 1,
+  "icon": "icon.png",
+  "slots": {
+    "work_finished":  ["sounds/serve.wav", "sounds/obey.wav"],
+    "question_asked": ["sounds/what.wav", "sounds/ready.wav"],
+    "ready":          ["sounds/ready.wav"],
+    "select":         ["sounds/what.wav"],
+    "annoyed":        ["sounds/pissed.wav"],
+    "death":          ["sounds/death.wav"]
+  }
+}
