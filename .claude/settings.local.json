@@ -99,7 +99,13 @@
       "Bash(gh run *)",
       "Bash(netstat -ano -p tcp)",
       "Bash(tasklist *)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(Select-String *)",
+      "Bash(Test-Path *)",
+      "Bash(wait *)",
+      "Bash(awk -F'\"type\":\"' 'NF>1{split\\($2,a,\"\\\\\"\"\\); print a[1]}' ~/.claude/projects/C--Users-tecno-Desktop-Projects-claude-usage-in-taskbar/0409346e-b48d-487b-bc2f-ee3c35c7800b.jsonl)",
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)"
     ]
   }
 }
