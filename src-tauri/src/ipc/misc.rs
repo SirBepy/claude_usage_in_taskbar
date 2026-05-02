@@ -164,21 +164,6 @@ pub fn get_update_state(app: AppHandle) -> serde_json::Value {
 }
 
 #[tauri::command]
-pub fn list_sound_packs() -> Vec<crate::notifications::soundpacks::SoundPack> {
-    crate::notifications::soundpacks::list_with_installed_state()
-}
-
-#[tauri::command]
-pub async fn install_sound_pack(pack_id: String) -> Result<(), String> {
-    crate::notifications::soundpacks::install(&pack_id).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn sound_pack_file_url(pack: String, sound: String) -> Option<String> {
-    crate::notifications::soundpacks::file_data_url(&pack, &sound)
-}
-
-#[tauri::command]
 pub fn piper_status() -> crate::notifications::piper::PiperStatus {
     crate::notifications::piper::status()
 }
@@ -205,11 +190,6 @@ pub fn play_sound_preview(app: AppHandle, filename: String) -> Result<(), String
     }
     crate::notifications::audio::play_sound_file(&app, &filename);
     Ok(())
-}
-
-#[tauri::command]
-pub fn play_pack_sound_preview(_pack: String, _file: String, _app: tauri::AppHandle) {
-    // Deprecated; deleted in Task 15 along with the soundpacks module.
 }
 
 #[cfg(test)]
