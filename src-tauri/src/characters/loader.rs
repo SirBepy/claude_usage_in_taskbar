@@ -132,6 +132,15 @@ mod tests {
     }
 
     #[test]
+    fn skips_character_with_malformed_json() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("broken");
+        write(&dir.join("character.json"), "{ this is not json");
+        write(&dir.join("icon.png"), "x");
+        assert!(load_all(tmp.path()).is_empty());
+    }
+
+    #[test]
     fn returns_sorted_by_id() {
         let tmp = TempDir::new().unwrap();
         write_valid(tmp.path(), "zeta");
