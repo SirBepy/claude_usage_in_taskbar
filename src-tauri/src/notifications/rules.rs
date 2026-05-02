@@ -50,7 +50,7 @@ pub fn resolve_with_character(
     let files = character.slot_files(slot);
     let Some(pick) = crate::characters::slots::random_pick(files) else { return default_rule; };
     let Ok(dir) = crate::settings::paths::characters_dir() else { return default_rule; };
-    let abs = dir.join(&character.id).join(pick);
+    let abs = character.asset_path(&dir, pick);
     NotificationRule {
         enabled: true,
         mode: NotifMode::Sound,
