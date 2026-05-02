@@ -98,6 +98,22 @@ export interface InstanceTokenStats {
 }
 
 export interface SoundPack { id: string; [k: string]: unknown; }
+
+export type CharacterSlot =
+  | "work_finished"
+  | "question_asked"
+  | "ready"
+  | "select"
+  | "annoyed"
+  | "death";
+
+export interface Character {
+  id: string;
+  label: string;
+  version: number;
+  icon: string;
+  slots: { [key: string]: string[] };
+}
 export interface PiperStatus { [k: string]: unknown; }
 export interface ProjectConfig { id: string; path: string; [k: string]: unknown; }
 export interface ProjectGroup {
@@ -183,12 +199,20 @@ export const api = {
     }
   },
 
-  // --- Sound packs ---
-  listSoundPacks: (): Promise<SoundPack[]> => invoke("list_sound_packs"),
-  installSoundPack: (packId: string): Promise<unknown> =>
-    invoke("install_sound_pack", { packId }),
-  soundPackFileUrl: (pack: string, sound: string): Promise<string | null> =>
-    invoke("sound_pack_file_url", { pack, sound }),
+  // --- Sound packs (DEPRECATED, removed in T20 along with consumers) ---
+  listSoundPacks: (): Promise<SoundPack[]> => Promise.resolve([]),
+  installSoundPack: (_packId: string): Promise<unknown> => Promise.resolve(),
+  soundPackFileUrl: (_pack: string, _sound: string): Promise<string | null> => Promise.resolve(null),
+
+  // --- Characters ---
+  listCharacters: (): Promise<Character[]> => invoke("list_characters"),
+  assignCharacter: (projectId: string, characterId: string | null): Promise<void> =>
+    invoke("assign_character", { projectId, characterId }),
+  playCharacterSlot: (characterId: string, slot: CharacterSlot): Promise<void> =>
+    invoke("play_character_slot", { characterId, slot }),
+  characterAssetUrl: (characterId: string, file: string): Promise<string | null> =>
+    invoke("character_asset_url", { characterId, file }),
+  getCharactersDir: (): Promise<string> => invoke("get_characters_dir"),
 
   // --- Piper TTS ---
   piperStatus: (): Promise<PiperStatus> => invoke("piper_status"),
