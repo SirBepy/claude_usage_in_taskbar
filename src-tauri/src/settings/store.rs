@@ -43,6 +43,9 @@ pub fn load(path: &Path) -> Settings {
     if s.poll_interval_secs == 3600 {
         s.poll_interval_secs = 600;
     }
+    // Migrate: drop the legacy projectNotifOverrides map. Replaced by
+    // Avatar::Character on each ProjectConfig in v2 (Characters feature).
+    s.extra.remove("projectNotifOverrides");
     dedupe_projects_by_path_key(&mut s.projects);
     s
 }
