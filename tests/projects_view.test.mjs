@@ -16,8 +16,8 @@ const projectDetailTs = readFileSync(
   join(distDir, "views", "project-detail", "project-detail.ts"),
   "utf8",
 );
-const notifOverridesTs = readFileSync(
-  join(distDir, "views", "project-detail", "subviews", "notif-overrides", "notif-overrides.ts"),
+const characterPickTs = readFileSync(
+  join(distDir, "views", "project-detail", "subviews", "character-pick", "character-pick.ts"),
   "utf8",
 );
 const automationTs = readFileSync(
@@ -57,14 +57,13 @@ describe("Projects view DOM", () => {
   it("has project-detail menu button + popover container", () => {
     expect(projectDetailTs).toMatch(/id="projectDetailMenuBtn"/);
     expect(projectDetailTs).toMatch(/id="projectDetailMenu"[^>]*class="menu-popover/);
-    expect(projectDetailTs).toMatch(/data-menu-item="notif-overrides"/);
+    expect(projectDetailTs).toMatch(/data-menu-item="character-pick"/);
     expect(projectDetailTs).toMatch(/data-menu-item="automation"/);
     expect(projectDetailTs).toMatch(/data-menu-item="folder-mapping"/);
   });
 
-  it("has subviews for overrides / automation / folder-mapping / sessions / session-detail", () => {
-    // session-detail is deferred to Task 11; still in legacy HTML.
-    expect(notifOverridesTs).toMatch(/view-project-notif-overrides/);
+  it("has subviews for character-pick / automation / folder-mapping / sessions / session-detail", () => {
+    expect(characterPickTs).toMatch(/view-project-character-pick/);
     expect(automationTs).toMatch(/view-project-automation/);
     expect(folderMappingTs).toMatch(/view-project-folder-mapping/);
     expect(sessionsListTs).toMatch(/view-project-sessions/);
@@ -72,14 +71,14 @@ describe("Projects view DOM", () => {
   });
 
   it("each project subview has a back button", () => {
-    expect(notifOverridesTs).toMatch(/id="notifOverridesBackBtn"/);
+    expect(characterPickTs).toMatch(/id="characterPickBackBtn"/);
     expect(automationTs).toMatch(/id="automationBackBtn"/);
     expect(folderMappingTs).toMatch(/id="folderMappingBackBtn"/);
     expect(sessionsListTs).toMatch(/id="allSessionsBackBtn"/);
     expect(sessionDetailTs).toMatch(/id="sessionDetailBackBtn"/);
   });
 
-  it("automation + notif-override + path-editor DOM moved out of project-detail view", () => {
+  it("automation + character-pick + path-editor DOM moved out of project-detail view", () => {
     expect(projectDetailTs).not.toMatch(/id="automationSection"/);
     expect(projectDetailTs).not.toMatch(/id="projectNotifOverridesSection"/);
     expect(projectDetailTs).not.toMatch(/id="projectDetailPath"[^A-Za-z]/);
@@ -99,8 +98,7 @@ describe("Projects view DOM", () => {
     expect(folderMappingTs).toMatch(/id="hideProjectBtn"/);
   });
 
-  it("notif-overrides subview owns the template + rows container", () => {
-    expect(notifOverridesTs).toMatch(/id="projectOverrideRowTemplate"/);
-    expect(notifOverridesTs).toMatch(/id="projectOverrideRows"/);
+  it("character-pick subview owns the dropdown", () => {
+    expect(characterPickTs).toMatch(/id="character-select"/);
   });
 });
