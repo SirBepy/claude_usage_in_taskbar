@@ -76,7 +76,19 @@ export async function renderProjectsList(): Promise<void> {
         return lastMs(b) - lastMs(a);
       case "tokens": return Number(b.tokens_7d || 0) - Number(a.tokens_7d || 0);
       case "recent":
-      default: return lastMs(b) - lastMs(a);
+      default: {
+        const aMs = lastMs(a);
+        const bMs = lastMs(b);
+        const now = Date.now();
+        const aJustNow = now - aMs < 60000;
+        const bJustNow = now - bMs < 60000;
+        if (aJustNow && bJustNow) {
+          const liveDiff = (b.live || 0) - (a.live || 0);
+          if (liveDiff !== 0) return liveDiff;
+          return nameOf(a).localeCompare(nameOf(b));
+        }
+        return bMs - aMs;
+      }
     }
   });
 
