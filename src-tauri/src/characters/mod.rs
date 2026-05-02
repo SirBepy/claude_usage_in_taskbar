@@ -3,6 +3,7 @@
 
 pub mod slots;
 pub mod loader;
+pub mod assets;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
