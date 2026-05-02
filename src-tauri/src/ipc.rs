@@ -1,6 +1,7 @@
 pub mod usage;
 pub mod settings;
 pub mod projects;
+pub mod project_groups;
 pub mod channels;
 pub mod tokens;
 pub mod auth;
@@ -9,6 +10,7 @@ pub mod misc;
 pub use usage::*;
 pub use settings::*;
 pub use projects::*;
+pub use project_groups::*;
 pub use channels::*;
 pub use tokens::*;
 pub use auth::*;
