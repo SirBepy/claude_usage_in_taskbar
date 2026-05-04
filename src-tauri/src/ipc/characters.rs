@@ -50,15 +50,38 @@ pub fn play_character_slot(
     let Some(pick) = characters::slots::random_pick(files) else {
         return Err("slot has no files".into());
     };
-    let dir = paths::characters_dir().map_err(|e| e.to_string())?;
-    let path = c.asset_path(&dir, pick);
+    let path = c.asset_path(pick);
     crate::notifications::audio::play_path(&app, &path);
     Ok(())
 }
 
 #[tauri::command]
 pub fn character_asset_url(character_id: String, file: String) -> Option<String> {
-    characters::assets::file_data_url(&character_id, &file)
+    let c = characters::get(&character_id)?;
+    characters::assets::file_data_url_at(&c.asset_path(&file))
+}
+
+#[tauri::command]
+pub fn preview_character_file(
+    character_id: String,
+    file: String,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let Some(c) = characters::get(&character_id) else {
+        return Err(format!("unknown character: {character_id}"));
+    };
+    let path = c.asset_path(&file);
+    if !path.exists() {
+        return Err(format!("asset not found: {file}"));
+    }
+    state.preview.play(path, app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_character_preview(state: State<AppState>) {
+    state.preview.stop();
 }
 
 #[tauri::command]

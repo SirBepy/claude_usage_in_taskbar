@@ -110,6 +110,8 @@ export interface Character {
   label: string;
   version: number;
   icon: string;
+  game?: string;
+  game_label?: string;
   slots: { [key: string]: string[] };
 }
 export interface PiperStatus { [k: string]: unknown; }
@@ -205,6 +207,11 @@ export const api = {
     invoke("play_character_slot", { characterId, slot }),
   characterAssetUrl: (characterId: string, file: string): Promise<string | null> =>
     invoke("character_asset_url", { characterId, file }),
+  previewCharacterFile: (characterId: string, file: string): Promise<void> =>
+    invoke("preview_character_file", { characterId, file }),
+  stopCharacterPreview: (): Promise<void> => invoke("stop_character_preview"),
+  onCharacterPreviewEnded: (cb: () => void): Unlisten =>
+    listenEvent("character-preview-ended", cb),
   getCharactersDir: (): Promise<string> => invoke("get_characters_dir"),
 
   // --- Piper TTS ---

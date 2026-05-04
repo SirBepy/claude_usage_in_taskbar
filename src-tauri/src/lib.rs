@@ -129,6 +129,8 @@ pub fn run() {
             ipc::assign_character,
             ipc::play_character_slot,
             ipc::character_asset_url,
+            ipc::preview_character_file,
+            ipc::stop_character_preview,
             ipc::get_characters_dir,
         ])
         .setup(|app| {

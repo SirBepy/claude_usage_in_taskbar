@@ -1,11 +1,12 @@
 {
-  "id": "acolyte",
-  "label": "Acolyte (Undead)",
+  "id": "peasant",
+  "label": "Peasant (Human)",
   "version": 1,
   "icon": "icon.png",
+  "game": "Warcraft",
   "slots": {
-    "work_finished":  ["sounds/serve.wav", "sounds/obey.wav"],
-    "question_asked": ["sounds/what.wav", "sounds/ready.wav"],
+    "work_finished":  ["sounds/ready.wav"],
+    "question_asked": ["sounds/yes.wav", "sounds/ok.wav", "sounds/what.wav"],
     "ready":          ["sounds/ready.wav"],
     "select":         ["sounds/what.wav"],
     "annoyed":        ["sounds/pissed.wav"],

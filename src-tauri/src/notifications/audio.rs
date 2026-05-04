@@ -9,7 +9,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 const GAP: Duration = Duration::from_millis(200);
 
@@ -67,6 +67,78 @@ impl AudioCtx {
 }
 
 impl Default for AudioCtx { fn default() -> Self { Self::new() } }
+
+// ── Preview player ────────────────────────────────────────────────────────────
+// Dedicated single-file preview with stop support and a completion event.
+// Used by the character-detail view instead of HTML5 Audio (WebView2 blocks
+// data:audio/* URIs).
+
+enum PreviewMsg {
+    Play(PathBuf, AppHandle),
+    Stop,
+}
+
+pub struct PreviewCtx {
+    tx: std::sync::mpsc::SyncSender<PreviewMsg>,
+}
+
+impl PreviewCtx {
+    pub fn new() -> Self {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<PreviewMsg>(4);
+        std::thread::spawn(move || {
+            let Ok((_stream, handle)) = OutputStream::try_default() else {
+                log::warn!("preview: failed to init audio output");
+                return;
+            };
+            let mut active: Option<(Sink, AppHandle)> = None;
+            loop {
+                match rx.try_recv() {
+                    Ok(PreviewMsg::Play(path, app)) => {
+                        if let Some((s, _)) = active.take() { s.stop(); }
+                        match Sink::try_new(&handle) {
+                            Ok(sink) => match load_source(&path) {
+                                Ok(src) => {
+                                    sink.append(src);
+                                    active = Some((sink, app));
+                                }
+                                Err(e) => log::warn!("preview decode failed: {e}"),
+                            },
+                            Err(e) => log::warn!("preview sink create failed: {e}"),
+                        }
+                    }
+                    Ok(PreviewMsg::Stop) => {
+                        if let Some((s, _)) = active.take() { s.stop(); }
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                }
+                if let Some((ref sink, ref app)) = active {
+                    if sink.empty() {
+                        let _ = app.emit("character-preview-ended", ());
+                        active = None;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        Self { tx }
+    }
+
+    pub fn play(&self, path: PathBuf, app: AppHandle) {
+        let _ = self.tx.try_send(PreviewMsg::Play(path, app));
+    }
+
+    pub fn stop(&self) {
+        let _ = self.tx.try_send(PreviewMsg::Stop);
+    }
+}
+
+impl Default for PreviewCtx { fn default() -> Self { Self::new() } }
+
+fn load_source(path: &Path) -> Result<Decoder<BufReader<File>>> {
+    let file = File::open(path).with_context(|| format!("open {path:?}"))?;
+    Decoder::new(BufReader::new(file)).context("decode")
+}
 
 fn play_blocking(handle: &rodio::OutputStreamHandle, path: &Path) -> Result<()> {
     let file = File::open(path).with_context(|| format!("open {path:?}"))?;

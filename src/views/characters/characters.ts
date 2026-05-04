@@ -1,141 +1,145 @@
-import { html, render } from "lit-html";
+import { html, render, type TemplateResult } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import { loadCharacters, invalidateCharactersCache, slotFillCount } from "../../shared/characters";
 import { hydrateCharacterAvatars } from "../../shared/projects";
-import { api, type Character, type CharacterSlot } from "../../shared/api";
+import { api, type Character } from "../../shared/api";
+import { openCharacterDetail } from "./character-detail";
 import "./characters.css";
 
-const ALL_SLOTS: CharacterSlot[] = ["work_finished", "question_asked", "ready", "select", "annoyed", "death"];
+interface GameGroup {
+  key: string;
+  label: string;
+  chars: Character[];
+}
 
-let lastSelectedId: string | null = null;
+function groupByGame(chars: Character[]): GameGroup[] {
+  const map = new Map<string, GameGroup>();
+  for (const c of chars) {
+    const key = c.game ?? "other";
+    const label = c.game_label ?? c.game ?? "Other";
+    if (!map.has(key)) map.set(key, { key, label, chars: [] });
+    map.get(key)!.chars.push(c);
+  }
+  return Array.from(map.values());
+}
 
-function characterCardTemplate(c: Character) {
+function cardTemplate(c: Character): TemplateResult {
   const { filled, total } = slotFillCount(c);
-  const active = c.id === lastSelectedId ? " active" : "";
   return html`
-    <div class="char-card${active}" data-character-id="${c.id}">
-      <img class="char-avatar" data-character-id="${c.id}" alt="${c.label}" />
-      <div class="body">
-        <div class="name">${c.label}</div>
-        <div class="meta">${filled}/${total} slots filled</div>
-      </div>
+    <div class="char-card" @click=${() => openCharacterDetail(c.id)}>
+      <img class="char-avatar char-card-avatar" data-character-id="${c.id}" alt="${c.label}" />
+      <div class="char-card-name">${c.label}</div>
+      <div class="char-card-count">${filled}/${total}</div>
     </div>
   `;
 }
 
-function renderDetail(c: Character): void {
-  lastSelectedId = c.id;
-  const detail = document.getElementById("character-detail");
-  if (!detail) return;
-  const tmpl = html`
-    <h3>${c.label}</h3>
-    <p class="muted">id: ${c.id} · v${c.version}</p>
-    ${ALL_SLOTS.map((slot) => {
-      const files = c.slots[slot] ?? [];
-      return html`
-        <div class="slot-row">
-          <div class="slot-name">${slot}</div>
-          <div class="slot-files">
-            ${files.length === 0
-              ? html`<span class="muted">(empty)</span>`
-              : files.map((f) => html`
-                  <button class="play-btn" @click=${() => api.playCharacterSlot(c.id, slot).catch(console.error)}>
-                    ▶ ${f}
-                  </button>
-                `)}
-          </div>
-        </div>
-      `;
-    })}
+function groupTemplate(g: GameGroup): TemplateResult {
+  return html`
+    <details class="char-group" open>
+      <summary class="char-group-summary">
+        <i class="ph ph-caret-right char-group-chevron"></i>
+        ${g.label}
+        <span class="char-group-count">${g.chars.length}</span>
+      </summary>
+      <div class="char-group-grid">
+        ${g.chars.map(cardTemplate)}
+      </div>
+    </details>
   `;
-  render(tmpl, detail);
 }
 
-async function refresh(): Promise<void> {
-  const list = document.getElementById("characters-list");
-  if (!list) return;
+async function refresh(list: HTMLElement): Promise<void> {
   const chars = await loadCharacters();
   if (chars.length === 0) {
-    list.innerHTML = `<div class="no-data">No characters installed. Run <code>/character-creator &lt;name&gt;</code> in Claude Code to make one, or open the characters folder and drop one in.</div>`;
-    const detail = document.getElementById("character-detail");
-    if (detail) detail.innerHTML = "";
+    render(
+      html`<div class="no-data">No characters installed. Run <code>/character-creator &lt;name&gt;</code> in Claude Code to make one.</div>`,
+      list,
+    );
     return;
   }
-  render(html`${chars.map(characterCardTemplate)}`, list);
+  const groups = groupByGame(chars);
+  render(
+    html`${groups.map(groupTemplate)}`,
+    list,
+  );
   await hydrateCharacterAvatars(list);
-  for (const card of Array.from(list.querySelectorAll<HTMLElement>(".char-card"))) {
-    card.onclick = () => {
-      const id = card.dataset.characterId;
-      if (!id) return;
-      const c = chars.find((x) => x.id === id);
-      if (c) {
-        list.querySelectorAll<HTMLElement>(".char-card.active").forEach((el) => el.classList.remove("active"));
-        card.classList.add("active");
-        renderDetail(c);
-      }
-    };
-  }
-  const initial = (lastSelectedId && chars.find((c) => c.id === lastSelectedId)) || chars[0];
-  if (!initial) return;
-  renderDetail(initial);
-  list.querySelector<HTMLElement>(`.char-card[data-character-id="${initial.id}"]`)?.classList.add("active");
-}
-
-function template() {
-  return html`
-    <div class="view view-characters">
-      <div class="view-header">
-        <button class="icon-btn burger" title="Menu" data-burger="true" @click=${openSidemenu}>
-          <i class="ph ph-list"></i>
-        </button>
-        <h2>Characters</h2>
-        <div class="view-header-actions">
-          <button class="icon-btn" id="characters-refresh" title="Refresh">
-            <i class="ph ph-arrow-clockwise"></i>
-          </button>
-          <button class="btn-secondary" id="characters-open-folder">
-            <i class="ph ph-folder-open"></i> Folder
-          </button>
-          <button class="btn-secondary" id="characters-create-new">
-            <i class="ph ph-plus"></i> New
-          </button>
-        </div>
-      </div>
-      <div class="view-body">
-        <div id="characters-list" class="characters-grid"></div>
-        <div id="character-detail"></div>
-      </div>
-    </div>
-  `;
 }
 
 export async function renderCharactersView(root: HTMLElement): Promise<() => void> {
-  render(template(), root);
+  render(
+    html`
+      <div class="view view-characters">
+        <div class="view-header">
+          <button class="icon-btn burger" title="Menu" data-burger="true" @click=${openSidemenu}>
+            <i class="ph ph-list"></i>
+          </button>
+          <h2>Characters</h2>
+          <div class="view-header-actions">
+            <div class="menu-anchor">
+              <button class="icon-btn" id="characters-more" title="More options">
+                <i class="ph ph-dots-three-vertical"></i>
+              </button>
+              <div class="menu-popover hidden" id="characters-menu">
+                <button class="menu-item" id="characters-refresh">
+                  <i class="ph ph-arrow-clockwise"></i> Refresh
+                </button>
+                <button class="menu-item" id="characters-open-folder">
+                  <i class="ph ph-folder-open"></i> Open folder
+                </button>
+                <button class="menu-item" id="characters-create-new">
+                  <i class="ph ph-plus"></i> New character
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="view-body">
+          <div id="characters-list"></div>
+        </div>
+      </div>
+    `,
+    root,
+  );
 
-  const refreshBtn = root.querySelector<HTMLButtonElement>("#characters-refresh");
-  if (refreshBtn) refreshBtn.onclick = () => {
-    invalidateCharactersCache();
-    void refresh();
+  const list = root.querySelector<HTMLElement>("#characters-list")!;
+  const moreBtn = root.querySelector<HTMLButtonElement>("#characters-more")!;
+  const menu = root.querySelector<HTMLElement>("#characters-menu")!;
+
+  moreBtn.onclick = (e) => {
+    e.stopPropagation();
+    menu.classList.toggle("hidden");
   };
 
-  const openFolder = root.querySelector<HTMLButtonElement>("#characters-open-folder");
-  if (openFolder) openFolder.onclick = async () => {
-    try {
-      const dir = await api.getCharactersDir();
-      await api.openInExplorer(dir);
-    } catch (e) {
-      console.error("openCharactersFolder failed", e);
+  const closeOnOutside = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node) && e.target !== moreBtn) {
+      menu.classList.add("hidden");
     }
   };
+  document.addEventListener("click", closeOnOutside);
 
-  const createBtn = root.querySelector<HTMLButtonElement>("#characters-create-new");
-  if (createBtn) createBtn.onclick = () => {
-    alert("To make a new character, run this in Claude Code:\n\n  /character-creator <name>\n\nThe skill searches sprite + sound sources, downloads candidates, and asks you to pick which go into each slot.");
+  root.querySelector<HTMLButtonElement>("#characters-refresh")!.onclick = () => {
+    menu.classList.add("hidden");
+    invalidateCharactersCache();
+    void refresh(list);
   };
 
-  await refresh();
+  root.querySelector<HTMLButtonElement>("#characters-open-folder")!.onclick = async () => {
+    menu.classList.add("hidden");
+    const dir = await api.getCharactersDir();
+    await api.openInExplorer(dir);
+  };
+
+  root.querySelector<HTMLButtonElement>("#characters-create-new")!.onclick = () => {
+    menu.classList.add("hidden");
+    alert(
+      "To make a new character, run this in Claude Code:\n\n  /character-creator <name>\n\nThe skill searches sprite + sound sources, downloads candidates, and asks you to pick which go into each slot.",
+    );
+  };
+
+  await refresh(list);
 
   return () => {
-    /* nothing to tear down */
+    document.removeEventListener("click", closeOnOutside);
   };
 }

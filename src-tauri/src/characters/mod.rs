@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use crate::characters::slots::Slot;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, ts_rs::TS)]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct Character {
     pub id: String,
@@ -20,8 +20,38 @@ pub struct Character {
     #[serde(default = "default_version")]
     pub version: u32,
     pub icon: String,
+    /// Game slug from character.json (e.g. "warcraft").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game: Option<String>,
+    /// Pretty game name from game.json, injected by the loader.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_label: Option<String>,
+    /// True for _shared bundles — excluded from the UI list.
+    #[serde(default)]
+    #[ts(skip)]
+    pub shared: bool,
+    /// Absolute path to this character's on-disk directory, injected by the loader.
+    /// Not serialized to/from JSON.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub dir: PathBuf,
     /// Slot key (lowercase snake_case) -> list of file paths relative to character dir.
     pub slots: HashMap<String, Vec<String>>,
+}
+
+// Manual PartialEq that ignores the runtime-only `dir` field so JSON round-trip
+// tests comparing two deserialized structs still pass.
+impl PartialEq for Character {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.label == other.label
+            && self.version == other.version
+            && self.icon == other.icon
+            && self.game == other.game
+            && self.game_label == other.game_label
+            && self.shared == other.shared
+            && self.slots == other.slots
+    }
 }
 
 fn default_version() -> u32 { 1 }
@@ -32,9 +62,9 @@ impl Character {
         self.slots.get(slot.key()).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
-    /// Resolves an asset path relative to the character's on-disk dir.
-    pub fn asset_path(&self, characters_dir: &std::path::Path, relative: &str) -> PathBuf {
-        characters_dir.join(&self.id).join(relative)
+    /// Resolves an asset path relative to this character's on-disk directory.
+    pub fn asset_path(&self, relative: &str) -> PathBuf {
+        self.dir.join(relative)
     }
 }
 
@@ -52,6 +82,10 @@ mod char_tests {
             label: "Peon (Orc)".into(),
             version: 1,
             icon: "icon.png".into(),
+            game: None,
+            game_label: None,
+            shared: false,
+            dir: PathBuf::new(),
             slots,
         }
     }
@@ -88,10 +122,10 @@ mod char_tests {
     }
 
     #[test]
-    fn asset_path_joins_correctly() {
-        let c = sample();
-        let dir = std::path::Path::new("/tmp/chars");
-        assert_eq!(c.asset_path(dir, "icon.png"), std::path::PathBuf::from("/tmp/chars/peon/icon.png"));
+    fn asset_path_uses_dir_field() {
+        let mut c = sample();
+        c.dir = std::path::PathBuf::from("/tmp/chars/warcraft/peon");
+        assert_eq!(c.asset_path("icon.png"), std::path::PathBuf::from("/tmp/chars/warcraft/peon/icon.png"));
     }
 }
 

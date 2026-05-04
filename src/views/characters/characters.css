@@ -1,65 +1,90 @@
-.view-characters .characters-grid {
+/* ── Character groups ── */
+.char-group {
+  margin-bottom: 20px;
+}
+
+.char-group-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.char-group-summary::-webkit-details-marker { display: none; }
+
+.char-group-chevron {
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+
+details[open] .char-group-chevron {
+  transform: rotate(90deg);
+}
+
+.char-group-count {
+  margin-left: auto;
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── Portrait character cards ── */
+.char-group-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
 }
 
 .char-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 8px;
+  gap: 6px;
+  padding: 12px 8px 10px;
   border-radius: 8px;
-  background: var(--card-bg, #222);
+  background: var(--surface, #1f1f2c);
+  border: 1px solid var(--border);
   cursor: pointer;
-  transition: background .15s;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: center;
 }
 
-.char-card.active,
 .char-card:hover {
-  background: var(--card-bg-hover, #333);
+  border-color: var(--primary);
+  background: var(--surface-alt);
 }
 
-.char-card .char-avatar {
-  width: 48px;
-  height: 48px;
+.char-card-avatar {
+  width: 56px;
+  height: 56px;
   image-rendering: pixelated;
   border-radius: 6px;
 }
 
-.char-card .body .name {
+.char-card-name {
+  font-size: 0.76rem;
   font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
 }
 
-.char-card .body .meta {
-  font-size: 0.85em;
-  opacity: 0.7;
-}
-
-#character-detail {
-  margin-top: 16px;
-}
-
-#character-detail .slot-row {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  padding: 6px 0;
-  border-top: 1px solid var(--divider, #333);
-}
-
-#character-detail .slot-name {
-  width: 140px;
-  font-family: monospace;
-  opacity: 0.85;
-}
-
-#character-detail .play-btn {
-  margin: 2px;
-  font-size: 0.85em;
-}
-
-#character-detail .muted {
-  opacity: 0.6;
-  font-style: italic;
+.char-card-count {
+  font-size: 0.68rem;
+  font-family: 'Fira Code', monospace;
+  color: var(--text-dim);
 }
