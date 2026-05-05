@@ -10,6 +10,10 @@ pub fn open_dashboard(app: AppHandle) {
 
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
+    use std::sync::atomic::Ordering;
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        state.should_quit.store(true, Ordering::SeqCst);
+    }
     app.exit(0);
 }
 

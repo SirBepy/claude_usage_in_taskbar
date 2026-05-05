@@ -5,6 +5,7 @@ use crate::tray::TrayDisplayState;
 use crate::hooks::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 
 pub struct AppState {
     pub current_usage: Mutex<Option<UsageSnapshot>>,
@@ -17,6 +18,7 @@ pub struct AppState {
     pub channels: Arc<ChannelsManager>,
     pub hook_registration_pending: Mutex<bool>,
     pub update_state: Mutex<serde_json::Value>,
+    pub should_quit: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -36,6 +38,7 @@ impl AppState {
             channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
+            should_quit: Arc::new(AtomicBool::new(false)),
         }
     }
 }

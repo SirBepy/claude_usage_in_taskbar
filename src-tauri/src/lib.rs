@@ -215,6 +215,14 @@ pub fn run() {
                 let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        use std::sync::atomic::Ordering;
+                        let quitting = w.app_handle()
+                            .try_state::<crate::state::AppState>()
+                            .map(|s| s.should_quit.load(Ordering::SeqCst))
+                            .unwrap_or(false);
+                        if quitting {
+                            return;
+                        }
                         api.prevent_close();
                         let _ = w.eval("window.navigateTo && window.navigateTo('dashboard')");
                         let _ = w.hide();
