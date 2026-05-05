@@ -21,13 +21,17 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(settings: Settings, auth_state: AuthState) -> Self {
+        // Single audio stream kept alive on its own thread; both contexts share the handle.
+        let handle = crate::notifications::audio::init_audio_handle();
+        let audio = crate::notifications::audio::AudioCtx::new(handle.clone());
+        let preview = crate::notifications::audio::PreviewCtx::new(handle);
         Self {
             current_usage: Mutex::new(None),
             settings: Mutex::new(settings),
             auth_state: Mutex::new(auth_state),
             display: Mutex::new(TrayDisplayState::default()),
-            audio: crate::notifications::audio::AudioCtx::new(),
-            preview: crate::notifications::audio::PreviewCtx::new(),
+            audio,
+            preview,
             instances: Arc::new(Registry::new()),
             channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),

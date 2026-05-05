@@ -37,8 +37,11 @@ pub fn resolve_with_character(
     };
     if matches!(kind, NotifKind::ThresholdCrossed) { return default_rule; }
     let Some(key) = cwd_key else { return default_rule; };
+    // Normalize the incoming CWD the same way stored paths are keyed so that
+    // casing and separator variants don't cause a miss.
+    let normalized_key = crate::settings::store::project_key(std::path::Path::new(key));
     let Some(proj) = settings.projects.iter().find(|p| {
-        crate::settings::store::project_key(&p.path) == key
+        crate::settings::store::project_key(&p.path) == normalized_key
     }) else { return default_rule; };
     let Avatar::Character(char_id) = &proj.avatar else { return default_rule; };
     let Some(character) = crate::characters::get(char_id) else { return default_rule; };
