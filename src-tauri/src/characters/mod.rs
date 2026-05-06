@@ -20,7 +20,7 @@ pub struct Character {
     #[serde(default = "default_version")]
     pub version: u32,
     pub icon: String,
-    /// Game slug from character.json (e.g. "warcraft").
+    /// Game slug from character.json (e.g. "warcraft3").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game: Option<String>,
     /// Pretty game name from game.json, injected by the loader.

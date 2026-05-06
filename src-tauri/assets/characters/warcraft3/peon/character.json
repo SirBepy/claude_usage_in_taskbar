@@ -3,7 +3,7 @@
   "label": "Peon (Orc)",
   "version": 1,
   "icon": "icon.png",
-  "game": "Warcraft",
+  "game": "warcraft3",
   "slots": {
     "work_finished":  ["sounds/complete.wav"],
     "question_asked": ["sounds/yes.wav"],
