@@ -43,7 +43,20 @@ pub fn ensure_bundled() -> Result<usize> {
         return Ok(0);
     };
     let dest = crate::settings::paths::characters_dir()?;
+    migrate_warcraft_slug(&dest);
     ensure_bundled_at(&src, &dest)
+}
+
+/// One-time rename: `<chars>/warcraft` → `<chars>/warcraft3` if old dir exists and new doesn't.
+fn migrate_warcraft_slug(chars_dir: &Path) {
+    let old = chars_dir.join("warcraft");
+    let new = chars_dir.join("warcraft3");
+    if old.exists() && !new.exists() {
+        match std::fs::rename(&old, &new) {
+            Ok(_) => log::info!("characters: migrated warcraft/ -> warcraft3/"),
+            Err(e) => log::warn!("characters: failed to migrate warcraft/ -> warcraft3/: {e}"),
+        }
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
