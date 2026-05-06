@@ -105,7 +105,24 @@
       "Bash(wait *)",
       "Bash(awk -F'\"type\":\"' 'NF>1{split\\($2,a,\"\\\\\"\"\\); print a[1]}' ~/.claude/projects/C--Users-tecno-Desktop-Projects-claude-usage-in-taskbar/0409346e-b48d-487b-bc2f-ee3c35c7800b.jsonl)",
       "PowerShell(git add *)",
-      "PowerShell(git commit *)"
+      "PowerShell(git commit *)",
+      "Bash(Get-ChildItem -Recurse \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src-tauri\\\\assets\\\\characters\")",
+      "Bash(Select-Object FullName)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src-tauri\\\\assets\\\\\" -Recurse | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\tecno\\\\AppData\\\\Roaming\\\\claude-usage-tauri\\\\characters\\\\\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })",
+      "PowerShell($raw = Get-Content \"C:\\\\Users\\\\tecno\\\\AppData\\\\Roaming\\\\claude-usage-tauri\\\\settings.json\" -Raw; $obj = $raw | ConvertFrom-Json; $obj.notifications | ConvertTo-Json -Depth 5)",
+      "PowerShell($raw = Get-Content \"C:\\\\Users\\\\tecno\\\\AppData\\\\Roaming\\\\claude-usage-tauri\\\\settings.json\" -Raw; $obj = $raw | ConvertFrom-Json; [PSCustomObject]@{ muteAll=$obj.muteAll; muteSounds=$obj.muteSounds; muteSystemNotifications=$obj.muteSystemNotifications } | ConvertTo-Json)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\tecno\\\\AppData\\\\Roaming\\\\claude-usage-tauri\\\\\" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\tecno\\\\AppData\\\\Roaming\\\\claude-usage-tauri\\\\logs\\\\\" | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src-tauri\\\\target\\\\debug\\\\\" -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src-tauri\\\\target\\\\debug\\\\assets\\\\\" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })",
+      "PowerShell($sw = [Diagnostics.Stopwatch]::StartNew\\(\\); '' | powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/tecno/.claude/aiusage-hook.ps1 refresh; $sw.Stop\\(\\); \"Elapsed: $\\($sw.ElapsedMilliseconds\\) ms\")",
+      "PowerShell($sw = [Diagnostics.Stopwatch]::StartNew\\(\\); $null | powershell -NoProfile -Command \"`$readTask = [Console]::In.ReadToEndAsync\\(\\); `$body = if \\(`$readTask.Wait\\(3000\\)\\) { `$readTask.Result } else { '{TIMEOUT}' }; Write-Output `\"got=[`$body]`\"\"; $sw.Stop\\(\\); \"Elapsed: $\\($sw.ElapsedMilliseconds\\) ms\")",
+      "PowerShell($sw = [Diagnostics.Stopwatch]::StartNew\\(\\); $null | powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/tecno/.claude/aiusage-hook.ps1 refresh; $sw.Stop\\(\\); \"Elapsed: $\\($sw.ElapsedMilliseconds\\) ms\")",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Wait-Job *)",
+      "PowerShell(Rename-Item *)"
     ]
   }
 }
