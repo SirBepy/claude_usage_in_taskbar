@@ -78,6 +78,11 @@ export interface UpdateState {
   [k: string]: unknown;
 }
 
+export interface AudioOutputDevice {
+  name: string;
+  is_default: boolean;
+}
+
 export interface HookRegistrationState {
   registered?: boolean;
   declined?: boolean;
@@ -143,6 +148,12 @@ export const api = {
   getSettings: (): Promise<SettingsShape | null> => invoke("get_settings"),
   saveSettings: (settings: SettingsShape): Promise<unknown> =>
     invoke("save_settings", { updated: settings }),
+
+  // --- Audio ---
+  listAudioOutputDevices: async (): Promise<AudioOutputDevice[]> => {
+    try { return (await invoke<AudioOutputDevice[]>("list_audio_output_devices")) || []; }
+    catch (e) { console.error("list_audio_output_devices failed", e); return []; }
+  },
 
   // --- Auth ---
   logout: (): Promise<unknown> => invoke("logout"),

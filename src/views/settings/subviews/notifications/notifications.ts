@@ -243,6 +243,33 @@ async function populateVoicePreview(): Promise<void> {
     : `<option value="">No projects yet</option>`;
 }
 
+async function populateAudioDevicePicker(): Promise<void> {
+  const sel = $("audioOutputDevice") as HTMLSelectElement | null;
+  if (!sel) return;
+  const s = getSettings();
+  const current = (s.audioOutputDevice as string | null) || "";
+
+  const devices = await api.listAudioOutputDevices();
+
+  const opts = ['<option value="">System default</option>'];
+  for (const d of devices) {
+    const suffix = d.is_default ? " (current)" : "";
+    const selected = d.name === current ? " selected" : "";
+    opts.push(`<option value="${d.name}"${selected}>${d.name}${suffix}</option>`);
+  }
+  sel.innerHTML = opts.join("");
+
+  if (current && !devices.find((d) => d.name === current)) {
+    const missing = document.createElement("option");
+    missing.value = current;
+    missing.textContent = `${current} (not found)`;
+    missing.selected = true;
+    sel.prepend(missing);
+  }
+
+  sel.addEventListener("change", saveSettings);
+}
+
 async function hydrateNotifications(): Promise<void> {
   const s = getSettings();
   const muteAllSwitch = $("muteAllSwitch") as HTMLInputElement | null;
@@ -259,6 +286,7 @@ async function hydrateNotifications(): Promise<void> {
   muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
   muteSoundsSwitch.addEventListener("change", saveSettings);
 
+  await populateAudioDevicePicker();
   buildNotifCards();
   const notifs = (s.notifications as Record<string, Record<string, unknown>>) || {};
   await Promise.all(NOTIF_TYPES.map((t) => renderNotifCard(t.key, notifs[t.key] || {})));
@@ -295,6 +323,15 @@ function template() {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
+        <div class="section">
+          <div class="section-title">Audio output</div>
+          <div class="option">
+            <span class="option-label">Output device</span>
+            <select id="audioOutputDevice">
+              <option value="">System default</option>
+            </select>
+          </div>
+        </div>
         <div class="section" id="muteSection">
           <div class="section-title">Mute</div>
           <div class="option">

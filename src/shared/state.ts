@@ -27,6 +27,7 @@ export interface SettingsShape {
   colorThresholds?: Array<{ min: number; color: string }>;
   paceBand?: number;
   paceColors?: { under?: string; nearSafe?: string; nearOver?: string; over?: string };
+  audioOutputDevice?: string | null;
   [k: string]: unknown;
 }
 

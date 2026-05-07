@@ -117,6 +117,11 @@ export function saveSettings(): void {
     colorThresholds: thresholds,
     fourBarsSessionSafeColor: valOr("fourBarsSessionSafeColor", (prev.fourBarsSessionSafeColor as string) || ""),
     fourBarsWeeklySafeColor: valOr("fourBarsWeeklySafeColor", (prev.fourBarsWeeklySafeColor as string) || ""),
+    audioOutputDevice: (() => {
+      const el = byId<HTMLSelectElement>("audioOutputDevice");
+      const val = el ? el.value : null;
+      return val || (prev.audioOutputDevice ?? null);
+    })(),
     muteAll: chkOr("muteAllSwitch", !!prev.muteAll),
     muteSounds: chkOr("muteSoundsSwitch", !!prev.muteSounds),
     muteSystemNotifications: chkOr("muteSystemSwitch", !!prev.muteSystemNotifications),
