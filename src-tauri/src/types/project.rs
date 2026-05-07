@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use super::automation::{AutomationConfig, InstanceKind, EndReason};
+use super::automation::{AutomationConfig, EndReason};
+use crate::sessions::kinds::InstanceKind;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(tag = "kind", content = "value", rename_all = "lowercase")]

@@ -6,8 +6,9 @@
 //! and `channels.rs` (future, Plan C). Any mutation emits an
 //! `instances-changed` Tauri event so the webview refreshes.
 
+use crate::sessions::kinds::InstanceKind;
 use crate::settings;
-use crate::types::{EndReason, Instance, InstanceKind, Settings};
+use crate::types::{EndReason, Instance, Settings};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;

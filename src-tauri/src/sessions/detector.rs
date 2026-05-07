@@ -3,7 +3,7 @@
 //! `SessionEnd` hook (force-kill, crash, window-close with dirty
 //! state).
 
-use crate::hooks::Registry;
+use crate::sessions::registry::Registry;
 use crate::types::EndReason;
 use std::collections::HashMap;
 use std::time::Duration;

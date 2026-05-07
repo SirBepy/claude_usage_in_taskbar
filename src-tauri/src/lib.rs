@@ -7,6 +7,7 @@ pub mod history;
 pub mod ipc;
 pub mod scheduler;
 pub mod scraping;
+pub mod sessions;
 pub mod settings;
 pub mod state;
 pub mod tokens;
@@ -205,7 +206,7 @@ pub fn run() {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     rehydrate_instances_from_session_files(&h);
-                    crate::hooks::run(h).await
+                    crate::sessions::detector::run(h).await
                 });
             }
             {
@@ -334,9 +335,9 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         let is_ours = state.channels.list().iter().any(|c| c.pid == Some(s.pid));
         let (kind, is_remote) = if is_ours {
-            (crate::types::InstanceKind::Automated, true)
+            (crate::sessions::kinds::InstanceKind::Automated, true)
         } else {
-            (crate::types::InstanceKind::External, false)
+            (crate::sessions::kinds::InstanceKind::External, false)
         };
         // Per-session jsonl first; the cwd-wide "latest" file would
         // be identical for every concurrent session in the project.
@@ -345,7 +346,7 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
         let name = transcript_path
             .as_deref()
             .and_then(|p| crate::tokens::first_user_prompt(p, 60));
-        let input = crate::hooks::RegisterInput {
+        let input = crate::sessions::registry::RegisterInput {
             session_id: s.session_id.clone(),
             cwd: s.cwd,
             pid: s.pid,

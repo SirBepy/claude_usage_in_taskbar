@@ -2,7 +2,7 @@
 
 use crate::channels::Manager as ChannelsManager;
 use crate::tray::TrayDisplayState;
-use crate::hooks::Registry;
+use crate::sessions::registry::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;

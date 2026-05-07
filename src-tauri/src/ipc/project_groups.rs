@@ -58,7 +58,7 @@ pub mod groups_test_helpers {
             entry.live = entry.live.saturating_add(1);
             entry.any_remote = entry.any_remote || inst.is_remote;
             entry.any_automated = entry.any_automated
-                || matches!(inst.kind, crate::types::InstanceKind::Automated);
+                || matches!(inst.kind, crate::sessions::kinds::InstanceKind::Automated);
             update_last_active(&mut entry.last_active_at, &now_iso);
         }
 
@@ -131,8 +131,9 @@ pub fn list_project_groups(state: State<AppState>) -> Vec<crate::types::ProjectG
 mod build_groups_tests {
     use super::groups_test_helpers::build_groups;
     use crate::tokens::TokenRecord;
+    use crate::sessions::kinds::InstanceKind;
     use crate::types::{
-        AutomationConfig, Avatar, Instance, InstanceKind, ProjectConfig,
+        AutomationConfig, Avatar, Instance, ProjectConfig,
     };
     use std::path::PathBuf;
 

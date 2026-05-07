@@ -199,14 +199,14 @@ async fn on_session_start(
         let pid = payload.pid.unwrap_or(0);
         let is_ours = state.channels.list().iter().any(|c| c.pid == Some(pid));
         if is_ours {
-            (crate::types::InstanceKind::Automated, true)
+            (crate::sessions::kinds::InstanceKind::Automated, true)
         } else {
-            (crate::types::InstanceKind::External, false)
+            (crate::sessions::kinds::InstanceKind::External, false)
         }
     };
 
     let transcript_path_buf = payload.transcript_path.clone().map(std::path::PathBuf::from);
-    let input = crate::hooks::RegisterInput {
+    let input = crate::sessions::registry::RegisterInput {
         session_id: payload.session_id.clone(),
         cwd: std::path::PathBuf::from(cwd),
         pid: payload.pid.unwrap_or(0),
@@ -351,4 +351,47 @@ pub async fn spawn(app: AppHandle) -> Result<u16> {
     });
 
     Ok(port)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Booting the on_session_start axum handler requires a full Tauri
+    //! AppHandle (the handler reaches into AppState for `instances` and
+    //! `channels` and also emits Tauri events). Standing up a mock
+    //! AppHandle inside a unit test is out of scope. Instead, we mirror
+    //! the handler's flow against the same `Registry` API the handler
+    //! invokes, asserting the SessionStart -> register write happens.
+    //! See `tests/hook_server_instances.rs` for the same approach.
+    use crate::sessions::kinds::InstanceKind;
+    use crate::sessions::registry::{Registry, RegisterInput};
+    use crate::types::Settings;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    #[tokio::test]
+    async fn session_start_hook_writes_to_sessions_registry() {
+        let registry = Registry::new();
+        let settings = Mutex::new(Settings::default());
+        let now = "2026-05-08T00:00:00Z";
+
+        // Mirror the on_session_start handler's RegisterInput
+        // construction (External path; no matching channel pid).
+        let input = RegisterInput {
+            session_id: "sess-abc".into(),
+            cwd: PathBuf::from("C:/proj"),
+            pid: 4242,
+            kind: InstanceKind::External,
+            is_remote: false,
+            transcript_path: None,
+            started_at: now.into(),
+        };
+
+        let (_project_id, created_new) = registry.register(input, &settings, now);
+        assert!(created_new, "session-start should create a new instance");
+        let listed = registry.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].session_id, "sess-abc");
+        assert_eq!(listed[0].pid, 4242);
+        assert_eq!(listed[0].kind, InstanceKind::External);
+    }
 }
