@@ -12,6 +12,7 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub auth_state: Mutex<AuthState>,
     pub display: Mutex<TrayDisplayState>,
+    pub audio_stream: crate::notifications::audio::AudioStreamCtrl,
     pub audio: crate::notifications::audio::AudioCtx,
     pub preview: crate::notifications::audio::PreviewCtx,
     pub instances: Arc<Registry>,
@@ -23,15 +24,17 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(settings: Settings, auth_state: AuthState) -> Self {
-        // Single audio stream kept alive on its own thread; both contexts share the handle.
-        let handle = crate::notifications::audio::init_audio_handle();
-        let audio = crate::notifications::audio::AudioCtx::new(handle.clone());
-        let preview = crate::notifications::audio::PreviewCtx::new(handle);
+        let audio_stream = crate::notifications::audio::AudioStreamCtrl::init(
+            settings.audio_output_device.as_deref(),
+        );
+        let audio = crate::notifications::audio::AudioCtx::new(audio_stream.handle_arc());
+        let preview = crate::notifications::audio::PreviewCtx::new(audio_stream.handle_arc());
         Self {
             current_usage: Mutex::new(None),
             settings: Mutex::new(settings),
             auth_state: Mutex::new(auth_state),
             display: Mutex::new(TrayDisplayState::default()),
+            audio_stream,
             audio,
             preview,
             instances: Arc::new(Registry::new()),
