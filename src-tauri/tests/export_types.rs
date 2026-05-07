@@ -6,6 +6,7 @@
 //! ourselves by composing each type's `decl()` into a single output.
 
 use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
+use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
 use std::fs;
