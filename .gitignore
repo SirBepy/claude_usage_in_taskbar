@@ -10,6 +10,7 @@ Thumbs.db
 .captured-cookies.json
 .playwright-mcp/
 .superpowers/
+.for_bepy/spike_fixtures/
 docs/superpowers/
 src/types/ipc.generated.ts
 /*.png
