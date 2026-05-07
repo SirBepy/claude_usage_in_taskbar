@@ -255,7 +255,8 @@ mod tests {
         let s: Settings = serde_json::from_str(raw).unwrap();
         assert_eq!(s.audio_output_device.as_deref(), Some("Speakers (Realtek Audio)"));
         let json = serde_json::to_string(&s).unwrap();
-        assert!(json.contains("audioOutputDevice"));
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.audio_output_device.as_deref(), Some("Speakers (Realtek Audio)"));
     }
 
     #[test]
