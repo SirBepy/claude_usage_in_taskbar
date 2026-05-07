@@ -10,13 +10,16 @@ pub fn list_audio_output_devices_impl() -> Vec<AudioOutputDevice> {
         .default_output_device()
         .and_then(|d| d.name().ok());
     match host.output_devices() {
-        Ok(devs) => devs
-            .filter_map(|d| d.name().ok())
-            .map(|name| {
-                let is_default = Some(&name) == default_name.as_ref();
-                AudioOutputDevice { name, is_default }
-            })
-            .collect(),
+        Ok(devs) => {
+            let mut default_marked = false;
+            devs.filter_map(|d| d.name().ok())
+                .map(|name| {
+                    let is_default = !default_marked && Some(&name) == default_name.as_ref();
+                    if is_default { default_marked = true; }
+                    AudioOutputDevice { name, is_default }
+                })
+                .collect()
+        }
         Err(e) => {
             log::warn!("audio: device enumeration failed: {e}");
             vec![]
