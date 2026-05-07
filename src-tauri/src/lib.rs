@@ -94,6 +94,7 @@ pub fn run() {
             ipc::piper_install_voice,
             ipc::piper_speak_preview,
             ipc::play_sound_preview,
+            ipc::list_audio_output_devices,
             ipc::copy_logs,
             ipc::get_platform,
             ipc::get_app_version,
