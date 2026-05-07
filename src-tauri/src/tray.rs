@@ -1,5 +1,6 @@
 pub mod menu;
 pub mod icon_render;
+pub mod bars;
 pub mod threshold;
 pub mod display_mode;
 pub mod fonts;

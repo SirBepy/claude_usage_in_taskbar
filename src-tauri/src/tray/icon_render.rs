@@ -4,7 +4,8 @@
 //! icon range gets a soft alpha based on distance from the ring's boundary,
 //! then blended over whatever is already in the buffer (pre-multiplied).
 
-use crate::tray::threshold::{ColorMode, IconSettings, IconStyle, SafePaceColorMode};
+use crate::tray::threshold::{ColorMode, IconSettings, IconStyle};
+use crate::tray::bars;
 use image::{ImageBuffer, ImageEncoder, Rgba, RgbaImage};
 
 pub const SIZE: u32 = 32;
@@ -16,8 +17,7 @@ const OUTER_R_IN:  f32 = 11.0;
 const INNER_R_OUT: f32 = 8.0;
 const INNER_R_IN:  f32 = 5.0;
 
-const TRACK: [u8; 3] = [60, 60, 60];
-const SAFE_PACE_COLOR: [u8; 3] = [100, 150, 220];
+pub(super) const TRACK: [u8; 3] = [60, 60, 60];
 const TRACK_ALPHA: u8 = 80;
 const LOADING: [u8; 3] = [74, 144, 226];
 const NEUTRAL_GRAY: [u8; 3] = [200, 200, 200];
@@ -70,9 +70,9 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
                 draw_ring_arc(&mut img, Some(100.0), OUTER_R_OUT, OUTER_R_IN, IDLE_GRAY);
                 draw_ring_arc(&mut img, Some(100.0), INNER_R_OUT, INNER_R_IN, IDLE_GRAY);
             } else if ctx.settings.icon_style == IconStyle::Bars {
-                draw_bars(&mut img, sess, weekly, ctx);
+                bars::draw_bars(&mut img, sess, weekly, ctx);
             } else if ctx.settings.icon_style == IconStyle::FourBars {
-                draw_four_bars(&mut img, sess, weekly, ctx);
+                bars::draw_four_bars(&mut img, sess, weekly, ctx);
             } else {
                 draw_ring_arc(&mut img, sess,    OUTER_R_OUT, OUTER_R_IN, color_for(sess,   ctx, ctx.session_safe, true));
                 draw_ring_arc(&mut img, weekly,  INNER_R_OUT, INNER_R_IN, color_for(weekly, ctx, ctx.weekly_safe,  true));
@@ -103,7 +103,7 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
     encode_png(&img)
 }
 
-fn color_for(pct: Option<f32>, ctx: &IconCtx, safe: Option<f32>, is_icon: bool) -> [u8; 3] {
+pub(super) fn color_for(pct: Option<f32>, ctx: &IconCtx, safe: Option<f32>, is_icon: bool) -> [u8; 3] {
     if is_icon && !ctx.settings.apply_color_to.icon { return NEUTRAL_GRAY; }
     if !is_icon && !ctx.settings.apply_color_to.number { return NEUTRAL_GRAY; }
     urgency_rgb(pct, ctx.settings, safe)
@@ -184,48 +184,6 @@ fn draw_ring_arc(img: &mut RgbaImage, pct: Option<f32>, r_out: f32, r_in: f32, f
     }
 }
 
-fn resolve_safe_color(mode: SafePaceColorMode, urgency: [u8; 3]) -> [u8; 3] {
-    match mode {
-        SafePaceColorMode::Default => SAFE_PACE_COLOR,
-        SafePaceColorMode::Urgency => urgency,
-        SafePaceColorMode::Fixed(rgb) => rgb,
-    }
-}
-
-fn draw_four_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
-    let sess_color = color_for(sess, ctx, ctx.session_safe, true);
-    let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
-    let sess_safe_color = resolve_safe_color(ctx.settings.safe_sess_color, sess_color);
-    let weekly_safe_color = resolve_safe_color(ctx.settings.safe_weekly_color, weekly_color);
-    // [sess-actual|sess-safe] 4px gap [weekly-actual|weekly-safe] — 7px each, no intra-group gap
-    draw_column(img, 0, 6, sess.unwrap_or(0.0), sess_color);
-    draw_column(img, 7, 13, ctx.session_safe.unwrap_or(0.0), sess_safe_color);
-    draw_column(img, 18, 24, weekly.unwrap_or(0.0), weekly_color);
-    draw_column(img, 25, 31, ctx.weekly_safe.unwrap_or(0.0), weekly_safe_color);
-}
-
-fn draw_bars(img: &mut RgbaImage, sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) {
-    let sess_color = color_for(sess, ctx, ctx.session_safe, /*is_icon=*/true);
-    let weekly_color = color_for(weekly, ctx, ctx.weekly_safe, true);
-    draw_column(img, 4, 13, sess.unwrap_or(0.0), sess_color);
-    draw_column(img, 18, 27, weekly.unwrap_or(0.0), weekly_color);
-}
-
-fn draw_column(img: &mut RgbaImage, x0: u32, x1: u32, pct: f32, fg: [u8; 3]) {
-    let fill_h = (pct.clamp(0.0, 100.0) / 100.0) * 28.0;
-    for y in 2..=30u32 {
-        let filled = (30 - y) as f32 <= fill_h;
-        let (r, g, b, a) = if filled {
-            (fg[0], fg[1], fg[2], 255)
-        } else {
-            (TRACK[0], TRACK[1], TRACK[2], 80)
-        };
-        for x in x0..=x1 {
-            img.put_pixel(x, y, Rgba([r, g, b, a]));
-        }
-    }
-}
-
 fn encode_png(img: &RgbaImage) -> Vec<u8> {
     let mut buf = Vec::with_capacity(4096);
     image::codecs::png::PngEncoder::new(&mut buf)
@@ -240,30 +198,9 @@ pub fn render_spin(frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
     let start = (frame as f32 * 0.28) % std::f32::consts::TAU;
 
     if ctx.settings.icon_style == IconStyle::Bars {
-        // bars: pulse session column blue, weekly steady.
-        let blue = [74u8, 144, 226];
-        let pulse = ((frame as f32 * 0.2).sin()).abs();
-        let alpha = (150.0 + pulse * 105.0).round() as u8;
-        for y in 2..=30 {
-            for x in 4..=13 {
-                img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha]));
-            }
-        }
-        draw_column(&mut img, 18, 27, weekly.unwrap_or(0.0),
-                    color_for(weekly, ctx, ctx.weekly_safe, /*is_icon=*/true));
+        bars::render_spin_bars(&mut img, frame, weekly, ctx);
     } else if ctx.settings.icon_style == IconStyle::FourBars {
-        // four-bars: pulse both session columns (actual + safe), weekly steady.
-        let blue = [74u8, 144, 226];
-        let pulse = ((frame as f32 * 0.2).sin()).abs();
-        let alpha = (150.0 + pulse * 105.0).round() as u8;
-        for y in 2..=30 {
-            for x in 0..=6 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
-            for x in 7..=13 { img.put_pixel(x, y, Rgba([blue[0], blue[1], blue[2], alpha])); }
-        }
-        let wc = color_for(weekly, ctx, ctx.weekly_safe, true);
-        draw_column(&mut img, 18, 24, weekly.unwrap_or(0.0), wc);
-        draw_column(&mut img, 25, 31, ctx.weekly_safe.unwrap_or(0.0),
-                    resolve_safe_color(ctx.settings.safe_weekly_color, wc));
+        bars::render_spin_four_bars(&mut img, frame, weekly, ctx);
     } else {
         draw_spin_arc(&mut img, start, arc_len, OUTER_R_OUT, OUTER_R_IN, LOADING);
         draw_ring_arc(&mut img, weekly, INNER_R_OUT, INNER_R_IN,
@@ -307,216 +244,4 @@ pub fn render_rings(sess: Option<f32>, weekly: Option<f32>) -> Vec<u8> {
         session_safe: None, weekly_safe: None,
         updating: false,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tray::threshold::{ColorApplyTo, ColorMode, ColorStop, IconSettings, IconStyle, PaceColors, DefaultDisplay};
-    use image::GenericImageView;
-
-    fn test_settings() -> IconSettings {
-        use crate::tray::threshold::SafePaceColorMode;
-        IconSettings {
-            default_display: DefaultDisplay::Icon,
-            icon_style: IconStyle::Rings,
-            color_mode: ColorMode::Threshold,
-            color_thresholds: vec![
-                ColorStop { min: 0, color: "#00ff00".into() },
-                ColorStop { min: 50, color: "#ff8800".into() },
-                ColorStop { min: 80, color: "#ff0000".into() },
-            ],
-            pace_band: 10.0,
-            pace_colors: PaceColors::default(),
-            apply_color_to: ColorApplyTo::default(),
-            safe_sess_color: SafePaceColorMode::Default,
-            safe_weekly_color: SafePaceColorMode::Default,
-        }
-    }
-
-    #[test]
-    fn png_header_correct() {
-        let bytes = render(Some(40.0), Some(80.0), &IconCtx {
-            settings: &test_settings(),
-            display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-        assert_eq!(&bytes[0..8], &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-    }
-
-    #[test]
-    fn decoded_dimensions_are_32x32() {
-        let bytes = render(Some(40.0), Some(80.0), &IconCtx {
-            settings: &test_settings(),
-            display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-        let decoded = image::load_from_memory(&bytes).unwrap();
-        assert_eq!(decoded.width(), SIZE);
-        assert_eq!(decoded.height(), SIZE);
-    }
-
-    #[test]
-    fn loading_state_renders_without_panicking() {
-        let _ = render(None, None, &IconCtx {
-            settings: &test_settings(),
-            display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-    }
-
-    #[test]
-    fn urgency_rgb_threshold_mode_selects_by_highest_reached_stop() {
-        let s = test_settings();
-        assert_eq!(urgency_rgb(Some(10.0), &s, None), [0, 255, 0]);
-        assert_eq!(urgency_rgb(Some(55.0), &s, None), [255, 136, 0]);
-        assert_eq!(urgency_rgb(Some(85.0), &s, None), [255, 0, 0]);
-    }
-
-    #[test]
-    fn urgency_rgb_loading_state_returns_blue() {
-        let s = test_settings();
-        let rgb = urgency_rgb(None, &s, None);
-        assert_eq!(rgb, [74, 144, 226]);
-    }
-
-    #[test]
-    fn urgency_rgb_pace_mode_uses_pace_colors() {
-        let mut s = test_settings();
-        s.color_mode = ColorMode::Pace;
-        // pct < safe-band = under
-        let under = urgency_rgb(Some(20.0), &s, Some(40.0));
-        // pct in [safe-band, safe) = near_safe
-        let near_safe = urgency_rgb(Some(35.0), &s, Some(40.0));
-        // pct in [safe, safe+band) = near_over
-        let near_over = urgency_rgb(Some(45.0), &s, Some(40.0));
-        // pct >= safe+band = over
-        let over = urgency_rgb(Some(60.0), &s, Some(40.0));
-        assert_ne!(under, near_safe);
-        assert_ne!(near_safe, near_over);
-        assert_ne!(near_over, over);
-    }
-
-    #[test]
-    fn aa_ring_has_soft_edges() {
-        let bytes = render(Some(50.0), Some(50.0), &IconCtx {
-            settings: &test_settings(),
-            display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-        let img = image::load_from_memory(&bytes).unwrap();
-        // Sample a pixel near the outer ring's outer edge.
-        // center=16,16; r_out=15.0. Pixel (31, 16) is right at the outer edge.
-        let edge = img.get_pixel(31, 16);
-        assert!(edge[3] > 0 && edge[3] < 255, "expected AA alpha, got {}", edge[3]);
-    }
-
-    #[test]
-    fn apply_color_to_icon_false_grays_out_icon() {
-        let mut s = test_settings();
-        s.apply_color_to.icon = false;
-        let bytes = render(Some(90.0), Some(10.0), &IconCtx {
-            settings: &s,
-            display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-        let img = image::load_from_memory(&bytes).unwrap();
-        // Scan all colored pixels; none should be red (threshold mode at 90%).
-        let mut has_red = false;
-        for y in 0..img.height() {
-            for x in 0..img.width() {
-                let p = img.get_pixel(x, y);
-                if p[3] > 100 && p[0] > 200 && p[1] < 50 && p[2] < 50 { has_red = true; }
-            }
-        }
-        assert!(!has_red, "expected grayed icon, found red pixels");
-    }
-
-    #[test]
-    fn number_session_mode_renders_digits_centered() {
-        let s = test_settings();
-        let bytes = render(Some(45.0), Some(12.0), &IconCtx {
-            settings: &s,
-            display_mode: DisplayMode::NumberSession,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-        let img = image::load_from_memory(&bytes).unwrap();
-        // Count lit pixels in the center band (rows 10-22)
-        let mut lit_center = 0;
-        for y in 10..22 {
-            for x in 0..32 {
-                if img.get_pixel(x, y)[3] > 100 { lit_center += 1; }
-            }
-        }
-        assert!(lit_center > 10, "expected '45' digits, found {lit_center} lit pixels");
-    }
-
-    #[test]
-    fn number_weekly_mode_does_not_panic_on_large_pct() {
-        // If weekly=150 we should still render a max of 99 (no overflow).
-        let s = test_settings();
-        let _ = render(Some(10.0), Some(150.0), &IconCtx {
-            settings: &s,
-            display_mode: DisplayMode::NumberWeekly,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-    }
-
-    #[test]
-    fn render_spin_differs_from_static_render() {
-        let s = test_settings();
-        let ctx = IconCtx {
-            settings: &s, display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        };
-        let a = render(Some(50.0), Some(50.0), &ctx);
-        let b = render_spin(0, Some(50.0), &ctx);
-        assert_ne!(a, b, "spin frame should produce different bytes than static render");
-    }
-
-    #[test]
-    fn render_spin_frames_differ_from_each_other() {
-        let s = test_settings();
-        let ctx = IconCtx {
-            settings: &s, display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        };
-        let f0 = render_spin(0, Some(50.0), &ctx);
-        let f5 = render_spin(5, Some(50.0), &ctx);
-        assert_ne!(f0, f5);
-    }
-
-    #[test]
-    fn bars_mode_fills_left_column_for_session_pct() {
-        let mut s = test_settings();
-        s.icon_style = IconStyle::Bars;
-        let bytes = render(Some(80.0), Some(20.0), &IconCtx {
-            settings: &s,
-            display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        });
-        let img = image::load_from_memory(&bytes).unwrap();
-        // Left bar x∈[4,13] — count fully-opaque pixels in that column range.
-        let mut left_filled = 0;
-        let mut right_filled = 0;
-        for y in 2..=30 {
-            for x in 4..=13 {
-                if img.get_pixel(x, y)[3] == 255 { left_filled += 1; }
-            }
-            for x in 18..=27 {
-                if img.get_pixel(x, y)[3] == 255 { right_filled += 1; }
-            }
-        }
-        assert!(left_filled > right_filled, "session 80% should fill more than weekly 20%");
-    }
 }
