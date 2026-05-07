@@ -1,0 +1,100 @@
+name: Auto-Fix Release Failure
+
+# Watches the Tauri Release workflow on master. If it fails, pulls the failed
+# step logs, hands them to Claude Code, lets it patch the repo, and pushes the
+# fix back to master so Tauri Release re-runs. Hard-capped at 2 consecutive
+# auto-fix commits to prevent loops.
+
+on:
+  workflow_run:
+    workflows: ["Tauri Release"]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  fix:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 10
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check retry cap
+        id: cap
+        shell: bash
+        run: |
+          # Count consecutive AUTO-FIX commits at HEAD. If >=2, give up so we
+          # don't ping-pong forever on a failure Claude can't solve.
+          count=0
+          for sha in $(git log -n 5 --format='%H'); do
+            msg=$(git log -1 --format='%s' "$sha")
+            if [[ "$msg" == AUTO-FIX:* ]]; then
+              count=$((count+1))
+            else
+              break
+            fi
+          done
+          echo "consecutive=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -ge 2 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Auto-fix cap reached ($count consecutive AUTO-FIX commits). Skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch failed logs
+        if: steps.cap.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh run view ${{ github.event.workflow_run.id }} \
+            --repo ${{ github.repository }} \
+            --log-failed > failure-full.log || true
+          # Trim to last 600 lines so the prompt fits comfortably in context.
+          tail -n 600 failure-full.log > failure.log
+          rm failure-full.log
+          echo "=== failure.log preview ==="
+          head -n 30 failure.log
+
+      - name: Run Claude Code
+        if: steps.cap.outputs.skip == 'false'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            The Tauri Release workflow (run id ${{ github.event.workflow_run.id }}) just failed on master.
+
+            Read `failure.log` in the repo root for the trimmed failed-step output.
+            Identify the root cause and patch the codebase to fix it.
+
+            Hard rules:
+            - Do NOT bump the version in package.json, src-tauri/Cargo.toml, or src-tauri/tauri.conf.json.
+            - Do NOT skip tests, pre-commit hooks, or signing.
+            - Do NOT delete or comment out code merely to make the build pass.
+            - Do NOT touch unrelated files. Stay scoped to the failure.
+            - If the failure is environmental (transient apt mirror error, runner outage, rate limit) and not a code defect, make zero changes.
+            - If the root cause is unclear from the log, make zero changes rather than guessing.
+
+      - name: Commit and push fix
+        if: steps.cap.outputs.skip == 'false'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f failure.log
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "Claude made no changes; nothing to commit. Likely a transient/environmental failure."
+            exit 0
+          fi
+          git add -A
+          attempt=$(( ${{ steps.cap.outputs.consecutive }} + 1 ))
+          git commit -m "AUTO-FIX: attempt ${attempt}/2 - patch release CI failure (run ${{ github.event.workflow_run.id }})"
+          git push origin master
