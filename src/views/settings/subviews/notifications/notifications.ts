@@ -267,6 +267,7 @@ async function populateAudioDevicePicker(): Promise<void> {
     sel.prepend(missing);
   }
 
+  sel.removeEventListener("change", saveSettings);
   sel.addEventListener("change", saveSettings);
 }
 
