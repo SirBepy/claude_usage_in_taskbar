@@ -127,7 +127,8 @@ fn try_recover_handle(shared: &Arc<Mutex<Option<Arc<OutputStreamHandle>>>>) {
         match OutputStream::try_default() {
             Ok((_stream, handle)) => {
                 let _ = result_tx.send(Some(handle));
-                loop { std::thread::sleep(Duration::from_secs(3600)); }
+                // Keep _stream alive. Recovery is rare; thread count is bounded by device-disconnect events.
+                std::thread::park();
             }
             Err(e) => {
                 log::warn!("audio: fallback reinit failed: {e}");
