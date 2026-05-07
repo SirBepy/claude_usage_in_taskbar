@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum InstanceKind {
     Automated,
     External,
+    Interactive,
 }
 
 #[cfg(test)]
@@ -18,5 +19,18 @@ mod tests {
         let e = InstanceKind::External;
         assert_eq!(serde_json::to_string(&a).unwrap(), "\"automated\"");
         assert_eq!(serde_json::to_string(&e).unwrap(), "\"external\"");
+    }
+
+    #[test]
+    fn interactive_kind_serializes_lowercase() {
+        let kind = InstanceKind::Interactive;
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, "\"interactive\"");
+    }
+
+    #[test]
+    fn interactive_kind_deserializes() {
+        let kind: InstanceKind = serde_json::from_str("\"interactive\"").unwrap();
+        assert!(matches!(kind, InstanceKind::Interactive));
     }
 }
