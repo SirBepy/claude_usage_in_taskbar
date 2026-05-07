@@ -1,10 +1,10 @@
 import { html, render } from "lit-html";
 import "./project-detail.css";
-import { formatTokens, totalTok, cacheEffPct } from "../../shared/tokens";
+import { formatTokens, totalTok } from "../../shared/tokens";
 import type { TokenRecord } from "../../shared/tokens";
 import { projectLabel, renderAvatar } from "../../shared/projects";
 import { resolveMergeChain, doMerge } from "../../shared/merges";
-import { uptimeFrom } from "../../shared/time";
+import { uptimeFrom, timeAgo } from "../../shared/time";
 import {
   getSettings,
   getTokenHistory,
@@ -443,25 +443,28 @@ function renderSessionsList(cwd: string, range: string): void {
   );
   const top = sorted.slice(0, 5);
   const rowsHTML = top.map((r, i) => {
-    const tot = totalTok(r);
-    const eff = cacheEffPct(r);
-    const date = (r as { date?: string }).date ?? "";
-    const turns = (r as TokenRecord).turns || 0;
-    return `<div class="today-row session-row" data-session-idx="${i}" style="cursor:pointer">
-      <span style="font-family:'Fira Code',monospace;font-size:0.75rem;color:var(--text-dim)">${date}</span>
-      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${formatTokens(tot)} tok · ${turns} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
-    </div>`;
+    const rec = r as TokenRecord & { sessionId?: string; lastActiveAt?: string; recordedAt?: string };
+    const when = timeAgo(rec.lastActiveAt || rec.recordedAt || rec.date);
+    const name = (rec.sessionId || "").slice(0, 8) || "—";
+    const tok = formatTokens(totalTok(r));
+    return `<tr class="session-row" data-session-idx="${i}" style="cursor:pointer">
+      <td class="col-when">${when}</td>
+      <td class="col-name">${name}</td>
+      <td class="col-tokens">${tok}</td>
+    </tr>`;
   }).join("");
   const seeAll = sorted.length > 5
     ? `<button class="see-all-link" id="seeAllSessionsBtn">See all ${sorted.length} sessions</button>`
     : "";
   list.innerHTML = `<div class="section" style="padding:10px 14px">
     <div class="section-title" style="margin-bottom:8px">Recent sessions</div>
-    ${rowsHTML}
+    <table class="session-table"><thead><tr>
+      <th>when</th><th>session</th><th>tokens</th>
+    </tr></thead><tbody>${rowsHTML}</tbody></table>
     ${seeAll}
   </div>`;
 
-  list.querySelectorAll<HTMLElement>(".session-row").forEach((el) => {
+  list.querySelectorAll<HTMLTableRowElement>(".session-row").forEach((el) => {
     el.onclick = () => {
       const idx = Number(el.dataset.sessionIdx);
       openSessionDetail(top[idx]);

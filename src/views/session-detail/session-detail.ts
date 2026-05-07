@@ -171,7 +171,8 @@ export async function renderSessionDetailView(
       const label = (r.name && r.name.trim()) || `Live session ${(r.session_id || "").slice(0, 8) || "?"}`;
       titleEl.textContent = label;
     } else {
-      titleEl.textContent = `Session - ${r.date || "unknown date"}`;
+      const sid = r.session_id || (r as { sessionId?: string }).sessionId || "";
+      titleEl.textContent = sid.slice(0, 8) || r.date || "unknown";
     }
   }
   if (pathEl) pathEl.textContent = cwd;

@@ -1,6 +1,7 @@
 import { html, render } from "lit-html";
 import "./sessions-list.css";
-import { formatTokens, totalTok, cacheEffPct } from "../../../../shared/tokens";
+import { formatTokens, totalTok } from "../../../../shared/tokens";
+import { timeAgo } from "../../../../shared/time";
 import type { TokenRecord } from "../../../../shared/tokens";
 import { renderAvatar, projectLabel } from "../../../../shared/projects";
 import { getProjectDetailState, getSettings, getTokenHistory } from "../../../../shared/state";
@@ -39,17 +40,20 @@ export function renderAllSessionsList(cwd: string): void {
     (((a as { date?: string }).date ?? "") < ((b as { date?: string }).date ?? "") ? 1 : -1),
   );
   const rowsHTML = sorted.map((r, i) => {
-    const tot = totalTok(r);
-    const eff = cacheEffPct(r);
-    const date = (r as { date?: string }).date ?? "";
-    const turns = (r as TokenRecord).turns || 0;
-    return `<div class="today-row session-row" data-session-idx="${i}" style="cursor:pointer">
-      <span style="font-family:'Fira Code',monospace;font-size:0.75rem;color:var(--text-dim)">${date}</span>
-      <span style="font-family:'Fira Code',monospace;font-size:0.75rem">${formatTokens(tot)} tok · ${turns} turns${eff > 0 ? ` · ${eff}% cache` : ""}</span>
-    </div>`;
+    const rec = r as TokenRecord & { sessionId?: string; lastActiveAt?: string; recordedAt?: string };
+    const when = timeAgo(rec.lastActiveAt || rec.recordedAt || rec.date);
+    const name = (rec.sessionId || "").slice(0, 8) || "—";
+    const tok = formatTokens(totalTok(r));
+    return `<tr class="session-row" data-session-idx="${i}" style="cursor:pointer">
+      <td class="col-when">${when}</td>
+      <td class="col-name">${name}</td>
+      <td class="col-tokens">${tok}</td>
+    </tr>`;
   }).join("");
-  list.innerHTML = rowsHTML;
-  list.querySelectorAll<HTMLElement>(".session-row").forEach((el) => {
+  list.innerHTML = `<table class="session-table"><thead><tr>
+    <th>when</th><th>session</th><th>tokens</th>
+  </tr></thead><tbody>${rowsHTML}</tbody></table>`;
+  list.querySelectorAll<HTMLTableRowElement>(".session-row").forEach((el) => {
     el.onclick = () => {
       const idx = Number(el.dataset.sessionIdx);
       openSessionDetail(sorted[idx], "project-sessions");

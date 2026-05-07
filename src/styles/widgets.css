@@ -1048,5 +1048,46 @@ input:checked+.slider:before {
 }
 .see-all-link:hover { text-decoration: underline; }
 
+/* Recent/all sessions table */
+.session-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+.session-table thead th {
+  text-align: left;
+  color: var(--text-dim, #8a8aa0);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 8px 5px 0;
+  font-weight: 600;
+}
+.session-table thead th:last-child { text-align: right; padding-right: 0; }
+.session-table tbody td {
+  padding: 5px 8px 5px 0;
+  border-top: 1px solid var(--border, #2e2e40);
+  vertical-align: middle;
+}
+.session-table tbody td:last-child { text-align: right; padding-right: 0; }
+.session-table .col-when {
+  color: var(--text-dim, #8a8aa0);
+  white-space: nowrap;
+  font-family: 'Fira Code', monospace;
+  width: 72px;
+}
+.session-table .col-name {
+  font-family: 'Fira Code', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-table .col-tokens {
+  font-family: 'Fira Code', monospace;
+  white-space: nowrap;
+  width: 56px;
+}
+.session-table tr.session-row:hover td { background: var(--surface-alt, #2a2a3d); }
+
 /* Session detail definition list rules moved to
  * src/views/session-detail/session-detail.css. */
