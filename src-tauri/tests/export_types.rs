@@ -60,6 +60,9 @@ fn emit_ipc_types() {
     out.push_str(&decl::<VoiceEntry>());
     out.push_str(&decl::<PiperStatus>());
 
+    // audio
+    out.push_str(&decl::<AudioOutputDevice>());
+
     let path = output_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create parent dir for ipc.generated.ts");

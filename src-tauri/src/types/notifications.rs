@@ -46,6 +46,13 @@ where D: serde::Deserializer<'de>,
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct AudioOutputDevice {
+    pub name: String,
+    pub is_default: bool,
+}
+
 /// User-configurable app settings.
 ///
 /// The dashboard owns a LOT of UI state (theme, project aliases + blacklist,
@@ -75,6 +82,8 @@ pub struct Settings {
     /// we re-run `install()` to heal existing users in place.
     pub hook_install_version: u32,
     pub legacy_obsidian_import_handled: bool,
+    #[serde(rename = "audioOutputDevice", default)]
+    pub audio_output_device: Option<String>,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -99,6 +108,7 @@ impl Default for Settings {
             hook_registration_declined: false,
             hook_install_version: 0,
             legacy_obsidian_import_handled: false,
+            audio_output_device: None,
             extra: serde_json::Map::new(),
         }
     }
@@ -237,5 +247,22 @@ mod tests {
         assert!(!s.hooks_registered);
         assert!(!s.hook_registration_declined);
         assert_eq!(s.hook_install_version, 0);
+    }
+
+    #[test]
+    fn audio_output_device_field_roundtrips() {
+        let raw = r#"{ "audioOutputDevice": "Speakers (Realtek Audio)" }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert_eq!(s.audio_output_device.as_deref(), Some("Speakers (Realtek Audio)"));
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("audioOutputDevice"));
+    }
+
+    #[test]
+    fn audio_output_device_defaults_to_none() {
+        let s = Settings::default();
+        assert_eq!(s.audio_output_device, None);
+        let parsed: Settings = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(parsed.audio_output_device, None);
     }
 }
