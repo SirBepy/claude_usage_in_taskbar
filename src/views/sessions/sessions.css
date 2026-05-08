@@ -450,6 +450,7 @@
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
+  user-select: text;
 }
 
 .session-composer {
