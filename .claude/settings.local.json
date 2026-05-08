@@ -132,7 +132,8 @@
       "PowerShell(claude *)",
       "PowerShell($key = $env:ANTHROPIC_API_KEY; if \\([string]::IsNullOrEmpty\\($key\\)\\) { \"ANTHROPIC_API_KEY: UNSET\" } else { \"ANTHROPIC_API_KEY: SET \\(length=$\\($key.Length\\)\\)\" })",
       "Bash(C:/Users/tecno/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/scripts/start-server.sh *)",
-      "Bash(C:/Users/tecno/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh *)"
+      "Bash(C:/Users/tecno/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh *)",
+      "Bash(pnpm test *)"
     ]
   }
 }
