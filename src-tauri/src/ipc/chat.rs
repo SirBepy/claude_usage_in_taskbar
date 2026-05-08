@@ -187,6 +187,23 @@ pub async fn send_message(
     run_session_turn(Some(session_id), cwd, prompt, state, app).await
 }
 
+/// Validate session_id against a strict charset. Used anywhere we use the
+/// id to construct a filesystem path. Rejects empty / too-long / any char
+/// outside [A-Za-z0-9_-]. Real session_ids upstream are UUIDs which always
+/// pass.
+pub(crate) fn validate_session_id(session_id: &str) -> Result<(), String> {
+    if session_id.is_empty() || session_id.len() > 128 {
+        return Err("invalid session_id length".to_string());
+    }
+    if !session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("invalid session_id (only alphanumeric, dash, underscore allowed)".to_string());
+    }
+    Ok(())
+}
+
 /// Pure file-writing helper, factored out of the `paste_image` command so it
 /// can be unit-tested without a Tauri AppHandle.
 pub(crate) fn write_attachment(
@@ -195,17 +212,7 @@ pub(crate) fn write_attachment(
     base64_data: &str,
     mime: &str,
 ) -> Result<PathBuf, String> {
-    // Defensive: don't trust session_id. Allowed chars are conservative -
-    // alphanumeric, dash, underscore. Length capped at 128. This blocks
-    // path separators, NUL bytes, drive letters, Windows reserved names,
-    // leading/trailing whitespace, and any other shell-special chars.
-    // Real session_ids upstream are UUIDs which fit easily.
-    if session_id.is_empty() || session_id.len() > 128 {
-        return Err("invalid session_id length".to_string());
-    }
-    if !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err("invalid session_id (only alphanumeric, dash, underscore allowed)".to_string());
-    }
+    validate_session_id(session_id)?;
     let dir = root.join("chat-attachments").join(session_id);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let bytes = base64::engine::general_purpose::STANDARD
@@ -238,6 +245,90 @@ pub async fn paste_image(
     let root = crate::settings::paths::data_dir().map_err(|e| e.to_string())?;
     let path = write_attachment(&root, &session_id, &base64_data, &mime)?;
     Ok(path.to_string_lossy().to_string())
+}
+
+/// Replay the JSONL transcript for `session_id` from disk into ChatEvents.
+/// Used by the Sessions view to seed the renderer when opening a session,
+/// and by the History view for read-only past-session browsing.
+#[tauri::command]
+pub async fn load_history(session_id: String) -> Result<Vec<ChatEvent>, String> {
+    // Strict charset on session_id prevents path traversal via '../' or
+    // weird drive-letter shenanigans. Same validation as paste_image.
+    validate_session_id(&session_id)?;
+    let home = dirs::home_dir().ok_or("no home dir")?;
+    let path = home
+        .join(".claude")
+        .join("sessions")
+        .join(format!("{}.jsonl", session_id));
+    crate::chat::history::replay(&path)
+}
+
+/// List past sessions from `~/.claude/sessions/*.jsonl`. Returns a paginated,
+/// optionally-filtered list sorted newest first by mtime.
+#[tauri::command]
+pub async fn list_history(
+    project_id: Option<String>,
+    search: Option<String>,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<crate::types::chat::HistoryEntry>, String> {
+    let home = dirs::home_dir().ok_or("no home dir")?;
+    let sessions_dir = home.join(".claude").join("sessions");
+    if !sessions_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::new();
+    for f in std::fs::read_dir(&sessions_dir).map_err(|e| e.to_string())? {
+        let f = match f {
+            Ok(x) => x,
+            Err(_) => continue,
+        };
+        let p = f.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let title = p
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let meta = f.metadata().ok();
+        let started_at = meta
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let ended_at = meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        entries.push(crate::types::chat::HistoryEntry {
+            session_id: title.clone(),
+            project_id: String::new(),
+            title,
+            started_at,
+            ended_at,
+            message_count: 0,
+            // last_kind is best-effort; without parsing the JSONL we can't tell
+            // whether the session was Interactive vs External. Cross-referencing
+            // with the registry is a follow-up; for v1 we mark as External.
+            last_kind: crate::sessions::kinds::InstanceKind::External,
+        });
+    }
+    if let Some(pid) = project_id {
+        entries.retain(|e| e.project_id == pid);
+    }
+    if let Some(q) = search.map(|s| s.to_lowercase()) {
+        entries.retain(|e| e.title.to_lowercase().contains(&q));
+    }
+    // Newest first by ended_at (mtime).
+    entries.sort_by(|a, b| b.ended_at.unwrap_or(0).cmp(&a.ended_at.unwrap_or(0)));
+    let len = entries.len();
+    let start = (offset as usize).min(len);
+    // saturating_add to prevent u32 overflow on attacker-supplied huge values.
+    let end = (offset.saturating_add(limit) as usize).min(len);
+    Ok(entries[start..end].to_vec())
 }
 
 /// Promote a Manual (External) session to Interactive. Kills the external
