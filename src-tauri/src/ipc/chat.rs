@@ -405,26 +405,34 @@ pub async fn read_attachment(path: String) -> Result<AttachmentData, String> {
 pub async fn load_history(session_id: String, cwd: Option<String>) -> Result<Vec<ChatEvent>, String> {
     validate_session_id(&session_id)?;
 
-    if let Some(cwd_str) = cwd.as_deref().filter(|s| !s.is_empty()) {
-        if let Some(p) = crate::tokens::transcript_for_session(Path::new(cwd_str), &session_id) {
-            return crate::chat::history::replay(&p);
+    // Sync filesystem IO + JSONL parse can be heavy for large transcripts
+    // (megabytes, thousands of events). Run on the blocking pool so the
+    // Tauri async runtime stays responsive to other IPC calls while the
+    // session loads.
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(cwd_str) = cwd.as_deref().filter(|s| !s.is_empty()) {
+            if let Some(p) = crate::tokens::transcript_for_session(Path::new(cwd_str), &session_id) {
+                return crate::chat::history::replay(&p);
+            }
+            // Fall through to scan: cwd path may not match the encoded dir
+            // exactly (case differences on Windows, junctions, etc.).
         }
-        // Fall through to scan: cwd path may not match the encoded dir
-        // exactly (case differences on Windows, junctions, etc.).
-    }
 
-    let projects = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
-    let entries = match std::fs::read_dir(&projects) {
-        Ok(e) => e,
-        Err(_) => return Err(format!("no transcript found for session {session_id}")),
-    };
-    for entry in entries.flatten() {
-        let candidate = entry.path().join(format!("{session_id}.jsonl"));
-        if candidate.exists() {
-            return crate::chat::history::replay(&candidate);
+        let projects = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
+        let entries = match std::fs::read_dir(&projects) {
+            Ok(e) => e,
+            Err(_) => return Err(format!("no transcript found for session {session_id}")),
+        };
+        for entry in entries.flatten() {
+            let candidate = entry.path().join(format!("{session_id}.jsonl"));
+            if candidate.exists() {
+                return crate::chat::history::replay(&candidate);
+            }
         }
-    }
-    Err(format!("no transcript found for session {session_id}"))
+        Err(format!("no transcript found for session {session_id}"))
+    })
+    .await
+    .map_err(|e| format!("join: {}", e))?
 }
 
 /// List past sessions by walking `~/.claude/projects/<encoded-cwd>/*.jsonl`.

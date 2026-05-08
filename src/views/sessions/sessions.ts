@@ -4,6 +4,7 @@ import { showView } from "../../shared/navigation";
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
+import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
@@ -579,42 +580,30 @@ async function renderPendingPane(
       renderer.detach();
       return;
     }
-    // Hook into the placeholder channel to capture the real session_id and
-    // swap subscription. We use a separate listener (not the renderer's own)
-    // so we can read the SessionStarted payload and call swapSubscription.
-    const ev = window.__TAURI__?.event;
-    if (ev?.listen) {
-      const unlistenPromise = ev.listen<ChatEvent>(`chat:${placeholderId}`, async (e) => {
-        const payload = e.payload;
-        if (payload.type === "session_started") {
-          const realId = payload.session_id;
-          if (!realId) return;
-          if (state.mountId !== myMount) return;
-          // Mark realId so renderSidebar suppresses the duplicate registry row.
-          if (state.pendingNewSession) {
-            state.pendingNewSession.realId = realId;
-          }
-          // Swap renderer subscription to the real id channel.
-          if (state.renderer && state.renderer.currentSessionId() === placeholderId) {
-            await state.renderer.swapSubscription(realId);
-          }
-          // Re-render sidebar to suppress the just-added duplicate row.
-          const root = document.querySelector<HTMLElement>(".view-sessions");
-          if (root) {
-            const listEl = root.querySelector<HTMLElement>("#sessions-list");
-            if (listEl) renderSidebar(listEl);
-          }
-          // One-shot: drop this listener now that we've captured the id.
-          try {
-            (await unlistenPromise)();
-          } catch {
-            /* ignore */
-          }
-        }
-      });
-      // Fire-and-forget; the listener cleans itself up after capture.
-      void unlistenPromise;
-    }
+    // Hook into the placeholder channel via the event store to capture the
+    // real session_id and swap subscription. The store also moves the
+    // cached events under the new key so subsequent reopens hit the cache.
+    let unsubPlaceholderWatch: (() => void) | null = null;
+    unsubPlaceholderWatch = sessionEvents.subscribe(placeholderId, async (payload) => {
+      if (payload.type !== "session_started") return;
+      const realId = payload.session_id;
+      if (!realId) return;
+      // Tear down THIS subscriber before swap so we don't leak under realId.
+      if (unsubPlaceholderWatch) {
+        try { unsubPlaceholderWatch(); } catch { /* ignore */ }
+        unsubPlaceholderWatch = null;
+      }
+      if (state.mountId !== myMount) return;
+      if (state.pendingNewSession) state.pendingNewSession.realId = realId;
+      if (state.renderer && state.renderer.currentSessionId() === placeholderId) {
+        await state.renderer.swapSubscription(realId);
+      }
+      const root = document.querySelector<HTMLElement>(".view-sessions");
+      if (root) {
+        const listEl = root.querySelector<HTMLElement>("#sessions-list");
+        if (listEl) renderSidebar(listEl);
+      }
+    });
   }
 
   // Composer is attached here. The FIRST send invokes start_session
@@ -633,17 +622,18 @@ async function renderPendingPane(
           .join("\n");
         if (!promptText.trim()) return;
 
-        // Optimistically push the user's message to the renderer. claude -p's
+        // Optimistically push the user's message into the cache. claude -p's
         // stream-json output never echoes the prompt back on stdout (verified
         // against the spike fixture), so without this the user wouldn't see
-        // their typed text in the chat at all.
-        if (state.renderer) {
-          state.renderer.handleEvent({
-            type: "user_message",
-            content: blocks,
-            timestamp: BigInt(Date.now()),
-          } as ChatEvent);
-        }
+        // their typed text in the chat at all. Going through the store rather
+        // than the renderer directly means the synthetic event lives in the
+        // cache too, so a later detach/reopen still shows the message.
+        const targetSid = state.renderer?.currentSessionId() ?? placeholderId;
+        sessionEvents.pushSynthetic(targetSid, {
+          type: "user_message",
+          content: blocks,
+          timestamp: BigInt(Date.now()),
+        } as ChatEvent);
 
         if (!started) {
           started = true;
@@ -837,17 +827,16 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       renderer.detach();
       return;
     }
-    // Replay history. Pass cwd so the backend can locate
-    // ~/.claude/projects/<encoded-cwd>/<id>.jsonl directly.
+    // Pull from the shared event store. Cache hit = instant render with no
+    // IPC. Cache miss triggers load_history under the hood. Either way the
+    // store keeps the live `chat:<id>` listener attached so events accrue
+    // even when this session isn't selected.
     try {
-      const args: { sessionId: string; cwd?: string } = { sessionId };
-      if (sess.cwd) args.cwd = String(sess.cwd);
-      const events = await invoke<ChatEvent[]>("load_history", args);
+      await renderer.loadFromStore(sess.cwd ? String(sess.cwd) : undefined);
       if (state.mountId !== myMount || state.selectedId !== sessionId) {
         renderer.detach();
         return;
       }
-      if (Array.isArray(events) && events.length > 0) renderer.loadHistory(events);
     } catch {
       /* tolerate absence */
     }
@@ -858,15 +847,13 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   if (composerEl) {
     state.composer = new Composer(composerEl, {
       onSend: async (blocks: ContentBlock[]) => {
-        // Optimistically render the user's message; claude -p doesn't echo
-        // it back via stream-json so without this the typed text vanishes.
-        if (state.renderer) {
-          state.renderer.handleEvent({
-            type: "user_message",
-            content: blocks,
-            timestamp: BigInt(Date.now()),
-          } as ChatEvent);
-        }
+        // Optimistically push the user's message via the store; claude -p
+        // doesn't echo it back via stream-json. Cache stays consistent.
+        sessionEvents.pushSynthetic(sessionId, {
+          type: "user_message",
+          content: blocks,
+          timestamp: BigInt(Date.now()),
+        } as ChatEvent);
         try {
           await invoke<void>("send_message", {
             sessionId,

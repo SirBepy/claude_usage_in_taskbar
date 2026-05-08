@@ -1,7 +1,14 @@
 // Renders ChatEvent streams into the DOM. Used by both the live Sessions view
-// (with a per-session Tauri event subscription) and the read-only History view
-// (replays a static array). Markdown via markdown-it; code-block syntax
-// highlighting via shiki, applied in a post-render async pass.
+// (with a per-session Tauri event subscription via `sessionEvents`) and the
+// read-only History view (replays a static array). Markdown via markdown-it;
+// code-block syntax highlighting via shiki, applied in a post-render async
+// pass.
+//
+// Performance contract: this renderer does INCREMENTAL DOM updates. The
+// container is filled once on attach/loadHistory; subsequent events append
+// or replace single message nodes rather than rebuilding the whole list.
+// Code-block highlighting is guarded by `data-highlighted` so already-shiki'd
+// blocks survive across renders without re-tokenization.
 
 import MarkdownIt from "markdown-it";
 // shiki/bundle/web ships ~80 web-relevant languages and is ~10x smaller than
@@ -9,15 +16,13 @@ import MarkdownIt from "markdown-it";
 // including emacs-lisp/wasm/cpp - causing ~3 MB of chunk bloat).
 import { codeToHtml } from "shiki/bundle/web";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
-import { invoke } from "../ipc";
+import { sessionEvents } from "./event-store";
 
 const md = new MarkdownIt({
   html: false, // safe: don't let assistant output inject HTML
   linkify: true,
   typographer: false,
 });
-
-type Unlisten = () => void;
 
 export interface SessionMeta {
   model: string | null;
@@ -41,82 +46,99 @@ interface RenderedMessage {
   ts: number;
 }
 
+interface HandleEventOpts {
+  /** Skip DOM updates; caller will batch-render later via flushRender. */
+  silent?: boolean;
+  /** Skip auto-scroll-to-bottom. */
+  skipScroll?: boolean;
+}
+
 export class ChatRenderer {
   private container: HTMLElement;
   private messages: RenderedMessage[] = [];
-  private unlisten: Unlisten | null = null;
+  /** Parallel to `messages`. Each entry is the rendered DOM node for the
+   * message at the same index. Lets us append/replace single nodes instead
+   * of rebuilding the whole list. */
+  private messageEls: HTMLElement[] = [];
+  /** Indices whose node needs to be replaced on next flushRender (e.g. the
+   * streaming assistant message got new content). */
+  private dirtyIndices = new Set<number>();
+  private unsubscribe: (() => void) | null = null;
   private streamingIndex: number | null = null;
   private sessionId: string | null = null;
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
-  // path -> data URL; populated lazily via read_attachment IPC. Persists
-  // across re-renders so we don't refetch on every streaming token.
-  private attachmentCache: Map<string, string> = new Map();
 
   constructor(container: HTMLElement) {
     this.container = container;
   }
 
   /**
-   * Subscribe to live events for `sessionId`. Detaches any prior subscription.
+   * Subscribe to live events for `sessionId` via the shared event store.
+   * Detaches any prior subscription. Does NOT load history; call
+   * `loadFromStore(cwd)` after attach to populate the pane from cache + JSONL.
    */
   async attach(sessionId: string): Promise<void> {
     this.detach();
     this.sessionId = sessionId;
     this.messages = [];
+    this.messageEls = [];
+    this.dirtyIndices.clear();
     this.streamingIndex = null;
     this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
-    this.render();
+    this.container.innerHTML = "";
 
-    const ev = window.__TAURI__?.event;
-    if (!ev?.listen) {
-      console.warn("[ChatRenderer] Tauri event API unavailable");
-      return;
-    }
-    this.unlisten = await ev.listen<ChatEvent>(`chat:${sessionId}`, (e) => {
-      this.handleEvent(e.payload);
+    this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
+      this.handleEvent(ev);
     });
   }
 
+  /**
+   * Pull cached events for the current session and bulk-render them in a
+   * single DOM pass. Cache hit = zero IPC, instant render. Cache miss =
+   * triggers `load_history` IPC under the hood (the store handles it).
+   *
+   * Idempotent: safe to call multiple times. Resets the message list before
+   * loading.
+   */
+  async loadFromStore(cwd?: string): Promise<void> {
+    if (!this.sessionId) return;
+    const sid = this.sessionId;
+    const events = await sessionEvents.ensureLoaded(sid, cwd);
+    // Bail if attach swapped us to a different session during the await.
+    if (this.sessionId !== sid) return;
+    this.bulkLoadEvents(events);
+  }
+
   detach(): void {
-    if (this.unlisten) {
-      try {
-        this.unlisten();
-      } catch {
-        /* ignore */
-      }
-      this.unlisten = null;
+    if (this.unsubscribe) {
+      try { this.unsubscribe(); } catch { /* ignore */ }
+      this.unsubscribe = null;
     }
     this.streamingIndex = null;
+    this.dirtyIndices.clear();
     this.sessionId = null;
   }
 
   /**
-   * Swap the live event subscription from the current session id to a new
-   * one (typically: placeholder -> real). Preserves the current rendered
-   * messages and streaming index so the user keeps seeing the in-progress
-   * turn instead of a flicker. Used when start_session captures the real
-   * session_id from claude's first SessionStarted event.
+   * Swap subscription from the current session id to a new one (typically
+   * placeholder -> real). Delegates to `sessionEvents.swap` so the cache
+   * follows. Preserves rendered messages so the user does not see a flicker.
    */
   async swapSubscription(newSessionId: string): Promise<void> {
     if (this.sessionId === newSessionId) return;
-    if (this.unlisten) {
-      try {
-        this.unlisten();
-      } catch {
-        /* ignore */
-      }
-      this.unlisten = null;
+    const oldId = this.sessionId;
+    if (this.unsubscribe) {
+      try { this.unsubscribe(); } catch { /* ignore */ }
+      this.unsubscribe = null;
     }
     this.sessionId = newSessionId;
-    const ev = window.__TAURI__?.event;
-    if (!ev?.listen) return;
-    this.unlisten = await ev.listen<ChatEvent>(`chat:${newSessionId}`, (e) => {
-      this.handleEvent(e.payload);
+    if (oldId) await sessionEvents.swap(oldId, newSessionId);
+    this.unsubscribe = sessionEvents.subscribe(newSessionId, (ev) => {
+      this.handleEvent(ev);
     });
   }
 
-  /** Currently subscribed session id, if any. */
   currentSessionId(): string | null {
     return this.sessionId;
   }
@@ -126,19 +148,29 @@ export class ChatRenderer {
   }
 
   /**
-   * Replace the message list with the given history. Used for read-only
-   * history view replay or for restoring the chat pane on reopen.
+   * Replace the message list with the given history (read-only path used by
+   * the History view). One DOM build at the end, no per-event re-render.
    */
   loadHistory(events: ChatEvent[]): void {
+    this.bulkLoadEvents(events);
+  }
+
+  private bulkLoadEvents(events: ChatEvent[]): void {
     this.messages = [];
+    this.messageEls = [];
+    this.dirtyIndices.clear();
     this.streamingIndex = null;
-    for (const ev of events) this.handleEvent(ev, /*skipScroll=*/ true);
-    this.render();
+    this.container.innerHTML = "";
+    for (const ev of events) {
+      this.handleEvent(ev, { silent: true, skipScroll: true });
+    }
+    this.flushRender();
     this.scrollToBottom();
   }
 
-  handleEvent(ev: ChatEvent, skipScroll = false): void {
+  handleEvent(ev: ChatEvent, opts: HandleEventOpts = {}): void {
     const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
+    let touched = false;
     switch (ev.type) {
       case "session_started":
         this.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
@@ -148,9 +180,11 @@ export class ChatRenderer {
           text: `Session started${ev.model ? ` (${ev.model})` : ""}`,
           ts,
         });
+        touched = true;
         break;
       case "user_message":
         this.messages.push({ kind: "user", content: ev.content, ts });
+        touched = true;
         break;
       case "assistant_message": {
         const msg: RenderedMessage = {
@@ -162,6 +196,7 @@ export class ChatRenderer {
         if (ev.streaming) {
           if (this.streamingIndex !== null) {
             this.messages[this.streamingIndex] = msg;
+            this.dirtyIndices.add(this.streamingIndex);
           } else {
             this.streamingIndex = this.messages.length;
             this.messages.push(msg);
@@ -169,11 +204,13 @@ export class ChatRenderer {
         } else {
           if (this.streamingIndex !== null) {
             this.messages[this.streamingIndex] = msg;
+            this.dirtyIndices.add(this.streamingIndex);
             this.streamingIndex = null;
           } else {
             this.messages.push(msg);
           }
         }
+        touched = true;
         break;
       }
       case "tool_use":
@@ -184,6 +221,7 @@ export class ChatRenderer {
           id: ev.id,
           ts,
         });
+        touched = true;
         break;
       case "tool_result":
         this.messages.push({
@@ -193,9 +231,11 @@ export class ChatRenderer {
           is_error: ev.is_error,
           ts,
         });
+        touched = true;
         break;
       case "notification":
         this.messages.push({ kind: "notification", text: ev.body, ts: Date.now() });
+        touched = true;
         break;
       case "session_ended":
         this.messages.push({
@@ -203,6 +243,7 @@ export class ChatRenderer {
           text: `Session ended${ev.exit_code !== null ? ` (exit ${ev.exit_code})` : ""}`,
           ts,
         });
+        touched = true;
         break;
       case "turn_usage":
         this.meta.inputTokens = ev.input_tokens;
@@ -211,45 +252,51 @@ export class ChatRenderer {
         this.onMetaUpdate?.(this.getMeta());
         return; // no DOM update needed
       default:
-        // Unknown variant; ignore for forward compat
-        break;
+        break; // unknown variant, ignore for forward compat
     }
-    this.render();
-    if (!skipScroll) this.scrollToBottom();
+    if (!touched) return;
+    if (!opts.silent) {
+      this.flushRender();
+      if (!opts.skipScroll) this.scrollToBottom();
+    }
   }
 
-  private render(): void {
-    this.container.innerHTML = this.messages.map((m) => this.renderMessage(m)).join("");
-    // Async syntax highlighting pass; ignore failures (unknown languages
-    // leave the block as-is). Don't await - let highlight stream in after
-    // the initial render lands so streaming feels live.
+  /**
+   * Apply pending DOM changes: replace dirty indices, append new messages.
+   * Cheap when there are no pending changes (early-return on empty diff).
+   */
+  private flushRender(): void {
+    // 1. Replace nodes for dirty (in-place mutated) messages.
+    if (this.dirtyIndices.size > 0) {
+      for (const idx of this.dirtyIndices) {
+        if (idx < this.messageEls.length) {
+          const newEl = this.buildMessageEl(this.messages[idx]!);
+          const oldEl = this.messageEls[idx]!;
+          oldEl.replaceWith(newEl);
+          this.messageEls[idx] = newEl;
+        }
+      }
+      this.dirtyIndices.clear();
+    }
+    // 2. Append nodes for newly-pushed messages.
+    if (this.messageEls.length < this.messages.length) {
+      const frag = document.createDocumentFragment();
+      while (this.messageEls.length < this.messages.length) {
+        const idx = this.messageEls.length;
+        const el = this.buildMessageEl(this.messages[idx]!);
+        frag.appendChild(el);
+        this.messageEls.push(el);
+      }
+      this.container.appendChild(frag);
+    }
+    // 3. Async syntax highlight pass for any un-highlighted code blocks.
     void this.highlightCodeBlocks();
-    void this.loadAttachmentImages();
   }
 
-  private async loadAttachmentImages(): Promise<void> {
-    const imgs = Array.from(
-      this.container.querySelectorAll<HTMLImageElement>("img.attachment-img:not([data-loaded])"),
-    );
-    for (const img of imgs) {
-      const path = img.dataset.attachmentPath;
-      if (!path) continue;
-      img.dataset.loaded = "true";
-      const cached = this.attachmentCache.get(path);
-      if (cached) {
-        img.src = cached;
-        continue;
-      }
-      try {
-        const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
-        const url = `data:${data.mime};base64,${data.base64}`;
-        this.attachmentCache.set(path, url);
-        img.src = url;
-      } catch {
-        img.alt = `(image unavailable)`;
-        img.classList.add("missing");
-      }
-    }
+  private buildMessageEl(m: RenderedMessage): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = this.renderMessage(m);
+    return wrap.firstElementChild as HTMLElement;
   }
 
   private async highlightCodeBlocks(): Promise<void> {
@@ -258,6 +305,8 @@ export class ChatRenderer {
     // (2) markdown-it's fence renderer emits <pre><code class="language-X">
     // ...</code></pre> with NO class on the <pre>. The selector must catch
     // both, hence we walk via <code> (which always exists) up to its <pre>.
+    // The :not([data-highlighted]) guard means already-shiki'd blocks are
+    // skipped on subsequent passes (incremental render preserves them).
     const codes = Array.from(
       this.container.querySelectorAll<HTMLElement>("pre > code:not([data-highlighted])"),
     );
@@ -266,11 +315,6 @@ export class ChatRenderer {
       if (!pre || pre.tagName !== "PRE") continue;
       const lang = pre.dataset.lang || extractFenceLang(code.className) || "text";
       try {
-        // Single theme to avoid the CSS-var bridge problem with shiki's
-        // dual-theme mode. github-dark reads OK on both light and dark app
-        // themes for v1; light-theme users get a slightly darker code panel
-        // than ideal but tokens stay readable. Theme switching is a polish
-        // item.
         const html = await codeToHtml(code.textContent ?? "", {
           lang,
           theme: "github-dark",
@@ -278,8 +322,6 @@ export class ChatRenderer {
         const safeLang = escapeHtml(lang);
         pre.outerHTML = `<div class="block code shiki-wrap" data-lang="${safeLang}" data-highlighted="true">${html}</div>`;
       } catch {
-        // Unknown language - mark BOTH the code element AND a wrapping
-        // attribute so the no-op fallback render survives subsequent passes.
         code.dataset.highlighted = "true";
       }
     }
@@ -309,7 +351,7 @@ export class ChatRenderer {
       .map((b) => {
         switch (b.type) {
           case "text":
-            return `<div class="block text">${renderTextWithFileTokens(b.text)}</div>`;
+            return `<div class="block text">${renderMarkdown(b.text)}</div>`;
           case "code":
             return `<pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre>`;
           case "image":
@@ -342,26 +384,6 @@ function escapeHtml(s: string): string {
 function renderMarkdown(text: string): string {
   // markdown-it with html:false escapes raw HTML; safe for untrusted input.
   return md.render(text);
-}
-
-// `<file:absolute-path>` tokens are how the composer hands pasted-image
-// paths to claude. They reach the chat transcript as plain user text.
-// Render them as inline <img> placeholders so the user sees the actual
-// image; loadAttachmentImages() fills in src via the read_attachment IPC.
-const FILE_TOKEN_RE = /<file:([^>]+)>/g;
-function renderTextWithFileTokens(text: string): string {
-  let html = "";
-  let last = 0;
-  for (const m of text.matchAll(FILE_TOKEN_RE)) {
-    const idx = m.index ?? 0;
-    if (idx > last) html += renderMarkdown(text.slice(last, idx));
-    const path = m[1] ?? "";
-    html += `<img class="block image attachment-img" data-attachment-path="${escapeHtml(path)}" alt="">`;
-    last = idx + m[0].length;
-  }
-  if (last < text.length) html += renderMarkdown(text.slice(last));
-  if (last === 0) html = renderMarkdown(text);
-  return html;
 }
 
 function extractFenceLang(className: string): string | null {
