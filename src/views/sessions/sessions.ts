@@ -512,8 +512,13 @@ async function launchNewSession(
   project: { path: string; name: string },
 ): Promise<void> {
   if (state.pendingNewSession) {
-    alert("Another new session is still starting; please wait for it to finish.");
-    return;
+    if (state.pendingNewSession.realId !== null) {
+      // A turn is already in flight - cannot interrupt.
+      alert("Another new session is still starting; please wait for it to finish.");
+      return;
+    }
+    // No message sent yet - abandon the empty pending session silently.
+    state.pendingNewSession = null;
   }
 
   const placeholderId = makePlaceholderId();
