@@ -980,6 +980,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       ) {
         if (state.renderer) state.renderer.detach();
         state.renderer = null;
+        state.composer?.destroy();
         state.composer = null;
         state.selectedId = null;
         pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
@@ -1047,6 +1048,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       state.statusbar.destroy();
       state.statusbar = null;
     }
+    state.composer?.destroy();
     state.composer = null;
     state.selectedId = null;
   };
@@ -1173,6 +1175,7 @@ export async function renderDetachedSession(
       state.statusbar.destroy();
       state.statusbar = null;
     }
+    state.composer?.destroy();
     state.composer = null;
     state.selectedId = null;
   };

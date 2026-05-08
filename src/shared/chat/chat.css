@@ -156,6 +156,15 @@
   font-size: 0.88rem;
 }
 
+.composer-textarea:focus {
+  outline: none;
+}
+
+.composer-textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  border-color: var(--primary);
+}
+
 .composer-textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;

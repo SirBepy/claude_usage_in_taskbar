@@ -26,10 +26,36 @@ export class Composer {
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
 
+  private _globalKeydown = (e: KeyboardEvent): void => {
+    if (this.disabled || !this.textarea || this.textarea.disabled) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key.length !== 1) return;
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLTextAreaElement ||
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLSelectElement ||
+      (active instanceof HTMLElement && active.isContentEditable)
+    ) return;
+    this.textarea.focus();
+    const start = this.textarea.selectionStart ?? this.textarea.value.length;
+    const end = this.textarea.selectionEnd ?? this.textarea.value.length;
+    this.textarea.value =
+      this.textarea.value.slice(0, start) + e.key + this.textarea.value.slice(end);
+    this.textarea.selectionStart = this.textarea.selectionEnd = start + 1;
+    this.textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    e.preventDefault();
+  };
+
   constructor(root: HTMLElement, opts: ComposerOptions) {
     this.root = root;
     this.opts = opts;
     this.render();
+    document.addEventListener("keydown", this._globalKeydown);
+  }
+
+  destroy(): void {
+    document.removeEventListener("keydown", this._globalKeydown);
   }
 
   setSessionId(id: string, opts: { readOnly?: boolean } = {}): void {
