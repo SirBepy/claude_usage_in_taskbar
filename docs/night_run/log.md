@@ -7,3 +7,4 @@
 2026-05-08 05:58 [x] phase-5a-sessions-view-html-skeleton attempts=2
 2026-05-08 06:43 [x] phase-5b-chat-renderer-and-composer attempts=1
 2026-05-08 07:28 [x] phase-5c-sessions-view-orchestration attempts=1
+2026-05-08 08:13 [x] phase-5d-markdown-it-shiki attempts=3
