@@ -145,6 +145,11 @@ async fn run_session_turn(
         placeholder: placeholder_id.clone(),
     };
 
+    // Resume turns (initial_id is Some) suppress forwarded SessionStarted events
+    // so the user doesn't see "Session started (model)" in the chat on every
+    // turn. The first turn (initial_id None) still surfaces it once - that's
+    // the only one that matters for the user.
+    let is_resume_turn = initial_id.is_some();
     let result = tauri::async_runtime::spawn_blocking(move || {
         run_turn(
             &cwd_path,
@@ -182,6 +187,16 @@ async fn run_session_turn(
                 }
                 if just_captured.is_some() {
                     let _ = app_for_closure.emit("instances-changed", ());
+                }
+                // Suppress SessionStarted forwarding on resume turns. Each
+                // `claude -p --resume` invocation re-emits a `system init`
+                // line with the same session_id; surfacing it as a
+                // "Session started" system message in the chat on every
+                // turn pollutes the transcript. The first turn (initial_id
+                // None) still gets it once.
+                let is_session_started = matches!(ev, ChatEvent::SessionStarted { .. });
+                if is_session_started && is_resume_turn {
+                    return;
                 }
                 let target = captured_for_closure
                     .lock()

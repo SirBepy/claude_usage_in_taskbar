@@ -506,6 +506,18 @@ async function renderPendingPane(
           .join("\n");
         if (!promptText.trim()) return;
 
+        // Optimistically push the user's message to the renderer. claude -p's
+        // stream-json output never echoes the prompt back on stdout (verified
+        // against the spike fixture), so without this the user wouldn't see
+        // their typed text in the chat at all.
+        if (state.renderer) {
+          state.renderer.handleEvent({
+            type: "user_message",
+            content: blocks,
+            timestamp: BigInt(Date.now()),
+          } as ChatEvent);
+        }
+
         if (!started) {
           started = true;
           try {
@@ -683,6 +695,15 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   if (composerEl) {
     state.composer = new Composer(composerEl, {
       onSend: async (blocks: ContentBlock[]) => {
+        // Optimistically render the user's message; claude -p doesn't echo
+        // it back via stream-json so without this the typed text vanishes.
+        if (state.renderer) {
+          state.renderer.handleEvent({
+            type: "user_message",
+            content: blocks,
+            timestamp: BigInt(Date.now()),
+          } as ChatEvent);
+        }
         try {
           await invoke<void>("send_message", {
             sessionId,

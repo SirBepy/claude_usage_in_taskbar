@@ -8,6 +8,11 @@
   border-radius: 6px;
   font-size: 0.88rem;
   line-height: 1.45;
+  /* Long unbroken strings (file paths, hashes, no-space prose) must wrap so
+     the message bubble can't extend past the pane width. overflow-wrap is
+     better-behaved than word-break for natural-language text. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .msg.user {

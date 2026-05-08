@@ -105,6 +105,10 @@ pub fn parse_line(line: &str) -> Option<ChatEvent> {
     let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
     match v.get("type").and_then(|t| t.as_str())? {
         // The init `system` line is what carries the session_id we care about.
+        // Other system subtypes (hook_started / hook_response / SessionStart hook
+        // re-emissions on each --resume turn) are noise for the chat surface and
+        // are dropped here. The instance registry is fed via the dedicated
+        // SessionStart HTTP hook, not via this stdout stream.
         "system" => {
             let subtype = v.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
             if subtype == "init" {
@@ -115,10 +119,7 @@ pub fn parse_line(line: &str) -> Option<ChatEvent> {
                     timestamp: ts,
                 })
             } else {
-                // hook_started / hook_response / etc - surface as Notification so the UI can
-                // show "running hook X" if desired, without a dedicated variant.
-                let body = v.get("hook_name").and_then(|s| s.as_str()).unwrap_or(subtype).to_string();
-                Some(ChatEvent::Notification { kind: format!("system.{}", subtype), body })
+                None
             }
         }
         "user" => Some(ChatEvent::UserMessage {
@@ -126,13 +127,30 @@ pub fn parse_line(line: &str) -> Option<ChatEvent> {
             timestamp: ts,
         }),
         "assistant" => {
-            // -p --include-partial-messages emits multiple `assistant` lines per turn,
-            // each carrying a token chunk. The runner detects "is this the final assistant
-            // line for the turn" by seeing the subsequent `result` line; for now, we mark
-            // every chunk as streaming=true and finalize on the result line.
+            // The transcript JSONL stores every claude reply as `assistant` lines
+            // with a populated `stop_reason` (turn already finalized on disk).
+            // The live `-p` stdout uses `stream_event` envelopes for partial
+            // chunks plus a single trailing `assistant` line carrying the full
+            // final message (also with `stop_reason` set). Either way, an
+            // `assistant` line with a non-empty `stop_reason` is finalized -
+            // mark streaming=false so the renderer doesn't keep its
+            // streamingIndex pointing at the row across turn boundaries.
+            //
+            // Empty-content assistant lines (thinking-only blocks have no text)
+            // are skipped to keep the chat clean.
+            let message = v.get("message")?;
+            let content = extract_content_blocks(message.get("content")?);
+            if content.is_empty() {
+                return None;
+            }
+            let has_stop_reason = message
+                .get("stop_reason")
+                .and_then(|s| s.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
             Some(ChatEvent::AssistantMessage {
-                content: extract_content_blocks(v.get("message")?.get("content")?),
-                streaming: true,
+                content,
+                streaming: !has_stop_reason,
                 timestamp: ts,
             })
         }
@@ -277,13 +295,88 @@ mod tests {
     }
 
     #[test]
-    fn assistant_chunk_marked_streaming() {
+    fn assistant_chunk_without_stop_reason_marked_streaming() {
         let mut ctx = ParserContext::new();
         let line = r#"{"type":"assistant","message":{"role":"assistant","content":"partial"},"timestamp":1}"#;
         let events = ctx.feed(format!("{}\n", line).as_bytes());
         match &events[0] {
             ChatEvent::AssistantMessage { streaming, .. } => assert!(*streaming),
             _ => panic!("expected streaming AssistantMessage"),
+        }
+    }
+
+    #[test]
+    fn assistant_with_stop_reason_marked_finalized() {
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        match &events[0] {
+            ChatEvent::AssistantMessage { streaming, content, .. } => {
+                assert_eq!(*streaming, false);
+                match &content[0] {
+                    ContentBlock::Text { text } => assert_eq!(text, "done"),
+                    _ => panic!("expected text"),
+                }
+            }
+            _ => panic!("expected finalized AssistantMessage"),
+        }
+    }
+
+    #[test]
+    fn assistant_with_only_thinking_block_is_skipped() {
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"...","signature":"sig"}],"stop_reason":"end_turn"},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        assert!(events.is_empty(), "thinking-only assistant lines must not surface");
+    }
+
+    #[test]
+    fn system_hook_subtypes_dropped() {
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"system","subtype":"hook_started","hook_name":"SessionStart:resume","timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        assert!(events.is_empty(), "hook chatter must not appear in chat");
+    }
+
+    #[test]
+    fn replay_two_turn_jsonl_preserves_message_order() {
+        // Reproduces Joe's bug: previously, every transcript assistant line was
+        // marked streaming=true, so streamingIndex stayed pointing at turn 1's
+        // reply slot and turn 2's reply overwrote it instead of appending.
+        let lines = [
+            r#"{"type":"user","message":{"role":"user","content":"first"},"timestamp":1}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"reply 1"}],"stop_reason":"end_turn"},"timestamp":2}"#,
+            r#"{"type":"user","message":{"role":"user","content":"second"},"timestamp":3}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"reply 2"}],"stop_reason":"end_turn"},"timestamp":4}"#,
+        ];
+        let mut ctx = ParserContext::new();
+        let mut all = Vec::new();
+        for l in lines {
+            all.extend(ctx.feed(format!("{}\n", l).as_bytes()));
+        }
+        // Expect 4 events in order, and every assistant marked finalized.
+        assert_eq!(all.len(), 4);
+        match &all[0] { ChatEvent::UserMessage { .. } => {}, _ => panic!("0: user") }
+        match &all[1] {
+            ChatEvent::AssistantMessage { streaming, content, .. } => {
+                assert_eq!(*streaming, false);
+                match &content[0] {
+                    ContentBlock::Text { text } => assert_eq!(text, "reply 1"),
+                    _ => panic!("text"),
+                }
+            }
+            _ => panic!("1: assistant"),
+        }
+        match &all[2] { ChatEvent::UserMessage { .. } => {}, _ => panic!("2: user") }
+        match &all[3] {
+            ChatEvent::AssistantMessage { streaming, content, .. } => {
+                assert_eq!(*streaming, false);
+                match &content[0] {
+                    ContentBlock::Text { text } => assert_eq!(text, "reply 2"),
+                    _ => panic!("text"),
+                }
+            }
+            _ => panic!("3: assistant"),
         }
     }
 
