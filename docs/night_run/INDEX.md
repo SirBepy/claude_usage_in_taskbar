@@ -11,7 +11,7 @@ End cap: none
 - [x] Phase 3a - Chat module skeleton + parser.rs - @docs/night_run/plans/01-phase-3a-chat-module-and-parser.md
 - [x] Phase 3b - chat/runner.rs (per-turn process spawn) - @docs/night_run/plans/02-phase-3b-chat-runner.md
 - [x] Phase 3c - sessions/registry helpers for Path C - @docs/night_run/plans/03-phase-3c-sessions-registry-helpers.md
-- [~ 05:13] Phase 4 - Chat IPC commands - @docs/night_run/plans/04-phase-4-chat-ipc-commands.md
+- [x] Phase 4 - Chat IPC commands - @docs/night_run/plans/04-phase-4-chat-ipc-commands.md
 - [ ] Phase 5a - view-sessions HTML + sidemenu + CSS skeleton - @docs/night_run/plans/05-phase-5a-sessions-view-html-skeleton.md
 - [ ] Phase 5b - chat-renderer.js + composer.js - @docs/night_run/plans/06-phase-5b-chat-renderer-and-composer.md
 - [ ] Phase 5c - sessions-view.js orchestration - @docs/night_run/plans/07-phase-5c-sessions-view-orchestration.md
