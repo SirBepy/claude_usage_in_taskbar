@@ -1,0 +1,66 @@
+.view-history .view-body {
+  padding: 0;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+
+.history-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 40px;
+}
+
+.history-layout {
+  display: flex;
+  height: 100%;
+}
+
+.history-sidebar {
+  width: 280px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--surface-alt);
+}
+
+.history-sidebar input {
+  width: 100%;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.history-sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-sidebar li {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.history-sidebar li:hover {
+  background: var(--surface);
+}
+
+.history-pane {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.history-pane .session-messages {
+  flex: 1;
+  overflow-y: auto;
+}

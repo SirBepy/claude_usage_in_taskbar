@@ -5,6 +5,8 @@ import "./styles/widgets.css";
 
 import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
+import { renderSessionsView } from "./views/sessions/sessions";
+import { renderHistoryView } from "./views/history/history";
 import { renderStatisticsView } from "./views/statistics/statistics";
 import { renderProjectsView } from "./views/projects/projects";
 import { renderCharactersView } from "./views/characters/characters";
@@ -24,6 +26,8 @@ import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
 
 registerView("dashboard", renderDashboard);
+registerView("sessions", renderSessionsView);
+registerView("history", renderHistoryView);
 registerView("statistics", renderStatisticsView);
 registerView("projects", renderProjectsView);
 registerView("characters", renderCharactersView);

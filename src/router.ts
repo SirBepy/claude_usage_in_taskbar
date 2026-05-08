@@ -26,7 +26,7 @@ export function mountRouter(root: HTMLElement): void {
   (window as unknown as {
     isMigratedView: (name: string) => boolean;
   }).isMigratedView = isMigrated;
-  const initial = window.location.hash.replace(/^#/, "") || "dashboard";
+  const initial = window.location.hash.replace(/^#/, "") || "sessions";
   void navigateTo(initial);
 }
 
