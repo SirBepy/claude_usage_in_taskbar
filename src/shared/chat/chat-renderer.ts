@@ -1,9 +1,20 @@
 // Renders ChatEvent streams into the DOM. Used by both the live Sessions view
 // (with a per-session Tauri event subscription) and the read-only History view
-// (replays a static array). Markdown rendering is the placeholder escapeHtml
-// for now; Phase 5d wires markdown-it + shiki.
+// (replays a static array). Markdown via markdown-it; code-block syntax
+// highlighting via shiki, applied in a post-render async pass.
 
+import MarkdownIt from "markdown-it";
+// shiki/bundle/web ships ~80 web-relevant languages and is ~10x smaller than
+// the default barrel "shiki" (which eagerly bundles every supported language,
+// including emacs-lisp/wasm/cpp - causing ~3 MB of chunk bloat).
+import { codeToHtml } from "shiki/bundle/web";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
+
+const md = new MarkdownIt({
+  html: false, // safe: don't let assistant output inject HTML
+  linkify: true,
+  typographer: false,
+});
 
 type Unlisten = () => void;
 
@@ -152,6 +163,43 @@ export class ChatRenderer {
 
   private render(): void {
     this.container.innerHTML = this.messages.map((m) => this.renderMessage(m)).join("");
+    // Async syntax highlighting pass; ignore failures (unknown languages
+    // leave the block as-is). Don't await - let highlight stream in after
+    // the initial render lands so streaming feels live.
+    void this.highlightCodeBlocks();
+  }
+
+  private async highlightCodeBlocks(): Promise<void> {
+    // Two paths produce <pre><code>: (1) renderBlocks emits
+    // <pre class="block code" data-lang="X"><code>...</code></pre>, and
+    // (2) markdown-it's fence renderer emits <pre><code class="language-X">
+    // ...</code></pre> with NO class on the <pre>. The selector must catch
+    // both, hence we walk via <code> (which always exists) up to its <pre>.
+    const codes = Array.from(
+      this.container.querySelectorAll<HTMLElement>("pre > code:not([data-highlighted])"),
+    );
+    for (const code of codes) {
+      const pre = code.parentElement as HTMLElement | null;
+      if (!pre || pre.tagName !== "PRE") continue;
+      const lang = pre.dataset.lang || extractFenceLang(code.className) || "text";
+      try {
+        // Single theme to avoid the CSS-var bridge problem with shiki's
+        // dual-theme mode. github-dark reads OK on both light and dark app
+        // themes for v1; light-theme users get a slightly darker code panel
+        // than ideal but tokens stay readable. Theme switching is a polish
+        // item.
+        const html = await codeToHtml(code.textContent ?? "", {
+          lang,
+          theme: "github-dark",
+        });
+        const safeLang = escapeHtml(lang);
+        pre.outerHTML = `<div class="block code shiki-wrap" data-lang="${safeLang}" data-highlighted="true">${html}</div>`;
+      } catch {
+        // Unknown language - mark BOTH the code element AND a wrapping
+        // attribute so the no-op fallback render survives subsequent passes.
+        code.dataset.highlighted = "true";
+      }
+    }
   }
 
   private renderMessage(m: RenderedMessage): string {
@@ -208,7 +256,12 @@ function escapeHtml(s: string): string {
   });
 }
 
-// Phase 5d wires markdown-it + shiki here. v1 just escapes.
 function renderMarkdown(text: string): string {
-  return escapeHtml(text);
+  // markdown-it with html:false escapes raw HTML; safe for untrusted input.
+  return md.render(text);
+}
+
+function extractFenceLang(className: string): string | null {
+  const m = className.match(/language-(\S+)/);
+  return m ? m[1]! : null;
 }

@@ -78,6 +78,22 @@
   margin: 6px 0;
 }
 
+/* Shiki-highlighted code blocks (Phase 5d). The wrap div carries our
+ * background; the inner <pre class="shiki"> from shiki only contributes
+ * tokenized spans. Dark theme is hardcoded to github-dark for v1. */
+.block.code.shiki-wrap {
+  padding: 0;
+  overflow: hidden;
+}
+
+.block.code.shiki-wrap pre.shiki {
+  margin: 0;
+  padding: 10px;
+  overflow-x: auto;
+  font-family: "Fira Code", monospace;
+  font-size: 0.82rem;
+}
+
 .block.image {
   max-width: 100%;
   border-radius: 4px;

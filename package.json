@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "20.19.39",
     "jsdom": "^29.0.2",
     "typescript": "5.9.3",
@@ -20,6 +21,8 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "lit-html": "3.3.2"
+    "lit-html": "3.3.2",
+    "markdown-it": "^14.1.1",
+    "shiki": "^4.0.2"
   }
 }
