@@ -21,4 +21,4 @@ End cap: none
 - [x] Phase 8a - History JSONL replay + IPC commands - @docs/night_run/plans/11-phase-8a-history-replay-and-ipc.md
 - [x] Phase 8b - History view frontend - @docs/night_run/plans/12-phase-8b-history-view-frontend.md
 - [x] Phase 9 - Detachable session windows - @docs/night_run/plans/13-phase-9-detached-windows.md
-- [ ] Phase 10 - Polish: app-quit cleanup + GC + docs update - @docs/night_run/plans/14-phase-10-polish.md
+- [~ 12:06] Phase 10 - Polish: app-quit cleanup + GC + docs update - @docs/night_run/plans/14-phase-10-polish.md
