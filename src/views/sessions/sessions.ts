@@ -78,6 +78,98 @@ let state: SessionsState = {
 };
 let nextMountId = 1;
 
+let activeCtxMenu: HTMLElement | null = null;
+
+function closeCtxMenu(): void {
+  if (activeCtxMenu) {
+    activeCtxMenu.remove();
+    activeCtxMenu = null;
+  }
+}
+
+function openCtxMenu(
+  sessionId: string,
+  anchor: HTMLElement,
+  pane: HTMLElement,
+): void {
+  closeCtxMenu();
+
+  const sess = state.sessions.find(s => s.session_id === sessionId);
+  if (!sess) return;
+
+  const menu = document.createElement("div");
+  menu.className = "session-ctx-menu";
+
+  // "New agent here"
+  const newItem = document.createElement("button");
+  newItem.className = "session-ctx-item";
+  newItem.innerHTML = '<i class="ph ph-plus"></i> New agent here';
+  newItem.addEventListener("click", () => {
+    closeCtxMenu();
+    void launchNewSession(pane, { path: String(sess.cwd), name: projectName(sess) });
+  });
+  menu.appendChild(newItem);
+
+  // "Run /close" — interactive non-busy only
+  if (sess.kind === "interactive" && !sess.busy) {
+    const closeItem = document.createElement("button");
+    closeItem.className = "session-ctx-item";
+    closeItem.innerHTML = '<i class="ph ph-door-open"></i> Run /close';
+    closeItem.addEventListener("click", async () => {
+      closeCtxMenu();
+      try {
+        await invoke<void>("send_message", {
+          sessionId,
+          cwd: String(sess.cwd ?? "."),
+          blocks: [{ type: "text", text: "/close" }],
+        });
+        void selectSession(sessionId, pane);
+      } catch (err) {
+        console.error("[sessions] send /close failed", err);
+      }
+    });
+    menu.appendChild(closeItem);
+  }
+
+  // "Open in VS Code"
+  const codeItem = document.createElement("button");
+  codeItem.className = "session-ctx-item";
+  codeItem.innerHTML = '<i class="ph ph-code"></i> Open in VS Code';
+  codeItem.addEventListener("click", async () => {
+    closeCtxMenu();
+    try {
+      await invoke<void>("open_in_vscode", { path: String(sess.cwd) });
+    } catch {
+      /* silently ignore — code may not be installed */
+    }
+  });
+  menu.appendChild(codeItem);
+
+  document.body.appendChild(menu);
+  activeCtxMenu = menu;
+
+  // Position below the anchor button, right-aligned
+  const rect = anchor.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - menuRect.width;
+  if (left < 4) left = 4;
+  if (top + menuRect.height > window.innerHeight - 4) top = rect.top - menuRect.height - 4;
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+}
+
+// Close context menu on outside click or Escape (wired once at module load)
+document.addEventListener("click", (e) => {
+  if (activeCtxMenu && !activeCtxMenu.contains(e.target as Node)) {
+    closeCtxMenu();
+  }
+}, true);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && activeCtxMenu) closeCtxMenu();
+});
+
 function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external");
 }
@@ -411,8 +503,13 @@ async function startNewSession(pane: HTMLElement): Promise<void> {
   const project = await pickProject();
   if (!project) return;
   if (state.mountId !== myMount) return;
+  await launchNewSession(pane, project);
+}
 
-  // Refuse to overlap two pending new-session attempts.
+async function launchNewSession(
+  pane: HTMLElement,
+  project: { path: string; name: string },
+): Promise<void> {
   if (state.pendingNewSession) {
     alert("Another new session is still starting; please wait for it to finish.");
     return;
@@ -427,13 +524,7 @@ async function startNewSession(pane: HTMLElement): Promise<void> {
   };
   state.selectedId = placeholderId;
 
-  // Render empty pane with renderer pre-attached to chat:<placeholder> and
-  // composer focused. The composer's onSend triggers start_session on the
-  // FIRST send (not via window.prompt) so the user types in the actual UI,
-  // not in a native popup. Subsequent sends route through send_message
-  // against the real session_id captured from SessionStarted.
   await renderPendingPane(pane, placeholderId, project);
-  if (state.mountId !== myMount) return;
 
   // Re-render sidebar to show the pending row.
   const root = document.querySelector<HTMLElement>(".view-sessions");
@@ -926,6 +1017,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   // we just fixed). The pending row itself has no data-session-id so it's
   // naturally non-clickable.
   listEl.addEventListener("click", (e) => {
+    // 3-dot menu button intercept
+    const menuBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".session-row-menu-btn");
+    if (menuBtn) {
+      e.stopPropagation();
+      const sid = menuBtn.dataset.sessionId;
+      if (sid) openCtxMenu(sid, menuBtn, pane);
+      return;
+    }
+
     if (state.pendingNewSession) return;
     const li = (e.target as HTMLElement).closest<HTMLLIElement>("li[data-session-id]");
     if (!li) return;
@@ -934,6 +1034,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   });
 
   return () => {
+    closeCtxMenu();
     if (state.unlistenInstances) {
       try { state.unlistenInstances(); } catch { /* ignore */ }
       state.unlistenInstances = null;
