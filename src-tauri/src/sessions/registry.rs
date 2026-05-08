@@ -116,6 +116,43 @@ impl Registry {
         project_id
     }
 
+    /// Like `record_interactive_session` but takes a pre-resolved `project_id`
+    /// instead of locking settings to upsert one. Used from the chat IPC layer
+    /// where settings has already been read on the calling thread (the
+    /// `&Mutex<Settings>` reference can't survive a `spawn_blocking` move).
+    pub fn upsert_interactive(
+        &self,
+        session_id: &str,
+        cwd: &std::path::Path,
+        project_id: &str,
+        now: &str,
+    ) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(existing) = guard.get_mut(session_id) {
+            existing.kind = InstanceKind::Interactive;
+            existing.busy = false;
+            existing.ended_at = None;
+            existing.end_reason = None;
+            return;
+        }
+        let instance = Instance {
+            session_id: session_id.to_string(),
+            pid: 0,
+            cwd: cwd.to_path_buf(),
+            project_id: project_id.to_string(),
+            kind: InstanceKind::Interactive,
+            is_remote: false,
+            started_at: now.to_string(),
+            transcript_path: None,
+            bridge_session_id: None,
+            name: None,
+            ended_at: None,
+            end_reason: None,
+            busy: false,
+        };
+        guard.insert(session_id.to_string(), instance);
+    }
+
     /// Path C helper: flip the `busy` flag on a session entry. Sidebar uses
     /// this to render running vs idle. No-op if session is unknown.
     pub fn set_busy(&self, session_id: &str, busy: bool) {

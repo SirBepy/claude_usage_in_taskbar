@@ -74,6 +74,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .manage(state)
+        .manage(std::sync::Arc::new(crate::ipc::chat::ChatState::new()))
         .invoke_handler(tauri::generate_handler![
             ipc::get_current_usage,
             ipc::get_history,
@@ -135,6 +136,9 @@ pub fn run() {
             ipc::preview_character_file,
             ipc::stop_character_preview,
             ipc::get_characters_dir,
+            ipc::start_session,
+            ipc::send_message,
+            ipc::cancel_turn,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

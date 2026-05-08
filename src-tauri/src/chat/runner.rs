@@ -7,6 +7,7 @@ use crate::types::chat::ChatEvent;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 #[derive(thiserror::Error, Debug)]
 pub enum RunError {
@@ -19,10 +20,18 @@ pub enum RunError {
 /// Run one user turn and return all events emitted before claude exited.
 /// `session_id` is `None` for the very first turn (no `--resume`); otherwise
 /// `Some(<id>)` resumes the prior session.
+///
+/// `pid_slot`, if provided, receives the spawned child's pid for the duration
+/// of the turn so an outside thread (the IPC layer's `cancel_turn` command)
+/// can OS-kill the process tree via `channels::kill::kill_tree(pid)`. The
+/// slot is cleared again before this function returns. The runner retains
+/// ownership of the `Child` so it can call `wait()` for clean reaping; the
+/// slot only carries the pid, not the Child handle.
 pub fn run_turn<F>(
     cwd: &PathBuf,
     session_id: Option<&str>,
     prompt: &str,
+    pid_slot: Option<Arc<Mutex<Option<u32>>>>,
     mut on_event: F,
 ) -> Result<(), RunError>
 where
@@ -41,8 +50,16 @@ where
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
 
     let mut child = cmd.spawn()?;
+    let pid = child.id();
     let mut stdout = child.stdout.take().expect("piped");
     let mut stderr = child.stderr.take().expect("piped");
+
+    // Publish pid to the cancel slot so cancel_turn can kill_tree(pid). We
+    // never park the Child itself - the runner needs it for wait().
+    if let Some(slot) = pid_slot.as_ref() {
+        let mut guard = slot.lock().unwrap();
+        *guard = Some(pid);
+    }
 
     // Drain stderr on a background thread so a chatty claude can't deadlock
     // by filling its stderr pipe while we're blocked on stdout.
@@ -76,6 +93,16 @@ where
         let _ = child.kill();
     }
 
+    // Clear pid slot BEFORE wait() so cancel_turn can't snapshot a pid and
+    // then have wait() free it back to the OS for recycling, leading to a
+    // kill_tree on a recycled-pid process. After this clear, any concurrent
+    // cancel_turn observes None and is a no-op; child.wait() then safely
+    // reaps the process.
+    if let Some(slot) = pid_slot.as_ref() {
+        let mut guard = slot.lock().unwrap();
+        *guard = None;
+    }
+
     let status = child.wait()?;
     let err_buf = stderr_thread.join().unwrap_or_default();
 
@@ -100,7 +127,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let mut got_session_started = false;
         let mut got_session_id = None;
-        run_turn(&cwd, None, "reply with the literal word OK", |ev| match ev {
+        run_turn(&cwd, None, "reply with the literal word OK", None, |ev| match ev {
             ChatEvent::SessionStarted { session_id, .. } => {
                 got_session_started = true;
                 got_session_id = Some(session_id);
