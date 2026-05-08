@@ -70,6 +70,11 @@ pub struct Instance {
     pub ended_at: Option<String>,
     #[serde(default)]
     pub end_reason: Option<EndReason>,
+    /// Path C: marks an Interactive session as having a turn currently
+    /// in flight (a `claude -p --resume` child is running). Sidebar
+    /// renders this as "running" vs "idle/needs input". False at rest.
+    #[serde(default)]
+    pub busy: bool,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a
@@ -146,6 +151,7 @@ mod tests {
             name: None,
             ended_at: None,
             end_reason: None,
+            busy: false,
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();

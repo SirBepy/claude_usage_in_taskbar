@@ -231,6 +231,7 @@ mod build_groups_tests {
             name: None,
             ended_at: None,
             end_reason: None,
+            busy: false,
         };
         let groups = build_groups(&[], &[], &[inst], 1714389600000);
         assert_eq!(groups.len(), 1);
@@ -254,6 +255,7 @@ mod build_groups_tests {
             name: None,
             ended_at: Some("2026-04-29T11:00:00Z".into()),
             end_reason: Some(crate::types::EndReason::Manual),
+            busy: false,
         };
         let groups = build_groups(&[], &[], &[inst], 0);
         assert_eq!(groups.len(), 0, "ended instances must not appear");

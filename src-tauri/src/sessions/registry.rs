@@ -62,9 +62,67 @@ impl Registry {
             name: None,
             ended_at: None,
             end_reason: None,
+            busy: false,
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
+    }
+
+    /// Path C helper: insert (or upgrade) an Interactive session entry.
+    ///
+    /// - If `session_id` is unknown, inserts a fresh Instance with kind=Interactive,
+    ///   pid=0 (Path C has no persistent process between turns), and resolves
+    ///   project_id via `settings::upsert_project_for_cwd`.
+    /// - If `session_id` already exists (e.g. takeover from Manual), mutates the
+    ///   existing entry: kind -> Interactive, busy -> false, ended_at/end_reason cleared,
+    ///   project_id and pid preserved.
+    ///
+    /// Returns the resolved project_id.
+    pub fn record_interactive_session(
+        &self,
+        session_id: &str,
+        cwd: &std::path::Path,
+        settings: &Mutex<Settings>,
+        now: &str,
+    ) -> String {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(existing) = guard.get_mut(session_id) {
+            existing.kind = InstanceKind::Interactive;
+            existing.busy = false;
+            existing.ended_at = None;
+            existing.end_reason = None;
+            return existing.project_id.clone();
+        }
+        let (project_id, _) = {
+            let mut s = settings.lock().unwrap();
+            settings::upsert_project_for_cwd(&mut s, cwd, now)
+        };
+        let instance = Instance {
+            session_id: session_id.to_string(),
+            pid: 0,
+            cwd: cwd.to_path_buf(),
+            project_id: project_id.clone(),
+            kind: InstanceKind::Interactive,
+            is_remote: false,
+            started_at: now.to_string(),
+            transcript_path: None,
+            bridge_session_id: None,
+            name: None,
+            ended_at: None,
+            end_reason: None,
+            busy: false,
+        };
+        guard.insert(session_id.to_string(), instance);
+        project_id
+    }
+
+    /// Path C helper: flip the `busy` flag on a session entry. Sidebar uses
+    /// this to render running vs idle. No-op if session is unknown.
+    pub fn set_busy(&self, session_id: &str, busy: bool) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            i.busy = busy;
+        }
     }
 
     /// Marks an instance as ended. Idempotent: returns `true` only the
@@ -149,5 +207,123 @@ impl Registry {
 
     pub fn known_session_ids(&self) -> Vec<String> {
         self.inner.lock().unwrap().keys().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn fresh_settings() -> Mutex<Settings> {
+        Mutex::new(Settings::default())
+    }
+
+    #[test]
+    fn record_interactive_session_inserts_with_pid_zero_and_idle() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        let project_id = registry.record_interactive_session(
+            "sess-abc",
+            Path::new("/tmp/x"),
+            &settings,
+            "2026-05-08T04:30:00Z",
+        );
+        assert!(!project_id.is_empty());
+        let entry = registry.get("sess-abc").expect("recorded");
+        assert!(matches!(entry.kind, InstanceKind::Interactive));
+        assert_eq!(entry.busy, false);
+        assert_eq!(entry.pid, 0);
+        assert_eq!(entry.project_id, project_id);
+    }
+
+    #[test]
+    fn set_busy_toggles_flag() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session(
+            "sess-abc",
+            Path::new("/tmp/x"),
+            &settings,
+            "2026-05-08T04:30:00Z",
+        );
+        registry.set_busy("sess-abc", true);
+        assert_eq!(registry.get("sess-abc").unwrap().busy, true);
+        registry.set_busy("sess-abc", false);
+        assert_eq!(registry.get("sess-abc").unwrap().busy, false);
+    }
+
+    #[test]
+    fn set_busy_unknown_session_is_noop() {
+        let registry = Registry::new();
+        registry.set_busy("missing", true);
+        assert!(registry.get("missing").is_none());
+    }
+
+    #[test]
+    fn record_interactive_session_upgrades_existing_external_to_interactive() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        // Pre-register as External via `register`.
+        let (orig_pid_proj, _) = registry.register(
+            RegisterInput {
+                session_id: "manual-1".into(),
+                cwd: PathBuf::from("/tmp/y"),
+                pid: 1234,
+                kind: InstanceKind::External,
+                is_remote: false,
+                transcript_path: None,
+                started_at: "2026-05-08T04:00:00Z".into(),
+            },
+            &settings,
+            "2026-05-08T04:00:00Z",
+        );
+        assert_eq!(registry.get("manual-1").unwrap().kind, InstanceKind::External);
+
+        // Takeover: convert to Interactive.
+        let new_pid_proj = registry.record_interactive_session(
+            "manual-1",
+            Path::new("/tmp/y"),
+            &settings,
+            "2026-05-08T04:30:00Z",
+        );
+        let entry = registry.get("manual-1").unwrap();
+        assert_eq!(entry.kind, InstanceKind::Interactive);
+        assert_eq!(entry.pid, 1234, "pid preserved on takeover");
+        assert_eq!(entry.busy, false);
+        assert_eq!(entry.project_id, orig_pid_proj, "project_id preserved");
+        assert_eq!(new_pid_proj, orig_pid_proj);
+    }
+
+    #[test]
+    fn record_interactive_session_clears_ended_state_on_takeover() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.register(
+            RegisterInput {
+                session_id: "ended-1".into(),
+                cwd: PathBuf::from("/tmp/z"),
+                pid: 99,
+                kind: InstanceKind::External,
+                is_remote: false,
+                transcript_path: None,
+                started_at: "2026-05-08T03:00:00Z".into(),
+            },
+            &settings,
+            "2026-05-08T03:00:00Z",
+        );
+        registry.mark_ended("ended-1", EndReason::Manual, "2026-05-08T03:30:00Z");
+        assert!(registry.get("ended-1").unwrap().ended_at.is_some());
+
+        registry.record_interactive_session(
+            "ended-1",
+            Path::new("/tmp/z"),
+            &settings,
+            "2026-05-08T04:30:00Z",
+        );
+        let entry = registry.get("ended-1").unwrap();
+        assert_eq!(entry.kind, InstanceKind::Interactive);
+        assert!(entry.ended_at.is_none());
+        assert!(entry.end_reason.is_none());
     }
 }
