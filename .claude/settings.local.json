@@ -122,7 +122,14 @@
       "PowerShell($sw = [Diagnostics.Stopwatch]::StartNew\\(\\); $null | powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/tecno/.claude/aiusage-hook.ps1 refresh; $sw.Stop\\(\\); \"Elapsed: $\\($sw.ElapsedMilliseconds\\) ms\")",
       "PowerShell(Get-CimInstance *)",
       "PowerShell(Wait-Job *)",
-      "PowerShell(Rename-Item *)"
+      "PowerShell(Rename-Item *)",
+      "Bash(Remove-Item *)",
+      "PowerShell(cargo test *)",
+      "Bash(powershell.exe *)",
+      "Bash(gh secret *)",
+      "Bash(C:\\\\Users\\\\tecno\\\\.claude\\\\plugins\\\\cache\\\\claude-plugins-official\\\\superpowers\\\\5.1.0\\\\skills\\\\brainstorming\\\\scripts\\\\start-server.sh *)",
+      "Bash(bash *)",
+      "PowerShell(claude *)"
     ]
   }
 }

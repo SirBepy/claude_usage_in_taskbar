@@ -1,4 +1,11 @@
 # Comments for Joe
 
 - Project-grouping work (9 commits, edd4e1d..539fc14) bypassed `/commit` 9 times. Subagent-driven-development plans embed `git commit -m` lines; that defeats the global "always /commit" rule. Logged as a feedback memory so future sessions emit plan steps that stage-and-handoff instead.
+- Audio device picker session: two subagent commits (`5d56838`, `c6087d3`) pushed to remote with lowercase prefixes (`feat:`/`fix:`) and `Co-Authored-By: Claude` attribution. Already shipped. Feedback memory and subagent brief template updated to make "do NOT commit" explicit.
 - Manual UI smoke test on the new Projects view still owed: run `cargo tauri dev`, confirm no `tauri` orphan and no drive-letter `zng-app` duplicate. I skipped this to avoid hijacking your screen.
+- Night-run set up 2026-05-08 02:58 with 16 cron slots @ 45m for 14 chat-hub plans (Phases 3-10). First fire 03:43, last 14:58. INDEX at `docs/night_run/INDEX.md`. Plans at `docs/night_run/plans/01..14-*.md`.
+- **CronCreate output flag:** every CronCreate returned with the message "Session-only (not written to disk, dies when Claude exits)" even though I passed `durable: true`. Either the message is misleading template text, or durable was silently ignored. If the latter, closing Claude Code before all 16 fires will lose remaining slots. Worth verifying `.claude/scheduled_tasks.json` has them when you wake.
+- Auto-decisions overnight: stashed pre-existing edits to `.claude/settings.local.json` + `.for_bepy/COMMENTS.md` to satisfy night-run's clean-tree precondition, then popped them back after scheduling. Added `.claude/scheduled_tasks.lock` to `.gitignore` (transient lockfile). Tree restored.
+- Phase 0 spike cost: $0.165 USD captured from one one-token "ECHO" reply via `claude -p --output-format=stream-json` (cache-miss on a 24,750-token system context). Confirms Path C billing per turn is real but caching amortizes.
+- ai_todo 06 retitled - the original "ANSI parser replan" recommendation is retired in favour of Path C (per-turn `-p --resume`). Confirmed by the live two-turn session-continuity test in spike_pty.rs.
+- For your morning verify: `git log master --oneline -10` shows tonight's local commits in order: spike, sessions/ rename, fix, foundation, Path C spike extension, plan files, INDEX. Night-run will push as it ticks; nothing pushed yet.
