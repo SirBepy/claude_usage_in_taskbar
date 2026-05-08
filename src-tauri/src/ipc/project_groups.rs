@@ -1,5 +1,7 @@
 use crate::state::AppState;
 use crate::settings::paths;
+use std::path::Path;
+use std::time::UNIX_EPOCH;
 use tauri::State;
 
 pub mod groups_test_helpers {
@@ -125,6 +127,50 @@ pub fn list_project_groups(state: State<AppState>) -> Vec<crate::types::ProjectG
     let instances = state.instances.list();
     let now_ms = chrono::Utc::now().timestamp_millis();
     groups_test_helpers::build_groups(&projects, &token_history, &instances, now_ms)
+}
+
+/// Computes the latest `mtime` of any `.jsonl` under
+/// `~/.claude/projects/<encoded-cwd>/` for the given cwd, returned as
+/// Unix-epoch seconds. Returns `0` when the directory is missing, empty,
+/// or contains no `.jsonl` files. Used by the Sessions "Most recent" sort
+/// in the new-session project-picker modal.
+#[tauri::command]
+pub fn project_last_activity_at(cwd: String) -> Result<i64, String> {
+    Ok(latest_jsonl_mtime_in_projects_dir(Path::new(&cwd)))
+}
+
+/// Returns max-mtime epoch seconds across `*.jsonl` in
+/// `~/.claude/projects/<encoded-cwd>/`. 0 if dir absent, unreadable, or
+/// has no jsonl files. Errors are swallowed - this is best-effort sort
+/// metadata, not load-bearing.
+fn latest_jsonl_mtime_in_projects_dir(cwd: &Path) -> i64 {
+    let Some(home) = dirs::home_dir() else { return 0 };
+    let encoded = crate::tokens::encode_cwd_as_project_dir(cwd);
+    let dir = home.join(".claude").join("projects").join(encoded);
+    max_jsonl_mtime(&dir)
+}
+
+/// Pure helper: walks `dir` for `*.jsonl` files and returns the max
+/// mtime as Unix-epoch seconds. 0 if dir missing or no jsonl found.
+fn max_jsonl_mtime(dir: &Path) -> i64 {
+    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    let mut best: i64 = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        let Ok(modified) = meta.modified() else { continue };
+        let secs = modified
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if secs > best {
+            best = secs;
+        }
+    }
+    best
 }
 
 #[cfg(test)]
@@ -259,5 +305,48 @@ mod build_groups_tests {
         };
         let groups = build_groups(&[], &[], &[inst], 0);
         assert_eq!(groups.len(), 0, "ended instances must not appear");
+    }
+}
+
+#[cfg(test)]
+mod last_activity_tests {
+    use super::max_jsonl_mtime;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[test]
+    fn returns_zero_for_missing_dir() {
+        assert_eq!(max_jsonl_mtime(Path::new("/definitely/does/not/exist/zzz")), 0);
+    }
+
+    #[test]
+    fn returns_zero_for_dir_with_no_jsonl() {
+        let d = tempdir().unwrap();
+        std::fs::write(d.path().join("foo.txt"), "").unwrap();
+        std::fs::write(d.path().join("bar.json"), "").unwrap();
+        assert_eq!(max_jsonl_mtime(d.path()), 0);
+    }
+
+    #[test]
+    fn returns_max_mtime_among_jsonl_files() {
+        let d = tempdir().unwrap();
+        let a = d.path().join("a.jsonl");
+        let b = d.path().join("b.jsonl");
+        let c = d.path().join("c.txt");
+        std::fs::write(&a, "").unwrap();
+        std::fs::write(&b, "").unwrap();
+        std::fs::write(&c, "").unwrap();
+        // Touch b last so it has the larger mtime; on fast filesystems
+        // a and b can share a timestamp - sleep a beat to force ordering.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&b, "newer").unwrap();
+        let got = max_jsonl_mtime(d.path());
+        assert!(got > 0, "expected non-zero mtime, got {got}");
+        // .txt file must not influence result; only jsonl files count.
+        // We verify by also writing a much-newer .txt and re-checking.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&c, "much-newer-txt").unwrap();
+        let got2 = max_jsonl_mtime(d.path());
+        assert_eq!(got, got2, "non-jsonl file must not affect mtime");
     }
 }

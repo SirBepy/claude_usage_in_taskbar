@@ -129,6 +129,7 @@ pub fn run() {
             ipc::register_hooks_globally,
             ipc::skip_hook_registration,
             ipc::list_project_groups,
+            ipc::project_last_activity_at,
             ipc::list_characters,
             ipc::assign_character,
             ipc::play_character_slot,

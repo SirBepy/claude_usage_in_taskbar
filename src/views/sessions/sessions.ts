@@ -1,11 +1,28 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
+import { showView } from "../../shared/navigation";
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { Composer } from "../../shared/chat/composer";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
 import type { Instance, ChatEvent, ContentBlock, ProjectGroup } from "../../types/ipc.generated";
+
+type SortChoice = "name" | "recent";
+const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
+
+function readStoredSort(): SortChoice {
+  try {
+    const v = localStorage.getItem(SORT_STORAGE_KEY);
+    if (v === "name" || v === "recent") return v;
+  } catch { /* localStorage may throw in private mode; ignore */ }
+  return "name";
+}
+
+function writeStoredSort(choice: SortChoice): void {
+  try { localStorage.setItem(SORT_STORAGE_KEY, choice); }
+  catch { /* ignore */ }
+}
 
 interface PendingNewSession {
   placeholderId: string;
@@ -118,15 +135,173 @@ async function pickProject(): Promise<{ path: string; name: string } | null> {
     alert("No projects detected yet. Run claude in a folder first or add a project.");
     return null;
   }
-  const lines = projects
-    .map((p, i) => `${i + 1}. ${p.name} (${p.path})`)
-    .join("\n");
-  const choice = window.prompt(`Pick project (number):\n${lines}`, "1");
-  if (!choice) return null;
-  const idx = parseInt(choice, 10) - 1;
-  const picked = projects[idx];
-  if (!picked) return null;
-  return { path: picked.path, name: picked.name };
+
+  // Fetch latest .jsonl mtime per project for the "Most recent" sort.
+  // Best-effort: failures fall back to 0 (sorts to bottom).
+  const mtimes = await Promise.all(
+    projects.map((p) =>
+      invoke<number>("project_last_activity_at", { cwd: p.path })
+        .catch(() => 0),
+    ),
+  );
+
+  return openProjectPickerModal(projects, mtimes);
+}
+
+function openProjectPickerModal(
+  projects: ProjectGroup[],
+  mtimes: number[],
+): Promise<{ path: string; name: string } | null> {
+  return new Promise((resolve) => {
+    const host = ensureModalHost();
+    let resolved = false;
+    const finish = (val: { path: string; name: string } | null) => {
+      if (resolved) return;
+      resolved = true;
+      closeModal();
+      resolve(val);
+    };
+
+    let sort: SortChoice = readStoredSort();
+    let filter = "";
+
+    const computeRows = (): ProjectGroup[] => {
+      const f = filter.trim().toLowerCase();
+      let rows = projects.filter((p) =>
+        !f
+        || p.name.toLowerCase().includes(f)
+        || p.path.toLowerCase().includes(f)
+      );
+      if (sort === "name") {
+        rows = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+      } else {
+        // "recent": use mtimes index lookup. Items with mtime=0 sort last.
+        rows = rows.slice().sort((a, b) => {
+          const ai = projects.indexOf(a);
+          const bi = projects.indexOf(b);
+          const am = mtimes[ai] ?? 0;
+          const bm = mtimes[bi] ?? 0;
+          return bm - am;
+        });
+      }
+      return rows;
+    };
+
+    const renderModal = () => {
+      const rows = computeRows();
+      const tpl = html`
+        <div class="modal-backdrop" @click=${() => finish(null)}></div>
+        <div
+          class="modal-card project-picker-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pick project"
+        >
+          <header class="modal-header">
+            <h3>Pick project</h3>
+            <select
+              class="project-picker-sort"
+              .value=${sort}
+              @change=${(e: Event) => {
+                const v = (e.target as HTMLSelectElement).value;
+                if (v === "name" || v === "recent") {
+                  sort = v;
+                  writeStoredSort(sort);
+                  renderModal();
+                }
+              }}
+            >
+              <option value="name">Name (A-Z)</option>
+              <option value="recent">Most recent</option>
+            </select>
+          </header>
+          <div class="modal-body project-picker-body">
+            <input
+              id="project-picker-search"
+              class="project-picker-search"
+              type="text"
+              placeholder="Search projects..."
+              .value=${filter}
+              @input=${(e: Event) => {
+                filter = (e.target as HTMLInputElement).value;
+                renderModal();
+              }}
+              @keydown=${(e: KeyboardEvent) => {
+                if (e.key === "Escape") {
+                  if (filter !== "") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    filter = "";
+                    renderModal();
+                  } else {
+                    finish(null);
+                  }
+                } else if (e.key === "Enter") {
+                  const matches = computeRows();
+                  if (matches.length === 1) {
+                    e.preventDefault();
+                    const m = matches[0]!;
+                    finish({ path: m.path, name: m.name });
+                  }
+                }
+              }}
+            />
+            <ul class="project-picker-list">
+              ${rows.length === 0
+                ? html`<li class="project-picker-empty">No matches</li>`
+                : rows.map(
+                    (p) => html`
+                      <li
+                        class="project-picker-row"
+                        @click=${() => finish({ path: p.path, name: p.name })}
+                      >
+                        <span class="project-picker-name">${p.name}</span>
+                        <span class="project-picker-path">${p.path}</span>
+                      </li>
+                    `,
+                  )}
+            </ul>
+          </div>
+          <footer class="modal-footer">
+            <button class="btn btn-secondary" @click=${() => finish(null)}>Cancel</button>
+          </footer>
+        </div>
+      `;
+      render(tpl, host);
+      // Autofocus the search input on first render. Re-focus on subsequent
+      // renders only if focus was already inside the modal (avoid stealing
+      // focus from the dropdown).
+      const input = host.querySelector<HTMLInputElement>("#project-picker-search");
+      const active = document.activeElement;
+      const shouldFocus = !active
+        || active === document.body
+        || (active instanceof HTMLElement && active.id === "project-picker-search");
+      if (input && shouldFocus) {
+        // Defer to next tick so lit-html finishes attaching DOM.
+        setTimeout(() => input.focus(), 0);
+      }
+    };
+
+    host.classList.add("open");
+    renderModal();
+  });
+}
+
+function ensureModalHost(): HTMLElement {
+  let host = document.getElementById("modal-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "modal-host";
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function closeModal(): void {
+  const host = document.getElementById("modal-host");
+  if (!host) return;
+  host.classList.remove("open");
+  render(html``, host);
 }
 
 /**
@@ -629,6 +804,14 @@ function template() {
           <i class="ph ph-list"></i>
         </button>
         <h2>Sessions</h2>
+        <button
+          class="icon-btn"
+          id="historyBtn"
+          title="History"
+          @click=${() => showView("history")}
+        >
+          <i class="ph ph-clock-counter-clockwise"></i>
+        </button>
         <button
           class="icon-btn"
           id="newSessionBtn"
