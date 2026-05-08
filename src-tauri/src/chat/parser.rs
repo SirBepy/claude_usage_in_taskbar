@@ -14,6 +14,10 @@ pub struct ParserContext {
     /// frontend sees the running text grow in place. Cleared on each new
     /// `content_block_start { type: "text" }`.
     current_text: String,
+    /// Set when a `content_block_start` with type "thinking" is seen in the
+    /// stream. Stays true for the session lifetime so the statusbar keeps
+    /// the indicator after the first thinking turn.
+    has_thinking: bool,
 }
 
 impl ParserContext {
@@ -21,6 +25,7 @@ impl ParserContext {
         Self {
             buf: Vec::with_capacity(4096),
             current_text: String::new(),
+            has_thinking: false,
         }
     }
 
@@ -37,10 +42,13 @@ impl ParserContext {
                 continue;
             }
             // stream_event lines (--include-partial-messages output) need
-            // accumulator state, so handle them inline. parse_line covers the
-            // stateless lines (system/user/assistant/tool_use/tool_result/result).
+            // accumulator state, so handle them inline. parse_result_line
+            // handles `result` (also stateful: reads has_thinking). parse_line
+            // covers the remaining stateless lines.
             if let Some(stream_events) = self.parse_stream_event_line(&line_str) {
                 events.extend(stream_events);
+            } else if let Some(result_events) = self.parse_result_line(&line_str) {
+                events.extend(result_events);
             } else if let Some(ev) = parse_line(&line_str) {
                 events.push(ev);
             } else {
@@ -73,6 +81,8 @@ impl ParserContext {
                     // New text block; discard any prior accumulator (defensive
                     // against malformed streams that skip content_block_stop).
                     self.current_text.clear();
+                } else if block_type == "thinking" {
+                    self.has_thinking = true;
                 }
                 Some(Vec::new())
             }
@@ -97,6 +107,45 @@ impl ParserContext {
             // duplicate).
             _ => Some(Vec::new()),
         }
+    }
+
+    /// Returns `Some(events)` if `line` is a `result` line, `None` otherwise.
+    /// Emits both a finalized AssistantMessage and a TurnUsage event.
+    fn parse_result_line(&mut self, line: &str) -> Option<Vec<ChatEvent>> {
+        let v: Value = serde_json::from_str(line).ok()?;
+        if v.get("type").and_then(|t| t.as_str())? != "result" {
+            return None;
+        }
+        let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+        let mut events = Vec::new();
+
+        if let Some(t) = v.get("result").and_then(|s| s.as_str()) {
+            events.push(ChatEvent::AssistantMessage {
+                content: vec![crate::types::chat::ContentBlock::Text { text: t.to_string() }],
+                streaming: false,
+                timestamp: ts,
+            });
+        }
+
+        let usage = v.get("usage");
+        let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+        let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+        let cache_creation = usage.and_then(|u| u.get("cache_creation_input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+        let cache_read = usage.and_then(|u| u.get("cache_read_input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+        let total_cost_usd = v.get("total_cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let duration_ms = v.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        events.push(ChatEvent::TurnUsage {
+            input_tokens,
+            output_tokens,
+            cache_creation_input_tokens: cache_creation,
+            cache_read_input_tokens: cache_read,
+            total_cost_usd,
+            duration_ms,
+            has_thinking: self.has_thinking,
+        });
+
+        Some(events)
     }
 }
 
@@ -168,17 +217,9 @@ pub fn parse_line(line: &str) -> Option<ChatEvent> {
             is_error: v.get("is_error").and_then(|b| b.as_bool()).unwrap_or(false),
             timestamp: ts,
         }),
-        // "result" marks the end of a turn under -p. Translate it into a finalized
-        // assistant message so the UI flips streaming->finalized in one event.
-        // The runner additionally consults this line for `total_cost_usd` / `usage`.
-        "result" => {
-            let final_text = v.get("result").and_then(|s| s.as_str()).map(|s| s.to_string());
-            final_text.map(|t| ChatEvent::AssistantMessage {
-                content: vec![ContentBlock::Text { text: t }],
-                streaming: false,
-                timestamp: ts,
-            })
-        }
+        // "result" is handled by ParserContext::parse_result_line (stateful:
+        // needs has_thinking). If it reaches here somehow, drop it.
+        "result" => None,
         "rate_limit_event" => {
             let info = v.get("rate_limit_info").cloned().unwrap_or(Value::Null);
             Some(ChatEvent::Notification {
@@ -279,9 +320,10 @@ mod tests {
     #[test]
     fn result_line_finalizes_assistant_message() {
         let mut ctx = ParserContext::new();
-        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"final answer","timestamp":1}"#;
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"result":"final answer","total_cost_usd":0.001,"duration_ms":1200,"usage":{"input_tokens":100,"output_tokens":10},"timestamp":1}"#;
         let events = ctx.feed(format!("{}\n", line).as_bytes());
-        assert_eq!(events.len(), 1);
+        // result emits AssistantMessage + TurnUsage
+        assert_eq!(events.len(), 2);
         match &events[0] {
             ChatEvent::AssistantMessage { streaming, content, .. } => {
                 assert_eq!(*streaming, false);
@@ -290,7 +332,16 @@ mod tests {
                     _ => panic!("expected text block"),
                 }
             }
-            _ => panic!("expected finalized AssistantMessage"),
+            _ => panic!("expected finalized AssistantMessage at index 0"),
+        }
+        match &events[1] {
+            ChatEvent::TurnUsage { input_tokens, total_cost_usd, duration_ms, has_thinking, .. } => {
+                assert_eq!(*input_tokens, 100);
+                assert_eq!(*total_cost_usd, 0.001);
+                assert_eq!(*duration_ms, 1200);
+                assert!(!has_thinking);
+            }
+            _ => panic!("expected TurnUsage at index 1"),
         }
     }
 
@@ -328,6 +379,24 @@ mod tests {
         let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"...","signature":"sig"}],"stop_reason":"end_turn"},"timestamp":1}"#;
         let events = ctx.feed(format!("{}\n", line).as_bytes());
         assert!(events.is_empty(), "thinking-only assistant lines must not surface");
+    }
+
+    #[test]
+    fn thinking_block_sets_has_thinking_in_turn_usage() {
+        let mut ctx = ParserContext::new();
+        let lines = [
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"result":"done","timestamp":1}"#,
+        ];
+        let mut all = Vec::new();
+        for l in lines {
+            all.extend(ctx.feed(format!("{}\n", l).as_bytes()));
+        }
+        let usage = all.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { has_thinking, .. }) => assert!(has_thinking),
+            _ => panic!("expected TurnUsage with has_thinking=true"),
+        }
     }
 
     #[test]
@@ -432,7 +501,8 @@ mod tests {
         }
         let result_line = r#"{"type":"result","subtype":"success","is_error":false,"result":"Final answer.","timestamp":1}"#;
         let events = ctx.feed(format!("{}\n", result_line).as_bytes());
-        // The result line emits a finalized AssistantMessage (streaming=false).
+        // result emits AssistantMessage + TurnUsage.
+        assert!(events.len() >= 1);
         match &events[0] {
             ChatEvent::AssistantMessage { streaming, content, .. } => {
                 assert_eq!(*streaming, false);

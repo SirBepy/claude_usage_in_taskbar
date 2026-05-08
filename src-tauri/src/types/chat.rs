@@ -49,6 +49,18 @@ pub enum ChatEvent {
         exit_code: Option<i32>,
         timestamp: i64,
     },
+    /// Emitted once per completed turn from the `result` line.
+    /// `input_tokens` = full context window usage for this turn (not additive).
+    /// `total_cost_usd` = cumulative session cost estimate.
+    TurnUsage {
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
+        total_cost_usd: f64,
+        duration_ms: u64,
+        has_thinking: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]

@@ -146,6 +146,7 @@ pub fn run() {
             ipc::list_history,
             ipc::detach_window,
             ipc::reattach_window,
+            ipc::get_git_info,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

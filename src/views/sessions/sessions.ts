@@ -3,10 +3,11 @@ import { openSidemenu } from "../../shared/sidemenu";
 import { showView } from "../../shared/navigation";
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
+import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import { Composer } from "../../shared/chat/composer";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
-import type { Instance, ChatEvent, ContentBlock, ProjectGroup } from "../../types/ipc.generated";
+import type { Instance, ChatEvent, ContentBlock, ProjectGroup, GitInfo } from "../../types/ipc.generated";
 
 type SortChoice = "name" | "recent";
 const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
@@ -44,6 +45,7 @@ interface SessionsState {
   composer: Composer | null;
   unlistenInstances: (() => void) | null;
   pendingNewSession: PendingNewSession | null;
+  statusbar: SessionStatusbar | null;
 }
 
 // Module-level singleton. mountId protects against stale-mount writes when
@@ -58,6 +60,7 @@ let state: SessionsState = {
   composer: null,
   unlistenInstances: null,
   pendingNewSession: null,
+  statusbar: null,
 };
 let nextMountId = 1;
 
@@ -641,6 +644,13 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
 async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;
   state.selectedId = sessionId;
+
+  // Clean up prior statusbar timer before wiping the pane.
+  if (state.statusbar) {
+    state.statusbar.destroy();
+    state.statusbar = null;
+  }
+
   const sess = state.sessions.find((s) => s.session_id === sessionId);
   if (!sess) {
     pane.innerHTML = `<div class="session-empty">Session ${escapeHtml(sessionId)} not found</div>`;
@@ -657,9 +667,24 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
     </header>
     ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> Read-only session - click <strong>Take Over</strong> to interact.</div>' : ""}
+    <div class="session-statusbar-host"></div>
     <div class="session-messages"></div>
     <div class="session-composer"></div>
   `;
+
+  // Mount statusbar.
+  const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
+  if (sbHost) {
+    const fields = await loadStatuslineFields();
+    const sb = new SessionStatusbar(sbHost, sess.started_at, fields);
+    state.statusbar = sb;
+    // Fetch git info async (non-blocking, populates when ready).
+    if (sess.cwd) {
+      invoke<GitInfo>("get_git_info", { cwd: String(sess.cwd) })
+        .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
+        .catch(() => { /* no git, fields just stay hidden */ });
+    }
+  }
 
   // Attach renderer
   if (state.renderer) state.renderer.detach();
@@ -667,6 +692,13 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   if (messagesEl) {
     const renderer = new ChatRenderer(messagesEl);
     state.renderer = renderer;
+    // Wire meta updates to statusbar (model, tokens, thinking, cost).
+    const sbForRenderer = state.statusbar;
+    if (sbForRenderer) {
+      renderer.onMetaUpdate = (meta) => {
+        if (state.statusbar === sbForRenderer) sbForRenderer.updateMeta(meta);
+      };
+    }
     await renderer.attach(sessionId);
     // Bail if a newer mount or selectSession superseded us during await.
     if (state.mountId !== myMount || state.selectedId !== sessionId) {
@@ -775,6 +807,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     composer: null,
     unlistenInstances: null,
     pendingNewSession: null,
+    statusbar: null,
   };
 
   render(template(), root);
@@ -858,6 +891,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       state.renderer.detach();
       state.renderer = null;
     }
+    if (state.statusbar) {
+      state.statusbar.destroy();
+      state.statusbar = null;
+    }
     state.composer = null;
     state.selectedId = null;
   };
@@ -933,6 +970,7 @@ export async function renderDetachedSession(
     composer: null,
     unlistenInstances: null,
     pendingNewSession: null,
+    statusbar: null,
   };
 
   // Solo chat layout: just the .session-pane, no sidebar, no header burger.
@@ -971,6 +1009,10 @@ export async function renderDetachedSession(
       state.renderer.detach();
       state.renderer = null;
     }
+    if (state.statusbar) {
+      state.statusbar.destroy();
+      state.statusbar = null;
+    }
     state.composer = null;
     state.selectedId = null;
   };
@@ -999,4 +1041,176 @@ function escapeHtml(s: string): string {
       default: return c;
     }
   });
+}
+
+// ── Statusline helpers ────────────────────────────────────────────────────────
+
+const DEFAULT_STATUSLINE_FIELDS = ["model", "branch", "repo", "context", "thinking"];
+
+const ALL_STATUSLINE_FIELDS = [
+  { key: "model",    label: "Model" },
+  { key: "branch",   label: "Branch" },
+  { key: "repo",     label: "Repo" },
+  { key: "context",  label: "Context %" },
+  { key: "thinking", label: "Thinking" },
+  { key: "duration", label: "Duration" },
+  { key: "cost",     label: "Cost" },
+];
+
+async function loadStatuslineFields(): Promise<string[]> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    const v = s["statuslineFields"];
+    if (Array.isArray(v)) return v as string[];
+  } catch { /* ignore */ }
+  return [...DEFAULT_STATUSLINE_FIELDS];
+}
+
+async function saveStatuslineFields(fields: string[]): Promise<void> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    await invoke("save_settings", { settings: { ...s, statuslineFields: fields } });
+  } catch (e) {
+    console.error("[statusbar] save fields failed", e);
+  }
+}
+
+function shortModelName(model: string): string {
+  // "claude-opus-4-7" -> "Opus 4.7", "claude-sonnet-4-6" -> "Sonnet 4.6"
+  const m = model.replace(/^claude-/, "").replace(/-(\d)/, " $1");
+  return m.charAt(0).toUpperCase() + m.slice(1);
+}
+
+function formatDuration(startedAt: string): string {
+  const ms = Math.max(0, Date.now() - new Date(startedAt).getTime());
+  const totalSecs = Math.floor(ms / 1000);
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+// ── SessionStatusbar ─────────────────────────────────────────────────────────
+
+class SessionStatusbar {
+  private container: HTMLElement;
+  private fields: string[];
+  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+  private gitInfo: GitInfo = { branch: null, repo: null };
+  private startedAt: string | null;
+  private durationTimer: ReturnType<typeof setInterval> | null = null;
+  private popoverOpen = false;
+
+  constructor(container: HTMLElement, startedAt: string | null, fields: string[]) {
+    this.container = container;
+    this.startedAt = startedAt;
+    this.fields = fields;
+    this.container.className = "session-statusbar";
+    this.render();
+    if (this.fields.includes("duration")) this.startDurationTimer();
+  }
+
+  updateMeta(meta: SessionMeta): void {
+    this.meta = meta;
+    this.render();
+  }
+
+  updateGitInfo(info: GitInfo): void {
+    this.gitInfo = info;
+    this.render();
+  }
+
+  destroy(): void {
+    if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
+  }
+
+  private startDurationTimer(): void {
+    this.durationTimer = setInterval(() => this.render(), 1000);
+  }
+
+  private render(): void {
+    const f = this.fields;
+    const chips: string[] = [];
+
+    if (f.includes("model") && this.meta.model) {
+      chips.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
+    }
+    if (f.includes("branch") && this.gitInfo.branch) {
+      chips.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
+    }
+    if (f.includes("repo") && this.gitInfo.repo) {
+      chips.push(`<span class="sb-chip sb-repo"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
+    }
+    if (f.includes("context") && this.meta.inputTokens > 0) {
+      const pct = Math.min(100, Math.round((this.meta.inputTokens / 200_000) * 100));
+      const cls = pct >= 80 ? " danger" : pct >= 50 ? " warn" : "";
+      chips.push(`<span class="sb-chip sb-context${cls}"><i class="ph ph-stack"></i>${pct}%</span>`);
+    }
+    if (f.includes("thinking") && this.meta.hasThinking) {
+      chips.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
+    }
+    if (f.includes("duration") && this.startedAt) {
+      chips.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${formatDuration(this.startedAt)}</span>`);
+    }
+    if (f.includes("cost") && this.meta.totalCostUsd > 0) {
+      chips.push(`<span class="sb-chip sb-cost"><i class="ph ph-coin"></i>$${this.meta.totalCostUsd.toFixed(4)}</span>`);
+    }
+
+    const popoverHtml = this.popoverOpen ? `
+      <div class="sb-popover">
+        ${ALL_STATUSLINE_FIELDS.map(({ key, label }) => `
+          <label class="sb-popover-row">
+            <input type="checkbox" data-key="${key}"${f.includes(key) ? " checked" : ""}>
+            ${escapeHtml(label)}
+          </label>
+        `).join("")}
+      </div>
+    ` : "";
+
+    this.container.innerHTML = `
+      <div class="sb-chips">${chips.join("") || '<span class="sb-empty">No fields</span>'}</div>
+      <button class="sb-gear icon-btn" title="Configure statusline"><i class="ph ph-sliders-horizontal"></i></button>
+      ${popoverHtml}
+    `;
+
+    this.container.querySelector(".sb-gear")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.popoverOpen = !this.popoverOpen;
+      this.render();
+    });
+
+    if (this.popoverOpen) {
+      this.container.querySelectorAll<HTMLInputElement>(".sb-popover input").forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const key = cb.dataset.key!;
+          if (cb.checked) {
+            if (!this.fields.includes(key)) this.fields = [...this.fields, key];
+          } else {
+            this.fields = this.fields.filter((k) => k !== key);
+          }
+          void saveStatuslineFields(this.fields);
+          if (key === "duration") {
+            if (this.fields.includes("duration") && !this.durationTimer) {
+              this.startDurationTimer();
+            } else if (!this.fields.includes("duration") && this.durationTimer) {
+              clearInterval(this.durationTimer);
+              this.durationTimer = null;
+            }
+          }
+          this.render();
+        });
+      });
+
+      const closeOnOutside = (e: MouseEvent) => {
+        if (!this.container.contains(e.target as Node)) {
+          this.popoverOpen = false;
+          this.render();
+          document.removeEventListener("click", closeOnOutside);
+        }
+      };
+      setTimeout(() => document.addEventListener("click", closeOnOutside), 0);
+    }
+  }
 }

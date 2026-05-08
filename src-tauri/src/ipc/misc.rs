@@ -167,6 +167,47 @@ pub fn get_update_state(app: AppHandle) -> serde_json::Value {
     app.state::<crate::state::AppState>().update_state.lock().unwrap().clone()
 }
 
+#[derive(serde::Serialize)]
+pub struct GitInfo {
+    pub branch: Option<String>,
+    pub repo: Option<String>,
+}
+
+/// Returns the current git branch and repository name for the given working
+/// directory. Used by the session statusbar to show branch + repo context.
+/// Never fails - missing git / no repo / no remote all produce None fields.
+#[tauri::command]
+pub fn get_git_info(cwd: String) -> GitInfo {
+    fn run_git(cwd: &str, args: &[&str]) -> Option<String> {
+        let mut cmd_args = vec!["-C", cwd];
+        cmd_args.extend_from_slice(args);
+        std::process::Command::new("git")
+            .args(&cmd_args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    let branch = run_git(&cwd, &["branch", "--show-current"]);
+
+    let remote_url = run_git(&cwd, &["remote", "get-url", "origin"]);
+    let repo = if let Some(url) = &remote_url {
+        url.split('/').last()
+            .map(|s| s.trim_end_matches(".git").to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        std::path::Path::new(&cwd)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string())
+    };
+
+    GitInfo { branch, repo }
+}
+
 #[tauri::command]
 pub fn piper_status() -> crate::notifications::piper::PiperStatus {
     crate::notifications::piper::status()

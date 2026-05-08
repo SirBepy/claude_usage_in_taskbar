@@ -18,6 +18,14 @@ const md = new MarkdownIt({
 
 type Unlisten = () => void;
 
+export interface SessionMeta {
+  model: string | null;
+  /** Full context window input for the latest turn (not additive). */
+  inputTokens: number;
+  hasThinking: boolean;
+  totalCostUsd: number;
+}
+
 interface RenderedMessage {
   kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification";
   content?: ContentBlock[];
@@ -38,6 +46,8 @@ export class ChatRenderer {
   private unlisten: Unlisten | null = null;
   private streamingIndex: number | null = null;
   private sessionId: string | null = null;
+  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+  public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -51,6 +61,7 @@ export class ChatRenderer {
     this.sessionId = sessionId;
     this.messages = [];
     this.streamingIndex = null;
+    this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
     this.render();
 
     const ev = window.__TAURI__?.event;
@@ -106,6 +117,10 @@ export class ChatRenderer {
     return this.sessionId;
   }
 
+  getMeta(): SessionMeta {
+    return { ...this.meta };
+  }
+
   /**
    * Replace the message list with the given history. Used for read-only
    * history view replay or for restoring the chat pane on reopen.
@@ -119,9 +134,11 @@ export class ChatRenderer {
   }
 
   handleEvent(ev: ChatEvent, skipScroll = false): void {
-    const ts = Number(ev.timestamp ?? Date.now());
+    const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
     switch (ev.type) {
       case "session_started":
+        this.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+        this.onMetaUpdate?.(this.getMeta());
         this.messages.push({
           kind: "system",
           text: `Session started${ev.model ? ` (${ev.model})` : ""}`,
@@ -183,6 +200,12 @@ export class ChatRenderer {
           ts,
         });
         break;
+      case "turn_usage":
+        this.meta.inputTokens = ev.input_tokens;
+        this.meta.totalCostUsd = ev.total_cost_usd;
+        if (ev.has_thinking) this.meta.hasThinking = true;
+        this.onMetaUpdate?.(this.getMeta());
+        return; // no DOM update needed
       default:
         // Unknown variant; ignore for forward compat
         break;
