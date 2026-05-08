@@ -8,6 +8,18 @@ import { Composer } from "../../shared/chat/composer";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
 import type { Instance, ChatEvent, ContentBlock, ProjectGroup, GitInfo } from "../../types/ipc.generated";
+import {
+  projectName,
+  sessionSubtitle,
+  statusIndicator,
+  sortSessions,
+  loadUnreadSet,
+  saveUnreadSet,
+  loadSort,
+  loadStateStyle,
+  LS_SORT,
+} from "./sessions-helpers";
+import type { SessionSort } from "./sessions-helpers";
 
 type SortChoice = "name" | "recent";
 const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
@@ -46,6 +58,7 @@ interface SessionsState {
   unlistenInstances: (() => void) | null;
   pendingNewSession: PendingNewSession | null;
   statusbar: SessionStatusbar | null;
+  prevBusyMap: Map<string, boolean>;
 }
 
 // Module-level singleton. mountId protects against stale-mount writes when
@@ -61,6 +74,7 @@ let state: SessionsState = {
   unlistenInstances: null,
   pendingNewSession: null,
   statusbar: null,
+  prevBusyMap: new Map(),
 };
 let nextMountId = 1;
 
@@ -71,7 +85,30 @@ function isLive(i: Instance): boolean {
 async function refreshSessions(): Promise<void> {
   try {
     const all = await invoke<Instance[]>("list_instances");
-    state.sessions = (all || []).filter(isLive);
+    const next = (all || []).filter(isLive);
+
+    const unread = loadUnreadSet();
+    const liveIds = new Set(next.map(s => s.session_id));
+
+    // GC: prune unread entries for sessions no longer alive
+    for (const id of [...unread]) {
+      if (!liveIds.has(id)) unread.delete(id);
+    }
+
+    // Mark unread for sessions that just finished a busy turn (busy true->false)
+    // and are not currently open/selected
+    for (const s of next) {
+      const wasBusy = state.prevBusyMap.get(s.session_id);
+      if (wasBusy === true && !s.busy && s.session_id !== state.selectedId) {
+        unread.add(s.session_id);
+      }
+    }
+
+    // Update prevBusyMap for next call
+    state.prevBusyMap = new Map(next.map(s => [s.session_id, s.busy]));
+
+    saveUnreadSet(unread);
+    state.sessions = next;
   } catch (err) {
     console.error("[sessions] list_instances failed", err);
     state.sessions = [];
@@ -645,6 +682,13 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   const myMount = state.mountId;
   state.selectedId = sessionId;
 
+  // Mark session as read
+  const unread = loadUnreadSet();
+  if (unread.has(sessionId)) {
+    unread.delete(sessionId);
+    saveUnreadSet(unread);
+  }
+
   // Clean up prior statusbar timer before wiping the pane.
   if (state.statusbar) {
     state.statusbar.destroy();
@@ -808,6 +852,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     unlistenInstances: null,
     pendingNewSession: null,
     statusbar: null,
+    prevBusyMap: new Map(),
   };
 
   render(template(), root);
@@ -971,6 +1016,7 @@ export async function renderDetachedSession(
     unlistenInstances: null,
     pendingNewSession: null,
     statusbar: null,
+    prevBusyMap: new Map(),
   };
 
   // Solo chat layout: just the .session-pane, no sidebar, no header burger.
