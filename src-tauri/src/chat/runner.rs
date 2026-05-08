@@ -81,6 +81,18 @@ where
     cmd.current_dir(cwd);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
 
+    // Windows-only: suppress the black console window that flashes when
+    // spawning `claude.exe` (a console subsystem binary) from a GUI Tauri
+    // app. CREATE_NO_WINDOW (0x08000000) is the documented flag for "spawn
+    // a console process without giving it a visible console". stdout is
+    // already piped so we still capture all output.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     let mut child = cmd.spawn()?;
     let pid = child.id();
     let mut stdout = child.stdout.take().expect("piped");
