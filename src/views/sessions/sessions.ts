@@ -115,56 +115,53 @@ async function refreshSessions(): Promise<void> {
   }
 }
 
-function statusClass(i: Instance): string {
-  if (i.kind === "external") return "done"; // Manual = read-only, dim
-  if (i.busy) return "running";
-  return "input"; // not busy = waiting for user input
-}
-
-function sessionTitle(i: Instance): string {
-  return i.name || i.session_id.slice(0, 12);
-}
 
 function renderSidebar(listEl: HTMLElement): void {
   const filter = state.filter.toLowerCase();
   const pending = state.pendingNewSession;
-  // When a new-session turn is pending, suppress the real registry entry
-  // (if any) so the sidebar shows ONLY the pending row. The real entry
-  // appears the moment Rust captures SessionStarted and emits
-  // instances-changed; without this filter the user briefly sees TWO rows
-  // for the same in-progress session.
+  const unread = loadUnreadSet();
+  const style = loadStateStyle();
+  const sort = loadSort();
+
   let visible = state.sessions;
-  if (pending && pending.realId) {
-    visible = visible.filter((s) => s.session_id !== pending.realId);
+  if (pending?.realId) {
+    visible = visible.filter(s => s.session_id !== pending.realId);
   }
-  const filtered = visible.filter((s) =>
-    !filter || sessionTitle(s).toLowerCase().includes(filter),
+
+  const filtered = visible.filter(s =>
+    !filter ||
+    projectName(s).toLowerCase().includes(filter) ||
+    sessionSubtitle(s).toLowerCase().includes(filter)
   );
-  const realRows = filtered
-    .map((s) => {
-      const isExternal = s.kind === "external";
-      const badge = isExternal
-        ? '<span class="session-row-badge readonly" title="Read-only external session"><i class="ph ph-eye"></i></span>'
-        : "";
-      return `<li data-session-id="${escapeHtml(s.session_id)}" class="${s.session_id === state.selectedId ? "active" : ""} ${isExternal ? "is-external" : ""}">
-          <span class="session-status-dot ${statusClass(s)}"></span>
-          <span class="session-title">${escapeHtml(sessionTitle(s))}</span>
-          ${badge}
-          <span class="session-row-kind">${escapeHtml(s.kind)}</span>
-        </li>`;
-    })
-    .join("");
+
+  const sorted = sortSessions(filtered, sort, unread);
+
+  const realRows = sorted.map(s => {
+    const isActive = s.session_id === state.selectedId;
+    const indicator = statusIndicator(s, unread, style, escapeHtml);
+    return `<li data-session-id="${escapeHtml(s.session_id)}" class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""}">
+      ${indicator}
+      <div class="session-row-text">
+        <span class="session-row-project">${escapeHtml(projectName(s))}</span>
+        <span class="session-row-subtitle">${escapeHtml(sessionSubtitle(s))}</span>
+      </div>
+      <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
+        <i class="ph ph-dots-three-vertical"></i>
+      </button>
+    </li>`;
+  }).join("");
+
   let pendingRow = "";
   if (pending) {
-    // Pending row is non-clickable (no data-session-id attr). Always
-    // active-styled because while pending the user is interacting with it.
-    const title = pending.projectName || "New session";
     pendingRow = `<li class="active pending" data-pending="1" title="Starting new session...">
-          <span class="session-status-dot running"></span>
-          <span class="session-title">${escapeHtml(title)}</span>
-          <span class="session-project" style="margin-left:auto;color:var(--text-dim);font-size:0.75rem">starting...</span>
-        </li>`;
+      <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
+      <div class="session-row-text">
+        <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
+        <span class="session-row-subtitle">starting...</span>
+      </div>
+    </li>`;
   }
+
   listEl.innerHTML = pendingRow + realRows;
 }
 
@@ -643,7 +640,7 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   const sess = state.sessions.find((s) => s.session_id === sessionId);
   const meta = header.querySelector<HTMLElement>(".meta");
   if (meta && sess) {
-    meta.textContent = `${sess.kind} - ${sess.pid ? `pid ${sess.pid}` : "no pid"}`;
+    meta.textContent = `${projectName(sess)}${sess.pid ? ` · pid ${sess.pid}` : ""}`;
   }
   // Add detach button (was omitted from pending header). Insert before cancel.
   if (!header.querySelector(".detach-btn")) {
@@ -704,8 +701,8 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
 
   pane.innerHTML = `
     <header class="session-header">
-      <span class="title">${escapeHtml(sessionTitle(sess))}</span>
-      <span class="meta">${escapeHtml(sess.kind)}${sess.pid ? ` - pid ${sess.pid}` : ""}</span>
+      <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
+      <span class="meta">${escapeHtml(projectName(sess))}${sess.pid ? ` · pid ${sess.pid}` : ""}</span>
       ${readOnly ? '<button class="icon-btn takeover-btn" title="Take over"><i class="ph ph-arrow-clockwise"></i></button>' : ""}
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
@@ -914,6 +911,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     });
   }
 
+  const sortSelect = root.querySelector<HTMLSelectElement>("#sessions-sort");
+  if (sortSelect) {
+    sortSelect.value = loadSort();
+    sortSelect.addEventListener("change", () => {
+      try { localStorage.setItem(LS_SORT, sortSelect.value); } catch { /* ignore */ }
+      renderSidebar(listEl);
+    });
+  }
+
   // Wire row clicks (delegated). Block clicks while a new-session turn is
   // pending so the user can't accidentally navigate away from the in-flight
   // chat (which would orphan the renderer subscription and surface the bug
@@ -977,12 +983,19 @@ function template() {
       </div>
       <div class="view-body sessions-layout">
         <aside class="sessions-sidebar">
-          <input
-            id="sessions-filter"
-            class="sessions-filter"
-            type="search"
-            placeholder="Filter"
-          />
+          <div class="sessions-controls">
+            <input
+              id="sessions-filter"
+              class="sessions-filter"
+              type="search"
+              placeholder="Filter"
+            />
+            <select id="sessions-sort" class="sessions-sort">
+              <option value="status">Status</option>
+              <option value="recent">Recent</option>
+              <option value="name">Name</option>
+            </select>
+          </div>
           <ul id="sessions-list" class="sessions-list"></ul>
         </aside>
         <main class="session-pane" id="session-pane">
