@@ -64,6 +64,11 @@ fn emit_ipc_types() {
     // audio
     out.push_str(&decl::<AudioOutputDevice>());
 
+    // chat (Path C chat hub)
+    out.push_str(&decl::<ChatEvent>());
+    out.push_str(&decl::<ContentBlock>());
+    out.push_str(&decl::<HistoryEntry>());
+
     let path = output_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create parent dir for ipc.generated.ts");
