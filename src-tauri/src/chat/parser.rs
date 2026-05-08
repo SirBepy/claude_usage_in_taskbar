@@ -8,11 +8,20 @@ use serde_json::Value;
 
 pub struct ParserContext {
     buf: Vec<u8>,
+    /// Accumulator for the current text content_block being assembled from
+    /// `stream_event` `content_block_delta` lines. `--include-partial-messages`
+    /// emits one stream_event per token chunk; we concatenate them so the
+    /// frontend sees the running text grow in place. Cleared on each new
+    /// `content_block_start { type: "text" }`.
+    current_text: String,
 }
 
 impl ParserContext {
     pub fn new() -> Self {
-        Self { buf: Vec::with_capacity(4096) }
+        Self {
+            buf: Vec::with_capacity(4096),
+            current_text: String::new(),
+        }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<ChatEvent> {
@@ -27,13 +36,67 @@ impl ParserContext {
             if line_str.trim().is_empty() {
                 continue;
             }
-            if let Some(ev) = parse_line(&line_str) {
+            // stream_event lines (--include-partial-messages output) need
+            // accumulator state, so handle them inline. parse_line covers the
+            // stateless lines (system/user/assistant/tool_use/tool_result/result).
+            if let Some(stream_events) = self.parse_stream_event_line(&line_str) {
+                events.extend(stream_events);
+            } else if let Some(ev) = parse_line(&line_str) {
                 events.push(ev);
             } else {
                 eprintln!("parser: unrecognised line: {}", line_str);
             }
         }
         events
+    }
+
+    /// Returns `Some(events)` if `line` is a `stream_event` (possibly empty
+    /// vec when the inner event is a no-op like message_start). `None` means
+    /// the line is not a stream_event and should fall through to parse_line.
+    fn parse_stream_event_line(&mut self, line: &str) -> Option<Vec<ChatEvent>> {
+        let v: Value = serde_json::from_str(line).ok()?;
+        if v.get("type").and_then(|t| t.as_str())? != "stream_event" {
+            return None;
+        }
+        let event = v.get("event")?;
+        let event_type = event.get("type").and_then(|t| t.as_str())?;
+        let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+
+        match event_type {
+            "content_block_start" => {
+                let block_type = event
+                    .get("content_block")
+                    .and_then(|c| c.get("type"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                if block_type == "text" {
+                    // New text block; discard any prior accumulator (defensive
+                    // against malformed streams that skip content_block_stop).
+                    self.current_text.clear();
+                }
+                Some(Vec::new())
+            }
+            "content_block_delta" => {
+                let delta = event.get("delta")?;
+                let delta_type = delta.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                if delta_type == "text_delta" {
+                    let text = delta.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                    self.current_text.push_str(text);
+                    return Some(vec![ChatEvent::AssistantMessage {
+                        content: vec![ContentBlock::Text { text: self.current_text.clone() }],
+                        streaming: true,
+                        timestamp: ts,
+                    }]);
+                }
+                // signature_delta / thinking_delta / input_json_delta - skip silently.
+                Some(Vec::new())
+            }
+            // message_start / content_block_stop / message_delta / message_stop
+            // are bookkeeping; the standalone `result` line will finalize the
+            // turn, so we don't emit a finalize from message_stop (would
+            // duplicate).
+            _ => Some(Vec::new()),
+        }
     }
 }
 
@@ -222,5 +285,93 @@ mod tests {
             ChatEvent::AssistantMessage { streaming, .. } => assert!(*streaming),
             _ => panic!("expected streaming AssistantMessage"),
         }
+    }
+
+    #[test]
+    fn stream_event_text_delta_accumulates_into_streaming_assistant() {
+        let mut ctx = ParserContext::new();
+        let lines = [
+            r#"{"type":"stream_event","event":{"type":"message_start","message":{}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi. "}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Ready."}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+        let mut all = Vec::new();
+        for l in lines {
+            all.extend(ctx.feed(format!("{}\n", l).as_bytes()));
+        }
+        // Expect two streaming AssistantMessage events: "Hi. " then "Hi. Ready.".
+        let streaming_msgs: Vec<_> = all
+            .iter()
+            .filter_map(|e| match e {
+                ChatEvent::AssistantMessage { content, streaming, .. } if *streaming => {
+                    match &content[0] {
+                        ContentBlock::Text { text } => Some(text.clone()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(streaming_msgs, vec!["Hi. ".to_string(), "Hi. Ready.".to_string()]);
+    }
+
+    #[test]
+    fn stream_event_thinking_delta_does_not_emit() {
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"abc"}}}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        assert!(events.is_empty(), "signature_delta must not surface to UI");
+    }
+
+    #[test]
+    fn stream_event_then_result_finalizes_correctly() {
+        let mut ctx = ParserContext::new();
+        let stream_lines = [
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Final answer."}}}"#,
+            r#"{"type":"stream_event","event":{"type":"message_stop"}}"#,
+        ];
+        for l in stream_lines {
+            ctx.feed(format!("{}\n", l).as_bytes());
+        }
+        let result_line = r#"{"type":"result","subtype":"success","is_error":false,"result":"Final answer.","timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", result_line).as_bytes());
+        // The result line emits a finalized AssistantMessage (streaming=false).
+        match &events[0] {
+            ChatEvent::AssistantMessage { streaming, content, .. } => {
+                assert_eq!(*streaming, false);
+                match &content[0] {
+                    ContentBlock::Text { text } => assert_eq!(text, "Final answer."),
+                    _ => panic!("expected text"),
+                }
+            }
+            _ => panic!("expected finalized AssistantMessage from result line"),
+        }
+    }
+
+    #[test]
+    fn new_text_block_resets_accumulator() {
+        let mut ctx = ParserContext::new();
+        let lines = [
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"First"}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Second"}}}"#,
+        ];
+        let mut last: Option<String> = None;
+        for l in lines {
+            for ev in ctx.feed(format!("{}\n", l).as_bytes()) {
+                if let ChatEvent::AssistantMessage { content, .. } = ev {
+                    if let ContentBlock::Text { text } = &content[0] {
+                        last = Some(text.clone());
+                    }
+                }
+            }
+        }
+        assert_eq!(last, Some("Second".to_string()));
     }
 }

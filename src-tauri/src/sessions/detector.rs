@@ -3,6 +3,7 @@
 //! `SessionEnd` hook (force-kill, crash, window-close with dirty
 //! state).
 
+use crate::sessions::kinds::InstanceKind;
 use crate::sessions::registry::Registry;
 use crate::types::EndReason;
 use std::collections::HashMap;
@@ -30,6 +31,13 @@ pub fn reconcile(registry: &Registry, input: ReconcileInput) -> Vec<String> {
         if i.end_reason.is_some() { continue; }
         // Skip unknown PIDs (pid = 0 when the hook didn't include it).
         if i.pid == 0 { continue; }
+        // Skip Interactive sessions (Path C). The pid stored on these is the
+        // claude.exe process from the FIRST -p turn, which exits as soon as
+        // the turn finishes. Reconciliation would mark the session ended
+        // 10s after the first reply, even though the user can keep sending
+        // turns. Lifecycle for Interactive is owned by the chat IPC layer
+        // (start_session / cancel_turn / app-quit cleanup), not the OS poll.
+        if i.kind == InstanceKind::Interactive { continue; }
         if live.contains(&i.pid) {
             input.absent_strikes.remove(&i.session_id);
             continue;

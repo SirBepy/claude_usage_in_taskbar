@@ -282,6 +282,17 @@ async fn on_session_end(
     );
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let state = ctx.app.state::<AppState>();
+    // Skip Interactive sessions (Path C). Each `claude -p` turn fires
+    // SessionStart on spawn and SessionEnd on exit; treating that as the
+    // session lifecycle would mark our Interactive entry ended after the
+    // first turn, dropping it from the live sidebar. Interactive lifecycle
+    // is owned by the chat IPC layer (start_session / cancel_turn /
+    // app-quit cleanup).
+    let kind = state.instances.get(&payload.session_id).map(|i| i.kind);
+    if kind == Some(crate::sessions::kinds::InstanceKind::Interactive) {
+        log::debug!("ignoring SessionEnd for Interactive session {}", payload.session_id);
+        return StatusCode::NO_CONTENT;
+    }
     if state.instances.mark_ended(&payload.session_id, crate::types::EndReason::HookSessionEnd, &now) {
         let _ = ctx.app.emit("instances-changed", state.instances.list());
     }
