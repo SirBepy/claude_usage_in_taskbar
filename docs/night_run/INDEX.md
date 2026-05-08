@@ -17,7 +17,7 @@ End cap: none
 - [x] Phase 5c - sessions-view.js orchestration - @docs/night_run/plans/07-phase-5c-sessions-view-orchestration.md
 - [x] Phase 5d - markdown-it + shiki integration - @docs/night_run/plans/08-phase-5d-markdown-it-shiki.md
 - [x] Phase 6 - Image paste - @docs/night_run/plans/09-phase-6-image-paste.md
-- [ ] Phase 7 - Manual session takeover - @docs/night_run/plans/10-phase-7-takeover.md
+- [~ 09:43] Phase 7 - Manual session takeover - @docs/night_run/plans/10-phase-7-takeover.md
 - [ ] Phase 8a - History JSONL replay + IPC commands - @docs/night_run/plans/11-phase-8a-history-replay-and-ipc.md
 - [ ] Phase 8b - History view frontend - @docs/night_run/plans/12-phase-8b-history-view-frontend.md
 - [ ] Phase 9 - Detachable session windows - @docs/night_run/plans/13-phase-9-detached-windows.md
