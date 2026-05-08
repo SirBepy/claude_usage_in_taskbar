@@ -8,7 +8,7 @@ End cap: none
 
 ## Tasks
 
-- [~ 03:11] Phase 3a - Chat module skeleton + parser.rs - @docs/night_run/plans/01-phase-3a-chat-module-and-parser.md
+- [x] Phase 3a - Chat module skeleton + parser.rs - @docs/night_run/plans/01-phase-3a-chat-module-and-parser.md
 - [ ] Phase 3b - chat/runner.rs (per-turn process spawn) - @docs/night_run/plans/02-phase-3b-chat-runner.md
 - [ ] Phase 3c - sessions/registry helpers for Path C - @docs/night_run/plans/03-phase-3c-sessions-registry-helpers.md
 - [ ] Phase 4 - Chat IPC commands - @docs/night_run/plans/04-phase-4-chat-ipc-commands.md
