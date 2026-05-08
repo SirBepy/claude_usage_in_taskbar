@@ -229,6 +229,7 @@ function openProjectPickerModal(
               id="project-picker-search"
               class="project-picker-search"
               type="text"
+              autocomplete="off"
               placeholder="Search projects..."
               .value=${filter}
               @input=${(e: Event) => {
@@ -317,10 +318,8 @@ function openProjectPickerModal(
       // focus from the dropdown).
       const input = host.querySelector<HTMLInputElement>("#project-picker-search");
       const active = document.activeElement;
-      const shouldFocus = !active
-        || active === document.body
-        || (active instanceof HTMLElement && active.id === "project-picker-search");
-      if (input && shouldFocus) {
+      const focusIsInsideModal = active instanceof HTMLElement && host.contains(active);
+      if (input && !focusIsInsideModal) {
         // Defer to next tick so lit-html finishes attaching DOM.
         setTimeout(() => input.focus(), 0);
       }
