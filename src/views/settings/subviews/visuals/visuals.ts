@@ -171,6 +171,17 @@ function hydrateVisuals(): void {
   updateFourBarsColorsVisibility();
 
   wireInfoTooltips(document.getElementById("app") || document);
+
+  const sessionStateStyle = $("sessionStateStyle") as HTMLSelectElement | null;
+  if (sessionStateStyle) {
+    try {
+      sessionStateStyle.value = localStorage.getItem("cc_session_state_style") || "icons";
+    } catch { /* ignore */ }
+    sessionStateStyle.addEventListener("change", () => {
+      try { localStorage.setItem("cc_session_state_style", sessionStateStyle.value); }
+      catch { /* ignore */ }
+    });
+  }
 }
 
 // Back-compat window binding (legacy boot code calls this by name).
@@ -331,6 +342,17 @@ function template() {
               <span class="option-label">Over</span>
               <input type="color" id="paceColorOver" value="#e74c3c">
             </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">SESSIONS</div>
+          <div class="option">
+            <span class="option-label">Session state style</span>
+            <select id="sessionStateStyle">
+              <option value="icons">Icons</option>
+              <option value="dots">Dots</option>
+            </select>
           </div>
         </div>
 
