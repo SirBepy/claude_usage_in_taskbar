@@ -28,9 +28,26 @@ Each user turn = one short-lived `claude -p --resume <session_id>
 emit `ChatEvent`s, claude exits when the turn completes. Cancel during a
 turn via `cancel_turn` IPC -> `kill_tree(pid)` on the runner's child.
 
-Cost is per-turn (`~$0.04-0.17` observed during the Phase 0 spike, lower with
-caching) instead of subscription-included; this trades dollars for
-implementation simplicity vs. parsing claude's TUI ANSI stream.
+**Billing.** Spawned `claude -p` inherits the user's auth from the
+[Claude Code auth precedence](https://code.claude.com/docs/en/authentication):
+`ANTHROPIC_API_KEY` > `apiKeyHelper` > `CLAUDE_CODE_OAUTH_TOKEN` > Bedrock/Vertex
+envs > `/login` OAuth. With none of those set, billing falls through to the
+existing Pro/Max subscription quota (same pool as a normal interactive `claude`
+session). The `total_cost_usd` field in `result` events is a local API-rate
+*estimate*, NOT an actual charge; per the docs, "the dollar figure is an estimate
+computed locally from token counts and may differ from your actual bill."
+
+`chat/runner.rs::check_metered_billing` refuses to spawn if `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, or `CLAUDE_CODE_USE_VERTEX`
+is set. The chat hub is subscription-only by design; metered operation is not
+supported.
+
+**Rejected: Agent SDK pivot.** `@anthropic-ai/claude-agent-sdk` and the Python
+equivalent explicitly require `ANTHROPIC_API_KEY` and route to the metered API
+(per [Agent SDK docs](https://code.claude.com/docs/en/agent-sdk/overview):
+*"Anthropic does not allow third party developers to offer claude.ai login or
+rate limits for their products, including agents built on the Claude Agent
+SDK."*). Not a viable path for this app.
 
 Key modules:
 - `src-tauri/src/chat/runner.rs` - per-turn process spawn, stdout pump,
