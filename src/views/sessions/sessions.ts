@@ -168,6 +168,10 @@ function openProjectPickerModal(
 
     let sort: SortChoice = readStoredSort();
     let filter = "";
+    // Keyboard-navigable highlight. Always points at a row in the current
+    // filtered/sorted `computeRows()` output. Reset to 0 whenever filter or
+    // sort changes (top of the new list).
+    let selectedIdx = 0;
 
     const computeRows = (): ProjectGroup[] => {
       const f = filter.trim().toLowerCase();
@@ -211,6 +215,7 @@ function openProjectPickerModal(
                 if (v === "name" || v === "recent") {
                   sort = v;
                   writeStoredSort(sort);
+                  selectedIdx = 0;
                   renderModal();
                 }
               }}
@@ -228,6 +233,7 @@ function openProjectPickerModal(
               .value=${filter}
               @input=${(e: Event) => {
                 filter = (e.target as HTMLInputElement).value;
+                selectedIdx = 0;
                 renderModal();
               }}
               @keydown=${(e: KeyboardEvent) => {
@@ -236,16 +242,43 @@ function openProjectPickerModal(
                     e.preventDefault();
                     e.stopPropagation();
                     filter = "";
+                    selectedIdx = 0;
                     renderModal();
                   } else {
                     finish(null);
                   }
                 } else if (e.key === "Enter") {
                   const matches = computeRows();
-                  if (matches.length === 1) {
+                  if (matches.length > 0) {
                     e.preventDefault();
-                    const m = matches[0]!;
+                    const idx = Math.min(selectedIdx, matches.length - 1);
+                    const m = matches[idx]!;
                     finish({ path: m.path, name: m.name });
+                  }
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const matches = computeRows();
+                  if (matches.length > 0) {
+                    selectedIdx = Math.min(selectedIdx + 1, matches.length - 1);
+                    renderModal();
+                  }
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const matches = computeRows();
+                  if (matches.length > 0) {
+                    selectedIdx = Math.max(selectedIdx - 1, 0);
+                    renderModal();
+                  }
+                } else if (e.key === "Home") {
+                  e.preventDefault();
+                  selectedIdx = 0;
+                  renderModal();
+                } else if (e.key === "End") {
+                  e.preventDefault();
+                  const matches = computeRows();
+                  if (matches.length > 0) {
+                    selectedIdx = matches.length - 1;
+                    renderModal();
                   }
                 }
               }}
@@ -254,9 +287,16 @@ function openProjectPickerModal(
               ${rows.length === 0
                 ? html`<li class="project-picker-empty">No matches</li>`
                 : rows.map(
-                    (p) => html`
+                    (p, i) => html`
                       <li
-                        class="project-picker-row"
+                        class="project-picker-row ${i === Math.min(selectedIdx, rows.length - 1) ? "selected" : ""}"
+                        data-row-idx=${i}
+                        @mouseenter=${() => {
+                          if (selectedIdx !== i) {
+                            selectedIdx = i;
+                            renderModal();
+                          }
+                        }}
                         @click=${() => finish({ path: p.path, name: p.name })}
                       >
                         <span class="project-picker-name">${p.name}</span>
@@ -283,6 +323,13 @@ function openProjectPickerModal(
       if (input && shouldFocus) {
         // Defer to next tick so lit-html finishes attaching DOM.
         setTimeout(() => input.focus(), 0);
+      }
+      // Keep the selected row visible when keyboard nav scrolls past the
+      // viewport edge. block: "nearest" avoids unnecessary jumps when the
+      // row is already fully visible.
+      const selectedEl = host.querySelector<HTMLElement>(".project-picker-row.selected");
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ block: "nearest" });
       }
     };
 

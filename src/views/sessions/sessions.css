@@ -509,8 +509,14 @@
 .project-picker-row:last-child {
   border-bottom: none;
 }
-.project-picker-row:hover {
+.project-picker-row:hover,
+.project-picker-row.selected {
   background: var(--surface-alt, #15151e);
+}
+.project-picker-row.selected {
+  /* Subtle accent stripe so the keyboard-selected row reads distinctly from
+     a passive mouse hover. */
+  box-shadow: inset 3px 0 0 0 var(--primary, #4c9eff);
 }
 .project-picker-name {
   font-size: 0.88rem;
