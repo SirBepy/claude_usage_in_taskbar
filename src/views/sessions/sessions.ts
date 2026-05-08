@@ -101,14 +101,18 @@ function renderSidebar(listEl: HTMLElement): void {
     !filter || sessionTitle(s).toLowerCase().includes(filter),
   );
   const realRows = filtered
-    .map(
-      (s) =>
-        `<li data-session-id="${escapeHtml(s.session_id)}" class="${s.session_id === state.selectedId ? "active" : ""}">
+    .map((s) => {
+      const isExternal = s.kind === "external";
+      const badge = isExternal
+        ? '<span class="session-row-badge readonly" title="Read-only external session"><i class="ph ph-eye"></i></span>'
+        : "";
+      return `<li data-session-id="${escapeHtml(s.session_id)}" class="${s.session_id === state.selectedId ? "active" : ""} ${isExternal ? "is-external" : ""}">
           <span class="session-status-dot ${statusClass(s)}"></span>
           <span class="session-title">${escapeHtml(sessionTitle(s))}</span>
-          <span class="session-project" style="margin-left:auto;color:var(--text-dim);font-size:0.75rem">${s.kind}</span>
-        </li>`,
-    )
+          ${badge}
+          <span class="session-row-kind">${escapeHtml(s.kind)}</span>
+        </li>`;
+    })
     .join("");
   let pendingRow = "";
   if (pending) {
@@ -324,12 +328,8 @@ async function startNewSession(pane: HTMLElement): Promise<void> {
   const project = await pickProject();
   if (!project) return;
   if (state.mountId !== myMount) return;
-  const firstPrompt = window.prompt("First message to send:");
-  if (!firstPrompt) return;
-  if (state.mountId !== myMount) return;
 
-  // Refuse to overlap two pending new-session attempts. The user can wait
-  // for the in-flight one to complete before starting another.
+  // Refuse to overlap two pending new-session attempts.
   if (state.pendingNewSession) {
     alert("Another new session is still starting; please wait for it to finish.");
     return;
@@ -344,11 +344,12 @@ async function startNewSession(pane: HTMLElement): Promise<void> {
   };
   state.selectedId = placeholderId;
 
-  // Render the pane immediately. The renderer subscribes to chat:<placeholder>
-  // BEFORE invoking start_session, so it sees the SessionStarted event mirrored
-  // by Rust onto the placeholder channel and can swap to the real id without
-  // missing any partial-message stream events.
-  await renderPendingPane(pane, placeholderId, project, firstPrompt);
+  // Render empty pane with renderer pre-attached to chat:<placeholder> and
+  // composer focused. The composer's onSend triggers start_session on the
+  // FIRST send (not via window.prompt) so the user types in the actual UI,
+  // not in a native popup. Subsequent sends route through send_message
+  // against the real session_id captured from SessionStarted.
+  await renderPendingPane(pane, placeholderId, project);
   if (state.mountId !== myMount) return;
 
   // Re-render sidebar to show the pending row.
@@ -356,55 +357,6 @@ async function startNewSession(pane: HTMLElement): Promise<void> {
   if (root) {
     const listEl = root.querySelector<HTMLElement>("#sessions-list");
     if (listEl) renderSidebar(listEl);
-  }
-
-  try {
-    const sessionId = await invoke<string>("start_session", {
-      cwd: project.path,
-      prompt: firstPrompt,
-      placeholderId,
-    });
-    if (state.mountId !== myMount) return;
-    if (sessionId) {
-      // The renderer should have already swapped to chat:<sessionId> when
-      // the SessionStarted event fired mid-stream. If for any reason it
-      // didn't (race), force-swap now so subsequent send_message events
-      // land in this renderer.
-      if (state.renderer && state.renderer.currentSessionId() !== sessionId) {
-        await state.renderer.swapSubscription(sessionId);
-      }
-      // Rebind the composer to the real session id so future onSend calls
-      // use send_message(real_id) instead of trying to start a new session.
-      if (state.composer) {
-        state.composer.setSessionId(sessionId, { readOnly: false });
-      }
-      state.selectedId = sessionId;
-      // Clear pending; refreshSessions will surface the real entry now.
-      state.pendingNewSession = null;
-      await refreshSessions();
-      if (state.mountId !== myMount) return;
-      const root2 = document.querySelector<HTMLElement>(".view-sessions");
-      if (root2) {
-        const listEl = root2.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) renderSidebar(listEl);
-      }
-      // Rewire the pane header buttons to use the real id (the pending pane
-      // wired them to the placeholder for cancel_turn).
-      rebindPaneHeader(pane, sessionId);
-    }
-  } catch (err) {
-    console.error("[sessions] start_session failed", err);
-    state.pendingNewSession = null;
-    state.selectedId = null;
-    if (state.renderer) state.renderer.detach();
-    state.renderer = null;
-    state.composer = null;
-    pane.innerHTML = `<div class="session-empty">Failed to start session: ${escapeHtml(String(err))}</div>`;
-    const root2 = document.querySelector<HTMLElement>(".view-sessions");
-    if (root2) {
-      const listEl = root2.querySelector<HTMLElement>("#sessions-list");
-      if (listEl) renderSidebar(listEl);
-    }
   }
 }
 
@@ -421,16 +373,20 @@ async function renderPendingPane(
   pane: HTMLElement,
   placeholderId: string,
   project: { path: string; name: string },
-  _firstPrompt: string,
 ): Promise<void> {
   const myMount = state.mountId;
   pane.innerHTML = `
     <header class="session-header">
-      <span class="title">${escapeHtml(project.name)}</span>
-      <span class="meta">starting new session...</span>
+      <span class="title">New chat</span>
+      <span class="meta">${escapeHtml(project.name)} - ${escapeHtml(project.path)}</span>
       <button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>
     </header>
-    <div class="session-messages"></div>
+    <div class="session-messages">
+      <div class="session-pending-hint">
+        <i class="ph ph-paper-plane-tilt"></i>
+        <p>Type a message below to start a new session in <strong>${escapeHtml(project.name)}</strong>.</p>
+      </div>
+    </div>
     <div class="session-composer"></div>
   `;
 
@@ -487,18 +443,59 @@ async function renderPendingPane(
     }
   }
 
-  // Composer is attached here so the user CAN type a follow-up turn while
-  // the first turn is still streaming. onSend uses the resolved real id if
-  // available (set on state.pendingNewSession.realId), otherwise queues by
-  // disabling the composer until SessionStarted fires. For v1 simplicity:
-  // composer is enabled but onSend bails with a notice if the real id is
-  // not yet known.
+  // Composer is attached here. The FIRST send invokes start_session
+  // (passing placeholderId so Rust mirrors SessionStarted onto the channel
+  // we're already subscribed to). Subsequent sends route through
+  // send_message against the real id captured from SessionStarted.
   const composerEl = pane.querySelector<HTMLElement>(".session-composer");
   if (composerEl) {
+    let started = false;
     state.composer = new Composer(composerEl, {
       onSend: async (blocks: ContentBlock[]) => {
-        const realId = state.pendingNewSession?.realId;
-        if (!realId) {
+        if (state.mountId !== myMount) return;
+        const promptText = blocks
+          .map((b) => (b && b.type === "text" ? b.text : ""))
+          .filter((s) => s)
+          .join("\n");
+        if (!promptText.trim()) return;
+
+        if (!started) {
+          started = true;
+          try {
+            const sessionId = await invoke<string>("start_session", {
+              cwd: project.path,
+              prompt: promptText,
+              placeholderId,
+            });
+            if (state.mountId !== myMount) return;
+            if (sessionId) {
+              if (state.renderer && state.renderer.currentSessionId() !== sessionId) {
+                await state.renderer.swapSubscription(sessionId);
+              }
+              if (state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
+              state.selectedId = sessionId;
+              state.pendingNewSession = null;
+              await refreshSessions();
+              if (state.mountId !== myMount) return;
+              const root2 = document.querySelector<HTMLElement>(".view-sessions");
+              if (root2) {
+                const listEl = root2.querySelector<HTMLElement>("#sessions-list");
+                if (listEl) renderSidebar(listEl);
+              }
+              rebindPaneHeader(pane, sessionId);
+            }
+          } catch (err) {
+            console.error("[sessions] start_session failed", err);
+            started = false;
+            alert(`Failed to start session: ${err}`);
+          }
+          return;
+        }
+
+        // Subsequent sends: real id known via SessionStarted swap or via the
+        // start_session resolution above.
+        const realId = state.pendingNewSession?.realId ?? state.selectedId;
+        if (!realId || realId === placeholderId) {
           alert("Session is still starting; please wait for the first response.");
           return;
         }
@@ -516,6 +513,10 @@ async function renderPendingPane(
     });
     state.composer.setSessionId(placeholderId, { readOnly: false });
   }
+
+  // Focus composer textarea so user can immediately type.
+  const ta = pane.querySelector<HTMLTextAreaElement>(".composer-textarea");
+  if (ta) ta.focus();
 
   // Cancel button kills the in-flight first turn via cancel_turn(placeholder).
   // Rust's ChatState.running tracks the slot under the placeholder key when
@@ -592,11 +593,12 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   pane.innerHTML = `
     <header class="session-header">
       <span class="title">${escapeHtml(sessionTitle(sess))}</span>
-      <span class="meta">${escapeHtml(sess.kind)} - ${sess.pid ? `pid ${sess.pid}` : "no pid"}</span>
+      <span class="meta">${escapeHtml(sess.kind)}${sess.pid ? ` - pid ${sess.pid}` : ""}</span>
       ${readOnly ? '<button class="icon-btn takeover-btn" title="Take over"><i class="ph ph-arrow-clockwise"></i></button>' : ""}
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
-      <button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>
+      ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
     </header>
+    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> Read-only session - click <strong>Take Over</strong> to interact.</div>' : ""}
     <div class="session-messages"></div>
     <div class="session-composer"></div>
   `;
@@ -613,16 +615,19 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       renderer.detach();
       return;
     }
-    // Replay history if available (Phase 8 IPC; tolerate absence).
+    // Replay history. Pass cwd so the backend can locate
+    // ~/.claude/projects/<encoded-cwd>/<id>.jsonl directly.
     try {
-      const events = await invoke<ChatEvent[]>("load_history", { sessionId });
+      const args: { sessionId: string; cwd?: string } = { sessionId };
+      if (sess.cwd) args.cwd = String(sess.cwd);
+      const events = await invoke<ChatEvent[]>("load_history", args);
       if (state.mountId !== myMount || state.selectedId !== sessionId) {
         renderer.detach();
         return;
       }
       if (Array.isArray(events) && events.length > 0) renderer.loadHistory(events);
     } catch {
-      /* Phase 8a not landed yet; skip silently */
+      /* tolerate absence */
     }
   }
 
