@@ -296,21 +296,45 @@ pub async fn paste_image(
 /// Replay the JSONL transcript for `session_id` from disk into ChatEvents.
 /// Used by the Sessions view to seed the renderer when opening a session,
 /// and by the History view for read-only past-session browsing.
+///
+/// Claude CLI writes transcripts to `~/.claude/projects/<encoded-cwd>/<session_id>.jsonl`,
+/// NOT `~/.claude/sessions/<session_id>.jsonl` (the latter holds pid-keyed
+/// metadata, not transcripts). When `cwd` is known (Sessions view passes it
+/// from the Instance entry), use `transcript_for_session` directly; otherwise
+/// (History view, where cwd isn't carried on `HistoryEntry`) scan every project
+/// dir for a matching `<session_id>.jsonl`.
 #[tauri::command]
-pub async fn load_history(session_id: String) -> Result<Vec<ChatEvent>, String> {
-    // Strict charset on session_id prevents path traversal via '../' or
-    // weird drive-letter shenanigans. Same validation as paste_image.
+pub async fn load_history(session_id: String, cwd: Option<String>) -> Result<Vec<ChatEvent>, String> {
     validate_session_id(&session_id)?;
-    let home = dirs::home_dir().ok_or("no home dir")?;
-    let path = home
-        .join(".claude")
-        .join("sessions")
-        .join(format!("{}.jsonl", session_id));
-    crate::chat::history::replay(&path)
+
+    if let Some(cwd_str) = cwd.as_deref().filter(|s| !s.is_empty()) {
+        if let Some(p) = crate::tokens::transcript_for_session(Path::new(cwd_str), &session_id) {
+            return crate::chat::history::replay(&p);
+        }
+        // Fall through to scan: cwd path may not match the encoded dir
+        // exactly (case differences on Windows, junctions, etc.).
+    }
+
+    let projects = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
+    let entries = match std::fs::read_dir(&projects) {
+        Ok(e) => e,
+        Err(_) => return Err(format!("no transcript found for session {session_id}")),
+    };
+    for entry in entries.flatten() {
+        let candidate = entry.path().join(format!("{session_id}.jsonl"));
+        if candidate.exists() {
+            return crate::chat::history::replay(&candidate);
+        }
+    }
+    Err(format!("no transcript found for session {session_id}"))
 }
 
-/// List past sessions from `~/.claude/sessions/*.jsonl`. Returns a paginated,
-/// optionally-filtered list sorted newest first by mtime.
+/// List past sessions by walking `~/.claude/projects/<encoded-cwd>/*.jsonl`.
+/// `~/.claude/sessions/` is pid-keyed metadata, not transcripts. Returns a
+/// paginated, optionally-filtered list sorted newest first by mtime.
+///
+/// `project_id` filters by the encoded-cwd dir name (the same slug
+/// `tokens::encode_cwd_as_project_dir` produces). Pass `None` to list all.
 #[tauri::command]
 pub async fn list_history(
     project_id: Option<String>,
@@ -318,49 +342,55 @@ pub async fn list_history(
     limit: u32,
     offset: u32,
 ) -> Result<Vec<crate::types::chat::HistoryEntry>, String> {
-    let home = dirs::home_dir().ok_or("no home dir")?;
-    let sessions_dir = home.join(".claude").join("sessions");
-    if !sessions_dir.exists() {
+    let projects_dir = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
+    if !projects_dir.exists() {
         return Ok(Vec::new());
     }
     let mut entries = Vec::new();
-    for f in std::fs::read_dir(&sessions_dir).map_err(|e| e.to_string())? {
-        let f = match f {
-            Ok(x) => x,
-            Err(_) => continue,
-        };
-        let p = f.path();
-        if p.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+    let proj_dirs = std::fs::read_dir(&projects_dir).map_err(|e| e.to_string())?;
+    for proj_dir in proj_dirs.flatten() {
+        if !proj_dir.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
-        let title = p
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let meta = f.metadata().ok();
-        let started_at = meta
-            .as_ref()
-            .and_then(|m| m.created().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        let ended_at = meta
-            .as_ref()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64);
-        entries.push(crate::types::chat::HistoryEntry {
-            session_id: title.clone(),
-            project_id: String::new(),
-            title,
-            started_at,
-            ended_at,
-            message_count: 0,
-            // last_kind is best-effort; without parsing the JSONL we can't tell
-            // whether the session was Interactive vs External. Cross-referencing
-            // with the registry is a follow-up; for v1 we mark as External.
-            last_kind: crate::sessions::kinds::InstanceKind::External,
-        });
+        let proj_slug = proj_dir.file_name().to_string_lossy().to_string();
+        let inner = match std::fs::read_dir(proj_dir.path()) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+        for f in inner.flatten() {
+            let p = f.path();
+            if p.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let title = p
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let meta = f.metadata().ok();
+            let started_at = meta
+                .as_ref()
+                .and_then(|m| m.created().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let ended_at = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64);
+            entries.push(crate::types::chat::HistoryEntry {
+                session_id: title.clone(),
+                project_id: proj_slug.clone(),
+                title,
+                started_at,
+                ended_at,
+                message_count: 0,
+                // last_kind is best-effort; without parsing the JSONL we can't tell
+                // whether the session was Interactive vs External. Cross-referencing
+                // with the registry is a follow-up; for v1 we mark as External.
+                last_kind: crate::sessions::kinds::InstanceKind::External,
+            });
+        }
     }
     if let Some(pid) = project_id {
         entries.retain(|e| e.project_id == pid);

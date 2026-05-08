@@ -82,7 +82,9 @@ async function selectHistorySession(sessionId: string, pane: HTMLElement): Promi
 
   let events: ChatEvent[] = [];
   try {
-    events = (await invoke<ChatEvent[]>("load_history", { sessionId })) || [];
+    // History view doesn't track cwd per entry; backend scans
+    // ~/.claude/projects/*/<id>.jsonl as fallback when cwd is null.
+    events = (await invoke<ChatEvent[]>("load_history", { sessionId, cwd: null })) || [];
   } catch (err) {
     console.error("[history] load_history failed", err);
     pane.innerHTML = `<div class="history-empty">Failed to load: ${escapeHtml(String(err))}</div>`;

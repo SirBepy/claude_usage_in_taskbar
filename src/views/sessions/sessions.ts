@@ -153,9 +153,14 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       renderer.detach();
       return;
     }
-    // Replay history if available (Phase 8 IPC; tolerate absence).
+    // Replay history if available (Phase 8 IPC; tolerate absence). Pass cwd so
+    // the backend hits ~/.claude/projects/<encoded-cwd>/<id>.jsonl directly
+    // without scanning every project dir.
     try {
-      const events = await invoke<ChatEvent[]>("load_history", { sessionId });
+      const events = await invoke<ChatEvent[]>("load_history", {
+        sessionId,
+        cwd: String(sess.cwd ?? ""),
+      });
       if (state.mountId !== myMount || state.selectedId !== sessionId) {
         renderer.detach();
         return;
