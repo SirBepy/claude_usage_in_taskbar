@@ -78,17 +78,14 @@ body {
 }
 
 /* ── View containers ── */
-/* Content is capped at 560px wide so an oversized window (common when the
- * user drags the corner) doesn't stretch stat cards across a wall of
- * whitespace. The window itself can still grow; the content just centres. */
+/* Views fill the entire window. The user explicitly removed the previous
+ * max-width cap so layouts can breathe at any window size. */
 .view {
     display: flex;
     flex-direction: column;
     flex: 1;
     overflow: hidden;
-    max-width: 560px;
     width: 100%;
-    margin: 0 auto;
 }
 
 .view.hidden {

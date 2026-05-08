@@ -1,4 +1,4 @@
-import { html, render } from "lit-html";
+import { html, render, type TemplateResult } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
@@ -7,10 +7,16 @@ import "../../shared/chat/chat.css";
 import "./sessions.css";
 import type { Instance, ChatEvent, ContentBlock, ProjectGroup } from "../../types/ipc.generated";
 
+interface PendingNewSession {
+  cwd: string;
+  name: string;
+}
+
 interface SessionsState {
   mountId: number;
   sessions: Instance[];
   selectedId: string | null;
+  pendingNewSession: PendingNewSession | null;
   filter: string;
   renderer: ChatRenderer | null;
   composer: Composer | null;
@@ -24,6 +30,7 @@ let state: SessionsState = {
   mountId: 0,
   sessions: [],
   selectedId: null,
+  pendingNewSession: null,
   filter: "",
   renderer: null,
   composer: null,
@@ -60,19 +67,53 @@ function renderSidebar(listEl: HTMLElement): void {
   const filtered = state.sessions.filter((s) =>
     !filter || sessionTitle(s).toLowerCase().includes(filter),
   );
-  listEl.innerHTML = filtered
-    .map(
-      (s) =>
-        `<li data-session-id="${escapeHtml(s.session_id)}" class="${s.session_id === state.selectedId ? "active" : ""}">
+  const items = filtered
+    .map((s) => {
+      const isExternal = s.kind === "external";
+      const badge = isExternal
+        ? '<span class="session-row-badge readonly" title="Read-only external session"><i class="ph ph-eye"></i></span>'
+        : "";
+      return `<li data-session-id="${escapeHtml(s.session_id)}" class="${s.session_id === state.selectedId ? "active" : ""} ${isExternal ? "is-external" : ""}">
           <span class="session-status-dot ${statusClass(s)}"></span>
           <span class="session-title">${escapeHtml(sessionTitle(s))}</span>
-          <span class="session-project" style="margin-left:auto;color:var(--text-dim);font-size:0.75rem">${s.kind}</span>
-        </li>`,
-    )
+          ${badge}
+          <span class="session-row-kind">${escapeHtml(s.kind)}</span>
+        </li>`;
+    })
     .join("");
+  // Pending-new-session row (transient, rendered above real sessions).
+  const pending = state.pendingNewSession;
+  const pendingRow = pending
+    ? `<li class="pending-new active">
+        <span class="session-status-dot input"></span>
+        <span class="session-title">New chat - ${escapeHtml(pending.name)}</span>
+        <span class="session-row-kind">draft</span>
+      </li>`
+    : "";
+  listEl.innerHTML = pendingRow + items;
 }
 
-async function pickProject(): Promise<{ path: string; name: string } | null> {
+// ──────────────────────────────────────────────────────────────────────────
+// Project picker modal (replaces window.prompt)
+// ──────────────────────────────────────────────────────────────────────────
+
+function ensureModalHost(): HTMLElement {
+  let host = document.getElementById("sessions-modal-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "sessions-modal-host";
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function closeModal(host: HTMLElement, onEsc: (e: KeyboardEvent) => void): void {
+  host.classList.remove("open");
+  render(html``, host);
+  document.removeEventListener("keydown", onEsc);
+}
+
+async function openProjectPickerModal(): Promise<{ path: string; name: string } | null> {
   let projects: ProjectGroup[] = [];
   try {
     projects = (await invoke<ProjectGroup[]>("list_project_groups")) || [];
@@ -80,48 +121,203 @@ async function pickProject(): Promise<{ path: string; name: string } | null> {
     console.error("[sessions] list_project_groups failed", err);
   }
   if (!projects.length) {
-    alert("No projects detected yet. Run claude in a folder first or add a project.");
-    return null;
+    // Still surface a styled message rather than alert(), but the modal
+    // collapses to a "no projects" state with just a Cancel.
+    return new Promise((resolve) => {
+      const host = ensureModalHost();
+      const onEsc = (e: KeyboardEvent) => {
+        if (e.key === "Escape") finish(null);
+      };
+      const finish = (val: { path: string; name: string } | null) => {
+        closeModal(host, onEsc);
+        resolve(val);
+      };
+      render(
+        html`
+          <div class="sm-backdrop" @click=${() => finish(null)}></div>
+          <div class="sm-card" role="dialog" aria-modal="true" aria-label="Pick a project">
+            <header class="sm-header"><h3>Pick a project</h3></header>
+            <div class="sm-body">
+              <p class="sm-empty">No projects detected yet. Run claude in a folder first or add a project from the Projects view.</p>
+            </div>
+            <footer class="sm-footer">
+              <button class="btn btn-secondary" @click=${() => finish(null)}>Close</button>
+            </footer>
+          </div>
+        `,
+        host,
+      );
+      host.classList.add("open");
+      document.addEventListener("keydown", onEsc);
+    });
   }
-  const lines = projects
-    .map((p, i) => `${i + 1}. ${p.name} (${p.path})`)
-    .join("\n");
-  const choice = window.prompt(`Pick project (number):\n${lines}`, "1");
-  if (!choice) return null;
-  const idx = parseInt(choice, 10) - 1;
-  const picked = projects[idx];
-  if (!picked) return null;
-  return { path: picked.path, name: picked.name };
+
+  return new Promise((resolve) => {
+    const host = ensureModalHost();
+    let selectedIdx: number | null = null;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") finish(null);
+    };
+    const finish = (val: { path: string; name: string } | null) => {
+      closeModal(host, onEsc);
+      resolve(val);
+    };
+    const onContinue = () => {
+      if (selectedIdx === null) return;
+      const p = projects[selectedIdx];
+      if (!p) return finish(null);
+      finish({ path: p.path, name: p.name });
+    };
+    const draw = () => {
+      const tpl: TemplateResult = html`
+        <div class="sm-backdrop" @click=${() => finish(null)}></div>
+        <div class="sm-card" role="dialog" aria-modal="true" aria-label="Pick a project">
+          <header class="sm-header"><h3>Pick a project</h3></header>
+          <div class="sm-body sm-body-list">
+            <ul class="sm-project-list">
+              ${projects.map(
+                (p, i) => html`
+                  <li
+                    class="sm-project-row ${selectedIdx === i ? "selected" : ""}"
+                    @click=${() => {
+                      selectedIdx = i;
+                      draw();
+                    }}
+                    @dblclick=${() => {
+                      selectedIdx = i;
+                      onContinue();
+                    }}
+                  >
+                    <div class="sm-project-name">${p.name}</div>
+                    <div class="sm-project-path">${p.path}</div>
+                  </li>
+                `,
+              )}
+            </ul>
+          </div>
+          <footer class="sm-footer">
+            <button class="btn btn-secondary" @click=${() => finish(null)}>Cancel</button>
+            <button
+              class="btn btn-primary"
+              ?disabled=${selectedIdx === null}
+              @click=${onContinue}
+            >
+              Continue
+            </button>
+          </footer>
+        </div>
+      `;
+      render(tpl, host);
+    };
+    draw();
+    host.classList.add("open");
+    document.addEventListener("keydown", onEsc);
+  });
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// New-session flow
+// ──────────────────────────────────────────────────────────────────────────
+
 async function startNewSession(pane: HTMLElement): Promise<void> {
-  const project = await pickProject();
+  const project = await openProjectPickerModal();
   if (!project) return;
-  const firstPrompt = window.prompt("First message to send:");
-  if (!firstPrompt) return;
-  try {
-    const sessionId = await invoke<string>("start_session", {
-      cwd: project.path,
-      prompt: firstPrompt,
-    });
-    if (sessionId) {
-      await refreshSessions();
-      const root = document.querySelector<HTMLElement>(".view-sessions");
-      if (root) {
-        const listEl = root.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) renderSidebar(listEl);
-      }
-      await selectSession(sessionId, pane);
-    }
-  } catch (err) {
-    console.error("[sessions] start_session failed", err);
-    alert(`Failed to start session: ${err}`);
+
+  // Set transient pending state and render an empty chat pane immediately.
+  state.pendingNewSession = { cwd: project.path, name: project.name };
+  state.selectedId = null;
+
+  // Refresh sidebar to show the pending row + clear any active row.
+  const root = document.querySelector<HTMLElement>(".view-sessions");
+  if (root) {
+    const listEl = root.querySelector<HTMLElement>("#sessions-list");
+    if (listEl) renderSidebar(listEl);
   }
+
+  renderPendingPane(pane);
+}
+
+function renderPendingPane(pane: HTMLElement): void {
+  const myMount = state.mountId;
+  const pending = state.pendingNewSession;
+  if (!pending) return;
+
+  // Tear down any prior renderer/composer.
+  if (state.renderer) {
+    state.renderer.detach();
+    state.renderer = null;
+  }
+  state.composer = null;
+
+  pane.innerHTML = `
+    <header class="session-header">
+      <span class="title">New chat</span>
+      <span class="meta">${escapeHtml(pending.name)} - ${escapeHtml(pending.cwd)}</span>
+    </header>
+    <div class="session-messages">
+      <div class="session-pending-hint">
+        <i class="ph ph-paper-plane-tilt"></i>
+        <p>Type a message below to start a new session in <strong>${escapeHtml(pending.name)}</strong>.</p>
+      </div>
+    </div>
+    <div class="session-composer"></div>
+  `;
+
+  const composerEl = pane.querySelector<HTMLElement>(".session-composer");
+  if (!composerEl) return;
+  // Composer with onSend that bootstraps the real session, then routes
+  // subsequent messages through send_message.
+  state.composer = new Composer(composerEl, {
+    onSend: async (blocks: ContentBlock[]) => {
+      // Bail if mount/state changed during the await (e.g. user navigated away).
+      if (state.mountId !== myMount) return;
+      const cwd = pending.cwd;
+      // Collapse blocks into a single text prompt for start_session. The
+      // backend's start_session takes a string prompt; image attachments are
+      // surfaced as <file:path> mention text inside the same prompt.
+      const promptText = blocks
+        .map((b) => (b && b.type === "text" ? b.text : ""))
+        .filter((s) => s)
+        .join("\n");
+      if (!promptText.trim()) return;
+      try {
+        const sessionId = await invoke<string>("start_session", {
+          cwd,
+          prompt: promptText,
+        });
+        if (state.mountId !== myMount) return;
+        if (sessionId) {
+          state.pendingNewSession = null;
+          await refreshSessions();
+          if (state.mountId !== myMount) return;
+          const root = document.querySelector<HTMLElement>(".view-sessions");
+          if (root) {
+            const listEl = root.querySelector<HTMLElement>("#sessions-list");
+            if (listEl) renderSidebar(listEl);
+          }
+          await selectSession(sessionId, pane);
+        }
+      } catch (err) {
+        console.error("[sessions] start_session failed", err);
+        alert(`Failed to start session: ${err}`);
+      }
+    },
+  });
+  // No real session_id yet. Pass a placeholder; image-paste is allowed
+  // visually but paste_image IPC requires a session_id, so the composer's
+  // attachments path will fall back to "image dropped" until the real
+  // session_id materialises.
+  state.composer.setSessionId("__pending__", { readOnly: false });
+
+  // Focus composer so user can immediately type.
+  const ta = pane.querySelector<HTMLTextAreaElement>(".composer-textarea");
+  if (ta) ta.focus();
 }
 
 async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;
   state.selectedId = sessionId;
+  state.pendingNewSession = null;
   const sess = state.sessions.find((s) => s.session_id === sessionId);
   if (!sess) {
     pane.innerHTML = `<div class="session-empty">Session ${escapeHtml(sessionId)} not found</div>`;
@@ -132,11 +328,12 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   pane.innerHTML = `
     <header class="session-header">
       <span class="title">${escapeHtml(sessionTitle(sess))}</span>
-      <span class="meta">${escapeHtml(sess.kind)} - ${sess.pid ? `pid ${sess.pid}` : "no pid"}</span>
+      <span class="meta">${escapeHtml(sess.kind)}${sess.pid ? ` - pid ${sess.pid}` : ""}</span>
       ${readOnly ? '<button class="icon-btn takeover-btn" title="Take over"><i class="ph ph-arrow-clockwise"></i></button>' : ""}
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
-      <button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>
+      ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
     </header>
+    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> Read-only session - click <strong>Take Over</strong> to interact.</div>' : ""}
     <div class="session-messages"></div>
     <div class="session-composer"></div>
   `;
@@ -153,21 +350,19 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       renderer.detach();
       return;
     }
-    // Replay history if available (Phase 8 IPC; tolerate absence). Pass cwd so
-    // the backend hits ~/.claude/projects/<encoded-cwd>/<id>.jsonl directly
-    // without scanning every project dir.
+    // Replay history if available. For external read-only sessions the
+    // backend now accepts a cwd hint so it can locate the JSONL.
     try {
-      const events = await invoke<ChatEvent[]>("load_history", {
-        sessionId,
-        cwd: String(sess.cwd ?? ""),
-      });
+      const args: { sessionId: string; cwd?: string } = { sessionId };
+      if (sess.cwd) args.cwd = String(sess.cwd);
+      const events = await invoke<ChatEvent[]>("load_history", args);
       if (state.mountId !== myMount || state.selectedId !== sessionId) {
         renderer.detach();
         return;
       }
       if (Array.isArray(events) && events.length > 0) renderer.loadHistory(events);
     } catch {
-      /* Phase 8a not landed yet; skip silently */
+      /* load_history not yet available; skip silently */
     }
   }
 
@@ -243,6 +438,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     mountId: myMount,
     sessions: [],
     selectedId: null,
+    pendingNewSession: null,
     filter: "",
     renderer: null,
     composer: null,
@@ -320,6 +516,13 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     }
     state.composer = null;
     state.selectedId = null;
+    state.pendingNewSession = null;
+    // Tear down any open project-picker modal so it doesn't outlive the view.
+    const modalHost = document.getElementById("sessions-modal-host");
+    if (modalHost) {
+      modalHost.classList.remove("open");
+      render(html``, modalHost);
+    }
   };
 }
 
@@ -380,6 +583,7 @@ export async function renderDetachedSession(
     mountId: myMount,
     sessions: [],
     selectedId: null,
+    pendingNewSession: null,
     filter: "",
     renderer: null,
     composer: null,
@@ -424,6 +628,7 @@ export async function renderDetachedSession(
     }
     state.composer = null;
     state.selectedId = null;
+    state.pendingNewSession = null;
   };
 }
 
