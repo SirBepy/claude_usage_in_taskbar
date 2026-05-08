@@ -77,6 +77,36 @@ export class ChatRenderer {
   }
 
   /**
+   * Swap the live event subscription from the current session id to a new
+   * one (typically: placeholder -> real). Preserves the current rendered
+   * messages and streaming index so the user keeps seeing the in-progress
+   * turn instead of a flicker. Used when start_session captures the real
+   * session_id from claude's first SessionStarted event.
+   */
+  async swapSubscription(newSessionId: string): Promise<void> {
+    if (this.sessionId === newSessionId) return;
+    if (this.unlisten) {
+      try {
+        this.unlisten();
+      } catch {
+        /* ignore */
+      }
+      this.unlisten = null;
+    }
+    this.sessionId = newSessionId;
+    const ev = window.__TAURI__?.event;
+    if (!ev?.listen) return;
+    this.unlisten = await ev.listen<ChatEvent>(`chat:${newSessionId}`, (e) => {
+      this.handleEvent(e.payload);
+    });
+  }
+
+  /** Currently subscribed session id, if any. */
+  currentSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  /**
    * Replace the message list with the given history. Used for read-only
    * history view replay or for restoring the chat pane on reopen.
    */

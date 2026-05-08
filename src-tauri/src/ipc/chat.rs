@@ -52,13 +52,38 @@ impl ChatState {
     }
 }
 
+/// Validate a frontend-supplied placeholder id. Must start with "pending-"
+/// and contain only [A-Za-z0-9_-] otherwise. Length-capped. Returning Err
+/// indicates the caller should fall back to the server-generated placeholder
+/// instead of using attacker-supplied input as an event channel suffix.
+fn validate_placeholder_id(id: &str) -> Result<(), &'static str> {
+    if id.len() < 9 || id.len() > 64 {
+        return Err("placeholder length out of range");
+    }
+    if !id.starts_with("pending-") {
+        return Err("placeholder must start with 'pending-'");
+    }
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("placeholder charset");
+    }
+    Ok(())
+}
+
 /// Shared per-turn execution. Runs `claude -p` on a blocking thread, captures
 /// session_id from the first SessionStarted event, registers the session,
 /// emits ChatEvents over Tauri events, returns the resolved session_id.
+///
+/// `placeholder_id_in` is an optional caller-supplied placeholder used when
+/// `session_id_in` is None (i.e. brand-new session, frontend-driven). If
+/// supplied and well-formed (validate_placeholder_id), the SessionStarted
+/// event is mirrored on `chat:<placeholder>` so the frontend renderer can
+/// subscribe BEFORE invoking `start_session` and capture the real id from
+/// the stream itself rather than waiting for the entire turn to finish.
 async fn run_session_turn(
     session_id_in: Option<String>,
     cwd: String,
     prompt: String,
+    placeholder_id_in: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
@@ -74,10 +99,13 @@ async fn run_session_turn(
         let _ = app.emit("instances-changed", ());
     }
 
-    // Allocate cancel slot under either the known id or a "pending-..." key.
-    let placeholder_id = session_id_in
-        .clone()
-        .unwrap_or_else(|| format!("pending-{}", Utc::now().timestamp_millis()));
+    // Allocate cancel slot under either the known id, a caller-supplied
+    // "pending-..." placeholder (validated), or a server-generated fallback.
+    let placeholder_id = match (&session_id_in, placeholder_id_in.as_deref()) {
+        (Some(id), _) => id.clone(),
+        (None, Some(supplied)) if validate_placeholder_id(supplied).is_ok() => supplied.to_string(),
+        _ => format!("pending-{}", Utc::now().timestamp_millis()),
+    };
     let chat_state: State<'_, Arc<ChatState>> = app.state();
     let slot = chat_state.allocate(&placeholder_id);
     let placeholder_for_closure = placeholder_id.clone();
@@ -124,10 +152,12 @@ async fn run_session_turn(
             &prompt,
             Some(slot_for_closure),
             |ev: ChatEvent| {
+                let mut just_captured: Option<String> = None;
                 if let ChatEvent::SessionStarted { ref session_id, .. } = ev {
                     let mut g = captured_for_closure.lock().unwrap();
                     if g.is_none() {
                         *g = Some(session_id.clone());
+                        just_captured = Some(session_id.clone());
                         // Insert directly without re-resolving project_id.
                         registry_for_closure.upsert_interactive(
                             session_id,
@@ -136,8 +166,22 @@ async fn run_session_turn(
                             &now_str_for_closure,
                         );
                         registry_for_closure.set_busy(session_id, true);
-                        let _ = app_for_closure.emit("instances-changed", ());
                     }
+                }
+                // CRITICAL ordering for the new-session sidebar bug fix:
+                // when we just captured the real id, emit the SessionStarted
+                // event on `chat:<placeholder>` FIRST so the frontend captures
+                // the real id (and sets pendingNewSession.realId) BEFORE the
+                // `instances-changed` listener fires refreshSessions+renderSidebar.
+                // Otherwise the user briefly sees a duplicate row in the sidebar.
+                if let Some(ref real_id) = just_captured {
+                    if real_id != &placeholder_for_closure {
+                        let _ = app_for_closure
+                            .emit(&format!("chat:{}", placeholder_for_closure), &ev);
+                    }
+                }
+                if just_captured.is_some() {
+                    let _ = app_for_closure.emit("instances-changed", ());
                 }
                 let target = captured_for_closure
                     .lock()
@@ -169,10 +213,11 @@ async fn run_session_turn(
 pub async fn start_session(
     cwd: String,
     prompt: String,
+    placeholder_id: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    run_session_turn(None, cwd, prompt, state, app).await
+    run_session_turn(None, cwd, prompt, placeholder_id, state, app).await
 }
 
 #[tauri::command]
@@ -184,7 +229,7 @@ pub async fn send_message(
     app: AppHandle,
 ) -> Result<String, String> {
     let prompt = blocks_to_prompt_text(&blocks);
-    run_session_turn(Some(session_id), cwd, prompt, state, app).await
+    run_session_turn(Some(session_id), cwd, prompt, None, state, app).await
 }
 
 /// Drain ChatState.running and kill each in-flight runner child. Called
@@ -593,6 +638,25 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bad = write_attachment(tmp.path(), "sess", "!!!not-base64!!!", "image/png");
         assert!(bad.is_err());
+    }
+
+    #[test]
+    fn validate_placeholder_id_accepts_well_formed() {
+        assert!(validate_placeholder_id("pending-12345").is_ok());
+        assert!(validate_placeholder_id("pending-1700000000000").is_ok());
+        assert!(validate_placeholder_id("pending-abc-123_xyz").is_ok());
+    }
+
+    #[test]
+    fn validate_placeholder_id_rejects_malformed() {
+        assert!(validate_placeholder_id("").is_err());
+        assert!(validate_placeholder_id("pending-").is_err()); // < 9 chars
+        assert!(validate_placeholder_id("real-1234567").is_err()); // wrong prefix
+        assert!(validate_placeholder_id("60e53cc5-9823-4af3-979f-29e1e891a718").is_err()); // real session id
+        assert!(validate_placeholder_id("pending-../etc").is_err()); // path traversal
+        assert!(validate_placeholder_id("pending-a/b").is_err());
+        assert!(validate_placeholder_id("pending-a b").is_err()); // space
+        assert!(validate_placeholder_id(&format!("pending-{}", "x".repeat(60))).is_err()); // too long
     }
 
     #[test]
