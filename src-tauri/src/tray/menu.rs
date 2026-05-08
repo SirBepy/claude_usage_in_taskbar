@@ -46,7 +46,12 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                         let _ = crate::scheduler::poll_once(&h, crate::scheduler::PollTrigger::Manual).await;
                     });
                 }
-                "quit" => app.exit(0),
+                "quit" => {
+                    // Kill any in-flight runner children so we don't leak
+                    // claude.exe orphans. Drains ChatState.running before exit.
+                    crate::ipc::chat::cancel_all_inflight_turns(app);
+                    app.exit(0);
+                }
                 "mute-all" => {
                     let h = app.clone();
                     tauri::async_runtime::spawn(async move {

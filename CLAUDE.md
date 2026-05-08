@@ -1,8 +1,70 @@
-# Claude AI Usage Toolbar
+# Claude Companion (formerly Claude AI Usage Toolbar)
 
-Cross-platform system tray app (Tauri 2) that monitors Claude AI usage by
-scraping the Claude settings/usage page via a CDP-driven hidden Chrome
-tab, once per hour. Windows, macOS, and Linux (x86_64 DEB + AppImage) supported.
+Cross-platform Tauri 2 app for Claude Code users. Originally a usage tracker;
+now combines:
+
+- **Usage monitoring** (5h / 7d windows) via CDP-driven hidden Chrome scraping.
+- **Sessions view** that owns interactive Claude chat sessions across the
+  user's projects via per-turn `claude -p --resume <id>` invocations
+  (Path C; spawned via std::process::Command, no PTY).
+- **Custom HTML chat renderer** with markdown (markdown-it), syntax-highlighted
+  code blocks (shiki, github-dark), and clipboard image paste.
+- **History view** for read-only browsing of past sessions from
+  `~/.claude/sessions/*.jsonl`.
+- **Manual session takeover**: kill an external `claude` process and resume
+  its session from this app.
+- **Detachable session windows**: pop a session into its own Tauri window.
+- **Hooks system** surfacing live instance state across all session kinds
+  (External / Automated / Remote / Interactive).
+
+Windows, macOS, and Linux (x86_64 DEB + AppImage) supported. Linux gets the
+chat hub but not the future character-overlay work (Wayland click-through gap).
+
+## Chat hub (Path C architecture)
+
+Each user turn = one short-lived `claude -p --resume <session_id>
+--output-format=stream-json --verbose --include-partial-messages` process.
+`std::process::Command` pipes stdout, lines stream through `chat::parser` to
+emit `ChatEvent`s, claude exits when the turn completes. Cancel during a
+turn via `cancel_turn` IPC -> `kill_tree(pid)` on the runner's child.
+
+Cost is per-turn (`~$0.04-0.17` observed during the Phase 0 spike, lower with
+caching) instead of subscription-included; this trades dollars for
+implementation simplicity vs. parsing claude's TUI ANSI stream.
+
+Key modules:
+- `src-tauri/src/chat/runner.rs` - per-turn process spawn, stdout pump,
+  stderr-drain thread, cancel-via-pid slot.
+- `src-tauri/src/chat/parser.rs` - line-delimited stream-json -> ChatEvent.
+  Buffers across read boundaries, handles CRLF.
+- `src-tauri/src/chat/takeover.rs` - external -> Interactive promotion:
+  resolve session_id via `~/.claude/sessions/<pid>.json`, kill_tree the
+  external process, register Interactive entry preserving project_id + pid.
+- `src-tauri/src/chat/history.rs` - JSONL replay (reuses parser).
+- `src-tauri/src/ipc/chat.rs` - start_session / send_message / cancel_turn /
+  paste_image / takeover_manual / load_history / list_history /
+  detach_window / reattach_window / cancel_all_inflight_turns (quit hook) /
+  gc_attachments (24h scheduler).
+- `src-tauri/src/sessions/registry.rs` - Instance registry (was
+  hooks/instances.rs); gained busy bool + record_interactive_session +
+  upsert_interactive + set_busy helpers.
+- `src/views/sessions/sessions.ts` - main Sessions view + renderDetachedSession.
+- `src/views/history/history.ts` - History view orchestration.
+- `src/shared/chat/chat-renderer.ts` - virtualized DOM rendering, markdown
+  + shiki post-pass.
+- `src/shared/chat/composer.ts` - textarea + image paste, mountId race
+  guard pattern, "image attachment dropped" surfaced visibly when
+  paste_image IPC unavailable (memory rule: don't silently drop).
+
+Image paste flow: composer captures `image/*` from clipboard -> POSTs base64
+to `paste_image` IPC -> Rust validates session_id (alphanumeric+dash+underscore,
+length-capped) -> writes to `<app-data>/chat-attachments/<sid>/<uuid>.<ext>`
+-> returns path -> composer pushes `<file:<path>>` mention text into the
+next turn's prompt. Claude reads the file via its Read tool. Attachments
+older than 30 days GC'd by a background task scheduled at app startup.
+
+The original "tray-app monitors usage" identity is intact; the chat hub
+ships alongside, sharing the existing tray + dashboard window.
 
 ## Running
 

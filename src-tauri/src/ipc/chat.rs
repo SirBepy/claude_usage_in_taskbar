@@ -187,6 +187,52 @@ pub async fn send_message(
     run_session_turn(Some(session_id), cwd, prompt, state, app).await
 }
 
+/// Drain ChatState.running and kill each in-flight runner child. Called
+/// from the tray Quit handler so the app doesn't leak claude.exe orphans
+/// on exit. No-op if no turns are running.
+pub fn cancel_all_inflight_turns(app: &AppHandle) {
+    let chat_state: tauri::State<'_, Arc<ChatState>> = app.state();
+    let pids: Vec<u32> = {
+        let mut g = chat_state.running.lock().unwrap();
+        let snapshot: Vec<_> = g.drain().collect();
+        snapshot
+            .into_iter()
+            .filter_map(|(_id, slot)| slot.lock().unwrap().take())
+            .collect()
+    };
+    for pid in pids {
+        let _ = crate::channels::kill::kill_tree(pid);
+    }
+}
+
+/// Background GC for chat-attachments older than 30 days. Scheduled once
+/// on app startup; re-runs every 24h.
+pub async fn gc_attachments() {
+    let root = match crate::settings::paths::data_dir() {
+        Ok(d) => d.join("chat-attachments"),
+        Err(_) => return,
+    };
+    if !root.exists() {
+        return;
+    }
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(30 * 24 * 60 * 60);
+    let entries = match std::fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if modified < cutoff {
+                    let _ = std::fs::remove_dir_all(&path);
+                }
+            }
+        }
+    }
+}
+
 /// Validate session_id against a strict charset. Used anywhere we use the
 /// id to construct a filesystem path. Rejects empty / too-long / any char
 /// outside [A-Za-z0-9_-]. Real session_ids upstream are UUIDs which always

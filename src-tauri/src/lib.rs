@@ -153,6 +153,14 @@ pub fn run() {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             crate::tray::setup(app.handle())?;
+            // Schedule chat-attachments GC: run once on startup, then every 24h.
+            // Removes pasted-image directories whose mtime is older than 30 days.
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    crate::ipc::chat::gc_attachments().await;
+                    tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+                }
+            });
             {
                 use tauri_plugin_autostart::ManagerExt;
                 let autostart_mgr = app.autolaunch();
