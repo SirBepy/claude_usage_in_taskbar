@@ -13,3 +13,4 @@
 2026-05-08 10:28 [x] phase-8a-history-replay-and-ipc attempts=1
 2026-05-08 11:13 [x] phase-8b-history-view-frontend attempts=1
 2026-05-08 11:58 [x] phase-9-detached-windows attempts=2
+2026-05-08 12:06 [x] phase-10-polish attempts=1
