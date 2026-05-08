@@ -5,7 +5,7 @@ import "./styles/widgets.css";
 
 import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
-import { renderSessionsView } from "./views/sessions/sessions";
+import { renderSessionsView, renderDetachedSession } from "./views/sessions/sessions";
 import { renderHistoryView } from "./views/history/history";
 import { renderStatisticsView } from "./views/statistics/statistics";
 import { renderProjectsView } from "./views/projects/projects";
@@ -48,27 +48,49 @@ if (!app) {
   throw new Error("Root element #app not found in index.html");
 }
 
-mountRouter(app);
-initBoot();
+// Detached-window mode: backend opens a new Tauri window pointed at
+// `index.html#detached?session=<id>`. Detect that URL shape BEFORE
+// mounting the normal router (the router would treat "detached?..." as
+// an unknown view name) and render the solo session pane instead.
+function detachedSessionFromHash(): string | null {
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#detached")) return null;
+  const qIdx = hash.indexOf("?");
+  if (qIdx < 0) return null;
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  return params.get("session");
+}
 
-// Sidemenu wiring (ported from legacy dashboard.js). Burger buttons inside
-// migrated views wire openSidemenu on render; these bindings cover the
-// backdrop + nav-item clicks which live in the static index.html.
-const backdrop = document.getElementById("sidemenuBackdrop");
-if (backdrop) backdrop.onclick = closeSidemenu;
+const detachedSessionId = detachedSessionFromHash();
+if (detachedSessionId) {
+  document.body.classList.add("detached-mode");
+  // Hide all static legacy views from index.html so only #app renders.
+  document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
+  void renderDetachedSession(app, detachedSessionId);
+  // Skip mountRouter + sidemenu wiring; this window is single-purpose.
+} else {
+  mountRouter(app);
+  initBoot();
 
-document.querySelectorAll<HTMLElement>(".sidemenu-nav-item").forEach((item) => {
-  item.onclick = () => {
-    const view = item.dataset.view;
-    if (view) showView(view);
-    closeSidemenu();
-  };
-});
+  // Sidemenu wiring (ported from legacy dashboard.js). Burger buttons inside
+  // migrated views wire openSidemenu on render; these bindings cover the
+  // backdrop + nav-item clicks which live in the static index.html.
+  const backdrop = document.getElementById("sidemenuBackdrop");
+  if (backdrop) backdrop.onclick = closeSidemenu;
 
-// Static legacy back buttons still present in index.html.
-const graphBackBtn = document.getElementById("graphDetailBackBtn");
-if (graphBackBtn) graphBackBtn.onclick = () => showView("dashboard");
+  document.querySelectorAll<HTMLElement>(".sidemenu-nav-item").forEach((item) => {
+    item.onclick = () => {
+      const view = item.dataset.view;
+      if (view) showView(view);
+      closeSidemenu();
+    };
+  });
 
-document.querySelectorAll<HTMLElement>("#view-settings-sync .back-to-settings").forEach((btn) => {
-  btn.onclick = () => showView("settings");
-});
+  // Static legacy back buttons still present in index.html.
+  const graphBackBtn = document.getElementById("graphDetailBackBtn");
+  if (graphBackBtn) graphBackBtn.onclick = () => showView("dashboard");
+
+  document.querySelectorAll<HTMLElement>("#view-settings-sync .back-to-settings").forEach((btn) => {
+    btn.onclick = () => showView("settings");
+  });
+}

@@ -122,3 +122,14 @@
   gap: 8px;
   background: var(--surface-alt);
 }
+
+/* Detached-window mode: solo session pane, no sidebar/header. */
+.view-sessions.detached .view-body.detached-layout {
+  display: block;
+  height: 100vh;
+  padding: 0;
+}
+
+.view-sessions.detached .session-pane {
+  height: 100vh;
+}

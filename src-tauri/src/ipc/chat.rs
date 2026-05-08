@@ -331,6 +331,47 @@ pub async fn list_history(
     Ok(entries[start..end].to_vec())
 }
 
+/// Open the given chat session in a dedicated Tauri webview window. The
+/// window is labeled `session-<session_id>`; if it already exists we just
+/// focus it. Closing the window does NOT kill the session - it stays in
+/// the registry and can be reattached by clicking the row in the main
+/// sidebar.
+#[tauri::command]
+pub async fn detach_window(session_id: String, app: AppHandle) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    let label = format!("session-{}", session_id);
+    if let Some(existing) = app.get_webview_window(&label) {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let url = format!("index.html#detached?session={}", session_id);
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::App(url.into()),
+    )
+    .title(format!(
+        "Session {}",
+        &session_id[..session_id.len().min(8)]
+    ))
+    .inner_size(800.0, 600.0)
+    .build()
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Close the detached window for `session_id`, if any. Does not kill the
+/// session itself.
+#[tauri::command]
+pub async fn reattach_window(session_id: String, app: AppHandle) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    let label = format!("session-{}", session_id);
+    if let Some(win) = app.get_webview_window(&label) {
+        win.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Promote a Manual (External) session to Interactive. Kills the external
 /// claude process so this app's per-turn `--resume` calls don't race the
 /// external one for JSONL writes. Returns the session_id of the now-Interactive

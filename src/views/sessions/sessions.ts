@@ -358,6 +358,82 @@ function template() {
   `;
 }
 
+/**
+ * Detached-window entry point. Renders ONLY the chat pane for `sessionId`
+ * (no sidebar, no header). Called from main.ts when the URL hash starts
+ * with `#detached?session=...`. Reuses the same selectSession internals
+ * for renderer + composer wiring.
+ *
+ * Returns a teardown closure that detaches the renderer.
+ */
+export async function renderDetachedSession(
+  root: HTMLElement,
+  sessionId: string,
+): Promise<() => void> {
+  const myMount = nextMountId++;
+  state = {
+    mountId: myMount,
+    sessions: [],
+    selectedId: null,
+    filter: "",
+    renderer: null,
+    composer: null,
+    unlistenInstances: null,
+  };
+
+  // Solo chat layout: just the .session-pane, no sidebar, no header burger.
+  render(detachedTemplate(sessionId), root);
+
+  const pane = root.querySelector<HTMLElement>("#session-pane");
+  if (!pane) {
+    console.error("[sessions] detached template missing #session-pane");
+    return () => { /* no-op */ };
+  }
+
+  // We need state.sessions populated so selectSession can find the entry.
+  await refreshSessions();
+  if (state.mountId !== myMount) return () => { /* superseded */ };
+
+  // Subscribe to instances-changed so the meta line refreshes if the
+  // registry kind/busy/pid changes (e.g. takeover).
+  const ev = window.__TAURI__?.event;
+  if (ev?.listen) {
+    state.unlistenInstances = await ev.listen("instances-changed", async () => {
+      if (state.mountId !== myMount) return;
+      await refreshSessions();
+      // We don't have a sidebar to refresh here, but a follow-up could
+      // re-render the header meta line.
+    });
+  }
+
+  await selectSession(sessionId, pane);
+
+  return () => {
+    if (state.unlistenInstances) {
+      try { state.unlistenInstances(); } catch { /* ignore */ }
+      state.unlistenInstances = null;
+    }
+    if (state.renderer) {
+      state.renderer.detach();
+      state.renderer = null;
+    }
+    state.composer = null;
+    state.selectedId = null;
+  };
+}
+
+function detachedTemplate(sessionId: string) {
+  return html`
+    <div class="view view-sessions detached">
+      <div class="view-body sessions-layout detached-layout">
+        <main class="session-pane" id="session-pane" data-session-id=${sessionId}>
+          <div class="session-empty">Loading...</div>
+        </main>
+      </div>
+    </div>
+  `;
+}
+
 function escapeHtml(s: string): string {
   return String(s ?? "").replace(/[&<>"']/g, (c) => {
     switch (c) {
