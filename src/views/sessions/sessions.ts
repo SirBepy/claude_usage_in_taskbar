@@ -949,7 +949,6 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   const listEl = root.querySelector<HTMLElement>("#sessions-list");
   const pane = root.querySelector<HTMLElement>("#session-pane");
   const newBtn = root.querySelector<HTMLButtonElement>("#newSessionBtn");
-  const filterInput = root.querySelector<HTMLInputElement>("#sessions-filter");
 
   if (!view || !listEl || !pane) {
     console.error("[sessions] view template missing expected nodes");
@@ -995,13 +994,6 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     newBtn.addEventListener("click", () => void startNewSession(pane));
   }
 
-  // Wire filter input
-  if (filterInput) {
-    filterInput.addEventListener("input", () => {
-      state.filter = filterInput.value;
-      renderSidebar(listEl);
-    });
-  }
 
   const sortSelect = root.querySelector<HTMLSelectElement>("#sessions-sort");
   if (sortSelect) {
@@ -1087,12 +1079,6 @@ function template() {
       <div class="view-body sessions-layout">
         <aside class="sessions-sidebar">
           <div class="sessions-controls">
-            <input
-              id="sessions-filter"
-              class="sessions-filter"
-              type="search"
-              placeholder="Filter"
-            />
             <select id="sessions-sort" class="sessions-sort">
               <option value="status">Status</option>
               <option value="recent">Recent</option>

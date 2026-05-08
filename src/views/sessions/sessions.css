@@ -19,19 +19,7 @@
   display: flex;
   gap: 6px;
   padding: 8px 8px 0;
-}
-
-.sessions-filter {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 10px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-family: inherit;
-  margin: 0;
+  align-items: center;
 }
 
 .sessions-sort {
