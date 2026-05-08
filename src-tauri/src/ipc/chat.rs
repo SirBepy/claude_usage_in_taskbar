@@ -353,6 +353,44 @@ pub async fn paste_image(
     Ok(path.to_string_lossy().to_string())
 }
 
+#[derive(serde::Serialize)]
+pub struct AttachmentData {
+    pub mime: String,
+    pub base64: String,
+}
+
+/// Read a previously-pasted attachment as `{mime, base64}` for inline
+/// rendering in the chat view. Path is validated to live inside
+/// `<app-data>/chat-attachments/` (canonicalized) to block arbitrary
+/// file reads.
+#[tauri::command]
+pub async fn read_attachment(path: String) -> Result<AttachmentData, String> {
+    let root = crate::settings::paths::data_dir().map_err(|e| e.to_string())?;
+    let attachments_root = root.join("chat-attachments");
+    let attachments_root = attachments_root
+        .canonicalize()
+        .map_err(|e| format!("attachments dir missing: {e}"))?;
+    let target = PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|e| format!("file not found: {e}"))?;
+    if !target.starts_with(&attachments_root) {
+        return Err("path outside chat-attachments".to_string());
+    }
+    let bytes = std::fs::read(&target).map_err(|e| e.to_string())?;
+    let mime = match target.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
+    }
+    .to_string();
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(AttachmentData { mime, base64 })
+}
+
 /// Replay the JSONL transcript for `session_id` from disk into ChatEvents.
 /// Used by the Sessions view to seed the renderer when opening a session,
 /// and by the History view for read-only past-session browsing.

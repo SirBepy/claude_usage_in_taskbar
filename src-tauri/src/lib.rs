@@ -141,6 +141,7 @@ pub fn run() {
             ipc::send_message,
             ipc::cancel_turn,
             ipc::paste_image,
+            ipc::read_attachment,
             ipc::takeover_manual,
             ipc::load_history,
             ipc::list_history,

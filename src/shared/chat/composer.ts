@@ -130,7 +130,7 @@ export class Composer {
     this.attachmentsEl.innerHTML = this.attachments
       .map(
         (a, i) =>
-          `<div class="attachment"><img src="data:${a.mime};base64,${a.data}" alt=""><button class="rm" data-i="${i}" title="Remove">×</button></div>`,
+          `<div class="attachment"><img src="data:${a.mime};base64,${a.data}" alt=""><button class="rm" data-i="${i}" title="Remove"><i class="ph ph-x"></i></button></div>`,
       )
       .join("");
     this.attachmentsEl.querySelectorAll<HTMLButtonElement>(".rm").forEach((btn) => {

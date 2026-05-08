@@ -9,6 +9,7 @@ import MarkdownIt from "markdown-it";
 // including emacs-lisp/wasm/cpp - causing ~3 MB of chunk bloat).
 import { codeToHtml } from "shiki/bundle/web";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
+import { invoke } from "../ipc";
 
 const md = new MarkdownIt({
   html: false, // safe: don't let assistant output inject HTML
@@ -48,6 +49,9 @@ export class ChatRenderer {
   private sessionId: string | null = null;
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
+  // path -> data URL; populated lazily via read_attachment IPC. Persists
+  // across re-renders so we don't refetch on every streaming token.
+  private attachmentCache: Map<string, string> = new Map();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -220,6 +224,32 @@ export class ChatRenderer {
     // leave the block as-is). Don't await - let highlight stream in after
     // the initial render lands so streaming feels live.
     void this.highlightCodeBlocks();
+    void this.loadAttachmentImages();
+  }
+
+  private async loadAttachmentImages(): Promise<void> {
+    const imgs = Array.from(
+      this.container.querySelectorAll<HTMLImageElement>("img.attachment-img:not([data-loaded])"),
+    );
+    for (const img of imgs) {
+      const path = img.dataset.attachmentPath;
+      if (!path) continue;
+      img.dataset.loaded = "true";
+      const cached = this.attachmentCache.get(path);
+      if (cached) {
+        img.src = cached;
+        continue;
+      }
+      try {
+        const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
+        const url = `data:${data.mime};base64,${data.base64}`;
+        this.attachmentCache.set(path, url);
+        img.src = url;
+      } catch {
+        img.alt = `(image unavailable)`;
+        img.classList.add("missing");
+      }
+    }
   }
 
   private async highlightCodeBlocks(): Promise<void> {
@@ -279,7 +309,7 @@ export class ChatRenderer {
       .map((b) => {
         switch (b.type) {
           case "text":
-            return `<div class="block text">${renderMarkdown(b.text)}</div>`;
+            return `<div class="block text">${renderTextWithFileTokens(b.text)}</div>`;
           case "code":
             return `<pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre>`;
           case "image":
@@ -312,6 +342,26 @@ function escapeHtml(s: string): string {
 function renderMarkdown(text: string): string {
   // markdown-it with html:false escapes raw HTML; safe for untrusted input.
   return md.render(text);
+}
+
+// `<file:absolute-path>` tokens are how the composer hands pasted-image
+// paths to claude. They reach the chat transcript as plain user text.
+// Render them as inline <img> placeholders so the user sees the actual
+// image; loadAttachmentImages() fills in src via the read_attachment IPC.
+const FILE_TOKEN_RE = /<file:([^>]+)>/g;
+function renderTextWithFileTokens(text: string): string {
+  let html = "";
+  let last = 0;
+  for (const m of text.matchAll(FILE_TOKEN_RE)) {
+    const idx = m.index ?? 0;
+    if (idx > last) html += renderMarkdown(text.slice(last, idx));
+    const path = m[1] ?? "";
+    html += `<img class="block image attachment-img" data-attachment-path="${escapeHtml(path)}" alt="">`;
+    last = idx + m[0].length;
+  }
+  if (last < text.length) html += renderMarkdown(text.slice(last));
+  if (last === 0) html = renderMarkdown(text);
+  return html;
 }
 
 function extractFenceLang(className: string): string | null {
