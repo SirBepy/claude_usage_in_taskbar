@@ -140,6 +140,7 @@ pub fn run() {
             ipc::send_message,
             ipc::cancel_turn,
             ipc::paste_image,
+            ipc::takeover_manual,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

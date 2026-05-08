@@ -240,6 +240,23 @@ pub async fn paste_image(
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Promote a Manual (External) session to Interactive. Kills the external
+/// claude process so this app's per-turn `--resume` calls don't race the
+/// external one for JSONL writes. Returns the session_id of the now-Interactive
+/// entry; the frontend switches the chat pane to bind to it.
+#[tauri::command]
+pub async fn takeover_manual(
+    manual_pid: u32,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<String, String> {
+    let session_id = crate::chat::takeover::takeover(manual_pid, &state.instances, &state.settings)
+        .map_err(|e| e.to_string())?;
+    // Surface the registry change so the sidebar refreshes.
+    let _ = app.emit("instances-changed", ());
+    Ok(session_id)
+}
+
 #[tauri::command]
 pub async fn cancel_turn(
     session_id: String,
