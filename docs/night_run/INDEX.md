@@ -23,4 +23,4 @@ End cap: none
 - [x] Phase 8b - History view frontend - @docs/night_run/plans/12-phase-8b-history-view-frontend.md
 - [x] Phase 9 - Detachable session windows - @docs/night_run/plans/13-phase-9-detached-windows.md
 - [x] Phase 10 - Polish: app-quit cleanup + GC + docs update - @docs/night_run/plans/14-phase-10-polish.md
-- [~ 04:39] Phase 11 - Chat-hub permission + AskUserQuestion UI - @docs/night_run/plans/15-chat-hub-permission-ui.md
+- [x] Phase 11 - Chat-hub permission + AskUserQuestion UI - @docs/night_run/plans/15-chat-hub-permission-ui.md
