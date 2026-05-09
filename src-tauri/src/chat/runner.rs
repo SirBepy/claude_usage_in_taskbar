@@ -89,6 +89,11 @@ where
     if let Some(id) = session_id {
         cmd.arg("--resume").arg(id);
     }
+    // The prompt must be passed BEFORE `--mcp-config` because `--mcp-config`
+    // is variadic (`<configs...>`) and would otherwise consume the prompt as
+    // a second config value, leaving claude without a real prompt and
+    // erroring with "MCP config file not found: <prompt-text>".
+    cmd.arg(prompt);
     // Wire in the permission-prompt MCP server.
     if let Some(ref mcp_path) = mcp_json_path {
         cmd.arg("--permission-prompt-tool")
@@ -96,7 +101,6 @@ where
            .arg("--mcp-config")
            .arg(mcp_path);
     }
-    cmd.arg(prompt);
     cmd.current_dir(cwd);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
 

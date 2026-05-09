@@ -8,6 +8,7 @@ import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
+import { setSelectedSessionId } from "./permission-modal";
 import type { Instance, ChatEvent, ContentBlock, ProjectGroup, GitInfo } from "../../types/ipc.generated";
 import {
   projectName,
@@ -539,6 +540,7 @@ async function launchNewSession(
     realId: null,
   };
   state.selectedId = placeholderId;
+  setSelectedSessionId(null);
 
   await renderPendingPane(pane, placeholderId, project);
 
@@ -665,6 +667,7 @@ async function renderPendingPane(
               }
               if (state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
               state.selectedId = sessionId;
+              setSelectedSessionId(sessionId);
               state.pendingNewSession = null;
               await refreshSessions();
               if (state.mountId !== myMount) return;
@@ -774,6 +777,7 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
 async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;
   state.selectedId = sessionId;
+  setSelectedSessionId(sessionId);
 
   // Mark session as read
   const unread = loadUnreadSet();
@@ -986,6 +990,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
         state.composer?.destroy();
         state.composer = null;
         state.selectedId = null;
+        setSelectedSessionId(null);
         pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
       }
     });
@@ -1047,6 +1052,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     state.composer?.destroy();
     state.composer = null;
     state.selectedId = null;
+    setSelectedSessionId(null);
   };
 }
 
@@ -1168,6 +1174,7 @@ export async function renderDetachedSession(
     state.composer?.destroy();
     state.composer = null;
     state.selectedId = null;
+    setSelectedSessionId(null);
   };
 }
 

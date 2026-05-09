@@ -25,6 +25,7 @@ import { renderNotificationsView } from "./views/settings/subviews/notifications
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
+import { installPermissionModalListener } from "./views/sessions/permission-modal";
 import { invoke } from "./shared/ipc";
 import type { NewsPost } from "./types/ipc.generated";
 
@@ -64,6 +65,12 @@ function detachedSessionFromHash(): string | null {
   const params = new URLSearchParams(hash.slice(qIdx + 1));
   return params.get("session");
 }
+
+// Install the permission/question relay listener once per window, regardless
+// of whether this is the main window or a detached single-session window. The
+// listener is a no-op until either a permission-requested or question-requested
+// Tauri event fires from the hooks server.
+installPermissionModalListener();
 
 const detachedSessionId = detachedSessionFromHash();
 if (detachedSessionId) {
