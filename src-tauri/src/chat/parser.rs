@@ -49,10 +49,8 @@ impl ParserContext {
                 events.extend(stream_events);
             } else if let Some(result_events) = self.parse_result_line(&line_str) {
                 events.extend(result_events);
-            } else if let Some(ev) = parse_line(&line_str) {
-                events.push(ev);
             } else {
-                eprintln!("parser: unrecognised line: {}", line_str);
+                events.extend(parse_line(&line_str));
             }
         }
         events
@@ -143,16 +141,24 @@ impl ParserContext {
             total_cost_usd,
             duration_ms,
             has_thinking: self.has_thinking,
+            model: None,
         });
 
         Some(events)
     }
 }
 
-pub fn parse_line(line: &str) -> Option<ChatEvent> {
-    let v: Value = serde_json::from_str(line).ok()?;
+/// Parse one JSONL line and return 0-2 `ChatEvent`s. Most lines produce one
+/// event; an "assistant" JSONL line that carries `message.model` + `message.usage`
+/// also emits a `TurnUsage` so the statusbar can show model/cost from history.
+pub fn parse_line(line: &str) -> Vec<ChatEvent> {
+    let v: Value = match serde_json::from_str(line) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
     let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
-    match v.get("type").and_then(|t| t.as_str())? {
+    let Some(ty) = v.get("type").and_then(|t| t.as_str()) else { return vec![]; };
+    match ty {
         // The init `system` line is what carries the session_id we care about.
         // Other system subtypes (hook_started / hook_response / SessionStart hook
         // re-emissions on each --resume turn) are noise for the chat surface and
@@ -161,20 +167,23 @@ pub fn parse_line(line: &str) -> Option<ChatEvent> {
         "system" => {
             let subtype = v.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
             if subtype == "init" {
-                Some(ChatEvent::SessionStarted {
+                vec![ChatEvent::SessionStarted {
                     session_id: v.get("session_id").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                     model: v.get("model").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                     cwd: v.get("cwd").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                     timestamp: ts,
-                })
+                }]
             } else {
-                None
+                vec![]
             }
         }
-        "user" => Some(ChatEvent::UserMessage {
-            content: extract_content_blocks(v.get("message")?.get("content")?),
-            timestamp: ts,
-        }),
+        "user" => {
+            let Some(content_val) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
+            vec![ChatEvent::UserMessage {
+                content: extract_content_blocks(content_val),
+                timestamp: ts,
+            }]
+        }
         "assistant" => {
             // The transcript JSONL stores every claude reply as `assistant` lines
             // with a populated `stop_reason` (turn already finalized on disk).
@@ -187,47 +196,72 @@ pub fn parse_line(line: &str) -> Option<ChatEvent> {
             //
             // Empty-content assistant lines (thinking-only blocks have no text)
             // are skipped to keep the chat clean.
-            let message = v.get("message")?;
-            let content = extract_content_blocks(message.get("content")?);
+            let Some(message) = v.get("message") else { return vec![]; };
+            let Some(content_val) = message.get("content") else { return vec![]; };
+            let content = extract_content_blocks(content_val);
             if content.is_empty() {
-                return None;
+                return vec![];
             }
             let has_stop_reason = message
                 .get("stop_reason")
                 .and_then(|s| s.as_str())
                 .map(|s| !s.is_empty())
                 .unwrap_or(false);
-            Some(ChatEvent::AssistantMessage {
+            let mut evs = vec![ChatEvent::AssistantMessage {
                 content,
                 streaming: !has_stop_reason,
                 timestamp: ts,
-            })
+            }];
+            // JSONL assistant lines carry model + usage on the message object.
+            // Emit a TurnUsage so the statusbar can show model/cost from history.
+            let model = message.get("model").and_then(|s| s.as_str()).map(|s| s.to_string());
+            let usage = message.get("usage");
+            if model.is_some() || usage.is_some() {
+                let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+                let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+                let cache_creation = usage.and_then(|u| u.get("cache_creation_input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+                let cache_read = usage.and_then(|u| u.get("cache_read_input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+                evs.push(ChatEvent::TurnUsage {
+                    input_tokens,
+                    output_tokens,
+                    cache_creation_input_tokens: cache_creation,
+                    cache_read_input_tokens: cache_read,
+                    total_cost_usd: 0.0,
+                    duration_ms: 0,
+                    has_thinking: false,
+                    model,
+                });
+            }
+            evs
         }
-        "tool_use" => Some(ChatEvent::ToolUse {
-            tool_name: v.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            input: v.get("input").cloned().unwrap_or(Value::Null),
-            id: v.get("id").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            timestamp: ts,
-        }),
-        "tool_result" => Some(ChatEvent::ToolResult {
+        "tool_use" => {
+            let Some(id) = v.get("id").and_then(|s| s.as_str()) else { return vec![]; };
+            vec![ChatEvent::ToolUse {
+                tool_name: v.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                input: v.get("input").cloned().unwrap_or(Value::Null),
+                id: id.to_string(),
+                timestamp: ts,
+            }]
+        }
+        "tool_result" => vec![ChatEvent::ToolResult {
             tool_use_id: v.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("").to_string(),
             output: ContentBlock::Text {
                 text: v.get("content").and_then(|s| s.as_str()).unwrap_or("").to_string(),
             },
             is_error: v.get("is_error").and_then(|b| b.as_bool()).unwrap_or(false),
             timestamp: ts,
-        }),
+        }],
         // "result" is handled by ParserContext::parse_result_line (stateful:
         // needs has_thinking). If it reaches here somehow, drop it.
-        "result" => None,
+        "result" => vec![],
         "rate_limit_event" => {
             let info = v.get("rate_limit_info").cloned().unwrap_or(Value::Null);
-            Some(ChatEvent::Notification {
+            vec![ChatEvent::Notification {
                 kind: "rate_limit".into(),
                 body: info.to_string(),
-            })
+            }]
         }
-        _ => None,
+        _ => vec![],
     }
 }
 

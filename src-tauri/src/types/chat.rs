@@ -60,6 +60,10 @@ pub enum ChatEvent {
         total_cost_usd: f64,
         duration_ms: u64,
         has_thinking: bool,
+        /// Model that produced this turn. Populated from JSONL assistant lines
+        /// (where the model field lives on the message object) and left None
+        /// when emitted from the live `result` stream line.
+        model: Option<String>,
     },
 }
 

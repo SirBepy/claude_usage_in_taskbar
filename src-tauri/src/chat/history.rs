@@ -17,9 +17,7 @@ pub fn replay(path: &Path) -> Result<Vec<ChatEvent>, String> {
         if line.trim().is_empty() {
             continue;
         }
-        if let Some(ev) = parse_line(&line) {
-            events.push(ev);
-        }
+        events.extend(parse_line(&line));
     }
     Ok(events)
 }
@@ -120,7 +118,7 @@ pub fn read_page(
         let line_offset = window_start + line_start_in_buf as u64;
         let s = std::str::from_utf8(line_bytes).unwrap_or("");
         if !s.trim().is_empty() {
-            if let Some(ev) = parse_line(s) {
+            for ev in parse_line(s) {
                 let is_msg = is_message_event(&ev);
                 events.push((line_offset, ev));
                 if is_msg {

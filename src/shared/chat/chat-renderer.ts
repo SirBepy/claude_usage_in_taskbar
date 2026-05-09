@@ -356,6 +356,7 @@ export class ChatRenderer {
         this.meta.inputTokens = Number(ev.input_tokens);
         this.meta.totalCostUsd = ev.total_cost_usd;
         if (ev.has_thinking) this.meta.hasThinking = true;
+        if (ev.model) this.meta.model = ev.model;
         this.onMetaUpdate?.(this.getMeta());
         return; // no DOM update needed
       default:
