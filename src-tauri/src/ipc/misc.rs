@@ -177,36 +177,51 @@ pub struct GitInfo {
 /// Returns the current git branch and repository name for the given working
 /// directory. Used by the session statusbar to show branch + repo context.
 /// Never fails - missing git / no repo / no remote all produce None fields.
+///
+/// Runs on the blocking pool: spawning `git` is real process IO which
+/// must NOT happen on the Tauri runtime thread or the webview UI hangs
+/// for the duration of the spawn. On Windows the spawned `git.exe` is
+/// flagged CREATE_NO_WINDOW to suppress the otherwise-visible console
+/// flash on every chat open.
 #[tauri::command]
-pub fn get_git_info(cwd: String) -> GitInfo {
-    fn run_git(cwd: &str, args: &[&str]) -> Option<String> {
-        let mut cmd_args = vec!["-C", cwd];
-        cmd_args.extend_from_slice(args);
-        std::process::Command::new("git")
-            .args(&cmd_args)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-    }
+pub async fn get_git_info(cwd: String) -> GitInfo {
+    tauri::async_runtime::spawn_blocking(move || {
+        fn run_git(cwd: &str, args: &[&str]) -> Option<String> {
+            let mut cmd = std::process::Command::new("git");
+            cmd.arg("-C").arg(cwd).args(args);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+            cmd.output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        }
 
-    let branch = run_git(&cwd, &["branch", "--show-current"]);
+        let branch = run_git(&cwd, &["branch", "--show-current"]);
 
-    let remote_url = run_git(&cwd, &["remote", "get-url", "origin"]);
-    let repo = if let Some(url) = &remote_url {
-        url.split('/').last()
-            .map(|s| s.trim_end_matches(".git").to_string())
-            .filter(|s| !s.is_empty())
-    } else {
-        std::path::Path::new(&cwd)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_string())
-    };
+        let remote_url = run_git(&cwd, &["remote", "get-url", "origin"]);
+        let repo = if let Some(url) = &remote_url {
+            url.split('/')
+                .last()
+                .map(|s| s.trim_end_matches(".git").to_string())
+                .filter(|s| !s.is_empty())
+        } else {
+            std::path::Path::new(&cwd)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+        };
 
-    GitInfo { branch, repo }
+        GitInfo { branch, repo }
+    })
+    .await
+    .unwrap_or(GitInfo { branch: None, repo: None })
 }
 
 #[tauri::command]
