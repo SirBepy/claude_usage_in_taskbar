@@ -101,3 +101,14 @@ pub fn characters_dir() -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(&p)?;
     Ok(p)
 }
+
+pub fn hooks_port_file() -> anyhow::Result<std::path::PathBuf> {
+    Ok(data_dir()?.join("hooks_port.txt"))
+}
+
+pub fn mcp_temp_dir() -> anyhow::Result<std::path::PathBuf> {
+    let d = ensure_data_dir()?;
+    let p = d.join("mcp");
+    std::fs::create_dir_all(&p)?;
+    Ok(p)
+}

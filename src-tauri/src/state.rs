@@ -4,8 +4,10 @@ use crate::channels::Manager as ChannelsManager;
 use crate::tray::TrayDisplayState;
 use crate::sessions::registry::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use tokio::sync::oneshot;
 
 pub struct AppState {
     pub current_usage: Mutex<Option<UsageSnapshot>>,
@@ -20,6 +22,10 @@ pub struct AppState {
     pub hook_registration_pending: Mutex<bool>,
     pub update_state: Mutex<serde_json::Value>,
     pub should_quit: Arc<AtomicBool>,
+    /// Pending permission / question requests from the MCP server subprocess.
+    /// Key = UUID generated per request; value = oneshot sender that resolves
+    /// the blocked HTTP handler when the user responds via IPC.
+    pub pending: Arc<tokio::sync::Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
 }
 
 impl AppState {
@@ -42,6 +48,7 @@ impl AppState {
             hook_registration_pending: Mutex::new(false),
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
             should_quit: Arc::new(AtomicBool::new(false)),
+            pending: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 }

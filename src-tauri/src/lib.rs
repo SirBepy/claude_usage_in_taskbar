@@ -3,6 +3,7 @@ pub mod characters;
 pub mod chat;
 pub mod auth;
 pub mod hooks;
+pub mod mcp;
 pub mod notifications;
 pub mod history;
 pub mod ipc;
@@ -149,6 +150,8 @@ pub fn run() {
             ipc::detach_window,
             ipc::reattach_window,
             ipc::get_git_info,
+            ipc::respond_permission,
+            ipc::respond_question,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
