@@ -68,6 +68,7 @@ fn emit_ipc_types() {
     out.push_str(&decl::<ChatEvent>());
     out.push_str(&decl::<ContentBlock>());
     out.push_str(&decl::<HistoryEntry>());
+    out.push_str(&decl::<HistoryPage>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {

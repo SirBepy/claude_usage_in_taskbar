@@ -75,6 +75,15 @@ pub struct HistoryEntry {
     pub last_kind: crate::sessions::kinds::InstanceKind,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct HistoryPage {
+    pub events: Vec<ChatEvent>,
+    pub oldest_seq: u64,
+    pub newest_seq: u64,
+    pub has_more: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
