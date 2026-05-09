@@ -74,6 +74,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(state)
         .manage(std::sync::Arc::new(crate::ipc::chat::ChatState::new()))
@@ -103,6 +104,7 @@ pub fn run() {
             ipc::copy_logs,
             ipc::get_platform,
             ipc::get_app_version,
+            ipc::pick_folder,
             ipc::open_external,
             ipc::check_for_updates,
             ipc::download_and_install_update,

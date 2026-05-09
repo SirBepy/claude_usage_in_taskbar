@@ -71,6 +71,18 @@ pub fn get_app_version(app: AppHandle) -> String {
 }
 
 #[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .pick_folder(move |path| {
+            let _ = tx.send(path);
+        });
+    rx.await.unwrap_or(None).map(|p| p.to_string())
+}
+
+#[tauri::command]
 pub async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     #[allow(deprecated)]

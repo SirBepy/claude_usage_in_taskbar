@@ -449,6 +449,17 @@ function openProjectPickerModal(
             </ul>
           </div>
           <footer class="modal-footer">
+            <button
+              class="btn btn-secondary btn-new-folder"
+              @click=${async () => {
+                const picked = await invoke<string | null>("pick_folder");
+                if (!picked) return;
+                const name = picked.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? picked;
+                finish({ path: picked, name });
+              }}
+            >
+              <i class="ph ph-folder-open"></i> Open in new folder&hellip;
+            </button>
             <button class="btn btn-secondary" @click=${() => finish(null)}>Cancel</button>
           </footer>
         </div>

@@ -13,6 +13,7 @@
     "core:app:allow-name",
     "core:tray:default",
     "autostart:default",
+    "dialog:allow-open",
     "updater:default"
   ]
 }
