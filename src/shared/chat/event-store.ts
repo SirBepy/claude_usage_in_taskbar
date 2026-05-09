@@ -1,51 +1,60 @@
-// Per-session event store. Caches ChatEvents per session_id and maintains a
-// single Tauri `chat:<id>` listener for any session that has been touched, so:
+// Per-session event store. Caches paginated ChatEvents per session_id and
+// maintains a single Tauri `chat:<id>` listener for any session that has been
+// touched, so:
 //
-// - reopening a session is instant (cache hit, no load_history IPC, no JSONL
-//   re-parse)
-// - detached/unselected sessions keep accumulating events in the background
-//   so the user does not miss messages when they come back
+// - reopening a session is instant (cache hit, no IPC, no JSONL re-parse)
+// - detached/unselected sessions keep accumulating live events in the
+//   background so the user does not miss messages when they come back
 // - multiple consumers (sidebar pane + detached window) share one upstream
 //   listener instead of each opening their own
 //
-// Cache invalidation: entries live until app restart. session_ended is just
-// another event in the cache; the renderer surfaces it as a system message.
+// Pagination: chat-open path uses `loadInitial` (last 20 messages) and
+// `loadOlder` (next 20 older), backed by the `load_history_page` IPC. The
+// History view (read-only browse) still uses `load_history` directly.
 
-import type { ChatEvent } from "../../types/ipc.generated";
+import type { ChatEvent, HistoryPage } from "../../types/ipc.generated";
 import { invoke } from "../ipc";
 
 type Unlisten = () => void;
 type EventListener = (ev: ChatEvent) => void;
 
+const INITIAL_PAGE_SIZE = 20;
+const OLDER_PAGE_SIZE = 20;
+
 interface CacheEntry {
   events: ChatEvent[];
+  oldestSeq: number | null;
+  newestSeq: number | null;
+  hasMore: boolean;
+  loadingOlder: boolean;
+  initialLoaded: boolean;
   unlisten: Unlisten | null;
   subscribers: Set<EventListener>;
-  /** True once load_history has resolved (or determined empty). */
-  loaded: boolean;
 }
 
 class SessionEventStore {
   private cache = new Map<string, CacheEntry>();
 
-  /** Snapshot of currently cached events. */
   events(sessionId: string): ChatEvent[] {
     return this.cache.get(sessionId)?.events.slice() ?? [];
   }
 
   isLoaded(sessionId: string): boolean {
-    return !!this.cache.get(sessionId)?.loaded;
+    return !!this.cache.get(sessionId)?.initialLoaded;
+  }
+
+  hasMore(sessionId: string): boolean {
+    return !!this.cache.get(sessionId)?.hasMore;
   }
 
   /**
-   * Ensure the cache contains the JSONL history for `sessionId` and is
-   * subscribed to live events. Returns the live (mutable internal) event
-   * array; do not mutate. Subscribe via `subscribe` for live updates. If
-   * already loaded, returns immediately without IPC.
+   * Fetch the last `INITIAL_PAGE_SIZE` messages for `sessionId` and attach
+   * the live listener. Idempotent: subsequent calls return the cached array
+   * without re-fetching. Returns the live (mutable internal) event array.
    */
-  async ensureLoaded(sessionId: string, cwd?: string): Promise<ChatEvent[]> {
+  async loadInitial(sessionId: string, cwd?: string): Promise<ChatEvent[]> {
     let entry = this.cache.get(sessionId);
-    if (entry?.loaded) {
+    if (entry?.initialLoaded) {
       await this.ensureListener(sessionId);
       return entry.events;
     }
@@ -53,32 +62,61 @@ class SessionEventStore {
       entry = this.makeEntry();
       this.cache.set(sessionId, entry);
     }
-    // Attach listener BEFORE load_history so live events emitted during the
-    // IPC call land in the cache (claude could finish a turn mid-fetch).
     await this.ensureListener(sessionId);
     const liveDuringFetch = entry.events.length;
     try {
-      const args: { sessionId: string; cwd?: string } = { sessionId };
+      const args: { sessionId: string; cwd?: string; messageLimit: number } = {
+        sessionId,
+        messageLimit: INITIAL_PAGE_SIZE,
+      };
       if (cwd) args.cwd = cwd;
-      const history = (await invoke<ChatEvent[]>("load_history", args)) || [];
-      // Merge: history is the disk prefix; anything captured by the listener
-      // since we attached is the live tail. Preserve the tail by slicing
-      // entries[liveDuringFetch..] (everything appended via the listener) and
-      // appending it after the full history snapshot.
+      const page = await invoke<HistoryPage>("load_history_page", args);
       const liveTail = entry.events.slice(liveDuringFetch);
-      entry.events = history.concat(liveTail);
+      entry.events = [...page.events, ...liveTail];
+      entry.oldestSeq = Number(page.oldest_seq);
+      entry.newestSeq = Number(page.newest_seq);
+      entry.hasMore = page.has_more;
     } catch {
       /* tolerate absence (no JSONL yet for brand-new sessions) */
     }
-    entry.loaded = true;
+    entry.initialLoaded = true;
     return entry.events;
   }
 
   /**
-   * Subscribe to live events for `sessionId`. Returns an unsubscribe closure.
-   * The store keeps the upstream Tauri listener alive even after the last
-   * subscriber leaves (cache stays warm).
+   * Fetch the previous page of older messages and prepend them to the cache.
+   * Returns the prepended slice, or null if there is nothing more to load
+   * or a load is already in flight.
    */
+  async loadOlder(sessionId: string, cwd?: string): Promise<ChatEvent[] | null> {
+    const entry = this.cache.get(sessionId);
+    if (!entry || !entry.initialLoaded) return null;
+    if (!entry.hasMore || entry.loadingOlder) return null;
+    if (entry.oldestSeq == null) return null;
+    entry.loadingOlder = true;
+    try {
+      const args: { sessionId: string; cwd?: string; beforeSeq: number; messageLimit: number } = {
+        sessionId,
+        beforeSeq: entry.oldestSeq,
+        messageLimit: OLDER_PAGE_SIZE,
+      };
+      if (cwd) args.cwd = cwd;
+      const page = await invoke<HistoryPage>("load_history_page", args);
+      if (!page.events.length) {
+        entry.hasMore = false;
+        return null;
+      }
+      entry.events = [...page.events, ...entry.events];
+      entry.oldestSeq = Number(page.oldest_seq);
+      entry.hasMore = page.has_more;
+      return page.events;
+    } catch {
+      return null;
+    } finally {
+      entry.loadingOlder = false;
+    }
+  }
+
   subscribe(sessionId: string, fn: EventListener): () => void {
     let entry = this.cache.get(sessionId);
     if (!entry) {
@@ -93,12 +131,6 @@ class SessionEventStore {
     };
   }
 
-  /**
-   * Migrate cache + listener from `fromId` to `toId`. Used when a pending
-   * placeholder session id resolves to the real id captured from
-   * SessionStarted. Subscribers are preserved across the swap; the
-   * `chat:<fromId>` listener is torn down and `chat:<toId>` attached.
-   */
   async swap(fromId: string, toId: string): Promise<void> {
     if (fromId === toId) return;
     const fromEntry = this.cache.get(fromId);
@@ -108,24 +140,20 @@ class SessionEventStore {
       fromEntry.unlisten = null;
     }
     this.cache.delete(fromId);
-    // If toId already has a (probably empty) entry from an early subscribe,
-    // merge subscribers into it. Otherwise reuse fromEntry under toId.
     const existing = this.cache.get(toId);
     if (existing) {
       for (const ev of fromEntry.events) existing.events.push(ev);
       for (const sub of fromEntry.subscribers) existing.subscribers.add(sub);
-      existing.loaded = existing.loaded || fromEntry.loaded;
+      existing.initialLoaded = existing.initialLoaded || fromEntry.initialLoaded;
+      existing.oldestSeq = existing.oldestSeq ?? fromEntry.oldestSeq;
+      existing.newestSeq = fromEntry.newestSeq ?? existing.newestSeq;
+      existing.hasMore = existing.hasMore && fromEntry.hasMore;
     } else {
       this.cache.set(toId, fromEntry);
     }
     await this.ensureListener(toId);
   }
 
-  /**
-   * Push a synthetic event into the cache (e.g. optimistic user_message that
-   * the runner does not echo back via stream-json). Subscribers see it via
-   * the same callback path as live events.
-   */
   pushSynthetic(sessionId: string, ev: ChatEvent): void {
     let entry = this.cache.get(sessionId);
     if (!entry) {
@@ -139,7 +167,16 @@ class SessionEventStore {
   }
 
   private makeEntry(): CacheEntry {
-    return { events: [], unlisten: null, subscribers: new Set(), loaded: false };
+    return {
+      events: [],
+      oldestSeq: null,
+      newestSeq: null,
+      hasMore: false,
+      loadingOlder: false,
+      initialLoaded: false,
+      unlisten: null,
+      subscribers: new Set(),
+    };
   }
 
   private async ensureListener(sessionId: string): Promise<void> {
