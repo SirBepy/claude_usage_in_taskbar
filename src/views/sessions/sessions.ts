@@ -36,6 +36,18 @@ function writeStoredSort(choice: SortChoice): void {
   catch { /* ignore */ }
 }
 
+function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
+  pane.querySelector(".chat-loading-overlay")?.remove();
+  if (getComputedStyle(pane).position === "static") {
+    pane.style.position = "relative";
+  }
+  const overlay = document.createElement("div");
+  overlay.className = "chat-loading-overlay";
+  overlay.innerHTML = '<div class="chat-loading-ring"></div><div>Loading transcript&hellip;</div>';
+  pane.appendChild(overlay);
+  return overlay;
+}
+
 interface PendingNewSession {
   placeholderId: string;
   projectPath: string;
@@ -831,9 +843,10 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       return;
     }
     // Pull from the shared event store. Cache hit = instant render with no
-    // IPC. Cache miss triggers load_history under the hood. Either way the
-    // store keeps the live `chat:<id>` listener attached so events accrue
-    // even when this session isn't selected.
+    // IPC. Cache miss triggers load_history_page under the hood (last 20
+    // messages). Either way the store keeps the live `chat:<id>` listener
+    // attached so events accrue even when this session isn't selected.
+    const overlay = sessionEvents.isLoaded(sessionId) ? null : showChatLoadingOverlay(messagesEl);
     try {
       await renderer.loadFromStore(sess.cwd ? String(sess.cwd) : undefined);
       if (state.mountId !== myMount || state.selectedId !== sessionId) {
@@ -842,6 +855,8 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
       }
     } catch {
       /* tolerate absence */
+    } finally {
+      overlay?.remove();
     }
   }
 
