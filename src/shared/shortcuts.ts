@@ -108,7 +108,7 @@ export function onCtrlHeld(cb: (held: boolean) => void): () => void {
 }
 
 export function getAll(): ShortcutDef[] {
-  return SHORTCUT_DEFS;
+  return [...SHORTCUT_DEFS];
 }
 
 export function getBinding(id: string): string {
@@ -160,7 +160,12 @@ function _init(): void {
 
     if (def.suppressInInput) {
       const t = document.activeElement;
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
+      if (
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && t.isContentEditable)
+      ) return;
     }
 
     if (def.context && getActiveView() !== def.context) return;
