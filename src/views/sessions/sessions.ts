@@ -1224,6 +1224,7 @@ export async function renderDetachedSession(
   await selectSession(sessionId, pane);
 
   return () => {
+    _pane = null;
     if (state.unlistenInstances) {
       try { state.unlistenInstances(); } catch { /* ignore */ }
       state.unlistenInstances = null;
