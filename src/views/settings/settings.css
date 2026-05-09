@@ -1,3 +1,136 @@
 /* Settings root view - no subview-specific styles yet. Shared rules (.section,
  * .section-title, .option, .switch, .slider, .nav-row, .btn-danger, etc.) live
- * in src/dashboard.css. */
+ * in src/styles/widgets.css. */
+
+/* Shortcuts section */
+.shortcut-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.shortcut-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.shortcut-row.is-todo {
+  opacity: 0.45;
+}
+
+.shortcut-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shortcut-row-label {
+  font-size: 0.88rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.shortcut-row-desc {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.shortcut-row-todo-tag {
+  font-size: 0.65rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-dim);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.shortcut-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.shortcut-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.shortcut-kbd kbd {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--text);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.shortcut-capture-input {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-style: italic;
+  padding: 2px 6px;
+  border: 1px dashed var(--primary);
+  border-radius: 4px;
+}
+
+.shortcut-conflict-msg {
+  font-size: 0.7rem;
+  color: #e74c3c;
+  margin-top: 2px;
+}
+
+.shortcut-rebind-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.shortcut-rebind-btn:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.shortcut-reset-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 3px;
+}
+
+.shortcut-reset-btn:hover {
+  color: var(--text);
+}
+
+.shortcut-group-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 12px 0 6px;
+}
+
+.shortcut-group-header:first-child {
+  margin-top: 0;
+}
