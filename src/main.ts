@@ -11,6 +11,7 @@ import { renderStatisticsView } from "./views/statistics/statistics";
 import { renderProjectsView } from "./views/projects/projects";
 import { renderCharactersView } from "./views/characters/characters";
 import { renderCharacterDetailView } from "./views/characters/character-detail";
+import { renderNewsView } from "./views/news/news";
 import { renderProjectDetailView } from "./views/project-detail/project-detail";
 import { renderCharacterPickView } from "./views/project-detail/subviews/character-pick/character-pick";
 import { renderAutomationView } from "./views/project-detail/subviews/automation/automation";
@@ -24,6 +25,8 @@ import { renderNotificationsView } from "./views/settings/subviews/notifications
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
+import { invoke } from "./shared/ipc";
+import type { NewsPost } from "./types/ipc.generated";
 
 registerView("dashboard", renderDashboard);
 registerView("sessions", renderSessionsView);
@@ -32,6 +35,7 @@ registerView("statistics", renderStatisticsView);
 registerView("projects", renderProjectsView);
 registerView("characters", renderCharactersView);
 registerView("character-detail", renderCharacterDetailView);
+registerView("news", renderNewsView);
 registerView("project-detail", renderProjectDetailView);
 registerView("project-character-pick", renderCharacterPickView);
 registerView("project-automation", renderAutomationView);
@@ -92,5 +96,65 @@ if (detachedSessionId) {
 
   document.querySelectorAll<HTMLElement>("#view-settings-sync .back-to-settings").forEach((btn) => {
     btn.onclick = () => showView("settings");
+  });
+
+  setupNewsBadgeAndNotifications();
+}
+
+function setupNewsBadgeAndNotifications(): void {
+  const navItem = document.getElementById("sm-news");
+  if (!navItem) return;
+
+  const setBadge = (unread: number): void => {
+    navItem.classList.toggle("has-unread", unread > 0);
+  };
+
+  // Initial unread snapshot. The 6h backend poll updates from there.
+  void (async () => {
+    try {
+      const posts = await invoke<NewsPost[]>("list_news");
+      setBadge((posts || []).filter((p) => p.unread).length);
+    } catch (err) {
+      console.warn("[news] initial list_news failed", err);
+    }
+  })();
+
+  const ev = window.__TAURI__?.event;
+  if (!ev?.listen) return;
+
+  void ev.listen<{ unreadCount?: number }>("news-updated", (e) => {
+    setBadge(e.payload?.unreadCount ?? 0);
+  });
+
+  void ev.listen<{ title?: string; body?: string }>("news-notification", async (e) => {
+    const title = e.payload?.title || "Anthropic news";
+    const body = e.payload?.body || "";
+    try {
+      if (typeof Notification !== "undefined") {
+        if (Notification.permission === "default") {
+          await Notification.requestPermission();
+        }
+        if (Notification.permission === "granted") {
+          const n = new Notification(title, { body });
+          n.onclick = () => { void showView("news"); window.focus(); };
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("[news] OS notification failed", err);
+    }
+    // Fallback: lightweight in-app toast.
+    const stack = document.getElementById("toastStack");
+    if (!stack) return;
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML = `<span class="toast-msg"></span>`;
+    const msg = toast.querySelector(".toast-msg");
+    if (msg) msg.textContent = `${title}: ${body}`.trim();
+    toast.onclick = () => { void showView("news"); };
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => toast.classList.add("leaving"), 5000);
+    setTimeout(() => toast.remove(), 5300);
   });
 }

@@ -75,6 +75,9 @@ fn emit_ipc_types() {
     out.push_str(&decl::<HistoryEntry>());
     out.push_str(&decl::<HistoryPage>());
 
+    // news
+    out.push_str(&decl::<NewsPost>());
+
     let path = output_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).expect("create parent dir for ipc.generated.ts");

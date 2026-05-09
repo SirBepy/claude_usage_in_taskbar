@@ -4,6 +4,7 @@ pub mod chat;
 pub mod auth;
 pub mod hooks;
 pub mod mcp;
+pub mod news;
 pub mod notifications;
 pub mod history;
 pub mod ipc;
@@ -152,6 +153,10 @@ pub fn run() {
             ipc::get_git_info,
             ipc::respond_permission,
             ipc::respond_question,
+            ipc::list_news,
+            ipc::refresh_news,
+            ipc::mark_news_read,
+            ipc::mark_all_news_read,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
@@ -194,6 +199,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(auto_update_loop(h));
             }
             crate::scheduler::spawn(app.handle().clone());
+            crate::news::spawn_poll_loop(app.handle().clone());
 
             // Auto-backfill token history once, off the main thread. Keeps
             // the stats page populated on first launch / after new sessions.

@@ -106,6 +106,10 @@ pub fn hooks_port_file() -> anyhow::Result<std::path::PathBuf> {
     Ok(data_dir()?.join("hooks_port.txt"))
 }
 
+pub fn news_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("news.json"))
+}
+
 pub fn mcp_temp_dir() -> anyhow::Result<std::path::PathBuf> {
     let d = ensure_data_dir()?;
     let p = d.join("mcp");
