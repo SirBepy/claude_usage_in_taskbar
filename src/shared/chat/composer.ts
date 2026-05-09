@@ -65,7 +65,10 @@ export class Composer {
     this.render();
     // Preserve in-progress draft across re-renders (e.g. when the user toggles
     // takeover from read-only to interactive while typing).
-    if (this.textarea && draftText) this.textarea.value = draftText;
+    if (this.textarea && draftText) {
+      this.textarea.value = draftText;
+      this.autoResize();
+    }
   }
 
   private render(): void {
@@ -75,7 +78,7 @@ export class Composer {
     this.root.innerHTML = `
       <div class="composer-attachments"></div>
       <div class="composer-row">
-        <textarea class="composer-textarea" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
+        <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
         <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
           <i class="ph ph-paper-plane-right"></i>
         </button>
@@ -88,8 +91,17 @@ export class Composer {
     if (!this.disabled) {
       this.textarea?.addEventListener("keydown", this.onKey.bind(this));
       this.textarea?.addEventListener("paste", this.onPaste.bind(this));
+      this.textarea?.addEventListener("input", () => this.autoResize());
       this.sendBtn?.addEventListener("click", () => void this.send());
     }
+    this.autoResize();
+  }
+
+  private autoResize(): void {
+    const ta = this.textarea;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${ta.scrollHeight}px`;
   }
 
   private async onKey(e: KeyboardEvent): Promise<void> {
@@ -166,6 +178,7 @@ export class Composer {
     }
 
     if (this.textarea) this.textarea.value = "";
+    this.autoResize();
     this.attachments = [];
     this.renderAttachments();
 

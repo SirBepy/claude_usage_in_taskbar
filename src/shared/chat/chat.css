@@ -188,7 +188,9 @@
 .composer-textarea {
   flex: 1;
   resize: none;
-  min-height: 60px;
+  box-sizing: border-box;
+  max-height: 200px;
+  overflow-y: auto;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
@@ -196,6 +198,7 @@
   padding: 8px;
   font-family: inherit;
   font-size: 0.88rem;
+  line-height: 1.4;
 }
 
 .composer-textarea:focus {
