@@ -81,7 +81,7 @@ pub fn merge_scraped(
         } else if is_new {
             new_slugs.push(item.slug.clone());
         }
-        let image_url = prev.and_then(|p| p.image_url.clone());
+        let summary = prev.and_then(|p| p.summary.clone());
         let date_iso = crate::news::scraper::parse_date_iso(&item.date_label);
         next_posts.push(NewsPost {
             slug: item.slug,
@@ -89,9 +89,9 @@ pub fn merge_scraped(
             title: item.title,
             category: item.category,
             excerpt: item.excerpt,
+            summary,
             date_label: item.date_label,
             date_iso,
-            image_url,
             unread,
         });
     }
@@ -160,12 +160,12 @@ mod tests {
     }
 
     #[test]
-    fn merge_preserves_image_url_across_refetches() {
+    fn merge_preserves_summary_across_refetches() {
         let mut s = NewsStore::default();
         merge_scraped(&mut s, vec![item("a", "May 5, 2026")]);
-        s.posts[0].image_url = Some("https://cdn/x.png".into());
+        s.posts[0].summary = Some("TLDR sentence.".into());
         merge_scraped(&mut s, vec![item("a", "May 5, 2026")]);
-        assert_eq!(s.posts[0].image_url.as_deref(), Some("https://cdn/x.png"));
+        assert_eq!(s.posts[0].summary.as_deref(), Some("TLDR sentence."));
     }
 
     #[test]

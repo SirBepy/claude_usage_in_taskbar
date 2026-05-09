@@ -177,17 +177,13 @@ function renderBody(root: HTMLElement) {
 }
 
 function renderItem(post: NewsPost) {
+  const tldr = post.summary || post.excerpt || null;
   return html`
     <li
       class="news-item ${post.unread ? "news-item-unread" : ""}"
       @click=${() => openPost(post)}
       title=${post.url}
     >
-      ${post.imageUrl
-        ? html`<img class="news-thumb" src=${post.imageUrl} loading="lazy" alt="" />`
-        : html`<div class="news-thumb news-thumb-placeholder">
-            <i class="ph ph-newspaper"></i>
-          </div>`}
       <div class="news-text">
         <div class="news-meta">
           ${post.unread ? html`<span class="news-unread-dot" aria-label="unread"></span>` : null}
@@ -195,7 +191,7 @@ function renderItem(post: NewsPost) {
           <time class="news-date">${post.dateLabel}</time>
         </div>
         <div class="news-title">${post.title}</div>
-        ${post.excerpt ? html`<div class="news-excerpt">${post.excerpt}</div>` : null}
+        ${tldr ? html`<div class="news-excerpt">${tldr}</div>` : null}
       </div>
       <i class="ph ph-arrow-up-right news-open-icon"></i>
     </li>

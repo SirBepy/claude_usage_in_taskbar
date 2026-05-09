@@ -9,8 +9,10 @@ pub struct NewsPost {
     pub title: String,
     pub category: Option<String>,
     pub excerpt: Option<String>,
+    /// One-sentence TLDR from the article's `<meta name="description">`.
+    /// Written by Anthropic, fetched per-article on first sighting.
+    pub summary: Option<String>,
     pub date_label: String,
     pub date_iso: Option<String>,
-    pub image_url: Option<String>,
     pub unread: bool,
 }

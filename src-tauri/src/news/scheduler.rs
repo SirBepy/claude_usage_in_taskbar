@@ -29,12 +29,21 @@ pub async fn poll_once(app: &AppHandle) -> anyhow::Result<()> {
     let scraped = news::fetch_index().await?;
     let new_slugs = news::store::merge_scraped(&mut store, scraped);
 
-    for slug in &new_slugs {
-        let Some(post) = store.posts.iter_mut().find(|p| &p.slug == slug) else { continue };
-        if post.image_url.is_some() { continue; }
-        match news::fetch_og_image(&post.url).await {
-            Ok(img) => post.image_url = img,
-            Err(e) => log::warn!("og:image fetch failed for {slug}: {e:#}"),
+    // Fetch the article-page summary for any post that doesn't have one yet.
+    // This covers brand-new slugs and back-fills posts that were stored under
+    // an older build that didn't capture summaries.
+    let needs_summary: Vec<(String, String)> = store.posts.iter()
+        .filter(|p| p.summary.is_none())
+        .map(|p| (p.slug.clone(), p.url.clone()))
+        .collect();
+    for (slug, url) in needs_summary {
+        match news::fetch_summary(&url).await {
+            Ok(summary) => {
+                if let Some(post) = store.posts.iter_mut().find(|p| p.slug == slug) {
+                    post.summary = summary;
+                }
+            }
+            Err(e) => log::warn!("summary fetch failed for {slug}: {e:#}"),
         }
     }
     store.last_fetch_at = Some(chrono::Utc::now().to_rfc3339());

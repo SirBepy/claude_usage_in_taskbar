@@ -92,7 +92,7 @@ pub fn parse_index(html: &str) -> Result<Vec<ScrapedItem>> {
     Ok(out)
 }
 
-pub async fn fetch_og_image(article_url: &str) -> Result<Option<String>> {
+pub async fn fetch_summary(article_url: &str) -> Result<Option<String>> {
     let body = reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .build()?
@@ -102,16 +102,29 @@ pub async fn fetch_og_image(article_url: &str) -> Result<Option<String>> {
         .error_for_status()?
         .text()
         .await?;
-    Ok(parse_og_image(&body))
+    Ok(parse_summary(&body))
 }
 
-pub fn parse_og_image(html: &str) -> Option<String> {
+/// Pulls Anthropic's own one-sentence TLDR from `<meta name="description">`.
+/// Falls back to og:description, then twitter:description (all three are
+/// always identical on anthropic.com today, but cheap to be robust).
+pub fn parse_summary(html: &str) -> Option<String> {
     let doc = Html::parse_document(html);
-    let sel = Selector::parse(r#"meta[property="og:image"]"#).ok()?;
-    doc.select(&sel)
-        .next()
-        .and_then(|m| m.value().attr("content"))
-        .map(|s| s.to_string())
+    let candidates = [
+        r#"meta[name="description"]"#,
+        r#"meta[property="og:description"]"#,
+        r#"meta[name="twitter:description"]"#,
+    ];
+    for q in candidates {
+        let Ok(sel) = Selector::parse(q) else { continue };
+        if let Some(content) = doc.select(&sel).next().and_then(|m| m.value().attr("content")) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// "Apr 16, 2026" → "2026-04-16". Returns None for unparsable input.
@@ -181,9 +194,26 @@ mod tests {
     }
 
     #[test]
-    fn extracts_og_image() {
-        let html = r#"<html><head><meta property="og:image" content="https://cdn/x.png"/></head></html>"#;
-        assert_eq!(parse_og_image(html).as_deref(), Some("https://cdn/x.png"));
+    fn extracts_meta_description_as_summary() {
+        let html = r#"<html><head>
+            <meta name="description" content="One-sentence TLDR.">
+            <meta property="og:description" content="og fallback">
+        </head></html>"#;
+        assert_eq!(parse_summary(html).as_deref(), Some("One-sentence TLDR."));
+    }
+
+    #[test]
+    fn summary_falls_back_to_og_description() {
+        let html = r#"<html><head>
+            <meta property="og:description" content="og fallback">
+        </head></html>"#;
+        assert_eq!(parse_summary(html).as_deref(), Some("og fallback"));
+    }
+
+    #[test]
+    fn summary_returns_none_when_no_meta_description() {
+        let html = r#"<html><head><title>x</title></head></html>"#;
+        assert_eq!(parse_summary(html), None);
     }
 
     #[test]
