@@ -69,6 +69,18 @@ where
 {
     check_metered_billing(&|k| std::env::var(k).ok())?;
 
+    // Write a per-turn .mcp.json so claude can find our permission-prompt MCP server.
+    // The guard removes the file on drop regardless of how run_turn exits.
+    let turn_id = uuid::Uuid::new_v4().to_string();
+    let mcp_json_path = write_mcp_config(&turn_id, session_id);
+    struct McpConfigGuard(Option<PathBuf>);
+    impl Drop for McpConfigGuard {
+        fn drop(&mut self) {
+            if let Some(ref p) = self.0 { let _ = std::fs::remove_file(p); }
+        }
+    }
+    let _mcp_guard = McpConfigGuard(mcp_json_path.clone());
+
     let mut cmd = Command::new("claude");
     cmd.arg("-p")
        .arg("--output-format=stream-json")
@@ -76,6 +88,13 @@ where
        .arg("--include-partial-messages");
     if let Some(id) = session_id {
         cmd.arg("--resume").arg(id);
+    }
+    // Wire in the permission-prompt MCP server.
+    if let Some(ref mcp_path) = mcp_json_path {
+        cmd.arg("--permission-prompt-tool")
+           .arg("mcp__cc_companion__approval_prompt")
+           .arg("--mcp-config")
+           .arg(mcp_path);
     }
     cmd.arg(prompt);
     cmd.current_dir(cwd);
@@ -157,6 +176,27 @@ where
         });
     }
     Ok(())
+}
+
+/// Write a temporary .mcp.json file for the current turn and return its path.
+/// Returns None if the app-data dir is unavailable (non-fatal; permission
+/// relay simply won't be wired up for this turn).
+fn write_mcp_config(turn_id: &str, session_id: Option<&str>) -> Option<PathBuf> {
+    let mcp_dir = crate::settings::paths::mcp_temp_dir().ok()?;
+    let exe = std::env::current_exe().ok()?;
+    let sid = session_id.unwrap_or("").to_string();
+    let config = serde_json::json!({
+        "mcpServers": {
+            "cc_companion": {
+                "command": exe.to_string_lossy(),
+                "args": ["--mcp-permission"],
+                "env": {"CC_SESSION_ID": sid}
+            }
+        }
+    });
+    let path = mcp_dir.join(format!("{turn_id}.json"));
+    std::fs::write(&path, serde_json::to_string(&config).ok()?).ok()?;
+    Some(path)
 }
 
 #[cfg(test)]
