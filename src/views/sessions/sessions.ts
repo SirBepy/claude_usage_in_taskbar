@@ -1314,12 +1314,11 @@ async function saveStatuslineFields(fields: string[]): Promise<void> {
   }
 }
 
-function modelContextWindow(model: string | null): number {
-  if (!model) return 200_000;
-  // Haiku 4.5 and older Claude 3.x models: 200K
-  if (model.includes("haiku") || model.includes("claude-3")) return 200_000;
-  // Claude 4.x Opus/Sonnet: 1M
-  return 1_000_000;
+function modelContextWindow(_model: string | null): number {
+  // Claude Code caps all sessions at 200K regardless of model capacity.
+  // The init line does not carry context_window, so we can't read it from
+  // the stream. 200K matches observed behavior across Sonnet 4.6 sessions.
+  return 200_000;
 }
 
 function shortModelName(model: string): string {
