@@ -27,6 +27,9 @@ import { api } from "./api";
 import { refreshDashboard } from "../views/statistics/statistics";
 import { renderProjectsList } from "../views/projects/projects";
 import { renderProjectDetailContent } from "../views/project-detail/project-detail";
+import * as shortcuts from "./shortcuts";
+import { triggerNewSessionGlobal } from "../views/sessions/sessions";
+import { showView } from "./navigation";
 
 function activeViewName(): string {
   return window.location.hash.replace(/^#/, "") || "dashboard";
@@ -262,4 +265,8 @@ export function initBoot(): void {
   wireHookModal();
   void maybeOfferLegacyImport();
   void maybeShowHookModal();
+
+  shortcuts.register("new-chat", triggerNewSessionGlobal);
+  shortcuts.register("go-home", () => showView("dashboard"));
+  shortcuts.register("go-chats", () => showView("sessions"));
 }
