@@ -107,7 +107,8 @@ export class ChatRenderer {
     this.cwdHint = cwd;
     const events = await sessionEvents.loadInitial(sid, cwd);
     if (this.sessionId !== sid) return;
-    this.bulkLoadEvents(events);
+    await this.bulkLoadEvents(events);
+    if (this.sessionId !== sid) return;
     this.installTopSentinel();
   }
 
@@ -168,7 +169,8 @@ export class ChatRenderer {
     }
 
     const allEvents = sessionEvents.events(sid);
-    this.bulkLoadEvents(allEvents);
+    await this.bulkLoadEvents(allEvents);
+    if (this.sessionId !== sid) return;
 
     if (scroller) {
       const newScrollHeight = scroller.scrollHeight;
@@ -232,22 +234,35 @@ export class ChatRenderer {
 
   /**
    * Replace the message list with the given history (read-only path used by
-   * the History view). One DOM build at the end, no per-event re-render.
+   * the History view). Chunked render with event-loop yields between batches
+   * so the UI stays responsive on big transcripts.
    */
-  loadHistory(events: ChatEvent[]): void {
-    this.bulkLoadEvents(events);
+  async loadHistory(events: ChatEvent[]): Promise<void> {
+    await this.bulkLoadEvents(events);
   }
 
-  private bulkLoadEvents(events: ChatEvent[]): void {
+  /**
+   * Build the message list in chunks, flushing DOM after each batch and
+   * yielding to the event loop in between so window resize / clicks /
+   * other input keep working. The chat is covered by the loading overlay
+   * during this so the user sees the rolling render only once it lifts.
+   */
+  private async bulkLoadEvents(events: ChatEvent[]): Promise<void> {
     this.messages = [];
     this.messageEls = [];
     this.dirtyIndices.clear();
     this.streamingIndex = null;
     this.container.innerHTML = "";
-    for (const ev of events) {
-      this.handleEvent(ev, { silent: true, skipScroll: true });
+    const CHUNK = 8;
+    for (let i = 0; i < events.length; i += CHUNK) {
+      for (let j = i; j < Math.min(i + CHUNK, events.length); j++) {
+        this.handleEvent(events[j]!, { silent: true, skipScroll: true });
+      }
+      this.flushRender();
+      if (i + CHUNK < events.length) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
     }
-    this.flushRender();
     this.scrollToBottom();
   }
 

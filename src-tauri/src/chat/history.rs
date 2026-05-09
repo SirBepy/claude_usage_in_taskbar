@@ -24,16 +24,14 @@ pub fn replay(path: &Path) -> Result<Vec<ChatEvent>, String> {
     Ok(events)
 }
 
-/// Returns true for events that count toward `message_limit` — the
-/// user-perceived "message bubble" view: plain UserMessage and
-/// AssistantMessage. Tool calls, results, notifications, session boundaries,
-/// and turn-usage records are non-message events (returned in the page
-/// alongside their surrounding messages, but do not count toward the limit).
+/// Returns true for events that count toward `message_limit`. We count only
+/// AssistantMessage events: a "page size" of N means N assistant replies plus
+/// every surrounding event (UserMessage, ToolUse, ToolResult, TurnUsage,
+/// Notification) that lives between them. This biases pagination toward
+/// "show me the last N AI turns" rather than letting long stretches of
+/// tool-only output exhaust the budget.
 fn is_message_event(ev: &ChatEvent) -> bool {
-    matches!(
-        ev,
-        ChatEvent::UserMessage { .. } | ChatEvent::AssistantMessage { .. }
-    )
+    matches!(ev, ChatEvent::AssistantMessage { .. })
 }
 
 /// Read a paginated window of the JSONL transcript at `path` by tail-reading
@@ -275,7 +273,7 @@ mod tests {
     fn count_messages(events: &[ChatEvent]) -> usize {
         events
             .iter()
-            .filter(|e| matches!(e, ChatEvent::UserMessage { .. } | ChatEvent::AssistantMessage { .. }))
+            .filter(|e| matches!(e, ChatEvent::AssistantMessage { .. }))
             .count()
     }
 
@@ -298,6 +296,8 @@ mod tests {
 
     #[test]
     fn read_page_non_message_events_dont_count() {
+        // Only AssistantMessage events count toward message_limit. UserMessage,
+        // ToolUse, ToolResult ride along but don't count.
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("b.jsonl");
         let mut lines: Vec<String> = Vec::new();
@@ -309,10 +309,12 @@ mod tests {
         }
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         write_jsonl(&p, &refs);
+        // Ask for more assistants than exist (10 vs 5) so the walk runs out
+        // of file before hitting the limit; window covers everything.
         let page = read_page(&p, None, 10).unwrap();
         assert_eq!(page.oldest_seq, 0);
         assert!(!page.has_more);
-        assert_eq!(count_messages(&page.events), 10);
+        assert_eq!(count_messages(&page.events), 5);
         assert_eq!(page.events.len(), 20);
     }
 
@@ -341,7 +343,7 @@ mod tests {
         let p = dir.path().join("d.jsonl");
         let mut lines: Vec<String> = Vec::new();
         for i in 0..15 {
-            lines.push(user_line(&format!("u{}", i), i as i64));
+            lines.push(assistant_line(&format!("a{}", i), i as i64));
         }
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         write_jsonl(&p, &refs);
@@ -353,6 +355,7 @@ mod tests {
 
     #[test]
     fn read_page_orphan_tool_result_passes_through() {
+        // Walk back limit=1 AssistantMessage, capture surrounding events.
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("e.jsonl");
         let lines = vec![
@@ -363,12 +366,11 @@ mod tests {
         ];
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         write_jsonl(&p, &refs);
-        let page = read_page(&p, None, 2).unwrap();
-        // Window: user_line + tool_result_line + assistant_line = 3 events.
-        // The earlier tool_use_line is excluded; the orphan tool_result is in.
-        assert_eq!(page.events.len(), 3);
-        assert_eq!(count_messages(&page.events), 2);
-        assert!(matches!(page.events[1], ChatEvent::ToolResult { .. }));
+        let page = read_page(&p, None, 1).unwrap();
+        // Walk back from EOF: assistant (count=1, stop). Slice = just the
+        // assistant. Earlier tool_use/user/tool_result are excluded.
+        assert_eq!(count_messages(&page.events), 1);
+        assert!(matches!(page.events[0], ChatEvent::AssistantMessage { .. }));
         assert!(page.has_more);
     }
 
@@ -399,15 +401,19 @@ mod tests {
         ];
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         write_jsonl(&p, &refs);
-        let page = read_page(&p, None, 3).unwrap();
-        assert_eq!(count_messages(&page.events), 3);
+        // 1 assistant in fixture; ask for 2 to force the walk past it,
+        // running into the file start. All 3 events returned.
+        let page = read_page(&p, None, 2).unwrap();
+        assert_eq!(count_messages(&page.events), 1);
+        assert_eq!(page.events.len(), 3);
         assert!(!page.has_more);
-        match &page.events[1] {
+        let assistant = page.events.iter().find_map(|e| match e {
             ChatEvent::AssistantMessage { content, .. } => match &content[0] {
-                crate::types::chat::ContentBlock::Text { text } => assert_eq!(text.len(), 80 * 1024),
-                _ => panic!("expected text block"),
+                crate::types::chat::ContentBlock::Text { text } => Some(text.len()),
+                _ => None,
             },
-            _ => panic!("expected AssistantMessage"),
-        }
+            _ => None,
+        });
+        assert_eq!(assistant, Some(80 * 1024));
     }
 }

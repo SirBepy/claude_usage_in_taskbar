@@ -18,8 +18,11 @@ import { invoke } from "../ipc";
 type Unlisten = () => void;
 type EventListener = (ev: ChatEvent) => void;
 
-const INITIAL_PAGE_SIZE = 20;
-const OLDER_PAGE_SIZE = 20;
+// Page size counts AssistantMessage events only — see read_page in
+// src-tauri/src/chat/history.rs. 10 AI replies plus all surrounding
+// user/tool/turn events typically renders well under 100 ms.
+const INITIAL_PAGE_SIZE = 10;
+const OLDER_PAGE_SIZE = 10;
 
 interface CacheEntry {
   events: ChatEvent[];
