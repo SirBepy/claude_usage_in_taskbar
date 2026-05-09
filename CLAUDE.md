@@ -61,11 +61,13 @@ Key modules:
 - `src-tauri/src/ipc/chat.rs` - start_session / send_message / cancel_turn /
   paste_image / takeover_manual / load_history / list_history /
   detach_window / reattach_window / cancel_all_inflight_turns (quit hook) /
-  gc_attachments (24h scheduler).
+  gc_attachments (24h scheduler) / respond_permission / respond_question.
+- `src-tauri/src/mcp/server.rs` - stdio MCP server (permission-prompt + ask_user_question tools).
 - `src-tauri/src/sessions/registry.rs` - Instance registry (was
   hooks/instances.rs); gained busy bool + record_interactive_session +
   upsert_interactive + set_busy helpers.
 - `src/views/sessions/sessions.ts` - main Sessions view + renderDetachedSession.
+- `src/views/sessions/permission-modal.ts` - permission / question relay modal (permission-requested + question-requested Tauri events).
 - `src/views/history/history.ts` - History view orchestration.
 - `src/shared/chat/chat-renderer.ts` - virtualized DOM rendering, markdown
   + shiki post-pass.
@@ -82,6 +84,40 @@ older than 30 days GC'd by a background task scheduled at app startup.
 
 The original "tray-app monitors usage" identity is intact; the chat hub
 ships alongside, sharing the existing tray + dashboard window.
+
+## Chat hub permissions
+
+When the runner spawns `claude -p`, it also:
+1. Writes a per-turn `.mcp.json` to `<app-data>/mcp/<turn-uuid>.json` containing
+   the path to the current executable and `--mcp-permission` as the command.
+2. Passes `--permission-prompt-tool mcp__cc_companion__approval_prompt` and
+   `--mcp-config <path>` to the `claude` command.
+
+When claude needs permission to run a tool (Edit, Write, Bash, …) it calls
+`mcp__cc_companion__approval_prompt` on our MCP server subprocess. The MCP
+server HTTP-POSTs to `/permissions/request` on the hooks server (port from
+`<app-data>/hooks_port.txt`). The hooks server inserts a oneshot channel into
+`AppState::pending` and emits the Tauri event `permission-requested`. The
+sessions view shows a modal; the user clicks Allow or Deny, which fires the
+`respond_permission` IPC → resolves the pending channel → HTTP response
+returns to the MCP server → claude proceeds.
+
+`AskUserQuestion` uses the same pipeline via `/questions/request` and
+`respond_question`. When the stream-json shows a `tool_use` with name
+`AskUserQuestion` or ending in `ask_user_question`, the chat renderer
+renders the questions inline (read-only display); the interactive question
+modal fires from the `question-requested` Tauri event.
+
+**Debugging:**
+- Port: `cat <app-data>/hooks_port.txt`
+- MCP server stderr: captured by runner's stderr-drain thread and included
+  in `RunError::NonZeroExit.stderr` on failure.
+- Pending map leaks: each request times out after 5 minutes server-side.
+
+**Key files:**
+- `src-tauri/src/mcp/server.rs` — stdio JSON-RPC 2.0 MCP server
+- `src-tauri/src/hooks/server.rs` — `/permissions/request|respond` + `/questions/request|respond` endpoints + pending map
+- `src/views/sessions/permission-modal.ts` — permission + question modal UI
 
 ## Running
 
@@ -126,6 +162,7 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `src-tauri/src/hooks/instances.rs`          | Running-instance registry                                                                                     |
 | `src-tauri/src/hooks/detector.rs`           | 5 s reconcile loop                                                                                            |
 | `src-tauri/src/hooks/session_files.rs`      | ~/.claude/sessions/<pid>.json resolver                                                                        |
+| `src-tauri/src/mcp/server.rs`               | stdio MCP server (--mcp-permission mode): approval_prompt + ask_user_question tools                           |
 | `src-tauri/src/channels/spawn.rs`           | CreateProcessW automation launcher                                                                            |
 | `src-tauri/src/channels/watchdog.rs`        | Restart backoff + wait                                                                                        |
 | `src-tauri/src/channels/window_chrome.rs`   | hwnd discovery + chrome strip                                                                                 |
