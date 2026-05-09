@@ -26,10 +26,13 @@ const md = new MarkdownIt({
 
 export interface SessionMeta {
   model: string | null;
-  /** Full context window input for the latest turn (not additive). */
+  /** Full context window input for the latest completed turn. */
   inputTokens: number;
   hasThinking: boolean;
+  /** Accumulated cost estimate across all turns (local API-rate estimate, not actual charge). */
   totalCostUsd: number;
+  /** True once any TurnUsage event has been received this session. */
+  hasUsage: boolean;
 }
 
 interface RenderedMessage {
@@ -66,7 +69,7 @@ export class ChatRenderer {
   private unsubscribe: (() => void) | null = null;
   private streamingIndex: number | null = null;
   private sessionId: string | null = null;
-  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
 
   constructor(container: HTMLElement) {
@@ -85,7 +88,7 @@ export class ChatRenderer {
     this.messageEls = [];
     this.dirtyIndices.clear();
     this.streamingIndex = null;
-    this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+    this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
     this.container.innerHTML = "";
 
     this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
@@ -271,7 +274,7 @@ export class ChatRenderer {
     let touched = false;
     switch (ev.type) {
       case "session_started":
-        this.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+        this.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
         this.onMetaUpdate?.(this.getMeta());
         this.messages.push({
           kind: "system",
@@ -353,8 +356,12 @@ export class ChatRenderer {
         touched = true;
         break;
       case "turn_usage":
-        this.meta.inputTokens = Number(ev.input_tokens);
-        this.meta.totalCostUsd = ev.total_cost_usd;
+        // Keep the highest inputTokens seen (latest turn always has the most context).
+        if (Number(ev.input_tokens) > this.meta.inputTokens) {
+          this.meta.inputTokens = Number(ev.input_tokens);
+        }
+        this.meta.totalCostUsd += ev.total_cost_usd;
+        this.meta.hasUsage = true;
         if (ev.has_thinking) this.meta.hasThinking = true;
         if (ev.model) this.meta.model = ev.model;
         this.onMetaUpdate?.(this.getMeta());

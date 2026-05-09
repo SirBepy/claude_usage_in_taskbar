@@ -405,6 +405,9 @@
 .sb-chip.sb-model { color: var(--primary); border-color: rgba(157, 125, 252, 0.2); }
 .sb-chip.sb-branch { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
 .sb-chip.sb-repo { color: var(--text-dim); }
+.sb-chip.sb-folder { color: var(--text-dim); }
+.sb-chip.sb-folder-btn { cursor: pointer; }
+.sb-chip.sb-folder-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); border-color: var(--border); }
 .sb-chip.sb-context { color: var(--text-dim); }
 .sb-chip.sb-context.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.3); }
 .sb-chip.sb-context.danger { color: #f87171; border-color: rgba(248, 113, 113, 0.3); }

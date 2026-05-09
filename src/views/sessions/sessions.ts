@@ -186,6 +186,18 @@ function openCtxMenu(
   });
   menu.appendChild(codeItem);
 
+  // "Copy PID" — only if session has a pid
+  if (sess.pid) {
+    const pidItem = document.createElement("button");
+    pidItem.className = "session-ctx-item";
+    pidItem.innerHTML = '<i class="ph ph-copy"></i> Copy PID';
+    pidItem.addEventListener("click", () => {
+      closeCtxMenu();
+      void navigator.clipboard.writeText(String(sess.pid));
+    });
+    menu.appendChild(pidItem);
+  }
+
   document.body.appendChild(menu);
   activeCtxMenu = menu;
 
@@ -781,7 +793,7 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   const sess = state.sessions.find((s) => s.session_id === sessionId);
   const meta = header.querySelector<HTMLElement>(".meta");
   if (meta && sess) {
-    meta.textContent = `${projectName(sess)}${sess.pid ? ` · pid ${sess.pid}` : ""}`;
+    meta.textContent = projectName(sess);
   }
   // Add detach button (was omitted from pending header). Insert before cancel.
   if (!header.querySelector(".detach-btn")) {
@@ -844,12 +856,12 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   pane.innerHTML = `
     <header class="session-header">
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
-      <span class="meta">${escapeHtml(projectName(sess))}${sess.pid ? ` · pid ${sess.pid}` : ""}</span>
+      <span class="meta">${escapeHtml(projectName(sess))}</span>
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
     </header>
-    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
     <div class="session-statusbar-host"></div>
+    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
     <div class="session-messages"></div>
     <div class="session-composer"></div>
   `;
@@ -858,7 +870,7 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
     const fields = await loadStatuslineFields();
-    const sb = new SessionStatusbar(sbHost, sess.started_at, fields);
+    const sb = new SessionStatusbar(sbHost, sess.started_at, fields, sess.cwd ? String(sess.cwd) : null);
     state.statusbar = sb;
     // Fetch git info async (non-blocking, populates when ready).
     if (sess.cwd) {
@@ -1276,11 +1288,12 @@ const DEFAULT_STATUSLINE_FIELDS = ["model", "branch", "repo", "context", "thinki
 const ALL_STATUSLINE_FIELDS = [
   { key: "branch",   label: "Branch" },
   { key: "repo",     label: "Repo" },
+  { key: "folder",   label: "Project Folder" },
   { key: "model",    label: "Model" },
   { key: "context",  label: "Context %" },
   { key: "thinking", label: "Thinking" },
   { key: "duration", label: "Duration" },
-  { key: "cost",     label: "Cost" },
+  { key: "cost",     label: "Cost (estimate)" },
 ];
 
 async function loadStatuslineFields(): Promise<string[]> {
@@ -1323,16 +1336,18 @@ function formatDuration(startedAt: string): string {
 class SessionStatusbar {
   private container: HTMLElement;
   private fields: string[];
-  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0 };
+  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private gitInfo: GitInfo = { branch: null, repo: null };
   private startedAt: string | null;
+  private cwd: string | null;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
   private popoverOpen = false;
 
-  constructor(container: HTMLElement, startedAt: string | null, fields: string[]) {
+  constructor(container: HTMLElement, startedAt: string | null, fields: string[], cwd: string | null = null) {
     this.container = container;
     this.startedAt = startedAt;
     this.fields = fields;
+    this.cwd = cwd;
     this.container.className = "session-statusbar";
     this.render();
     if (this.fields.includes("duration")) this.startDurationTimer();
@@ -1359,13 +1374,18 @@ class SessionStatusbar {
   private render(): void {
     const f = this.fields;
 
-    // Git group: branch, repo
+    // Git group: branch, repo, folder
     const gitChips: string[] = [];
     if (f.includes("branch") && this.gitInfo.branch) {
       gitChips.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
     }
     if (f.includes("repo") && this.gitInfo.repo) {
       gitChips.push(`<span class="sb-chip sb-repo"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
+    }
+    if (f.includes("folder") && this.cwd) {
+      const folderName = this.cwd.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? this.cwd;
+      const cwdEsc = escapeHtml(this.cwd);
+      gitChips.push(`<span class="sb-chip sb-folder sb-folder-btn" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`);
     }
 
     // Claude group: model, context, thinking, duration, cost
@@ -1374,9 +1394,10 @@ class SessionStatusbar {
       claudeChips.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
     }
     if (f.includes("context") && this.meta.inputTokens > 0) {
-      const pct = Math.min(100, Math.round((this.meta.inputTokens / 200_000) * 100));
-      const cls = pct >= 80 ? " danger" : pct >= 50 ? " warn" : "";
-      claudeChips.push(`<span class="sb-chip sb-context${cls}"><i class="ph ph-stack"></i>${pct}%</span>`);
+      const raw = (this.meta.inputTokens / 200_000) * 100;
+      const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
+      const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
+      claudeChips.push(`<span class="sb-chip sb-context${cls}"><i class="ph ph-stack"></i>${pctStr}%</span>`);
     }
     if (f.includes("thinking") && this.meta.hasThinking) {
       claudeChips.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
@@ -1384,8 +1405,8 @@ class SessionStatusbar {
     if (f.includes("duration") && this.startedAt) {
       claudeChips.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${formatDuration(this.startedAt)}</span>`);
     }
-    if (f.includes("cost") && this.meta.totalCostUsd > 0) {
-      claudeChips.push(`<span class="sb-chip sb-cost"><i class="ph ph-coin"></i>$${this.meta.totalCostUsd.toFixed(4)}</span>`);
+    if (f.includes("cost") && this.meta.hasUsage) {
+      claudeChips.push(`<span class="sb-chip sb-cost" title="Local API-rate estimate, not an actual charge"><i class="ph ph-coin"></i>$${this.meta.totalCostUsd.toFixed(4)}</span>`);
     }
 
     const sep = gitChips.length > 0 && claudeChips.length > 0
@@ -1414,6 +1435,12 @@ class SessionStatusbar {
       e.stopPropagation();
       this.popoverOpen = !this.popoverOpen;
       this.render();
+    });
+
+    this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
+      if (this.cwd) {
+        void invoke<void>("open_in_explorer", { path: this.cwd });
+      }
     });
 
     if (this.popoverOpen) {

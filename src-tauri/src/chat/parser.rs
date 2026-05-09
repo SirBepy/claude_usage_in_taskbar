@@ -193,29 +193,34 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
             // `assistant` line with a non-empty `stop_reason` is finalized -
             // mark streaming=false so the renderer doesn't keep its
             // streamingIndex pointing at the row across turn boundaries.
-            //
-            // Empty-content assistant lines (thinking-only blocks have no text)
-            // are skipped to keep the chat clean.
             let Some(message) = v.get("message") else { return vec![]; };
             let Some(content_val) = message.get("content") else { return vec![]; };
             let content = extract_content_blocks(content_val);
-            if content.is_empty() {
-                return vec![];
-            }
-            let has_stop_reason = message
-                .get("stop_reason")
-                .and_then(|s| s.as_str())
-                .map(|s| !s.is_empty())
-                .unwrap_or(false);
-            let mut evs = vec![ChatEvent::AssistantMessage {
-                content,
-                streaming: !has_stop_reason,
-                timestamp: ts,
-            }];
-            // JSONL assistant lines carry model + usage on the message object.
-            // Emit a TurnUsage so the statusbar can show model/cost from history.
             let model = message.get("model").and_then(|s| s.as_str()).map(|s| s.to_string());
             let usage = message.get("usage");
+
+            let mut evs = Vec::new();
+
+            // Only emit AssistantMessage when there is visible text/image content.
+            // Tool-use-only turns (all content blocks are type "tool_use") have no
+            // renderable content, but we must NOT skip TurnUsage for them - those
+            // turns still consume context window tokens that must reach the statusbar.
+            if !content.is_empty() {
+                let has_stop_reason = message
+                    .get("stop_reason")
+                    .and_then(|s| s.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+                evs.push(ChatEvent::AssistantMessage {
+                    content,
+                    streaming: !has_stop_reason,
+                    timestamp: ts,
+                });
+            }
+
+            // JSONL assistant lines carry model + usage on the message object.
+            // Always emit TurnUsage when present so the statusbar ctx% reflects
+            // every turn's input tokens (including tool-use-only turns).
             if model.is_some() || usage.is_some() {
                 let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
                 let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
@@ -232,6 +237,8 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                     model,
                 });
             }
+
+            // If both evs are empty (no renderable content, no model/usage) drop silently.
             evs
         }
         "tool_use" => {
