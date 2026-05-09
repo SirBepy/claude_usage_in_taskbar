@@ -147,7 +147,7 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
     let child = cmd.spawn().map_err(SpawnError::Io)?;
     let pid = child.id();
     // Drop `child`: `Child::drop` on Unix does not kill or reap; it only
-    // closes stdio FDs (null stdio => nothing to close). The watchdog
+    // closes stdio FDs (null stdio => nothing to close). The exit-watcher
     // reaps via `waitpid` exactly once (see wait_for_child_exit).
     drop(child);
 

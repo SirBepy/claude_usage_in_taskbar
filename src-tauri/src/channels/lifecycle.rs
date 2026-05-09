@@ -1,34 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager as _};
 use crate::types::ChannelStatus;
 use super::manager::ChannelSnapshot;
-use super::watchdog::{RestartDecision, RestartState, next_restart_delay};
 use super::spawn::{spawn_child, SpawnInput};
 use super::window_chrome::{resolve_console_hwnd, strip_console_chrome, hide_hwnd};
 use super::kill::kill_tree;
-
-// -------- Per-project restart state --------
-
-static RESTART_STATES: once_cell::sync::Lazy<Mutex<HashMap<String, RestartState>>> =
-    once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
-
-fn suppress_restart_for(project_id: &str) {
-    let mut g = RESTART_STATES.lock().unwrap();
-    g.entry(project_id.to_string()).or_default().suppress_restart = true;
-}
-
-fn clear_suppress_for(project_id: &str) {
-    let mut g = RESTART_STATES.lock().unwrap();
-    g.entry(project_id.to_string()).or_default().suppress_restart = false;
-}
-
-fn next_decision_for(project_id: &str, runtime: Duration) -> RestartDecision {
-    let mut guard = RESTART_STATES.lock().unwrap();
-    let st = guard.entry(project_id.to_string()).or_default();
-    next_restart_delay(st, runtime)
-}
 
 // -------- Lifecycle API --------
 
@@ -112,43 +87,14 @@ pub fn start_channel(
         let handle = spawn_out.process_handle;
         let pid_for_wait = spawn_out.pid;
         tauri::async_runtime::spawn(async move {
-            let started_at = std::time::Instant::now();
             super::spawn::wait_for_child_exit(handle, pid_for_wait).await;
-            let runtime = started_at.elapsed();
-
             let state = app_w.state::<crate::state::AppState>();
-            let decision = next_decision_for(&proj_w, runtime);
-
-            match decision {
-                RestartDecision::DoNotRestart => {
-                    state.channels.patch(&proj_w, |s| {
-                        s.status = ChannelStatus::Stopped;
-                        s.pid = None;
-                        s.hwnd = None;
-                    });
-                    emit_changed(&app_w);
-                }
-                RestartDecision::GiveUp => {
-                    state.channels.patch(&proj_w, |s| {
-                        s.status = ChannelStatus::Crashed;
-                        s.pid = None;
-                        s.hwnd = None;
-                    });
-                    emit_changed(&app_w);
-                }
-                RestartDecision::RestartAfter(delay) => {
-                    state.channels.patch(&proj_w, |s| {
-                        s.status = ChannelStatus::Stopped;
-                        s.pid = None;
-                        s.hwnd = None;
-                    });
-                    emit_changed(&app_w);
-                    tokio::time::sleep(delay).await;
-                    tauri::async_runtime::spawn(async move {
-                        let _ = start_channel(app_w, proj_w).await;
-                    });
-                }
-            }
+            state.channels.patch(&proj_w, |s| {
+                s.status = ChannelStatus::Stopped;
+                s.pid = None;
+                s.hwnd = None;
+            });
+            emit_changed(&app_w);
         });
     }
 
@@ -162,7 +108,6 @@ pub fn stop_channel(app: &AppHandle, project_id: &str) -> Result<(), String> {
         Some(s) => (s.pid, s.hwnd),
         None => return Ok(()),
     };
-    suppress_restart_for(project_id);
     if let Some(pid) = pid {
         kill_tree(pid);
     }
@@ -180,7 +125,6 @@ pub fn stop_channel(app: &AppHandle, project_id: &str) -> Result<(), String> {
 
 pub async fn restart_channel(app: AppHandle, project_id: String) -> Result<(), String> {
     stop_channel(&app, &project_id)?;
-    clear_suppress_for(&project_id);
     start_channel(app, project_id).await
 }
 

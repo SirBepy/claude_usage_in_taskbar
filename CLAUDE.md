@@ -164,7 +164,6 @@ scheduling, IPC, notifications. Webview serves the dashboard as a tiny SPA.
 | `src-tauri/src/hooks/session_files.rs`      | ~/.claude/sessions/<pid>.json resolver                                                                        |
 | `src-tauri/src/mcp/server.rs`               | stdio MCP server (--mcp-permission mode): approval_prompt + ask_user_question tools                           |
 | `src-tauri/src/channels/spawn.rs`           | CreateProcessW automation launcher                                                                            |
-| `src-tauri/src/channels/watchdog.rs`        | Restart backoff + wait                                                                                        |
 | `src-tauri/src/channels/window_chrome.rs`   | hwnd discovery + chrome strip                                                                                 |
 | `src-tauri/src/channels/kill.rs`            | taskkill tree on shutdown                                                                                     |
 | `src-tauri/src/channels/vault_detector.rs`  | %APPDATA% Obsidian vault reader                                                                               |
@@ -320,10 +319,9 @@ The sidemenu is a fixed overlay (`#sidemenu`) slid in via CSS transform. Every t
 
 ## Channel management (Plan C)
 
-- `src-tauri/src/channels/` owns automated channel lifecycle: spawn, kill tree, restart-with-backoff, show/hide console.
+- `src-tauri/src/channels/` owns automated channel lifecycle: spawn, kill tree, show/hide console. **No auto-restart on exit** (would register a fresh bridge with the Claude desktop app each time, piling up duplicate entries in the Code sidebar). Mirrors the original `obsidian_claude_remote` behavior: spawn once, stay dead until manual Restart.
 - **Windows spawn:** raw `CreateProcessW` with `STARTF_USESHOWWINDOW | SW_HIDE` in `STARTUPINFOW` so the new console is born invisible (no flash) and `CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP`. Command line: `cmd.exe /C claude --remote-control --remote-control-session-name-prefix "<prefix>" [--continue]`. After spawn, hwnd resolved via `EnumWindows` by owning pid, then `strip_console_chrome` removes `WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME` so the console is frameless when shown. No X button: user can't kill the process by closing the window; only the dashboard's Stop action does. Watchdog blocks on `WaitForSingleObject`. Kill uses `taskkill /T /F /PID <pid>` (node subprocesses → tree-kill required).
 - **macOS spawn:** `std::process::Command::new("claude")` with remote-control args, null stdio, and `setsid()` in `pre_exec` so the child becomes its own process-group leader (PGID == PID). No visible console exists, so no hwnd-strip, no Show/Hide UI on mac. Watchdog blocks on `libc::waitpid` via `tokio::task::spawn_blocking`. Kill uses `libc::killpg(pid, SIGKILL)` which reaps every node subprocess that inherited the group.
-- `next_restart_delay` shared across both platforms: stable >5s → immediate restart; early exit → 2/4/8/16s backoff; 5 cap-bucket failures → Crashed.
 - `src-tauri/src/channels/vault_detector.rs` reads `%APPDATA%\Obsidian\obsidian.json` on Windows and `~/Library/Application Support/{Obsidian,obsidian}/obsidian.json` on macOS (casing varies by installer version) for the automation picker.
 - `ipc::import_legacy_obsidian_config` maps the old Python app's config.json into a new ProjectConfig with an auto-configured automation.
 - The `obsidian_claude_remote` repo is archived on GitHub as of 2026-04-21; see its README.
