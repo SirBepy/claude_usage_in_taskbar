@@ -1219,9 +1219,9 @@ function escapeHtml(s: string): string {
 const DEFAULT_STATUSLINE_FIELDS = ["model", "branch", "repo", "context", "thinking"];
 
 const ALL_STATUSLINE_FIELDS = [
-  { key: "model",    label: "Model" },
   { key: "branch",   label: "Branch" },
   { key: "repo",     label: "Repo" },
+  { key: "model",    label: "Model" },
   { key: "context",  label: "Context %" },
   { key: "thinking", label: "Thinking" },
   { key: "duration", label: "Duration" },
@@ -1303,31 +1303,40 @@ class SessionStatusbar {
 
   private render(): void {
     const f = this.fields;
-    const chips: string[] = [];
 
-    if (f.includes("model") && this.meta.model) {
-      chips.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
-    }
+    // Git group: branch, repo
+    const gitChips: string[] = [];
     if (f.includes("branch") && this.gitInfo.branch) {
-      chips.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
+      gitChips.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
     }
     if (f.includes("repo") && this.gitInfo.repo) {
-      chips.push(`<span class="sb-chip sb-repo"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
+      gitChips.push(`<span class="sb-chip sb-repo"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
+    }
+
+    // Claude group: model, context, thinking, duration, cost
+    const claudeChips: string[] = [];
+    if (f.includes("model") && this.meta.model) {
+      claudeChips.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
     }
     if (f.includes("context") && this.meta.inputTokens > 0) {
       const pct = Math.min(100, Math.round((this.meta.inputTokens / 200_000) * 100));
       const cls = pct >= 80 ? " danger" : pct >= 50 ? " warn" : "";
-      chips.push(`<span class="sb-chip sb-context${cls}"><i class="ph ph-stack"></i>${pct}%</span>`);
+      claudeChips.push(`<span class="sb-chip sb-context${cls}"><i class="ph ph-stack"></i>${pct}%</span>`);
     }
     if (f.includes("thinking") && this.meta.hasThinking) {
-      chips.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
+      claudeChips.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
     }
     if (f.includes("duration") && this.startedAt) {
-      chips.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${formatDuration(this.startedAt)}</span>`);
+      claudeChips.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${formatDuration(this.startedAt)}</span>`);
     }
     if (f.includes("cost") && this.meta.totalCostUsd > 0) {
-      chips.push(`<span class="sb-chip sb-cost"><i class="ph ph-coin"></i>$${this.meta.totalCostUsd.toFixed(4)}</span>`);
+      claudeChips.push(`<span class="sb-chip sb-cost"><i class="ph ph-coin"></i>$${this.meta.totalCostUsd.toFixed(4)}</span>`);
     }
+
+    const sep = gitChips.length > 0 && claudeChips.length > 0
+      ? `<span class="sb-sep"></span>`
+      : "";
+    const allChips = [...gitChips, ...(sep ? [sep] : []), ...claudeChips];
 
     const popoverHtml = this.popoverOpen ? `
       <div class="sb-popover">
@@ -1341,7 +1350,7 @@ class SessionStatusbar {
     ` : "";
 
     this.container.innerHTML = `
-      <div class="sb-chips">${chips.join("") || '<span class="sb-empty">No fields</span>'}</div>
+      <div class="sb-chips">${allChips.length > 0 ? allChips.join("") : '<span class="sb-empty">No fields</span>'}</div>
       <button class="sb-gear icon-btn" title="Configure statusline"><i class="ph ph-sliders-horizontal"></i></button>
       ${popoverHtml}
     `;

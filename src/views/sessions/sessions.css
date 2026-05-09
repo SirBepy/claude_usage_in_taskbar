@@ -412,6 +412,16 @@
 .sb-chip.sb-duration { color: var(--text-dim); }
 .sb-chip.sb-cost { color: var(--text-dim); }
 
+.sb-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: var(--border, #2e2e40);
+  align-self: center;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
 .sb-empty {
   font-size: 0.72rem;
   color: var(--text-dim);
