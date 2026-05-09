@@ -144,6 +144,7 @@ pub fn run() {
             ipc::read_attachment,
             ipc::takeover_manual,
             ipc::load_history,
+            ipc::load_history_page,
             ipc::list_history,
             ipc::detach_window,
             ipc::reattach_window,

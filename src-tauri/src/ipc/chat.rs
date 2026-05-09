@@ -435,6 +435,46 @@ pub async fn load_history(session_id: String, cwd: Option<String>) -> Result<Vec
     .map_err(|e| format!("join: {}", e))?
 }
 
+/// Paginated transcript reader. Returns the last `message_limit` message
+/// bubbles (UserMessage / AssistantMessage), plus all surrounding tool calls
+/// and metadata events. Pass `before_seq = Some(oldestSeq)` to fetch the
+/// previous page.
+///
+/// Used by the Sessions view chat-open path. The History view keeps using
+/// `load_history` because it browses full transcripts read-only.
+#[tauri::command]
+pub async fn load_history_page(
+    session_id: String,
+    cwd: Option<String>,
+    before_seq: Option<u64>,
+    message_limit: u32,
+) -> Result<crate::types::chat::HistoryPage, String> {
+    validate_session_id(&session_id)?;
+    let limit = message_limit.clamp(1, 500);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(cwd_str) = cwd.as_deref().filter(|s| !s.is_empty()) {
+            if let Some(p) = crate::tokens::transcript_for_session(Path::new(cwd_str), &session_id) {
+                return crate::chat::history::read_page(&p, before_seq, limit);
+            }
+        }
+        let projects = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
+        let entries = match std::fs::read_dir(&projects) {
+            Ok(e) => e,
+            Err(_) => return Err(format!("no transcript found for session {session_id}")),
+        };
+        for entry in entries.flatten() {
+            let candidate = entry.path().join(format!("{session_id}.jsonl"));
+            if candidate.exists() {
+                return crate::chat::history::read_page(&candidate, before_seq, limit);
+            }
+        }
+        Err(format!("no transcript found for session {session_id}"))
+    })
+    .await
+    .map_err(|e| format!("join: {}", e))?
+}
+
 /// List past sessions by walking `~/.claude/projects/<encoded-cwd>/*.jsonl`.
 /// `~/.claude/sessions/` is pid-keyed metadata, not transcripts. Returns a
 /// paginated, optionally-filtered list sorted newest first by mtime.
