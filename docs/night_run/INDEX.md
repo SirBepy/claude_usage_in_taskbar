@@ -1,9 +1,10 @@
-# Night Run - 2026-05-08
+# Night Run - 2026-05-09
 
 Branch: master
-Interval: 45m
-Scheduled: 16 (14 tasks + 2 buffer)
-Started: 02:58
+Repo: https://github.com/SirBepy/claude_usage_in_taskbar
+Interval: 1h
+Scheduled: 3 (1 task + 2 buffer)
+Started: 03:38
 End cap: none
 
 ## Tasks
@@ -22,3 +23,4 @@ End cap: none
 - [x] Phase 8b - History view frontend - @docs/night_run/plans/12-phase-8b-history-view-frontend.md
 - [x] Phase 9 - Detachable session windows - @docs/night_run/plans/13-phase-9-detached-windows.md
 - [x] Phase 10 - Polish: app-quit cleanup + GC + docs update - @docs/night_run/plans/14-phase-10-polish.md
+- [ ] Phase 11 - Chat-hub permission + AskUserQuestion UI - @docs/night_run/plans/15-chat-hub-permission-ui.md
