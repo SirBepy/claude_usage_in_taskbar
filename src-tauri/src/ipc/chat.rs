@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, Manager, State};
+use serde_json::Value;
 
 /// Per-app shared state owned by Tauri. Tracks which sessions have a turn
 /// currently running so we can cancel them. Map value is a Mutex carrying
@@ -648,6 +649,47 @@ pub(crate) fn blocks_to_prompt_text(blocks: &[ContentBlock]) -> String {
         out.push('\n');
     }
     out.trim_end().to_string()
+}
+
+/// Respond to a pending permission request from the MCP server.
+/// Looks up the oneshot sender in the shared pending map and resolves it.
+#[tauri::command]
+pub async fn respond_permission(
+    id: String,
+    behavior: String,
+    updated_input: Option<Value>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if behavior != "allow" && behavior != "deny" {
+        return Err(format!("invalid behavior: {behavior:?} (must be 'allow' or 'deny')"));
+    }
+    let val = serde_json::json!({"behavior": behavior, "updatedInput": updated_input});
+    let tx = state.pending.lock().await.remove(&id);
+    match tx {
+        Some(tx) => {
+            let _ = tx.send(val);
+            Ok(())
+        }
+        None => Err(format!("no pending request with id {id}")),
+    }
+}
+
+/// Respond to a pending question request from the MCP server.
+#[tauri::command]
+pub async fn respond_question(
+    id: String,
+    answers: Value,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let val = serde_json::json!({"answers": answers});
+    let tx = state.pending.lock().await.remove(&id);
+    match tx {
+        Some(tx) => {
+            let _ = tx.send(val);
+            Ok(())
+        }
+        None => Err(format!("no pending question with id {id}")),
+    }
 }
 
 #[cfg(test)]
