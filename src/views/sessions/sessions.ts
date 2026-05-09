@@ -799,11 +799,10 @@ async function selectSession(sessionId: string, pane: HTMLElement): Promise<void
     <header class="session-header">
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}${sess.pid ? ` · pid ${sess.pid}` : ""}</span>
-      ${readOnly ? '<button class="icon-btn takeover-btn" title="Take over"><i class="ph ph-arrow-clockwise"></i></button>' : ""}
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
     </header>
-    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> Read-only session - click <strong>Take Over</strong> to interact.</div>' : ""}
+    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
     <div class="session-statusbar-host"></div>
     <div class="session-messages"></div>
     <div class="session-composer"></div>

@@ -334,8 +334,28 @@
   font-size: 1rem;
 }
 
-.readonly-banner strong {
+.readonly-banner .readonly-banner-text {
+  flex: 1;
+}
+
+.readonly-banner .takeover-btn {
+  background: rgba(251, 191, 36, 0.18);
+  border: 1px solid rgba(251, 191, 36, 0.5);
   color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.readonly-banner .takeover-btn:hover {
+  background: rgba(251, 191, 36, 0.3);
+}
+
+.readonly-banner .takeover-btn:active {
+  background: rgba(251, 191, 36, 0.4);
 }
 
 /* ── Session statusline ──────────────────────────────────────────────────── */

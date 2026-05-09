@@ -280,10 +280,19 @@ export class ChatRenderer {
         });
         touched = true;
         break;
-      case "user_message":
-        this.messages.push({ kind: "user", content: ev.content, ts });
+      case "user_message": {
+        // Strip Claude Code slash-command wrapper tags (`<command-name>`,
+        // `<command-message>`, `<command-args>`, `<local-command-stdout>`)
+        // from user text so the chat doesn't show internal markup. Drop the
+        // message entirely if all blocks become empty (e.g. the JSONL row was
+        // only tool_result blocks, which the parser already filters out, or
+        // pure command-wrapper text).
+        const cleaned = cleanUserBlocks(ev.content);
+        if (cleaned.length === 0) break;
+        this.messages.push({ kind: "user", content: cleaned, ts });
         touched = true;
         break;
+      }
       case "assistant_message": {
         const msg: RenderedMessage = {
           kind: "assistant",
@@ -487,4 +496,24 @@ function renderMarkdown(text: string): string {
 function extractFenceLang(className: string): string | null {
   const m = className.match(/language-(\S+)/);
   return m ? m[1]! : null;
+}
+
+// Claude Code wraps slash-command prompts with internal tags like
+// `<command-name>`, `<command-message>`, `<command-args>`, and shells out
+// stdout via `<local-command-stdout>`. These are session bookkeeping, not
+// content the user wants to see in the chat.
+const COMMAND_TAG_RE = /<\/?(?:command-name|command-message|command-args|local-command-stdout)(?:\s[^>]*)?>/gi;
+
+function cleanUserBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const out: ContentBlock[] = [];
+  for (const b of blocks) {
+    if (b.type === "text") {
+      const stripped = b.text.replace(COMMAND_TAG_RE, "").trim();
+      if (stripped.length === 0) continue;
+      out.push({ type: "text", text: stripped });
+    } else {
+      out.push(b);
+    }
+  }
+  return out;
 }

@@ -21,6 +21,23 @@
   max-width: 85%;
 }
 
+/* Markdown lists default to padding-left: 40px which pushes long items past
+   the bubble's right edge. Trim the indent and let list-position render the
+   marker inside the padding box. */
+.msg ul,
+.msg ol {
+  padding-left: 22px;
+  margin: 6px 0;
+}
+
+.msg li {
+  margin: 2px 0;
+}
+
+.msg li > p {
+  margin: 0;
+}
+
 .msg.assistant {
   background: var(--surface);
   border: 1px solid var(--border);
