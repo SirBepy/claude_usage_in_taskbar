@@ -18,6 +18,9 @@ pub enum ChatEvent {
         model: String,
         cwd: String,
         timestamp: i64,
+        /// Context window size in tokens. Parsed from the stream-json init line
+        /// when available. 0 means unknown (caller should fall back to model lookup).
+        context_window: u64,
     },
     UserMessage {
         content: Vec<ContentBlock>,

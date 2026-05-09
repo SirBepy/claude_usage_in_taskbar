@@ -1314,6 +1314,14 @@ async function saveStatuslineFields(fields: string[]): Promise<void> {
   }
 }
 
+function modelContextWindow(model: string | null): number {
+  if (!model) return 200_000;
+  // Haiku 4.5 and older Claude 3.x models: 200K
+  if (model.includes("haiku") || model.includes("claude-3")) return 200_000;
+  // Claude 4.x Opus/Sonnet: 1M
+  return 1_000_000;
+}
+
 function shortModelName(model: string): string {
   // "claude-opus-4-7" -> "Opus 4.7", "claude-sonnet-4-6" -> "Sonnet 4.6"
   const m = model.replace(/^claude-/, "").replace(/-(\d)/, " $1");
@@ -1336,7 +1344,7 @@ function formatDuration(startedAt: string): string {
 class SessionStatusbar {
   private container: HTMLElement;
   private fields: string[];
-  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+  private meta: SessionMeta = { model: null, inputTokens: 0, contextWindow: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private gitInfo: GitInfo = { branch: null, repo: null };
   private startedAt: string | null;
   private cwd: string | null;
@@ -1394,10 +1402,11 @@ class SessionStatusbar {
       claudeChips.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
     }
     if (f.includes("context") && this.meta.inputTokens > 0) {
-      const raw = (this.meta.inputTokens / 200_000) * 100;
+      const window = this.meta.contextWindow || modelContextWindow(this.meta.model);
+      const raw = (this.meta.inputTokens / window) * 100;
       const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
       const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
-      claudeChips.push(`<span class="sb-chip sb-context${cls}"><i class="ph ph-stack"></i>${pctStr}%</span>`);
+      claudeChips.push(`<span class="sb-chip sb-context${cls}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens"><i class="ph ph-stack"></i>${pctStr}%</span>`);
     }
     if (f.includes("thinking") && this.meta.hasThinking) {
       claudeChips.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
