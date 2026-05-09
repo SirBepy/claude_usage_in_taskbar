@@ -846,3 +846,30 @@
 @keyframes chat-top-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Ctrl-held keyboard hint badges */
+#sessions-list.kbd-hint-active li[data-kbd-hint]::before {
+  content: attr(data-kbd-hint);
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: var(--bg);
+  border-radius: 3px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  z-index: 2;
+  pointer-events: none;
+  line-height: 1;
+}
+
+#sessions-list.kbd-hint-active li.active[data-kbd-hint]::before {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--bg);
+}

@@ -2,6 +2,7 @@ import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import { showView } from "../../shared/navigation";
 import { invoke } from "../../shared/ipc";
+import * as shortcuts from "../../shared/shortcuts";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
@@ -71,6 +72,7 @@ interface SessionsState {
   pendingNewSession: PendingNewSession | null;
   statusbar: SessionStatusbar | null;
   prevBusyMap: Map<string, boolean>;
+  sortedSessionIds: string[];
 }
 
 // Module-level singleton. mountId protects against stale-mount writes when
@@ -87,8 +89,12 @@ let state: SessionsState = {
   pendingNewSession: null,
   statusbar: null,
   prevBusyMap: new Map(),
+  sortedSessionIds: [],
 };
 let nextMountId = 1;
+
+let _pane: HTMLElement | null = null;
+let _pendingOpenPicker = false;
 
 let activeCtxMenu: HTMLElement | null = null;
 
@@ -97,6 +103,29 @@ function closeCtxMenu(): void {
     activeCtxMenu.remove();
     activeCtxMenu = null;
   }
+}
+
+export function triggerNewSessionGlobal(): void {
+  if (_pane) {
+    void startNewSession(_pane);
+  } else {
+    _pendingOpenPicker = true;
+    showView("sessions");
+  }
+}
+
+export function selectSessionByIndex(index: number): void {
+  if (!_pane) return;
+  const id = state.sortedSessionIds[index];
+  if (id) void selectSession(id, _pane);
+}
+
+export function closeFocusedChat(): void {
+  const id = state.selectedId;
+  if (!id) return;
+  const sess = state.sessions.find(s => s.session_id === id);
+  if (!sess?.busy) return;
+  void invoke<void>("cancel_turn", { sessionId: id });
 }
 
 function openCtxMenu(
@@ -239,11 +268,13 @@ function renderSidebar(listEl: HTMLElement): void {
   );
 
   const sorted = sortSessions(filtered, sort, unread);
+  state.sortedSessionIds = sorted.map(s => s.session_id);
 
-  const realRows = sorted.map(s => {
+  const realRows = sorted.map((s, i) => {
     const isActive = s.session_id === state.selectedId;
     const indicator = statusIndicator(s, unread, style, escapeHtml);
-    return `<li data-session-id="${escapeHtml(s.session_id)}" class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""}">
+    const kbdHint = i < 9 ? ` data-kbd-hint="${i + 1}"` : "";
+    return `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""}">
       ${indicator}
       <div class="session-row-text">
         <span class="session-row-project">${escapeHtml(projectName(s))}</span>
@@ -960,6 +991,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     pendingNewSession: null,
     statusbar: null,
     prevBusyMap: new Map(),
+    sortedSessionIds: [],
   };
 
   render(template(), root);
@@ -973,6 +1005,23 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     console.error("[sessions] view template missing expected nodes");
     return () => { /* no-op */ };
   }
+
+  _pane = pane;
+  if (_pendingOpenPicker) {
+    _pendingOpenPicker = false;
+    void startNewSession(pane);
+  }
+
+  // Register chats-view shortcuts
+  for (let i = 0; i < 9; i++) {
+    const idx = i;
+    shortcuts.register(`open-chat-${i + 1}`, () => selectSessionByIndex(idx));
+  }
+  shortcuts.register("close-chat", closeFocusedChat);
+
+  let unlistenCtrlHeld: (() => void) | null = shortcuts.onCtrlHeld((held) => {
+    listEl.classList.toggle("kbd-hint-active", held);
+  });
 
   // Initial load
   await refreshSessions();
@@ -1047,6 +1096,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   });
 
   return () => {
+    for (let i = 1; i <= 9; i++) shortcuts.unregister(`open-chat-${i}`);
+    shortcuts.unregister("close-chat");
+    if (unlistenCtrlHeld) { unlistenCtrlHeld(); unlistenCtrlHeld = null; }
+    _pane = null;
     closeCtxMenu();
     if (state.unlistenInstances) {
       try { state.unlistenInstances(); } catch { /* ignore */ }
@@ -1079,7 +1132,7 @@ function template() {
         >
           <i class="ph ph-list"></i>
         </button>
-        <h2>Sessions</h2>
+        <h2>Chats</h2>
         <button
           class="icon-btn"
           id="historyBtn"
@@ -1140,6 +1193,7 @@ export async function renderDetachedSession(
     pendingNewSession: null,
     statusbar: null,
     prevBusyMap: new Map(),
+    sortedSessionIds: [],
   };
 
   // Solo chat layout: just the .session-pane, no sidebar, no header burger.
