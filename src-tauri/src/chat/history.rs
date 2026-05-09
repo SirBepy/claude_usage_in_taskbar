@@ -5,7 +5,7 @@
 use crate::chat::parser::parse_line;
 use crate::types::chat::{ChatEvent, HistoryPage};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 pub fn replay(path: &Path) -> Result<Vec<ChatEvent>, String> {
@@ -36,99 +36,134 @@ fn is_message_event(ev: &ChatEvent) -> bool {
     )
 }
 
-/// Read a paginated window of the JSONL transcript at `path`.
+/// Read a paginated window of the JSONL transcript at `path` by tail-reading
+/// from EOF backward in 64KB chunks until `message_limit` message-class
+/// events have been parsed (or the file start is reached). First-page time
+/// is O(20 messages of bytes) regardless of total file size.
 ///
-/// - `before_seq = None` → window ends at EOF (the last lines).
-/// - `before_seq = Some(s)` → window ends at seq `s - 1` (exclusive of `s`).
-/// - `message_limit` is in *messages*, not events. Walk backward from the end
-///   of the window counting only message-class events; stop when the count
-///   reaches the limit or when seq 0 is reached.
+/// `seq` values are *byte offsets* of line starts. Frontend treats them as
+/// opaque monotonic ids: pass the previous page's `oldest_seq` as
+/// `before_seq` to fetch the page above it.
 ///
-/// All events in the resolved [oldest_seq, newest_seq] range are returned in
-/// forward order, including non-message events like tool_use/tool_result that
-/// fall between the message boundaries.
+/// - `before_seq = None` → tail-read from EOF.
+/// - `before_seq = Some(off)` → tail-read from byte offset `off` (exclusive).
+/// - `message_limit` counts only `UserMessage` / `AssistantMessage` events.
+///   Tool calls, results, notifications, session boundaries, and turn-usage
+///   records ride along but do not count toward the limit.
 ///
 /// Orphan tool_results: a page may contain a `ToolResult` whose matching
-/// `ToolUse` lives at a seq below `oldest_seq`. The renderer tolerates this
-/// (tool_result rendering does not look up the matching tool_use), so no
-/// backend expansion is performed.
+/// `ToolUse` lives below `oldest_seq`. The renderer tolerates this.
 pub fn read_page(
     path: &Path,
     before_seq: Option<u64>,
     message_limit: u32,
 ) -> Result<HistoryPage, String> {
-    if matches!(before_seq, Some(0)) || message_limit == 0 {
-        return Ok(HistoryPage {
-            events: Vec::new(),
-            oldest_seq: 0,
-            newest_seq: 0,
-            has_more: false,
-        });
+    if message_limit == 0 || matches!(before_seq, Some(0)) {
+        return Ok(empty_page());
     }
 
-    let f = File::open(path).map_err(|e| format!("open {}: {}", path.display(), e))?;
-    let reader = BufReader::new(f);
-    let mut all: Vec<(u64, ChatEvent)> = Vec::new();
-    for (idx, line) in reader.lines().enumerate() {
-        let line = line.map_err(|e| e.to_string())?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Some(ev) = parse_line(&line) {
-            all.push((idx as u64, ev));
-        }
+    let mut f = File::open(path).map_err(|e| format!("open {}: {}", path.display(), e))?;
+    let file_len = f
+        .metadata()
+        .map_err(|e| e.to_string())?
+        .len();
+    let upper: u64 = before_seq.unwrap_or(file_len).min(file_len);
+    if upper == 0 {
+        return Ok(empty_page());
     }
 
-    if all.is_empty() {
-        return Ok(HistoryPage {
-            events: Vec::new(),
-            oldest_seq: 0,
-            newest_seq: 0,
-            has_more: false,
-        });
-    }
+    const CHUNK: usize = 64 * 1024;
+    let mut tail_buf: Vec<u8> = Vec::with_capacity(CHUNK * 2);
+    let mut window_start: u64 = upper;
+    let mut events: Vec<(u64, ChatEvent)> = Vec::new();
+    let mut messages: u32 = 0;
+    let mut reached_start = false;
 
-    let upper_idx: usize = match before_seq {
-        None => all.len() - 1,
-        Some(s) => match all.iter().rposition(|(seq, _)| *seq < s) {
-            Some(i) => i,
-            None => {
-                return Ok(HistoryPage {
-                    events: Vec::new(),
-                    oldest_seq: 0,
-                    newest_seq: 0,
-                    has_more: false,
-                });
-            }
-        },
-    };
-
-    let mut msg_count: u32 = 0;
-    let mut lower_idx = upper_idx;
     loop {
-        if is_message_event(&all[lower_idx].1) {
-            msg_count += 1;
-            if msg_count >= message_limit {
-                break;
+        let need_more = window_start > 0
+            && tail_buf
+                .iter()
+                .rposition(|&b| b == b'\n')
+                .is_none();
+        if need_more {
+            let read_size = std::cmp::min(CHUNK as u64, window_start) as usize;
+            let read_start = window_start - read_size as u64;
+            f.seek(SeekFrom::Start(read_start)).map_err(|e| e.to_string())?;
+            let mut chunk = vec![0u8; read_size];
+            f.read_exact(&mut chunk).map_err(|e| e.to_string())?;
+            chunk.extend_from_slice(&tail_buf);
+            tail_buf = chunk;
+            window_start = read_start;
+        }
+
+        let newline_pos = tail_buf.iter().rposition(|&b| b == b'\n');
+        let line_start_in_buf: usize = match newline_pos {
+            Some(pos) => pos + 1,
+            None => {
+                if window_start == 0 {
+                    reached_start = true;
+                    0
+                } else {
+                    // Buffer has no newline yet and we haven't reached file
+                    // start — the next iteration will fetch more bytes.
+                    continue;
+                }
+            }
+        };
+
+        let mut line_bytes = &tail_buf[line_start_in_buf..];
+        if line_bytes.last() == Some(&b'\n') {
+            line_bytes = &line_bytes[..line_bytes.len() - 1];
+        }
+        if line_bytes.last() == Some(&b'\r') {
+            line_bytes = &line_bytes[..line_bytes.len() - 1];
+        }
+
+        let line_offset = window_start + line_start_in_buf as u64;
+        let s = std::str::from_utf8(line_bytes).unwrap_or("");
+        if !s.trim().is_empty() {
+            if let Some(ev) = parse_line(s) {
+                let is_msg = is_message_event(&ev);
+                events.push((line_offset, ev));
+                if is_msg {
+                    messages += 1;
+                }
             }
         }
-        if lower_idx == 0 {
+
+        match newline_pos {
+            Some(pos) => tail_buf.truncate(pos),
+            None => tail_buf.clear(),
+        }
+
+        if messages >= message_limit {
             break;
         }
-        lower_idx -= 1;
+        if reached_start && tail_buf.is_empty() {
+            break;
+        }
     }
 
-    let slice = &all[lower_idx..=upper_idx];
-    let oldest_seq = slice.first().map(|(s, _)| *s).unwrap_or(0);
-    let newest_seq = slice.last().map(|(s, _)| *s).unwrap_or(0);
-    let events: Vec<ChatEvent> = slice.iter().map(|(_, e)| e.clone()).collect();
-    let has_more = oldest_seq > 0;
+    events.reverse();
+    let oldest_seq = events.first().map(|(o, _)| *o).unwrap_or(0);
+    let newest_seq = events.last().map(|(o, _)| *o).unwrap_or(0);
+    let has_more = oldest_seq > 0 && !events.is_empty();
+    let evs: Vec<ChatEvent> = events.into_iter().map(|(_, e)| e).collect();
     Ok(HistoryPage {
-        events,
+        events: evs,
         oldest_seq,
         newest_seq,
         has_more,
     })
+}
+
+fn empty_page() -> HistoryPage {
+    HistoryPage {
+        events: Vec::new(),
+        oldest_seq: 0,
+        newest_seq: 0,
+        has_more: false,
+    }
 }
 
 #[cfg(test)]
@@ -237,6 +272,13 @@ mod tests {
         )
     }
 
+    fn count_messages(events: &[ChatEvent]) -> usize {
+        events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::UserMessage { .. } | ChatEvent::AssistantMessage { .. }))
+            .count()
+    }
+
     #[test]
     fn read_page_last_n_messages() {
         let dir = tempfile::tempdir().unwrap();
@@ -249,9 +291,8 @@ mod tests {
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         write_jsonl(&p, &refs);
         let page = read_page(&p, None, 20).unwrap();
-        assert_eq!(page.events.len(), 20);
-        assert_eq!(page.oldest_seq, 40);
-        assert_eq!(page.newest_seq, 59);
+        assert_eq!(count_messages(&page.events), 20);
+        assert!(page.oldest_seq > 0);
         assert!(page.has_more);
     }
 
@@ -271,6 +312,7 @@ mod tests {
         let page = read_page(&p, None, 10).unwrap();
         assert_eq!(page.oldest_seq, 0);
         assert!(!page.has_more);
+        assert_eq!(count_messages(&page.events), 10);
         assert_eq!(page.events.len(), 20);
     }
 
@@ -287,8 +329,9 @@ mod tests {
         write_jsonl(&p, &refs);
         let p1 = read_page(&p, None, 20).unwrap();
         let p2 = read_page(&p, Some(p1.oldest_seq), 20).unwrap();
-        assert_eq!(p2.newest_seq + 1, p1.oldest_seq);
-        assert_eq!(p2.events.len(), 20);
+        // Page 2 ends strictly before page 1 begins.
+        assert!(p2.newest_seq < p1.oldest_seq);
+        assert_eq!(count_messages(&p2.events), 20);
         assert!(p2.has_more);
     }
 
@@ -305,7 +348,7 @@ mod tests {
         let p1 = read_page(&p, None, 10).unwrap();
         let p2 = read_page(&p, Some(p1.oldest_seq), 10).unwrap();
         assert!(!p2.has_more);
-        assert_eq!(p1.events.len() + p2.events.len(), 15);
+        assert_eq!(count_messages(&p1.events) + count_messages(&p2.events), 15);
     }
 
     #[test]
@@ -321,11 +364,12 @@ mod tests {
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         write_jsonl(&p, &refs);
         let page = read_page(&p, None, 2).unwrap();
-        assert_eq!(page.oldest_seq, 1);
-        assert_eq!(page.newest_seq, 3);
+        // Window: user_line + tool_result_line + assistant_line = 3 events.
+        // The earlier tool_use_line is excluded; the orphan tool_result is in.
         assert_eq!(page.events.len(), 3);
-        assert!(page.has_more);
+        assert_eq!(count_messages(&page.events), 2);
         assert!(matches!(page.events[1], ChatEvent::ToolResult { .. }));
+        assert!(page.has_more);
     }
 
     #[test]
@@ -338,5 +382,32 @@ mod tests {
         assert!(!page.has_more);
         assert_eq!(page.oldest_seq, 0);
         assert_eq!(page.newest_seq, 0);
+    }
+
+    #[test]
+    fn read_page_handles_lines_spanning_chunk_boundary() {
+        // Build a transcript where some lines are larger than the 64KB read
+        // chunk to verify the tail-read buffer correctly grows when the
+        // newest line spans more than one chunk's worth of bytes.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("big.jsonl");
+        let big_text = "x".repeat(80 * 1024);
+        let lines = vec![
+            user_line("first", 0),
+            assistant_line(&big_text, 1),
+            user_line("after-big", 2),
+        ];
+        let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        write_jsonl(&p, &refs);
+        let page = read_page(&p, None, 3).unwrap();
+        assert_eq!(count_messages(&page.events), 3);
+        assert!(!page.has_more);
+        match &page.events[1] {
+            ChatEvent::AssistantMessage { content, .. } => match &content[0] {
+                crate::types::chat::ContentBlock::Text { text } => assert_eq!(text.len(), 80 * 1024),
+                _ => panic!("expected text block"),
+            },
+            _ => panic!("expected AssistantMessage"),
+        }
     }
 }
