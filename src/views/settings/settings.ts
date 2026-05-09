@@ -166,7 +166,7 @@ interface ShortcutsUIState {
   captureListener: ((e: KeyboardEvent) => void) | null;
 }
 
-function renderShortcutsSection(container: HTMLElement): void {
+function renderShortcutsSection(container: HTMLElement): () => void {
   const s: ShortcutsUIState = { capturingId: null, conflictMsg: null, captureListener: null };
 
   const re = () => {
@@ -284,6 +284,7 @@ function renderShortcutsSection(container: HTMLElement): void {
   }
 
   re();
+  return () => stopCapture();
 }
 
 export async function renderSettingsView(
@@ -305,12 +306,12 @@ export async function renderSettingsView(
   if (logoutBtn) logoutBtn.onclick = () => { void api.logout(); };
 
   const shortcutsContainer = root.querySelector<HTMLElement>("#shortcuts-section-container");
-  if (shortcutsContainer) renderShortcutsSection(shortcutsContainer);
+  const cleanupShortcuts = shortcutsContainer ? renderShortcutsSection(shortcutsContainer) : null;
 
   try { await hydrateSettingsRoot(); }
   catch (e) { console.error("[settings root] render failed", e); }
 
-  return () => { /* no teardown */ };
+  return () => { cleanupShortcuts?.(); };
 }
 
 function template() {
