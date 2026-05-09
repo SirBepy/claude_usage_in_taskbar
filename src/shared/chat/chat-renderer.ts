@@ -355,10 +355,14 @@ export class ChatRenderer {
         });
         touched = true;
         break;
-      case "turn_usage":
-        // Keep the highest inputTokens seen (latest turn always has the most context).
-        if (Number(ev.input_tokens) > this.meta.inputTokens) {
-          this.meta.inputTokens = Number(ev.input_tokens);
+      case "turn_usage": {
+        // Total context = input + cache_creation + cache_read.
+        // Claude Code uses prompt caching aggressively, so most context lives
+        // in cache_read_input_tokens, not input_tokens alone. Using only
+        // input_tokens would show ~0% for any session with a warm cache.
+        const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens);
+        if (totalCtx > this.meta.inputTokens) {
+          this.meta.inputTokens = totalCtx;
         }
         this.meta.totalCostUsd += ev.total_cost_usd;
         this.meta.hasUsage = true;
@@ -366,6 +370,7 @@ export class ChatRenderer {
         if (ev.model) this.meta.model = ev.model;
         this.onMetaUpdate?.(this.getMeta());
         return; // no DOM update needed
+      }
       default:
         break; // unknown variant, ignore for forward compat
     }
