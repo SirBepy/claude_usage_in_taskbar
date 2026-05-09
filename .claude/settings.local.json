@@ -134,7 +134,12 @@
       "Bash(C:/Users/tecno/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/scripts/start-server.sh *)",
       "Bash(C:/Users/tecno/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh *)",
       "Bash(pnpm test *)",
-      "Bash(pnpm tsc *)"
+      "Bash(pnpm tsc *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src\\\\views\\\\sessions\\\\sessions.ts\")",
+      "Bash(Measure-Object -Line)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(cargo build *)",
+      "PowerShell(pnpm vitest *)"
     ]
   }
 }
