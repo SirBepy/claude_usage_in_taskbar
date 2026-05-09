@@ -1,5 +1,4 @@
 // src/shared/shortcuts.ts
-import { getActiveView } from "./navigation";
 
 export interface ShortcutDef {
   id: string;
@@ -142,6 +141,10 @@ function fireCtrlHeld(held: boolean): void {
 }
 
 function _init(): void {
+  // Lazy import avoids loading DOM-dependent navigation module in test environments.
+  let getActiveView: (() => string) | null = null;
+  void import("./navigation").then(m => { getActiveView = m.getActiveView; });
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "Control" || e.key === "Meta") {
       fireCtrlHeld(true);
@@ -168,7 +171,7 @@ function _init(): void {
       ) return;
     }
 
-    if (def.context && getActiveView() !== def.context) return;
+    if (def.context && getActiveView && getActiveView() !== def.context) return;
 
     const handler = handlers.get(def.id);
     if (!handler) return;
