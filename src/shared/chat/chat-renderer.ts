@@ -104,10 +104,92 @@ export class ChatRenderer {
   async loadFromStore(cwd?: string): Promise<void> {
     if (!this.sessionId) return;
     const sid = this.sessionId;
-    const events = await sessionEvents.ensureLoaded(sid, cwd);
-    // Bail if attach swapped us to a different session during the await.
+    this.cwdHint = cwd;
+    const events = await sessionEvents.loadInitial(sid, cwd);
     if (this.sessionId !== sid) return;
     this.bulkLoadEvents(events);
+    this.installTopSentinel();
+  }
+
+  private cwdHint: string | undefined = undefined;
+  private topSentinel: HTMLElement | null = null;
+  private topObserver: IntersectionObserver | null = null;
+
+  private installTopSentinel(): void {
+    this.removeTopSentinel();
+    if (!this.sessionId) return;
+    if (!sessionEvents.hasMore(this.sessionId)) return;
+    const sentinel = document.createElement("div");
+    sentinel.className = "chat-top-sentinel";
+    sentinel.innerHTML = '<div class="chat-top-spinner" hidden></div>';
+    this.container.prepend(sentinel);
+    this.topSentinel = sentinel;
+    this.topObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          void this.fetchOlder();
+        }
+      }
+    });
+    this.topObserver.observe(sentinel);
+  }
+
+  private removeTopSentinel(): void {
+    if (this.topObserver) {
+      try { this.topObserver.disconnect(); } catch { /* ignore */ }
+      this.topObserver = null;
+    }
+    if (this.topSentinel && this.topSentinel.parentNode) {
+      this.topSentinel.parentNode.removeChild(this.topSentinel);
+    }
+    this.topSentinel = null;
+  }
+
+  private async fetchOlder(): Promise<void> {
+    if (!this.sessionId) return;
+    const sid = this.sessionId;
+    if (!sessionEvents.hasMore(sid)) {
+      this.removeTopSentinel();
+      return;
+    }
+    const spinner = this.topSentinel?.querySelector(".chat-top-spinner") as HTMLElement | null;
+    if (spinner) spinner.hidden = false;
+    const scroller = this.findScroller();
+    const oldScrollTop = scroller ? scroller.scrollTop : 0;
+    const oldScrollHeight = scroller ? scroller.scrollHeight : 0;
+
+    const older = await sessionEvents.loadOlder(sid, this.cwdHint);
+    if (this.sessionId !== sid) return;
+
+    if (!older || older.length === 0) {
+      if (spinner) spinner.hidden = true;
+      if (!sessionEvents.hasMore(sid)) this.removeTopSentinel();
+      return;
+    }
+
+    const allEvents = sessionEvents.events(sid);
+    this.bulkLoadEvents(allEvents);
+
+    if (scroller) {
+      const newScrollHeight = scroller.scrollHeight;
+      scroller.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+    }
+
+    if (sessionEvents.hasMore(sid)) {
+      this.installTopSentinel();
+    }
+  }
+
+  private findScroller(): HTMLElement | null {
+    let n: HTMLElement | null = this.container;
+    while (n) {
+      const overflowY = getComputedStyle(n).overflowY;
+      if ((overflowY === "auto" || overflowY === "scroll") && n.scrollHeight > n.clientHeight) {
+        return n;
+      }
+      n = n.parentElement;
+    }
+    return null;
   }
 
   detach(): void {
@@ -115,6 +197,7 @@ export class ChatRenderer {
       try { this.unsubscribe(); } catch { /* ignore */ }
       this.unsubscribe = null;
     }
+    this.removeTopSentinel();
     this.streamingIndex = null;
     this.dirtyIndices.clear();
     this.sessionId = null;
@@ -246,7 +329,7 @@ export class ChatRenderer {
         touched = true;
         break;
       case "turn_usage":
-        this.meta.inputTokens = ev.input_tokens;
+        this.meta.inputTokens = Number(ev.input_tokens);
         this.meta.totalCostUsd = ev.total_cost_usd;
         if (ev.has_thinking) this.meta.hasThinking = true;
         this.onMetaUpdate?.(this.getMeta());

@@ -5,6 +5,7 @@
 //! file. Instead, we drop `export` from the derives and write the file
 //! ourselves by composing each type's `decl()` into a single output.
 
+use claude_usage_tauri_lib::ipc::misc::GitInfo;
 use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
@@ -51,7 +52,11 @@ fn emit_ipc_types() {
 
     // notifications (settings module)
     out.push_str(&decl::<DisplayMode>());
+    out.push_str(&decl::<AutoUpdateMode>());
     out.push_str(&decl::<Settings>());
+
+    // misc IPC
+    out.push_str(&decl::<GitInfo>());
 
     // tokens
     out.push_str(&decl::<TokenRecord>());

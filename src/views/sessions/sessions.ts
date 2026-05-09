@@ -20,8 +20,6 @@ import {
   loadStateStyle,
   LS_SORT,
 } from "./sessions-helpers";
-import type { SessionSort } from "./sessions-helpers";
-
 type SortChoice = "name" | "recent";
 const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
 

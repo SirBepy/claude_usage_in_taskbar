@@ -167,7 +167,8 @@ pub fn get_update_state(app: AppHandle) -> serde_json::Value {
     app.state::<crate::state::AppState>().update_state.lock().unwrap().clone()
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct GitInfo {
     pub branch: Option<String>,
     pub repo: Option<String>,
