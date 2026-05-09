@@ -14,10 +14,11 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpListener;
 
@@ -319,6 +320,123 @@ async fn poll_first_user_prompt(path: &std::path::Path) -> Option<String> {
     None
 }
 
+// ─── Permission / question relay ───────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct PermRequestBody {
+    id: String,
+    tool_name: String,
+    input: Value,
+    #[serde(default)]
+    session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PermRespondBody {
+    id: String,
+    behavior: String,
+    #[serde(default)]
+    updated_input: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct QuestRequestBody {
+    id: String,
+    questions: Value,
+    #[serde(default)]
+    session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct QuestRespondBody {
+    id: String,
+    answers: Value,
+}
+
+async fn on_permission_request(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(body): Json<PermRequestBody>,
+) -> impl IntoResponse {
+    let state = ctx.app.state::<AppState>();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
+    {
+        let mut pending = state.pending.lock().await;
+        pending.insert(body.id.clone(), tx);
+    }
+    let _ = ctx.app.emit(
+        "permission-requested",
+        json!({
+            "id": body.id,
+            "tool_name": body.tool_name,
+            "input": body.input,
+            "session_id": body.session_id,
+        }),
+    );
+    match tokio::time::timeout(Duration::from_secs(300), rx).await {
+        Ok(Ok(val)) => (StatusCode::OK, Json(val)),
+        _ => {
+            state.pending.lock().await.remove(&body.id);
+            (StatusCode::OK, Json(json!({"behavior": "deny", "message": "user did not respond in time"})))
+        }
+    }
+}
+
+async fn on_permission_respond(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(body): Json<PermRespondBody>,
+) -> impl IntoResponse {
+    let state = ctx.app.state::<AppState>();
+    let tx = state.pending.lock().await.remove(&body.id);
+    if let Some(tx) = tx {
+        let val = json!({"behavior": body.behavior, "updatedInput": body.updated_input});
+        let _ = tx.send(val);
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
+async fn on_question_request(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(body): Json<QuestRequestBody>,
+) -> impl IntoResponse {
+    let state = ctx.app.state::<AppState>();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
+    {
+        let mut pending = state.pending.lock().await;
+        pending.insert(body.id.clone(), tx);
+    }
+    let _ = ctx.app.emit(
+        "question-requested",
+        json!({
+            "id": body.id,
+            "questions": body.questions,
+            "session_id": body.session_id,
+        }),
+    );
+    match tokio::time::timeout(Duration::from_secs(300), rx).await {
+        Ok(Ok(val)) => (StatusCode::OK, Json(val)),
+        _ => {
+            state.pending.lock().await.remove(&body.id);
+            (StatusCode::OK, Json(json!({"answers": {}})))
+        }
+    }
+}
+
+async fn on_question_respond(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(body): Json<QuestRespondBody>,
+) -> impl IntoResponse {
+    let state = ctx.app.state::<AppState>();
+    let tx = state.pending.lock().await.remove(&body.id);
+    if let Some(tx) = tx {
+        let _ = tx.send(json!({"answers": body.answers}));
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
 /// Fixed port matching the Electron app + README + installer + user hook scripts
 /// at `~/.claude/aiusage-hook.{ps1,sh}`. Changing this breaks every already-installed
 /// hook client, so it stays pinned.
@@ -343,6 +461,11 @@ pub async fn spawn(app: AppHandle) -> Result<u16> {
         }
     }
 
+    // Write hooks_port.txt so the MCP server subprocess can discover the port.
+    if let Ok(port_file) = paths::hooks_port_file() {
+        let _ = std::fs::write(&port_file, port.to_string());
+    }
+
     let ctx = Arc::new(HookCtx { app: app.clone() });
     let router = Router::new()
         .route("/refresh", post(on_refresh))
@@ -350,6 +473,10 @@ pub async fn spawn(app: AppHandle) -> Result<u16> {
         .route("/quit", post(on_quit))
         .route("/hooks/session-start", post(on_session_start))
         .route("/hooks/session-end", post(on_session_end))
+        .route("/permissions/request", post(on_permission_request))
+        .route("/permissions/respond", post(on_permission_respond))
+        .route("/questions/request", post(on_question_request))
+        .route("/questions/respond", post(on_question_respond))
         .with_state(ctx);
 
     tokio::spawn(async move {
