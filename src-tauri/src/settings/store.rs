@@ -19,9 +19,8 @@ use super::identity::dedupe_projects_by_path_key;
 pub fn load(path: &Path) -> Settings {
     let mut s: Settings = match std::fs::read_to_string(path) {
         Err(_) => Settings::default(),
-        Ok(raw) => match serde_json::from_str::<Settings>(&raw) {
-            Ok(parsed) => parsed,
-            Err(err) => {
+        Ok(raw) => {
+            let backup_and_default = |err: serde_json::Error| -> Settings {
                 let ts = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
@@ -33,8 +32,27 @@ pub fn load(path: &Path) -> Settings {
                     backup.display()
                 );
                 Settings::default()
+            };
+            match serde_json::from_str::<serde_json::Value>(&raw) {
+                Err(err) => backup_and_default(err),
+                Ok(mut v) => {
+                    // Legacy snake_case → camelCase migration. We used to use
+                    // `#[serde(alias = "auto_update")]` here, but ts-rs warns
+                    // on `alias`, so the migration runs by hand instead.
+                    if let Some(obj) = v.as_object_mut() {
+                        if !obj.contains_key("autoUpdate") {
+                            if let Some(legacy) = obj.remove("auto_update") {
+                                obj.insert("autoUpdate".to_string(), legacy);
+                            }
+                        }
+                    }
+                    match serde_json::from_value::<Settings>(v) {
+                        Ok(parsed) => parsed,
+                        Err(err) => backup_and_default(err),
+                    }
+                }
             }
-        },
+        }
     };
     // Migrate stale default from earlier tauri-rewrite builds that shipped
     // with a 1-hour poll before the 10-minute default landed. No UI ever
@@ -143,6 +161,16 @@ mod tests {
             })
             .collect();
         assert_eq!(backups.len(), 1, "exactly one backup file");
+    }
+
+    #[test]
+    fn load_migrates_legacy_snake_case_auto_update_key() {
+        use crate::types::AutoUpdateMode;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{ "auto_update": false }"#).unwrap();
+        let s = load(&path);
+        assert_eq!(s.auto_update, AutoUpdateMode::Never);
     }
 
     #[test]

@@ -21,10 +21,10 @@ pub struct Character {
     pub version: u32,
     pub icon: String,
     /// Game slug from character.json (e.g. "warcraft3").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub game: Option<String>,
     /// Pretty game name from game.json, injected by the loader.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub game_label: Option<String>,
     /// True for _shared bundles — excluded from the UI list.
     #[serde(default)]

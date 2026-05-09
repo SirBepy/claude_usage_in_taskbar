@@ -408,6 +408,7 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
 /// auto-installing depending on the current `autoUpdate` setting. Lives for the
 /// app lifetime so toggling the setting from the UI takes effect on the next
 /// tick (no restart required).
+#[cfg(not(dev))]
 async fn auto_update_loop(app: tauri::AppHandle) {
     use crate::types::AutoUpdateMode;
     use tauri::Manager;
@@ -416,7 +417,6 @@ async fn auto_update_loop(app: tauri::AppHandle) {
     let mut did_startup_check = false;
     loop {
         let mode = app.state::<crate::state::AppState>().settings.lock().unwrap().auto_update;
-        #[cfg(not(dev))]
         match mode {
             AutoUpdateMode::Never => {}
             AutoUpdateMode::OnStartup => {
@@ -431,4 +431,9 @@ async fn auto_update_loop(app: tauri::AppHandle) {
         did_startup_check = true;
         tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
     }
+}
+
+#[cfg(dev)]
+async fn auto_update_loop(_app: tauri::AppHandle) {
+    // Updater is disabled in dev builds; loop body is a no-op.
 }
