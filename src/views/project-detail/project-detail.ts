@@ -46,7 +46,7 @@ function instanceRowHtml(i: Instance, stats: InstanceStats | undefined): string 
   const tokens = stats?.tokens ?? 0;
   const turns = stats?.turns ?? 0;
   const prompts = stats?.prompts ?? 0;
-  const fallback = `Session ${i.session_id.slice(0, 8)}`;
+  const fallback = `Chat ${i.session_id.slice(0, 8)}`;
   const label = (i.name && i.name.trim()) || fallback;
   return `
     <div class="instance-row clickable" data-session-id="${i.session_id}">
@@ -446,12 +446,12 @@ function renderSessionsList(cwd: string, range: string): void {
     </tr>`;
   }).join("");
   const seeAll = sorted.length > 5
-    ? `<button class="see-all-link" id="seeAllSessionsBtn">See all ${sorted.length} sessions</button>`
+    ? `<button class="see-all-link" id="seeAllSessionsBtn">See all ${sorted.length} chats</button>`
     : "";
   list.innerHTML = `<div class="section" style="padding:10px 14px">
-    <div class="section-title" style="margin-bottom:8px">Recent sessions</div>
+    <div class="section-title" style="margin-bottom:8px">Recent chats</div>
     <table class="session-table"><thead><tr>
-      <th>when</th><th>session</th><th>tokens</th>
+      <th>when</th><th>chat</th><th>tokens</th>
     </tr></thead><tbody>${rowsHTML}</tbody></table>
     ${seeAll}
   </div>`;
