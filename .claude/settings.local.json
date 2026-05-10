@@ -147,7 +147,8 @@
       "WebFetch(domain:docs.claude.com)",
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src-tauri\\\\src\" -Recurse -Filter \"*.rs\")",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "PowerShell(pnpm tsc *)"
     ]
   }
 }
