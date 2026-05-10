@@ -411,26 +411,8 @@ pub async fn load_history(session_id: String, cwd: Option<String>) -> Result<Vec
     // Tauri async runtime stays responsive to other IPC calls while the
     // session loads.
     tauri::async_runtime::spawn_blocking(move || {
-        if let Some(cwd_str) = cwd.as_deref().filter(|s| !s.is_empty()) {
-            if let Some(p) = crate::tokens::transcript_for_session(Path::new(cwd_str), &session_id) {
-                return crate::chat::history::replay(&p);
-            }
-            // Fall through to scan: cwd path may not match the encoded dir
-            // exactly (case differences on Windows, junctions, etc.).
-        }
-
-        let projects = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
-        let entries = match std::fs::read_dir(&projects) {
-            Ok(e) => e,
-            Err(_) => return Err(format!("no transcript found for session {session_id}")),
-        };
-        for entry in entries.flatten() {
-            let candidate = entry.path().join(format!("{session_id}.jsonl"));
-            if candidate.exists() {
-                return crate::chat::history::replay(&candidate);
-            }
-        }
-        Err(format!("no transcript found for session {session_id}"))
+        let path = crate::chat::history::locate_transcript(&session_id, cwd.as_deref())?;
+        crate::chat::history::replay(&path)
     })
     .await
     .map_err(|e| format!("join: {}", e))?
@@ -454,23 +436,8 @@ pub async fn load_history_page(
     let limit = message_limit.clamp(1, 500);
 
     tauri::async_runtime::spawn_blocking(move || {
-        if let Some(cwd_str) = cwd.as_deref().filter(|s| !s.is_empty()) {
-            if let Some(p) = crate::tokens::transcript_for_session(Path::new(cwd_str), &session_id) {
-                return crate::chat::history::read_page(&p, before_seq, limit);
-            }
-        }
-        let projects = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
-        let entries = match std::fs::read_dir(&projects) {
-            Ok(e) => e,
-            Err(_) => return Err(format!("no transcript found for session {session_id}")),
-        };
-        for entry in entries.flatten() {
-            let candidate = entry.path().join(format!("{session_id}.jsonl"));
-            if candidate.exists() {
-                return crate::chat::history::read_page(&candidate, before_seq, limit);
-            }
-        }
-        Err(format!("no transcript found for session {session_id}"))
+        let path = crate::chat::history::locate_transcript(&session_id, cwd.as_deref())?;
+        crate::chat::history::read_page(&path, before_seq, limit)
     })
     .await
     .map_err(|e| format!("join: {}", e))?
