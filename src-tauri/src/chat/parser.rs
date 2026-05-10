@@ -172,7 +172,6 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                     model: v.get("model").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                     cwd: v.get("cwd").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                     timestamp: ts,
-                    context_window: v.get("context_window").and_then(|v| v.as_u64()).unwrap_or(0),
                 }]
             } else {
                 vec![]

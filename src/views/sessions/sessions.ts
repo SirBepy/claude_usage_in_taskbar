@@ -1331,7 +1331,7 @@ function formatDuration(startedAt: string): string {
 class SessionStatusbar {
   private container: HTMLElement;
   private fields: string[];
-  private meta: SessionMeta = { model: null, inputTokens: 0, contextWindow: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private gitInfo: GitInfo = { branch: null, repo: null };
   private startedAt: string | null;
   private cwd: string | null;
@@ -1389,7 +1389,7 @@ class SessionStatusbar {
       claudeChips.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
     }
     if (f.includes("context") && this.meta.inputTokens > 0) {
-      const window = this.meta.contextWindow || modelContextWindow(this.meta.model);
+      const window = modelContextWindow(this.meta.model);
       const raw = (this.meta.inputTokens / window) * 100;
       const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
       const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";

@@ -29,8 +29,6 @@ export interface SessionMeta {
   model: string | null;
   /** Full context window input for the latest completed turn (input + cache_creation + cache_read). */
   inputTokens: number;
-  /** Context window size in tokens from the stream-json init line. 0 = unknown. */
-  contextWindow: number;
   hasThinking: boolean;
   /** Accumulated cost estimate across all turns (local API-rate estimate, not actual charge). */
   totalCostUsd: number;
@@ -72,7 +70,7 @@ export class ChatRenderer {
   private unsubscribe: (() => void) | null = null;
   private streamingIndex: number | null = null;
   private sessionId: string | null = null;
-  private meta: SessionMeta = { model: null, inputTokens: 0, contextWindow: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
 
   constructor(container: HTMLElement) {
@@ -91,7 +89,7 @@ export class ChatRenderer {
     this.messageEls = [];
     this.dirtyIndices.clear();
     this.streamingIndex = null;
-    this.meta = { model: null, inputTokens: 0, contextWindow: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+    this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
     this.container.innerHTML = "";
 
     this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
@@ -277,7 +275,7 @@ export class ChatRenderer {
     let touched = false;
     switch (ev.type) {
       case "session_started":
-        this.meta = { model: ev.model || null, inputTokens: 0, contextWindow: Number(ev.context_window) || 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+        this.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
         this.onMetaUpdate?.(this.getMeta());
         this.messages.push({
           kind: "system",
