@@ -90,3 +90,11 @@ pub fn get_characters_dir() -> Result<String, String> {
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| e.to_string())
 }
+
+/// Drops the in-memory character list cache. Frontend calls this after
+/// the user clicks Refresh in the Characters view (e.g. after the
+/// `/character-creator` skill writes a new bundle to disk).
+#[tauri::command]
+pub fn invalidate_characters_cache() {
+    characters::cache::invalidate();
+}

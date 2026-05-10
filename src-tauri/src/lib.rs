@@ -142,6 +142,7 @@ pub fn run() {
             ipc::preview_character_file,
             ipc::stop_character_preview,
             ipc::get_characters_dir,
+            ipc::invalidate_characters_cache,
             ipc::start_session,
             ipc::send_message,
             ipc::cancel_turn,

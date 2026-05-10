@@ -255,4 +255,52 @@ mod tests {
         let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
         assert_eq!(rule.sound_pack, "default");
     }
+
+    /// Happy path: project has `Avatar::Character(id)`, that character is
+    /// in the cache, and its `WorkFinished` slot has a file. Resolver must
+    /// return a synthetic rule with `CHARACTER_PACK_SENTINEL` and an
+    /// absolute `sound_file` path. (Bonus from ai_todo #03.)
+    #[test]
+    fn character_resolver_returns_synthetic_rule_for_valid_character_with_slot_file() {
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let cfg = NotificationsConfig::default();
+        let s = settings_with_project("C:/proj", Some("happy-peon"));
+
+        // Inject a character directly into the cache so the resolver
+        // doesn't try to read from disk. Slot points at a relative file
+        // under a fake `dir`; the resolver joins them via `asset_path`.
+        let mut slots = HashMap::new();
+        slots.insert("work_finished".into(), vec!["sounds/done.wav".into()]);
+        let character = crate::characters::Character {
+            id: "happy-peon".into(),
+            label: "Happy Peon".into(),
+            version: 1,
+            icon: "icon.png".into(),
+            game: None,
+            game_label: None,
+            shared: false,
+            dir: PathBuf::from("/fake/chars/happy-peon"),
+            slots,
+        };
+        crate::characters::cache::invalidate();
+        crate::characters::cache::set_for_test(vec![character]);
+
+        let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
+
+        assert_eq!(rule.sound_pack, CHARACTER_PACK_SENTINEL);
+        assert_eq!(rule.mode, NotifMode::Sound);
+        assert!(rule.enabled);
+        // sound_file should be the asset_path (dir join slot file).
+        assert!(
+            rule.sound_file.contains("happy-peon"),
+            "expected character dir in path, got {}",
+            rule.sound_file
+        );
+        assert!(rule.sound_file.ends_with("done.wav"), "got {}", rule.sound_file);
+
+        crate::characters::cache::invalidate();
+    }
 }

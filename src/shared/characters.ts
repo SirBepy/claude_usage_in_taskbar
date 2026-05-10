@@ -20,6 +20,13 @@ export async function loadCharacters(): Promise<Character[]> {
 
 export function invalidateCharactersCache(): void {
   cache = null;
+  // Fire-and-forget: also drop the Rust-side cache so the next list reads
+  // fresh from disk. Backend errors are non-fatal here; the frontend cache
+  // is already cleared and the next `loadCharacters()` will surface any
+  // real failure.
+  api.invalidateCharactersCache().catch((e) => {
+    console.error("[characters] backend invalidate failed", e);
+  });
 }
 
 export function findCharacter(chars: Character[], id: string): Character | null {

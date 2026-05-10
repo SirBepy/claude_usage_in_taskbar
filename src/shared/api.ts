@@ -224,6 +224,7 @@ export const api = {
   onCharacterPreviewEnded: (cb: () => void): Unlisten =>
     listenEvent("character-preview-ended", cb),
   getCharactersDir: (): Promise<string> => invoke("get_characters_dir"),
+  invalidateCharactersCache: (): Promise<void> => invoke("invalidate_characters_cache"),
 
   // --- Piper TTS ---
   piperStatus: (): Promise<PiperStatus> => invoke("piper_status"),

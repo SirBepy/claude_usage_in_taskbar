@@ -5,6 +5,7 @@ pub mod slots;
 pub mod loader;
 pub mod assets;
 pub mod bundled;
+pub mod cache;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -129,10 +130,11 @@ mod char_tests {
     }
 }
 
-/// Load all characters from the standard app-data dir. Convenience for IPC.
+/// Load all characters from the standard app-data dir. Routed through the
+/// in-memory cache so notification dispatch doesn't re-scan disk per fire.
+/// Frontend invalidates via the `invalidate_characters_cache` IPC.
 pub fn list() -> Vec<Character> {
-    let Ok(dir) = crate::settings::paths::characters_dir() else { return vec![]; };
-    loader::load_all(&dir)
+    cache::cached_list()
 }
 
 pub fn get(id: &str) -> Option<Character> {
