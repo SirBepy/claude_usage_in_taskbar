@@ -172,8 +172,7 @@ export class ChatRenderer {
       return;
     }
 
-    const allEvents = sessionEvents.events(sid);
-    await this.bulkLoadEvents(allEvents);
+    this.prependEvents(older);
     if (this.sessionId !== sid) return;
 
     if (scroller) {
@@ -183,6 +182,100 @@ export class ChatRenderer {
 
     if (sessionEvents.hasMore(sid)) {
       this.installTopSentinel();
+    } else {
+      this.removeTopSentinel();
+    }
+  }
+
+  /**
+   * Render `events` (an older page from `loadOlder`) into a DocumentFragment
+   * and prepend it to the container without rebuilding existing nodes. Keeps
+   * `messages` / `messageEls` 1:1 by re-indexing `streamingIndex` and
+   * `dirtyIndices` so the live tail keeps pointing at the right rows.
+   *
+   * Older pages are by definition historical, so none of them can be the
+   * currently-streaming assistant message; we never set/clear streamingIndex
+   * here, just shift it.
+   */
+  private prependEvents(events: ChatEvent[]): void {
+    if (events.length === 0) return;
+
+    // Build new RenderedMessage list + DOM nodes in isolation, mirroring the
+    // logic in handleEvent / flushRender but writing into a local buffer so
+    // existing this.messages / this.messageEls stay untouched until splice.
+    const newMessages: RenderedMessage[] = [];
+    const newEls: HTMLElement[] = [];
+    const frag = document.createDocumentFragment();
+
+    for (const ev of events) {
+      const msg = this.eventToRenderedMessage(ev);
+      if (!msg) continue;
+      newMessages.push(msg);
+      const el = this.buildMessageEl(msg);
+      newEls.push(el);
+      frag.appendChild(el);
+    }
+
+    if (newMessages.length === 0) return;
+
+    // Insert before the existing first message but after the top sentinel
+    // (which is `this.topSentinel`). Using container.prepend would put the
+    // fragment before the sentinel; instead, insertBefore the existing first
+    // message so the sentinel keeps its place at the very top.
+    const firstExisting = this.messageEls[0] ?? null;
+    if (firstExisting) {
+      this.container.insertBefore(frag, firstExisting);
+    } else if (this.topSentinel && this.topSentinel.parentNode === this.container) {
+      // No existing messages but sentinel present: append after sentinel.
+      this.container.appendChild(frag);
+    } else {
+      this.container.prepend(frag);
+    }
+
+    const shift = newMessages.length;
+    this.messages = [...newMessages, ...this.messages];
+    this.messageEls = [...newEls, ...this.messageEls];
+
+    if (this.streamingIndex !== null) {
+      this.streamingIndex += shift;
+    }
+    if (this.dirtyIndices.size > 0) {
+      const reindexed = new Set<number>();
+      for (const idx of this.dirtyIndices) reindexed.add(idx + shift);
+      this.dirtyIndices = reindexed;
+    }
+
+    void this.highlightCodeBlocks();
+  }
+
+  /**
+   * Pure mapping from a ChatEvent to a RenderedMessage. Mirrors the cases in
+   * handleEvent that produce a row but does NOT mutate any renderer state.
+   * Returns null for events that shouldn't render a row (e.g. turn_usage,
+   * empty user_message after command-tag stripping).
+   */
+  private eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
+    const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
+    switch (ev.type) {
+      case "session_started":
+        return { kind: "system", text: `Session started${ev.model ? ` (${ev.model})` : ""}`, ts };
+      case "user_message": {
+        const cleaned = cleanUserBlocks(ev.content);
+        if (cleaned.length === 0) return null;
+        return { kind: "user", content: cleaned, ts };
+      }
+      case "assistant_message":
+        return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
+      case "tool_use":
+        return { kind: "tool_use", tool: ev.tool_name, input: ev.input, id: ev.id, ts };
+      case "tool_result":
+        return { kind: "tool_result", tool_use_id: ev.tool_use_id, output: ev.output, is_error: ev.is_error, ts };
+      case "notification":
+        return { kind: "notification", text: ev.body, ts: Date.now() };
+      case "session_ended":
+        return { kind: "system", text: `Session ended${ev.exit_code !== null ? ` (exit ${ev.exit_code})` : ""}`, ts };
+      default:
+        return null;
     }
   }
 
