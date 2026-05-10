@@ -95,6 +95,14 @@ let state: SessionsState = {
 };
 let nextMountId = 1;
 
+// Single point of truth for the active session id. Mutating `state.selectedId`
+// directly without notifying permission-modal would silently gate-out modals
+// for the new session. Always go through this helper.
+function setActiveSession(id: string | null): void {
+  state.selectedId = id;
+  setSelectedSessionId(id);
+}
+
 let _pane: HTMLElement | null = null;
 let _pendingOpenPicker = false;
 
@@ -578,8 +586,7 @@ async function launchNewSession(
     projectName: project.name,
     realId: null,
   };
-  state.selectedId = placeholderId;
-  setSelectedSessionId(null);
+  setActiveSession(placeholderId);
 
   await renderPendingPane(pane, placeholderId, project);
 
@@ -705,8 +712,7 @@ async function renderPendingPane(
                 await state.renderer.swapSubscription(sessionId);
               }
               if (state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
-              state.selectedId = sessionId;
-              setSelectedSessionId(sessionId);
+              setActiveSession(sessionId);
               state.pendingNewSession = null;
               await refreshSessions();
               if (state.mountId !== myMount) return;
@@ -815,8 +821,7 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
 
 async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;
-  state.selectedId = sessionId;
-  setSelectedSessionId(sessionId);
+  setActiveSession(sessionId);
 
   // Mark session as read
   const unread = loadUnreadSet();
@@ -1046,8 +1051,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
         state.renderer = null;
         state.composer?.destroy();
         state.composer = null;
-        state.selectedId = null;
-        setSelectedSessionId(null);
+        setActiveSession(null);
         pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
       }
     });
@@ -1112,8 +1116,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     }
     state.composer?.destroy();
     state.composer = null;
-    state.selectedId = null;
-    setSelectedSessionId(null);
+    setActiveSession(null);
   };
 }
 
@@ -1236,8 +1239,7 @@ export async function renderDetachedSession(
     }
     state.composer?.destroy();
     state.composer = null;
-    state.selectedId = null;
-    setSelectedSessionId(null);
+    setActiveSession(null);
   };
 }
 
