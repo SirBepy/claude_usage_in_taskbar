@@ -28,7 +28,7 @@ function onEsc(e: KeyboardEvent): void {
   if (e.key === "Escape") closeModal();
 }
 
-function ensureModalHost(): HTMLElement {
+export function ensureModalHost(): HTMLElement {
   let host = document.getElementById("modal-host");
   if (!host) {
     host = document.createElement("div");

@@ -11,6 +11,7 @@ import { Composer } from "../../shared/chat/composer";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
 import { setSelectedSessionId } from "./permission-modal";
+import { ensureModalHost, closeModal } from "../../shared/modal";
 import type { Instance, ChatEvent, ContentBlock, ProjectGroup, GitInfo } from "../../types/ipc.generated";
 import {
   projectName,
@@ -531,23 +532,6 @@ function openProjectPickerModal(
     host.classList.add("open");
     renderModal();
   });
-}
-
-function ensureModalHost(): HTMLElement {
-  let host = document.getElementById("modal-host");
-  if (!host) {
-    host = document.createElement("div");
-    host.id = "modal-host";
-    document.body.appendChild(host);
-  }
-  return host;
-}
-
-function closeModal(): void {
-  const host = document.getElementById("modal-host");
-  if (!host) return;
-  host.classList.remove("open");
-  render(html``, host);
 }
 
 /**
