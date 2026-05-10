@@ -118,15 +118,20 @@ pub mod groups_test_helpers {
 }
 
 #[tauri::command]
-pub fn list_project_groups(state: State<AppState>) -> Vec<crate::types::ProjectGroup> {
+pub async fn list_project_groups(state: State<'_, AppState>) -> Result<Vec<crate::types::ProjectGroup>, ()> {
     let projects = state.settings.lock().unwrap().projects.clone();
-    let token_history = match paths::token_history_file() {
-        Ok(p) => crate::tokens::load_history(&p),
-        Err(_) => Vec::new(),
-    };
     let instances = state.instances.list();
     let now_ms = chrono::Utc::now().timestamp_millis();
-    groups_test_helpers::build_groups(&projects, &token_history, &instances, now_ms)
+    let groups = tauri::async_runtime::spawn_blocking(move || {
+        let token_history = match paths::token_history_file() {
+            Ok(p) => crate::tokens::load_history(&p),
+            Err(_) => Vec::new(),
+        };
+        groups_test_helpers::build_groups(&projects, &token_history, &instances, now_ms)
+    })
+    .await
+    .unwrap_or_default();
+    Ok(groups)
 }
 
 /// Computes the latest `mtime` of any `.jsonl` under
@@ -135,8 +140,12 @@ pub fn list_project_groups(state: State<AppState>) -> Vec<crate::types::ProjectG
 /// or contains no `.jsonl` files. Used by the Sessions "Most recent" sort
 /// in the new-session project-picker modal.
 #[tauri::command]
-pub fn project_last_activity_at(cwd: String) -> Result<i64, String> {
-    Ok(latest_jsonl_mtime_in_projects_dir(Path::new(&cwd)))
+pub async fn project_last_activity_at(cwd: String) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        latest_jsonl_mtime_in_projects_dir(Path::new(&cwd))
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Returns max-mtime epoch seconds across `*.jsonl` in

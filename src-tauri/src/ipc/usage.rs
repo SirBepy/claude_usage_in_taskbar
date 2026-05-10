@@ -9,14 +9,18 @@ pub fn get_current_usage(state: State<AppState>) -> Option<UsageSnapshot> {
 }
 
 #[tauri::command]
-pub fn get_history(limit: Option<u32>) -> Vec<UsageSnapshot> {
+pub async fn get_history(limit: Option<u32>) -> Vec<UsageSnapshot> {
     let path = match paths::history_file() { Ok(p) => p, Err(_) => return vec![] };
-    let mut all = history::load_all(&path).unwrap_or_default();
-    if let Some(n) = limit {
-        let start = all.len().saturating_sub(n as usize);
-        all = all.split_off(start);
-    }
-    all
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut all = history::load_all(&path).unwrap_or_default();
+        if let Some(n) = limit {
+            let start = all.len().saturating_sub(n as usize);
+            all = all.split_off(start);
+        }
+        all
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]

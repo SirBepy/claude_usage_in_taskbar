@@ -240,66 +240,94 @@ pub fn confirm_legacy_obsidian_import(
 }
 
 /// Open a filesystem path in the OS file manager (Explorer on Windows,
-/// Finder on macOS, default handler on Linux).
+/// Finder on macOS, default handler on Linux). Intentionally does NOT
+/// suppress the console window because explorer/open/xdg-open ARE the
+/// user-facing window the click is asking for.
 #[tauri::command]
-pub fn open_in_explorer(path: String) -> Result<(), String> {
+pub async fn open_in_explorer(path: String) -> Result<(), String> {
     if path.is_empty() { return Err("empty path".into()) }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&path)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("explorer spawn failed: {e}"))
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(&path).spawn()
-            .map(|_| ()).map_err(|e| format!("open spawn failed: {e}"))
-    }
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        std::process::Command::new("xdg-open").arg(&path).spawn()
-            .map(|_| ()).map_err(|e| format!("xdg-open spawn failed: {e}"))
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("explorer")
+                .arg(&path)
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("explorer spawn failed: {e}"))
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open").arg(&path).spawn()
+                .map(|_| ()).map_err(|e| format!("open spawn failed: {e}"))
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            std::process::Command::new("xdg-open").arg(&path).spawn()
+                .map(|_| ()).map_err(|e| format!("xdg-open spawn failed: {e}"))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Open a folder in VS Code.
 #[tauri::command]
-pub fn open_in_vscode(path: String) -> Result<(), String> {
+pub async fn open_in_vscode(path: String) -> Result<(), String> {
     if path.is_empty() { return Err("empty path".into()) }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "code", "-n", &path])
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("code launch failed: {e}"))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::process::Command::new("code").args(["-n", &path]).spawn()
-            .map(|_| ()).map_err(|e| format!("code launch failed: {e}"))
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            // VS Code on Windows ships only as `code.cmd`, so launch via
+            // cmd.exe /C. Hide the console window the cmd shim would otherwise
+            // flash.
+            let mut cmd = std::process::Command::new("cmd");
+            cmd.args(["/C", "code", "-n", &path]);
+            crate::util::process::hide_console(&mut cmd);
+            cmd.spawn()
+                .map(|_| ())
+                .map_err(|e| format!("code launch failed: {e}"))
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut cmd = std::process::Command::new("code");
+            cmd.args(["-n", &path]);
+            crate::util::process::hide_console(&mut cmd);
+            cmd.spawn()
+                .map(|_| ())
+                .map_err(|e| format!("code launch failed: {e}"))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-/// Bulk existence check for project directories.
+/// Bulk existence check for project directories. Each `.exists()` is a
+/// `stat` syscall and on Windows can stall on disconnected network drives,
+/// so run on the blocking pool.
 #[tauri::command]
-pub fn check_paths_exist(paths: Vec<String>) -> std::collections::HashMap<String, bool> {
-    paths
-        .into_iter()
-        .map(|p| {
-            let exists = std::path::Path::new(&p).exists();
-            (p, exists)
-        })
-        .collect()
+pub async fn check_paths_exist(paths: Vec<String>) -> std::collections::HashMap<String, bool> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|p| {
+                let exists = std::path::Path::new(&p).exists();
+                (p, exists)
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 // --- Vault detector ---
 
 #[tauri::command]
-pub fn detect_obsidian_vaults() -> Vec<std::path::PathBuf> {
-    crate::channels::vault_detector::detect().unwrap_or_default()
+pub async fn detect_obsidian_vaults() -> Vec<std::path::PathBuf> {
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::channels::vault_detector::detect().unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 // --- Instances ---

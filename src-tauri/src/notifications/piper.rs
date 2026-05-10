@@ -94,14 +94,15 @@ pub async fn synthesize(text: &str, voice_id: &str) -> Result<PathBuf> {
     let out = std::env::temp_dir().join(format!("piper-{}.wav", rand::random::<u64>()));
     let binary = crate::settings::paths::piper_binary_path()?;
     use tokio::io::AsyncWriteExt;
-    let mut child = tokio::process::Command::new(binary)
+    let mut piper_cmd = tokio::process::Command::new(binary);
+    piper_cmd
         .args(["--model", model.to_str().unwrap(),
                "--output_file", out.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .context("spawn piper")?;
+        .stderr(std::process::Stdio::null());
+    crate::util::process::hide_console_tokio(&mut piper_cmd);
+    let mut child = piper_cmd.spawn().context("spawn piper")?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(text.as_bytes()).await?;
         stdin.shutdown().await?;

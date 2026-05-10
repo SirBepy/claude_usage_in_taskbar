@@ -33,21 +33,27 @@ pub fn read_log_contents(log_path: &std::path::Path) -> Result<String, String> {
 /// Reads the tauri-plugin-log log file and returns its contents as a string.
 /// The renderer writes this to the clipboard for bug reports.
 #[tauri::command]
-pub fn read_log_file(app: AppHandle) -> Result<String, String> {
+pub async fn read_log_file(app: AppHandle) -> Result<String, String> {
     use tauri::Manager;
     let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     let product = app.package_info().name.clone();
     let log_path = log_dir.join(format!("{product}.log"));
-    read_log_contents(&log_path)
+    tauri::async_runtime::spawn_blocking(move || read_log_contents(&log_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn copy_logs(app: AppHandle) -> Result<(), String> {
+pub async fn copy_logs(app: AppHandle) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     let product = app.package_info().name.clone();
     let log_path = log_dir.join(format!("{product}.log"));
-    let contents = read_log_contents(&log_path).unwrap_or_else(|e| format!("<error reading log: {e}>"));
+    let contents = tauri::async_runtime::spawn_blocking(move || {
+        read_log_contents(&log_path).unwrap_or_else(|e| format!("<error reading log: {e}>"))
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     app.clipboard().write_text(contents).map_err(|e| e.to_string())
 }
 
@@ -289,10 +295,14 @@ mod tests {
         std::fs::create_dir(&real).unwrap();
         let fake = dir.path().join("not-here");
 
-        let result = check_paths_exist(vec![
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let result = rt.block_on(check_paths_exist(vec![
             real.to_string_lossy().to_string(),
             fake.to_string_lossy().to_string(),
-        ]);
+        ]));
         assert_eq!(result[&real.to_string_lossy().to_string()], true);
         assert_eq!(result[&fake.to_string_lossy().to_string()], false);
     }

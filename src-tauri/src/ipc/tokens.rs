@@ -3,9 +3,11 @@ use crate::settings::paths;
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
-pub fn get_token_history() -> Vec<TokenRecord> {
+pub async fn get_token_history() -> Vec<TokenRecord> {
     let Ok(path) = paths::token_history_file() else { return vec![] };
-    tokens::load_history(&path)
+    tauri::async_runtime::spawn_blocking(move || tokens::load_history(&path))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]

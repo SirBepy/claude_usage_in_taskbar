@@ -15,3 +15,16 @@ pub fn hide_console(cmd: &mut std::process::Command) {
         let _ = cmd;
     }
 }
+
+/// Same as `hide_console` but for `tokio::process::Command`. Tokio's Command
+/// re-exports the Windows-only `creation_flags` extension.
+pub fn hide_console_tokio(cmd: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cmd;
+    }
+}

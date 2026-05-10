@@ -115,10 +115,11 @@ fn spawn_browser(bin: &Path, profile: &Path, port: u16) -> std::io::Result<Child
 fn kill_browser(child: &mut Child) {
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new("taskkill")
-            .args(["/PID", &child.id().to_string(), "/T", "/F"])
-            .stdout(Stdio::null()).stderr(Stdio::null())
-            .status();
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null()).stderr(Stdio::null());
+        crate::util::process::hide_console(&mut cmd);
+        let _ = cmd.status();
     }
     #[cfg(target_os = "macos")]
     {
