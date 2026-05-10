@@ -72,12 +72,6 @@
   opacity: 0.85;
 }
 
-.sessions-list li.pending-new {
-  background: rgba(157, 125, 252, 0.12);
-  border-left: 3px solid var(--primary);
-  cursor: default;
-}
-
 .session-title {
   flex: 1;
   min-width: 0;
@@ -152,13 +146,9 @@
 
 .sessions-list li.active .session-state-icon { color: var(--bg) !important; opacity: 0.9; }
 
-@keyframes session-spin {
-  to { transform: rotate(360deg); }
-}
-
 .session-state-icon.spinning {
   display: inline-block;
-  animation: session-spin 1.2s linear infinite;
+  animation: spin 1.2s linear infinite;
 }
 
 /* Dot mode overrides (when icons are disabled) */
@@ -518,163 +508,6 @@
   height: 100vh;
 }
 
-/* ── Project-picker modal (sessions view) ─────────────────────────────── */
-#sessions-modal-host {
-  position: fixed;
-  inset: 0;
-  z-index: 2700;
-  display: none;
-  align-items: center;
-  justify-content: center;
-}
-
-#sessions-modal-host.open {
-  display: flex;
-}
-
-#sessions-modal-host .sm-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-#sessions-modal-host .sm-card {
-  position: relative;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  width: min(560px, calc(100vw - 48px));
-  max-height: calc(100vh - 80px);
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
-}
-
-#sessions-modal-host .sm-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-#sessions-modal-host .sm-header h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-#sessions-modal-host .sm-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-  min-height: 0;
-}
-
-#sessions-modal-host .sm-body-list {
-  padding: 6px;
-}
-
-#sessions-modal-host .sm-empty {
-  margin: 0;
-  padding: 24px 16px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 0.88rem;
-  line-height: 1.5;
-}
-
-#sessions-modal-host .sm-project-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-#sessions-modal-host .sm-project-row {
-  padding: 10px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-#sessions-modal-host .sm-project-row:hover {
-  background: var(--surface-alt);
-}
-
-#sessions-modal-host .sm-project-row.selected {
-  background: rgba(157, 125, 252, 0.14);
-  border-color: var(--primary);
-}
-
-#sessions-modal-host .sm-project-name {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#sessions-modal-host .sm-project-path {
-  font-size: 0.74rem;
-  color: var(--text-dim);
-  font-family: 'Fira Code', monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-#sessions-modal-host .sm-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-alt);
-  flex-shrink: 0;
-}
-
-#sessions-modal-host .sm-footer .btn {
-  padding: 7px 16px;
-  border-radius: 8px;
-  border: none;
-  font-family: 'DM Sans', system-ui, sans-serif;
-  font-size: 0.86rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-#sessions-modal-host .sm-footer .btn-primary {
-  background: var(--primary);
-  color: var(--bg);
-}
-
-#sessions-modal-host .sm-footer .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-
-#sessions-modal-host .sm-footer .btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-#sessions-modal-host .sm-footer .btn-secondary {
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-
-#sessions-modal-host .sm-footer .btn-secondary:hover {
-  border-color: var(--primary);
-  color: var(--text);
-}
-
 /* ── Project picker modal v2 (search + sort + persistence) ────────────── */
 #modal-host {
   display: none;
@@ -818,7 +651,7 @@
   border: 2px solid rgba(255, 255, 255, 0.18);
   border-top-color: rgba(255, 255, 255, 0.6);
   border-radius: 50%;
-  animation: chat-top-spin 0.8s linear infinite;
+  animation: spin 0.8s linear infinite;
   pointer-events: auto;
 }
 
@@ -843,10 +676,10 @@
   border: 3px solid rgba(255, 255, 255, 0.18);
   border-top-color: rgba(255, 255, 255, 0.7);
   border-radius: 50%;
-  animation: chat-top-spin 0.8s linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
-@keyframes chat-top-spin {
+@keyframes spin {
   to { transform: rotate(360deg); }
 }
 

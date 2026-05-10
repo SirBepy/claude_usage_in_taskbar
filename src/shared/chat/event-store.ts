@@ -27,7 +27,6 @@ const OLDER_PAGE_SIZE = 10;
 interface CacheEntry {
   events: ChatEvent[];
   oldestSeq: number | null;
-  newestSeq: number | null;
   hasMore: boolean;
   loadingOlder: boolean;
   initialLoaded: boolean;
@@ -77,7 +76,6 @@ class SessionEventStore {
       const liveTail = entry.events.slice(liveDuringFetch);
       entry.events = [...page.events, ...liveTail];
       entry.oldestSeq = Number(page.oldest_seq);
-      entry.newestSeq = Number(page.newest_seq);
       entry.hasMore = page.has_more;
     } catch {
       /* tolerate absence (no JSONL yet for brand-new sessions) */
@@ -149,7 +147,6 @@ class SessionEventStore {
       for (const sub of fromEntry.subscribers) existing.subscribers.add(sub);
       existing.initialLoaded = existing.initialLoaded || fromEntry.initialLoaded;
       existing.oldestSeq = existing.oldestSeq ?? fromEntry.oldestSeq;
-      existing.newestSeq = fromEntry.newestSeq ?? existing.newestSeq;
       existing.hasMore = existing.hasMore && fromEntry.hasMore;
     } else {
       this.cache.set(toId, fromEntry);
@@ -173,7 +170,6 @@ class SessionEventStore {
     return {
       events: [],
       oldestSeq: null,
-      newestSeq: null,
       hasMore: false,
       loadingOlder: false,
       initialLoaded: false,

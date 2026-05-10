@@ -233,15 +233,3 @@ fn draw_spin_arc(img: &mut RgbaImage, start: f32, arc_len: f32, r_out: f32, r_in
     }
 }
 
-/// Back-compat: existing tray.rs call site uses `render_rings(Some, Some)`.
-/// Forwards to `render` with default-ish IconCtx. Once tray.rs is updated in a
-/// later task this function can be removed.
-pub fn render_rings(sess: Option<f32>, weekly: Option<f32>) -> Vec<u8> {
-    let settings = IconSettings::default();
-    render(sess, weekly, &IconCtx {
-        settings: &settings,
-        display_mode: DisplayMode::Icon,
-        session_safe: None, weekly_safe: None,
-        updating: false,
-    })
-}
