@@ -524,7 +524,9 @@ export class ChatRenderer {
     const codes = Array.from(
       this.container.querySelectorAll<HTMLElement>("pre > code:not([data-highlighted])"),
     );
-    for (const code of codes) {
+    for (let i = 0; i < codes.length; i++) {
+      const code = codes[i];
+      if (!code) continue;
       const pre = code.parentElement as HTMLElement | null;
       if (!pre || pre.tagName !== "PRE") continue;
       const lang = pre.dataset.lang || extractFenceLang(code.className) || "text";
@@ -537,6 +539,12 @@ export class ChatRenderer {
         pre.outerHTML = `<div class="block code shiki-wrap" data-lang="${safeLang}" data-highlighted="true">${html}</div>`;
       } catch {
         code.dataset.highlighted = "true";
+      }
+      // Yield a macrotask between blocks so the browser can paint and stay
+      // responsive when a transcript carries many or huge fenced blocks.
+      // Each codeToHtml await is microtask-fast and won't yield on its own.
+      if (i + 1 < codes.length) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
   }
