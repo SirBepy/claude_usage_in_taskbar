@@ -53,10 +53,10 @@ pub fn mark_read(store: &mut NewsStore, slug: &str) {
 }
 
 /// Merges scraped items into the store. Returns the slugs that are NEW
-/// (not previously present in the store), so the caller can fetch og:image
-/// for them and decide whether to fire a notification. On the first ever
-/// merge (bootstrapped == false), no slugs are reported as new and every
-/// post is marked read.
+/// (not previously present in the store), so the caller can back-fill
+/// per-article summaries and decide whether to fire a notification. On the
+/// first ever merge (bootstrapped == false), no slugs are reported as new
+/// and every post is marked read.
 pub fn merge_scraped(
     store: &mut NewsStore,
     scraped: Vec<crate::news::ScrapedItem>,

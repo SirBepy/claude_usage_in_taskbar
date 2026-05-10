@@ -1,6 +1,5 @@
-/* Settings root view - no subview-specific styles yet. Shared rules (.section,
- * .section-title, .option, .switch, .slider, .nav-row, .btn-danger, etc.) live
- * in src/styles/widgets.css. */
+/* Settings views. Shared rules (.section, .section-title, .option, .switch,
+ * .slider, .nav-row, .btn-danger, etc.) live in src/styles/widgets.css. */
 
 /* Shortcuts section */
 .shortcut-row {

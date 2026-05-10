@@ -1,6 +1,6 @@
 //! 6h background poll. Scrapes anthropic.com/news, merges into the on-disk
-//! store, fetches og:image for any new slugs, then emits `news-updated` so
-//! the renderer can refresh the badge + list. Errors are logged but never
+//! store, back-fills summaries for any new slugs, then emits `news-updated`
+//! so the renderer can refresh the badge + list. Errors are logged but never
 //! propagate; the loop keeps running on the next tick.
 
 use crate::news;
