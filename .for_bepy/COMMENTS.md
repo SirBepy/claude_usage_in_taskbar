@@ -1,6 +1,7 @@
 # Comments for Joe
 
-- `context_window` field on `SessionStarted` in `chat.rs` is dead code - it's always 0 because the Claude Code init line doesn't carry that field. The field was added speculatively this session. Low priority to remove but misleading as-is.
+- ai_todo morning-grind 2026-05-11: knocked out batches A (trivial dead-code), B (parallel-agent extracts: locate_transcript / hide_console / news http client / characters cache / escapeHtml shared util / channel-status JSON helper), C (shortcuts cleanup), D (context_window field removal), E (project-detail label rename). 16 todos closed across ~13 commits. Two todos (#23 unregister-loop, #31 sort-key dup) were stale false positives - already-correct code; just deleted the todo files. Remaining defers: #04, #06-#09b, #10a/b, #15-#19, #33 (bigger sessions.ts cluster + chat-hub planning).
+- ~~`context_window` field on `SessionStarted` in `chat.rs` is dead code~~ **DONE 2026-05-11:** field removed from chat.rs / parser.rs / chat-renderer.ts / sessions.ts; statusbar falls back to `modelContextWindow(model)` (200K).
 
 - Project-grouping work (9 commits, edd4e1d..539fc14) bypassed `/commit` 9 times. Subagent-driven-development plans embed `git commit -m` lines; that defeats the global "always /commit" rule. Logged as a feedback memory so future sessions emit plan steps that stage-and-handoff instead.
 - Audio device picker session: two subagent commits (`5d56838`, `c6087d3`) pushed to remote with lowercase prefixes (`feat:`/`fix:`) and `Co-Authored-By: Claude` attribution. Already shipped. Feedback memory and subagent brief template updated to make "do NOT commit" explicit.
