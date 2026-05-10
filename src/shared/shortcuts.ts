@@ -26,33 +26,26 @@ const SHORTCUT_DEFS: ShortcutDef[] = [
   { id: "open-chat-7", defaultKeys: "ctrl+7", label: "Open chat 7", description: "Open the 7th most recent chat", context: "sessions", suppressInInput: true },
   { id: "open-chat-8", defaultKeys: "ctrl+8", label: "Open chat 8", description: "Open the 8th most recent chat", context: "sessions", suppressInInput: true },
   { id: "open-chat-9", defaultKeys: "ctrl+9", label: "Open chat 9", description: "Open the 9th most recent chat", context: "sessions", suppressInInput: true },
-  { id: "close-chat",  defaultKeys: "ctrl+w", label: "Close chat",  description: "Cancel the focused chat's active turn", context: "sessions", suppressInInput: true },
-
-  // Future (todo — shown in settings, no handler wired)
-  { id: "open-chat-split-1", defaultKeys: "ctrl+shift+1", label: "Open chat 1 in split", description: "Open most recent chat in splitscreen",    context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-2", defaultKeys: "ctrl+shift+2", label: "Open chat 2 in split", description: "Open 2nd most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-3", defaultKeys: "ctrl+shift+3", label: "Open chat 3 in split", description: "Open 3rd most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-4", defaultKeys: "ctrl+shift+4", label: "Open chat 4 in split", description: "Open 4th most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-5", defaultKeys: "ctrl+shift+5", label: "Open chat 5 in split", description: "Open 5th most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-6", defaultKeys: "ctrl+shift+6", label: "Open chat 6 in split", description: "Open 6th most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-7", defaultKeys: "ctrl+shift+7", label: "Open chat 7 in split", description: "Open 7th most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-8", defaultKeys: "ctrl+shift+8", label: "Open chat 8 in split", description: "Open 8th most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
-  { id: "open-chat-split-9", defaultKeys: "ctrl+shift+9", label: "Open chat 9 in split", description: "Open 9th most recent chat in splitscreen",  context: "sessions", suppressInInput: true, todo: "Requires splitscreen implementation" },
+  { id: "close-chat",  defaultKeys: "ctrl+w", label: "Cancel active turn",  description: "Cancel the current running turn in the focused chat", context: "sessions", suppressInInput: true },
 ];
 
 // ── Storage ────────────────────────────────────────────────────────────────
 
 const LS_KEY = "cc_shortcuts_bindings";
 
+let _bindingsCache: Record<string, string> | null = null;
+
 function loadBindings(): Record<string, string> {
+  if (_bindingsCache) return _bindingsCache;
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw) as Record<string, string>;
-  } catch { /* ignore */ }
-  return {};
+    _bindingsCache = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch { _bindingsCache = {}; }
+  return _bindingsCache;
 }
 
 function saveBindings(overrides: Record<string, string>): void {
+  _bindingsCache = overrides;
   try { localStorage.setItem(LS_KEY, JSON.stringify(overrides)); }
   catch { /* ignore */ }
 }
