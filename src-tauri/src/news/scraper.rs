@@ -5,11 +5,26 @@
 //! match by structural shape and stable substrings rather than full names.
 
 use anyhow::{anyhow, Result};
+use once_cell::sync::OnceCell;
 use scraper::{Html, Selector};
 
 const NEWS_INDEX: &str = "https://www.anthropic.com/news";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                           (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+static CLIENT: OnceCell<reqwest::Client> = OnceCell::new();
+
+/// Shared `reqwest::Client` for news scraping. Built once and reused so the
+/// connection pool persists across the 6h index poll + per-article summary
+/// fetches.
+fn client() -> &'static reqwest::Client {
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .build()
+            .expect("build reqwest client")
+    })
+}
 
 #[derive(Debug, Clone)]
 pub struct ScrapedItem {
@@ -22,9 +37,7 @@ pub struct ScrapedItem {
 }
 
 pub async fn fetch_index() -> Result<Vec<ScrapedItem>> {
-    let body = reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .build()?
+    let body = client()
         .get(NEWS_INDEX)
         .send()
         .await?
@@ -93,9 +106,7 @@ pub fn parse_index(html: &str) -> Result<Vec<ScrapedItem>> {
 }
 
 pub async fn fetch_summary(article_url: &str) -> Result<Option<String>> {
-    let body = reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .build()?
+    let body = client()
         .get(article_url)
         .send()
         .await?
