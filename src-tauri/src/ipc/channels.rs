@@ -36,15 +36,5 @@ pub fn hide_terminal(project_id: String, state: State<AppState>) -> Result<(), S
 
 #[tauri::command]
 pub fn list_channels(state: State<AppState>) -> Vec<serde_json::Value> {
-    state.channels.list().into_iter().map(|s| serde_json::json!({
-        "project_id": s.project_id,
-        "pid": s.pid,
-        "status": match s.status {
-            crate::types::ChannelStatus::Starting => "starting",
-            crate::types::ChannelStatus::Running => "running",
-            crate::types::ChannelStatus::Stopped => "stopped",
-            crate::types::ChannelStatus::Crashed => "crashed",
-        },
-        "has_hwnd": s.hwnd.is_some(),
-    })).collect()
+    state.channels.list().iter().map(crate::channels::channel_snapshot_to_json).collect()
 }

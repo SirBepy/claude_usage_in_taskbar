@@ -11,6 +11,24 @@ pub struct ChannelSnapshot {
     pub hwnd: Option<isize>,
 }
 
+/// Single source of truth for `ChannelSnapshot` -> JSON shape consumed by
+/// the frontend (both via `list_channels` IPC and `channels-changed` event).
+/// Exposes `has_hwnd: bool` rather than the raw HWND because no frontend
+/// consumer reads the raw value today.
+pub(crate) fn channel_snapshot_to_json(s: &ChannelSnapshot) -> serde_json::Value {
+    serde_json::json!({
+        "project_id": s.project_id,
+        "pid": s.pid,
+        "status": match s.status {
+            ChannelStatus::Starting => "starting",
+            ChannelStatus::Running  => "running",
+            ChannelStatus::Stopped  => "stopped",
+            ChannelStatus::Crashed  => "crashed",
+        },
+        "has_hwnd": s.hwnd.is_some(),
+    })
+}
+
 pub struct Manager {
     channels: Mutex<HashMap<String, ChannelSnapshot>>,
 }

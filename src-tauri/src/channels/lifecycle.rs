@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager as _};
 use crate::types::ChannelStatus;
-use super::manager::ChannelSnapshot;
+use super::manager::{channel_snapshot_to_json, ChannelSnapshot};
 use super::spawn::{spawn_child, SpawnInput};
 use super::window_chrome::{resolve_console_hwnd, strip_console_chrome, hide_hwnd};
 use super::kill::kill_tree;
@@ -9,17 +9,7 @@ use super::kill::kill_tree;
 
 pub(crate) fn emit_changed(app: &AppHandle) {
     let state = app.state::<crate::state::AppState>();
-    let snaps: Vec<_> = state.channels.list().into_iter().map(|s| serde_json::json!({
-        "project_id": s.project_id,
-        "pid": s.pid,
-        "status": match s.status {
-            ChannelStatus::Starting => "starting",
-            ChannelStatus::Running  => "running",
-            ChannelStatus::Stopped  => "stopped",
-            ChannelStatus::Crashed  => "crashed",
-        },
-        "hwnd": s.hwnd,
-    })).collect();
+    let snaps: Vec<_> = state.channels.list().iter().map(channel_snapshot_to_json).collect();
     let _ = app.emit("channels-changed", snaps);
 }
 
