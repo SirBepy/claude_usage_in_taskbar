@@ -16,6 +16,7 @@ import MarkdownIt from "markdown-it";
 // including emacs-lisp/wasm/cpp - causing ~3 MB of chunk bloat).
 import { codeToHtml } from "shiki/bundle/web";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
+import { escapeHtml } from "../escape-html";
 import { sessionEvents } from "./event-store";
 
 const md = new MarkdownIt({
@@ -488,19 +489,6 @@ export class ChatRenderer {
   private scrollToBottom(): void {
     this.container.scrollTop = this.container.scrollHeight;
   }
-}
-
-function escapeHtml(s: string): string {
-  return String(s).replace(/[&<>"']/g, (c) => {
-    switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      case "'": return "&#39;";
-      default: return c;
-    }
-  });
 }
 
 function renderMarkdown(text: string): string {

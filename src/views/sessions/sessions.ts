@@ -1,5 +1,6 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
+import { escapeHtml } from "../../shared/escape-html";
 import { showView } from "../../shared/navigation";
 import { invoke } from "../../shared/ipc";
 import * as shortcuts from "../../shared/shortcuts";
@@ -1266,19 +1267,6 @@ function detachedTemplate(sessionId: string) {
       </div>
     </div>
   `;
-}
-
-function escapeHtml(s: string): string {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => {
-    switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      case "'": return "&#39;";
-      default: return c;
-    }
-  });
 }
 
 // ── Statusline helpers ────────────────────────────────────────────────────────

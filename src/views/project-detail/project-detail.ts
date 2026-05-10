@@ -1,6 +1,7 @@
 import { html, render } from "lit-html";
 import "./project-detail.css";
 import { formatTokens, totalTok } from "../../shared/tokens";
+import { escapeHtml } from "../../shared/escape-html";
 import type { TokenRecord } from "../../shared/tokens";
 import { projectLabel, renderAvatar } from "../../shared/projects";
 import { resolveMergeChain, doMerge } from "../../shared/merges";
@@ -38,15 +39,6 @@ interface InstanceStats {
   tokens?: number;
   turns?: number;
   prompts?: number;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function instanceRowHtml(i: Instance, stats: InstanceStats | undefined): string {
