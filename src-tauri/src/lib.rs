@@ -16,6 +16,7 @@ pub mod state;
 pub mod tokens;
 pub mod tray;
 pub mod types;
+pub mod util;
 
 use crate::settings::paths;
 use crate::state::AppState;

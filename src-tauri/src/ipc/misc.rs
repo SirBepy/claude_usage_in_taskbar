@@ -201,12 +201,7 @@ pub async fn get_git_info(cwd: String) -> GitInfo {
         fn run_git(cwd: &str, args: &[&str]) -> Option<String> {
             let mut cmd = std::process::Command::new("git");
             cmd.arg("-C").arg(cwd).args(args);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                cmd.creation_flags(CREATE_NO_WINDOW);
-            }
+            crate::util::process::hide_console(&mut cmd);
             cmd.output()
                 .ok()
                 .filter(|o| o.status.success())
