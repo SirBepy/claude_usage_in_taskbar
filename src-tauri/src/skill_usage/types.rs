@@ -68,3 +68,12 @@ pub struct SkillDetail {
     pub invocations: InvocationCounts,
     pub events: Vec<SkillUsageEvent>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct KnownSkill {
+    pub skill: String,
+    pub total_invocations: u32,
+    /// ISO-8601 of the most recent invocation, or empty if unknown.
+    pub last_seen: String,
+}

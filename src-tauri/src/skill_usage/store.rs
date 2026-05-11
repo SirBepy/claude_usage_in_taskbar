@@ -1,6 +1,6 @@
 use crate::skill_usage::types::{
-    InvocationCounts, InvocationSource, SkillDetail, SkillUsageEntry, SkillUsageEvent,
-    SkillUsageWeek, TokenBreakdown,
+    InvocationCounts, InvocationSource, KnownSkill, SkillDetail, SkillUsageEntry,
+    SkillUsageEvent, SkillUsageWeek, TokenBreakdown,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::io::{BufRead, BufReader, Write};
@@ -147,6 +147,51 @@ pub fn get_week(dir: &Path, today: &str) -> SkillUsageWeek {
         entries,
         total_sessions: all_sessions.len() as u32,
     }
+}
+
+/// Walks every `events-*.jsonl` in `dir` once and returns a deduplicated
+/// list of every skill ever seen, with all-time invocation count and the
+/// most recent ts. Sorted by total_invocations descending.
+pub fn list_known_skills(dir: &Path) -> Vec<KnownSkill> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return vec![] };
+    let mut totals: std::collections::HashMap<String, (u32, String)> =
+        std::collections::HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if !name.starts_with("events-") || !name.ends_with(".jsonl") {
+            continue;
+        }
+        let Ok(file) = std::fs::File::open(&path) else { continue };
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(ev): Result<SkillUsageEvent, _> = serde_json::from_str(trimmed) else {
+                continue;
+            };
+            let entry = totals.entry(ev.skill.clone()).or_insert_with(|| (0, String::new()));
+            entry.0 += 1;
+            if ev.ts > entry.1 {
+                entry.1 = ev.ts;
+            }
+        }
+    }
+    let mut out: Vec<KnownSkill> = totals
+        .into_iter()
+        .map(|(skill, (total_invocations, last_seen))| KnownSkill {
+            skill,
+            total_invocations,
+            last_seen,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.total_invocations
+            .cmp(&a.total_invocations)
+            .then_with(|| a.skill.cmp(&b.skill))
+    });
+    out
 }
 
 pub fn get_detail(dir: &Path, today: &str, skill: &str) -> SkillDetail {
