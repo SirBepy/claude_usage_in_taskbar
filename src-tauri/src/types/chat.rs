@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum ContentBlock {
     Text { text: String },
-    Code { language: Option<String>, text: String },
     Image { mime: String, data: String },
 }
 

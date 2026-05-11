@@ -242,10 +242,6 @@ pub(crate) fn blocks_to_prompt_text(blocks: &[ContentBlock]) -> String {
     for b in blocks {
         match b {
             ContentBlock::Text { text } => out.push_str(text),
-            ContentBlock::Code { language, text } => {
-                let lang = language.clone().unwrap_or_default();
-                out.push_str(&format!("```{}\n{}\n```", lang, text));
-            }
             ContentBlock::Image { .. } => {
                 out.push_str("<image not yet persisted to disk>");
             }
@@ -263,24 +259,6 @@ mod tests {
     fn blocks_to_prompt_text_text_only() {
         let blocks = vec![ContentBlock::Text { text: "hi".into() }];
         assert_eq!(blocks_to_prompt_text(&blocks), "hi");
-    }
-
-    #[test]
-    fn blocks_to_prompt_text_code_block_renders_fences() {
-        let blocks = vec![ContentBlock::Code {
-            language: Some("rust".into()),
-            text: "let x = 1;".into(),
-        }];
-        assert_eq!(blocks_to_prompt_text(&blocks), "```rust\nlet x = 1;\n```");
-    }
-
-    #[test]
-    fn blocks_to_prompt_text_text_then_code() {
-        let blocks = vec![
-            ContentBlock::Text { text: "explain this:".into() },
-            ContentBlock::Code { language: None, text: "fn main(){}".into() },
-        ];
-        assert_eq!(blocks_to_prompt_text(&blocks), "explain this:\n```\nfn main(){}\n```");
     }
 
     #[test]

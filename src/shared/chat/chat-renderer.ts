@@ -621,12 +621,10 @@ export class ChatRenderer {
         switch (b.type) {
           case "text":
             return `<div class="block text">${renderMarkdown(b.text)}</div>`;
-          case "code":
-            return `<pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre>`;
           case "image":
             return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
           default:
-            return "";
+            ((_: never) => "")(b);
         }
       })
       .join("");
