@@ -1,0 +1,67 @@
+.skill-usage-widget { margin-top: 32px; }
+.skill-usage-widget h3 { margin: 0 0 12px 0; font-size: 14px; opacity: 0.85; }
+.skill-usage-widget .empty {
+  opacity: 0.6;
+  font-style: italic;
+  padding: 16px;
+  border: 1px dashed #333;
+  border-radius: 6px;
+}
+.skill-usage-widget .loading { opacity: 0.6; }
+
+.skill-usage-body {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.pie-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.pie-empty { opacity: 0.6; font-size: 12px; }
+.pie-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 11px;
+  max-width: 220px;
+}
+.pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+  word-break: break-all;
+}
+.pie-legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.skill-usage-table {
+  flex: 1;
+  min-width: 360px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.skill-usage-table th,
+.skill-usage-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid #1f1f1f;
+}
+.skill-usage-table th {
+  opacity: 0.7;
+  font-weight: normal;
+  cursor: pointer;
+  user-select: none;
+}
+.skill-usage-table th.sort-active { opacity: 1; color: #5b8def; }
+.skill-usage-table tbody tr { cursor: pointer; }
+.skill-usage-table tbody tr:hover { background: rgba(255, 255, 255, 0.04); }

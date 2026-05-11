@@ -341,6 +341,23 @@ export const api = {
       try { cb(payload || []); }
       catch (err) { console.error("onInstancesChanged handler threw", err); }
     }),
+
+  // --- Skill usage ---
+  getSkillUsageWeek: async (): Promise<import("../types/ipc.generated").SkillUsageWeek> => {
+    try { return await invoke<import("../types/ipc.generated").SkillUsageWeek>("get_skill_usage_week"); }
+    catch (e) { console.error("get_skill_usage_week failed", e); return { entries: [], total_sessions: 0 }; }
+  },
+  getSkillUsageDetail: async (
+    skill: string,
+  ): Promise<import("../types/ipc.generated").SkillDetail> => {
+    try { return await invoke<import("../types/ipc.generated").SkillDetail>("get_skill_usage_detail", { skill }); }
+    catch (e) {
+      console.error("get_skill_usage_detail failed", e);
+      return { skill, invocations: { total: 0, manual: 0, skill: 0, auto: 0 }, events: [] };
+    }
+  },
+  onSkillUsageChanged: (cb: () => void): Unlisten =>
+    listenEvent("skill-usage-changed", () => cb()),
 };
 
 export type Api = typeof api;

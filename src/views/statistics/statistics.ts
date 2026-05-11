@@ -15,6 +15,7 @@ import { hourToMs, timeAgo } from "../../shared/time";
 import { projectLabel, isBlacklisted } from "../../shared/projects";
 import { showView, openProjectDetail } from "../../shared/navigation";
 import { api } from "../../shared/api";
+import { renderSkillUsageWidget } from "./skill-usage-widget";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -1020,6 +1021,9 @@ export async function renderStatisticsView(
   const onRefresh = () => fill();
   window.addEventListener("refresh-dashboard-home", onRefresh);
 
+  const skillUsageHost = root.querySelector<HTMLElement>("#skill-usage-section");
+  const unlistenSkillUsage = skillUsageHost ? renderSkillUsageWidget(skillUsageHost) : () => { /* noop */ };
+
   function fill(): void {
     const c = getStatisticsContent();
     if (!c) return;
@@ -1034,6 +1038,7 @@ export async function renderStatisticsView(
 
   return () => {
     try { unlisten(); } catch { /* ignore */ }
+    try { unlistenSkillUsage(); } catch { /* ignore */ }
     window.removeEventListener("refresh-dashboard-home", onRefresh);
   };
 }
@@ -1057,6 +1062,7 @@ function template() {
         <div id="statistics-content">
           <div class="no-data">No data yet.</div>
         </div>
+        <div id="skill-usage-section"></div>
       </div>
     </div>
   `;
