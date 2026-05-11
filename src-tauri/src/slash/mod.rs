@@ -4,6 +4,7 @@ use ts_rs::TS;
 pub mod parse;
 pub mod builtins;
 pub mod enumerate;
+pub mod watcher;
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct SlashEntry {

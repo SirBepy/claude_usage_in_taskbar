@@ -206,6 +206,7 @@ pub fn run() {
             }
             crate::scheduler::spawn(app.handle().clone());
             crate::news::spawn_poll_loop(app.handle().clone());
+            crate::slash::watcher::spawn(app.handle().clone());
 
             // Auto-backfill token history once, off the main thread. Keeps
             // the stats page populated on first launch / after new sessions.
