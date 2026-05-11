@@ -2,6 +2,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 pub mod parse;
+pub mod builtins;
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct SlashEntry {
