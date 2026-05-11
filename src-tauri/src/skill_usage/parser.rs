@@ -1,5 +1,6 @@
 use crate::skill_usage::types::{InvocationSource, SkillUsageEvent, TokenBreakdown};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
@@ -49,7 +50,8 @@ pub fn parse_transcript(path: &Path) -> Vec<SkillUsageEvent> {
                 else {
                     continue;
                 };
-                let mut first_skill_in_turn: Option<String> = None;
+                // Collect every Skill tool_use in this turn, in order.
+                let mut skills_in_turn: Vec<(String, String)> = Vec::new(); // (tool_use_id, skill_name)
                 for c in content {
                     if c.get("type").and_then(|v| v.as_str()) == Some("tool_use")
                         && c.get("name").and_then(|v| v.as_str()) == Some("Skill")
@@ -57,35 +59,51 @@ pub fn parse_transcript(path: &Path) -> Vec<SkillUsageEvent> {
                         let skill_name = c
                             .pointer("/input/skill")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("");
+                            .unwrap_or("")
+                            .to_string();
                         if skill_name.is_empty() {
                             continue;
                         }
-                        if first_skill_in_turn.is_none() {
-                            first_skill_in_turn = Some(skill_name.to_string());
-                        }
+                        let id = c
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        skills_in_turn.push((id, skill_name));
                     }
                 }
-                let Some(skill_name) = first_skill_in_turn else {
+                if skills_in_turn.is_empty() {
                     continue;
-                };
+                }
 
-                let source = classify_source(
-                    &skill_name,
-                    last_user_text.as_deref(),
-                    skill_seen_since_user,
-                );
-                let tokens = next_assistant_usage(&lines, i);
+                let body_lengths = tool_result_lengths(&lines, i, &skills_in_turn);
+                let total_usage = next_assistant_usage(&lines, i);
+                let split = split_usage(&body_lengths, &total_usage);
+
                 let project = cwd.as_deref().map(basename).unwrap_or_default();
-                events.push(SkillUsageEvent {
-                    ts: chrono::Utc::now()
-                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                    skill: skill_name,
-                    session_id: session_id.clone().unwrap_or_default(),
-                    project,
-                    source,
-                    tokens,
-                });
+                let ts = chrono::Utc::now()
+                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+                for (idx, (_id, skill_name)) in skills_in_turn.iter().enumerate() {
+                    // Source for skills after the first in the same turn: chained.
+                    let source = if idx == 0 {
+                        classify_source(
+                            skill_name,
+                            last_user_text.as_deref(),
+                            skill_seen_since_user,
+                        )
+                    } else {
+                        InvocationSource::Skill
+                    };
+                    events.push(SkillUsageEvent {
+                        ts: ts.clone(),
+                        skill: skill_name.clone(),
+                        session_id: session_id.clone().unwrap_or_default(),
+                        project: project.clone(),
+                        source,
+                        tokens: split[idx].clone(),
+                    });
+                }
                 skill_seen_since_user = true;
             }
             _ => {}
@@ -160,6 +178,120 @@ fn next_assistant_usage(lines: &[Value], from_idx: usize) -> TokenBreakdown {
         };
     }
     TokenBreakdown::default()
+}
+
+/// Walks forward from `from_idx` to the next user turn, indexing its
+/// `tool_result` entries by `tool_use_id`, and returns the body length
+/// (sum of character lengths across text content) for each skill in order.
+/// Missing tool_results yield 0 for that slot.
+fn tool_result_lengths(
+    lines: &[Value],
+    from_idx: usize,
+    skills_in_turn: &[(String, String)],
+) -> Vec<usize> {
+    let mut by_id: HashMap<String, usize> = HashMap::new();
+    for line in lines.iter().skip(from_idx + 1) {
+        let t = line.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if t == "assistant" {
+            // We've passed the user turn that holds tool_results; stop.
+            break;
+        }
+        if t != "user" {
+            continue;
+        }
+        let Some(content) = line
+            .pointer("/message/content")
+            .and_then(|v| v.as_array())
+        else {
+            continue;
+        };
+        for c in content {
+            if c.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+                continue;
+            }
+            let Some(id) = c.get("tool_use_id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let len = tool_result_content_len(c.get("content"));
+            by_id.insert(id.to_string(), len);
+        }
+        // A skill's tool_results live in the same user turn that resolves it;
+        // once we've scanned that turn we're done.
+        break;
+    }
+    skills_in_turn
+        .iter()
+        .map(|(id, _)| by_id.get(id).copied().unwrap_or(0))
+        .collect()
+}
+
+/// `content` for a tool_result may be a string or an array of content blocks.
+/// We sum text lengths; non-text blocks (images) contribute 0 since skill
+/// bodies are text and we want a proxy for "input-token weight".
+fn tool_result_content_len(content: Option<&Value>) -> usize {
+    let Some(content) = content else { return 0 };
+    if let Some(s) = content.as_str() {
+        return s.len();
+    }
+    if let Some(arr) = content.as_array() {
+        return arr
+            .iter()
+            .filter_map(|b| {
+                if b.get("type").and_then(|v| v.as_str()) == Some("text") {
+                    b.get("text").and_then(|v| v.as_str())
+                } else {
+                    None
+                }
+            })
+            .map(str::len)
+            .sum();
+    }
+    0
+}
+
+/// Splits one TokenBreakdown across N slots weighted by body length.
+/// Each field is split independently using floor; the last slot collects
+/// the remainder so the per-skill sum equals the original exactly. When
+/// every weight is zero (no tool_results captured), falls back to an
+/// equal split with the same remainder-to-last rule.
+fn split_usage(weights: &[usize], total: &TokenBreakdown) -> Vec<TokenBreakdown> {
+    if weights.is_empty() {
+        return vec![];
+    }
+    if weights.len() == 1 {
+        return vec![total.clone()];
+    }
+    let total_weight: usize = weights.iter().sum();
+    let use_equal = total_weight == 0;
+
+    let mut out: Vec<TokenBreakdown> = Vec::with_capacity(weights.len());
+    let mut acc = TokenBreakdown::default();
+    for (idx, w) in weights.iter().enumerate() {
+        let mut piece = TokenBreakdown::default();
+        if idx == weights.len() - 1 {
+            // Last slot: take whatever's left so totals match exactly.
+            piece.input = total.input.saturating_sub(acc.input);
+            piece.output = total.output.saturating_sub(acc.output);
+            piece.cache_read = total.cache_read.saturating_sub(acc.cache_read);
+            piece.cache_create = total.cache_create.saturating_sub(acc.cache_create);
+        } else {
+            let (num, denom) = if use_equal {
+                (1u64, weights.len() as u64)
+            } else {
+                (*w as u64, total_weight as u64)
+            };
+            piece.input = total.input * num / denom;
+            piece.output = total.output * num / denom;
+            piece.cache_read = total.cache_read * num / denom;
+            piece.cache_create = total.cache_create * num / denom;
+        }
+        acc.input += piece.input;
+        acc.output += piece.output;
+        acc.cache_read += piece.cache_read;
+        acc.cache_create += piece.cache_create;
+        out.push(piece);
+    }
+    out
 }
 
 fn basename(path: &str) -> String {
