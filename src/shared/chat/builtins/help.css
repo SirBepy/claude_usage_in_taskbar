@@ -1,0 +1,55 @@
+.builtin-help-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.builtin-help {
+  background: var(--surface-1, #1d1f23);
+  border: 1px solid var(--border-1, #333);
+  border-radius: 8px;
+  width: min(640px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.builtin-help header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-1, #333);
+}
+.builtin-help .close-x {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.builtin-help ul {
+  list-style: none;
+  padding: 8px 14px;
+  overflow-y: auto;
+  margin: 0;
+}
+.builtin-help li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-2, rgba(255, 255, 255, 0.05));
+}
+.builtin-help li:last-child {
+  border-bottom: none;
+}
+.builtin-help .row-head {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.builtin-help .row-meta {
+  font-size: 0.85em;
+  opacity: 0.85;
+  margin-top: 2px;
+}

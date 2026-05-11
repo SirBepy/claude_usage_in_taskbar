@@ -3,5 +3,7 @@
 
 import { HANDLERS } from "./index";
 import { clearSession } from "./clear";
+import { showHelp } from "./help";
 
 HANDLERS.clear = clearSession;
+HANDLERS.help = showHelp;
