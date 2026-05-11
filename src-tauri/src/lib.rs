@@ -162,6 +162,7 @@ pub fn run() {
             ipc::refresh_news,
             ipc::mark_news_read,
             ipc::mark_all_news_read,
+            ipc::list_slash_commands,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
