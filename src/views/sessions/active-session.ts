@@ -118,6 +118,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const composerEl = pane.querySelector<HTMLElement>(".session-composer");
   if (composerEl) {
     state.composer = new Composer(composerEl, {
+      projectDir: sess.cwd ?? null,
       onSend: async (blocks: ContentBlock[]) => {
         // Optimistically push the user's message via the store; claude -p
         // doesn't echo it back via stream-json. Cache stays consistent.

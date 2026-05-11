@@ -5,6 +5,10 @@
 
 import { invoke } from "../ipc";
 import type { ContentBlock } from "../../types/ipc.generated";
+import { CaretSuggestPopup } from "./caret-popup/popup";
+import { SlashProvider } from "./caret-popup/providers/slash";
+import type { SuggestProvider } from "./caret-popup/types";
+import "./caret-popup/popup.css";
 
 interface Attachment {
   mime: string;
@@ -14,6 +18,7 @@ interface Attachment {
 
 export interface ComposerOptions {
   onSend: (blocks: ContentBlock[]) => Promise<void> | void;
+  projectDir?: string | null;
 }
 
 export class Composer {
@@ -25,6 +30,8 @@ export class Composer {
   private textarea: HTMLTextAreaElement | null = null;
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
+  private slash: SlashProvider | null = null;
+  private popup: CaretSuggestPopup<unknown> | null = null;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -50,12 +57,18 @@ export class Composer {
   constructor(root: HTMLElement, opts: ComposerOptions) {
     this.root = root;
     this.opts = opts;
+    this.slash = new SlashProvider();
+    void this.slash.start(opts.projectDir ?? null);
     this.render();
     document.addEventListener("keydown", this._globalKeydown);
   }
 
   destroy(): void {
     document.removeEventListener("keydown", this._globalKeydown);
+    this.popup?.destroy();
+    this.popup = null;
+    this.slash?.stop();
+    this.slash = null;
   }
 
   setSessionId(id: string, opts: { readOnly?: boolean } = {}): void {
@@ -88,10 +101,22 @@ export class Composer {
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
 
-    if (!this.disabled) {
-      this.textarea?.addEventListener("keydown", this.onKey.bind(this));
-      this.textarea?.addEventListener("paste", this.onPaste.bind(this));
-      this.textarea?.addEventListener("input", () => this.autoResize());
+    // The popup div was inside root.innerHTML, so it's gone after the swap.
+    // Rebuild it on every render and keep the provider's cache.
+    this.popup?.destroy();
+    this.popup = null;
+    if (!this.disabled && this.textarea && this.slash) {
+      this.popup = new CaretSuggestPopup({
+        anchor: this.root,
+        textarea: this.textarea,
+        provider: this.slash as unknown as SuggestProvider<unknown>,
+      });
+      this.textarea.addEventListener("keydown", this.onKey.bind(this));
+      this.textarea.addEventListener("paste", this.onPaste.bind(this));
+      this.textarea.addEventListener("input", () => {
+        this.autoResize();
+        this.popup?.handleInput();
+      });
       this.sendBtn?.addEventListener("click", () => void this.send());
     }
     this.autoResize();
@@ -105,6 +130,7 @@ export class Composer {
   }
 
   private async onKey(e: KeyboardEvent): Promise<void> {
+    if (this.popup?.handleKey(e)) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       await this.send();

@@ -144,6 +144,7 @@ export async function renderPendingPane(
   if (composerEl) {
     let started = false;
     state.composer = new Composer(composerEl, {
+      projectDir: project.path,
       onSend: async (blocks: ContentBlock[]) => {
         if (state.mountId !== myMount) return;
         const promptText = blocks
