@@ -3,6 +3,7 @@ use ts_rs::TS;
 
 pub mod parse;
 pub mod builtins;
+pub mod enumerate;
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct SlashEntry {

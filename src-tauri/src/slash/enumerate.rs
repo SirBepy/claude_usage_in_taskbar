@@ -1,0 +1,105 @@
+use std::fs;
+use std::path::Path;
+
+use super::parse::{extract_args, parse_frontmatter};
+use super::{builtins, SlashEntry, SlashSource};
+
+pub fn scan_all(project_dir: Option<&Path>) -> Vec<SlashEntry> {
+    let Some(home) = dirs::home_dir() else {
+        return builtins::all();
+    };
+    scan_dirs(&home.join(".claude"), project_dir)
+}
+
+pub fn scan_dirs(home_claude: &Path, project_dir: Option<&Path>) -> Vec<SlashEntry> {
+    let mut out = builtins::all();
+    scan_commands(&home_claude.join("commands"), &SlashSource::UserCommand, &mut out);
+    scan_skills(&home_claude.join("skills"), &SlashSource::UserSkill, &mut out);
+    scan_plugins(&home_claude.join("plugins/cache"), &mut out);
+    if let Some(p) = project_dir {
+        scan_commands(&p.join(".claude/commands"), &SlashSource::ProjectCommand, &mut out);
+    }
+    out
+}
+
+fn scan_commands(dir: &Path, src: &SlashSource, out: &mut Vec<SlashEntry>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for ent in entries.flatten() {
+        let p = ent.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Ok(body) = fs::read_to_string(&p) else {
+            log::warn!("[slash] unreadable: {}", p.display());
+            continue;
+        };
+        let fm = parse_frontmatter(&body);
+        let description = fm.description.unwrap_or_else(|| first_nonempty_line(&body));
+        out.push(SlashEntry {
+            name: fm.name.unwrap_or_else(|| stem.to_string()),
+            args: extract_args(&body),
+            description,
+            source: src.clone(),
+        });
+    }
+}
+
+fn scan_skills(dir: &Path, src: &SlashSource, out: &mut Vec<SlashEntry>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for ent in entries.flatten() {
+        let p = ent.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let skill_file = p.join("SKILL.md");
+        let Ok(body) = fs::read_to_string(&skill_file) else { continue };
+        let fm = parse_frontmatter(&body);
+        let Some(name) = fm
+            .name
+            .clone()
+            .or_else(|| p.file_name().and_then(|s| s.to_str()).map(String::from))
+        else {
+            continue;
+        };
+        out.push(SlashEntry {
+            name,
+            args: extract_args(&body),
+            description: fm.description.unwrap_or_default(),
+            source: src.clone(),
+        });
+    }
+}
+
+fn scan_plugins(dir: &Path, out: &mut Vec<SlashEntry>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for ent in entries.flatten() {
+        let plugin_root = ent.path();
+        if !plugin_root.is_dir() {
+            continue;
+        }
+        let plugin_name = match ent.file_name().into_string() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let Ok(versions) = fs::read_dir(&plugin_root) else { continue };
+        for v in versions.flatten() {
+            let vp = v.path();
+            if !vp.is_dir() {
+                continue;
+            }
+            let skill_src = SlashSource::PluginSkill { plugin: plugin_name.clone() };
+            let cmd_src = SlashSource::PluginCommand { plugin: plugin_name.clone() };
+            scan_skills(&vp.join("skills"), &skill_src, out);
+            scan_commands(&vp.join("commands"), &cmd_src, out);
+        }
+    }
+}
+
+fn first_nonempty_line(s: &str) -> String {
+    s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .to_string()
+}
