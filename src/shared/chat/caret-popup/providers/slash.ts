@@ -26,7 +26,7 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
   }
 
   shouldTrigger({ textBefore }: { textBefore: string; caretPos: number }): boolean {
-    return /(^|\n)\/[^\s]*$/.test(textBefore);
+    return /(^|\s)\/[^\s]*$/.test(textBefore);
   }
 
   query(token: string): SlashEntry[] {
