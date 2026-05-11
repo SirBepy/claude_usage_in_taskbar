@@ -107,10 +107,13 @@ export class CaretSuggestPopup {
   }
 
   private close(): void {
+    const wasOpen = this.open;
+    const prev = this.active;
     this.open = false;
     this.active = null;
     this.el.hidden = true;
     this.el.replaceChildren();
+    if (wasOpen) prev?.onClosed?.();
   }
 
   private render(): void {

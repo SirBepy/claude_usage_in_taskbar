@@ -7,6 +7,7 @@ import { invoke } from "../ipc";
 import type { ContentBlock } from "../../types/ipc.generated";
 import { CaretSuggestPopup } from "./caret-popup/popup";
 import { SlashProvider } from "./caret-popup/providers/slash";
+import { FileProvider } from "./caret-popup/providers/file";
 import type { SuggestProvider } from "./caret-popup/types";
 import "./caret-popup/popup.css";
 
@@ -31,6 +32,7 @@ export class Composer {
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private slash: SlashProvider | null = null;
+  private file: FileProvider | null = null;
   private popup: CaretSuggestPopup | null = null;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
@@ -64,6 +66,8 @@ export class Composer {
     }
     this.slash = new SlashProvider();
     void this.slash.start(opts.projectDir ?? null);
+    this.file = new FileProvider();
+    this.file.start(opts.projectDir ?? null);
     this.render();
     document.addEventListener("keydown", this._globalKeydown);
   }
@@ -74,6 +78,8 @@ export class Composer {
     this.popup = null;
     this.slash?.stop();
     this.slash = null;
+    this.file?.stop();
+    this.file = null;
   }
 
   setSessionId(id: string, opts: { readOnly?: boolean } = {}): void {
@@ -110,11 +116,11 @@ export class Composer {
     // Rebuild it on every render and keep the provider's cache.
     this.popup?.destroy();
     this.popup = null;
-    if (!this.disabled && this.textarea && this.slash) {
+    if (!this.disabled && this.textarea && this.slash && this.file) {
       this.popup = new CaretSuggestPopup({
         anchor: this.root,
         textarea: this.textarea,
-        providers: [this.slash] as unknown as SuggestProvider<unknown>[],
+        providers: [this.slash, this.file] as unknown as SuggestProvider<unknown>[],
       });
       this.textarea.addEventListener("keydown", this.onKey.bind(this));
       this.textarea.addEventListener("paste", this.onPaste.bind(this));

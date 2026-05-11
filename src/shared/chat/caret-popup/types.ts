@@ -4,6 +4,8 @@ export interface SuggestProvider<T> {
   query(token: string): T[];
   renderRow(item: T, selected: boolean): HTMLElement;
   onPick(item: T, textarea: HTMLTextAreaElement, tokenRange: [number, number]): void;
+  /** Called whenever the popup transitions from open to closed. */
+  onClosed?(): void;
 }
 
 export interface PopupOptions {
