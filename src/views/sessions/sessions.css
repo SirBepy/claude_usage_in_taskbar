@@ -237,6 +237,7 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--bg);
+  position: relative;
 }
 
 .session-empty {
@@ -370,6 +371,140 @@
 
 .readonly-banner .takeover-btn:active {
   background: rgba(251, 191, 36, 0.4);
+}
+
+/* ── Closing session banner ──────────────────────────────────────────────── */
+
+.session-closing-banner {
+  background: rgba(99, 102, 241, 0.08);
+  border-top: 1px solid rgba(99, 102, 241, 0.25);
+  color: #818cf8;
+  font-size: 0.82rem;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.session-closing-banner i {
+  font-size: 1rem;
+}
+
+.session-closing-banner .closing-banner-text {
+  flex: 1;
+}
+
+.session-closing-banner .cancel-closing-btn {
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.session-closing-banner .cancel-closing-btn:hover {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+.session-closing-banner .cancel-closing-btn:active {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+/* ── Close confirm modal ─────────────────────────────────────────────────── */
+
+.close-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.close-confirm-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 360px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.close-confirm-icon {
+  font-size: 1.5rem;
+  color: var(--text-dim);
+}
+
+.close-confirm-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.close-confirm-body {
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.close-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.btn-ccd-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-ccd-cancel:hover {
+  background: var(--surface-alt);
+}
+
+.btn-ccd-skip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-ccd-skip:hover {
+  background: var(--surface-alt);
+}
+
+.btn-ccd-commit {
+  background: rgba(99, 102, 241, 0.85);
+  border: 1px solid transparent;
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.btn-ccd-commit:hover {
+  background: rgba(99, 102, 241, 1);
 }
 
 /* ── Session statusline ──────────────────────────────────────────────────── */

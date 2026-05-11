@@ -192,6 +192,32 @@ pub struct GitInfo {
     pub repo: Option<String>,
 }
 
+/// Returns the list of files with uncommitted changes in the given directory.
+/// Used to detect whether there is work to commit before closing a chat session.
+/// Returns an empty vec if the directory is not a git repo or git is unavailable.
+#[tauri::command]
+pub async fn get_git_dirty(cwd: String) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&cwd).args(["status", "--porcelain"]);
+        crate::util::process::hide_console(&mut cmd);
+        cmd.output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| {
+                s.lines()
+                    .filter(|l| l.len() > 3)
+                    .map(|l| l[3..].trim().to_string())
+                    .filter(|p| !p.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Returns the current git branch and repository name for the given working
 /// directory. Used by the session statusbar to show branch + repo context.
 /// Never fails - missing git / no repo / no remote all produce None fields.

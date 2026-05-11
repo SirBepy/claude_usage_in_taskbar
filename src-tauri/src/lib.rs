@@ -158,6 +158,7 @@ pub fn run() {
             ipc::detach_window,
             ipc::reattach_window,
             ipc::get_git_info,
+            ipc::get_git_dirty,
             ipc::respond_permission,
             ipc::respond_question,
             ipc::list_news,
