@@ -55,6 +55,13 @@ struct SessionEndPayload {
     #[serde(default)] pub reason: Option<String>,
 }
 
+#[derive(Deserialize, Debug, Default)]
+struct StopPayload {
+    #[serde(default)] pub session_id: Option<String>,
+    #[serde(default)] pub transcript_path: Option<String>,
+    #[serde(default)] pub cwd: Option<String>,
+}
+
 async fn on_refresh(
     AxState(ctx): AxState<Arc<HookCtx>>,
     Json(payload): Json<RefreshPayload>,
@@ -300,6 +307,52 @@ async fn on_session_end(
     StatusCode::NO_CONTENT
 }
 
+async fn on_stop(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(payload): Json<StopPayload>,
+) -> impl IntoResponse {
+    log::info!(
+        "hook /hooks/stop: session={} cwd={} transcript={}",
+        payload.session_id.as_deref().unwrap_or("-"),
+        payload.cwd.as_deref().unwrap_or("-"),
+        payload.transcript_path.as_deref().unwrap_or("-"),
+    );
+
+    let Some(transcript_path) = payload.transcript_path.clone() else {
+        return (StatusCode::OK, Json(json!({"ok": true, "reason": "no transcript"})));
+    };
+    let Some(session_id) = payload.session_id.clone() else {
+        return (StatusCode::OK, Json(json!({"ok": true, "reason": "no session_id"})));
+    };
+
+    let app = ctx.app.clone();
+    tauri::async_runtime::spawn(async move {
+        let dir = match crate::settings::paths::skill_usage_dir() {
+            Ok(d) => d,
+            Err(e) => { log::warn!("skill_usage_dir failed: {e}"); return; }
+        };
+        let transcript = PathBuf::from(transcript_path);
+        let events = tauri::async_runtime::spawn_blocking(move || {
+            crate::skill_usage::parser::parse_transcript(&transcript)
+        })
+        .await
+        .unwrap_or_default();
+
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        if let Err(e) = crate::skill_usage::store::mark_session(&dir, &session_id, &today) {
+            log::warn!("mark_session failed: {e}");
+        }
+        if !events.is_empty() {
+            if let Err(e) = crate::skill_usage::store::append_events(&dir, &events) {
+                log::warn!("append_events failed: {e}");
+            }
+        }
+        let _ = app.emit("skill-usage-changed", json!({}));
+    });
+
+    (StatusCode::OK, Json(json!({"ok": true})))
+}
+
 /// Polls the transcript for the first real user prompt. Fresh
 /// sessions start before the user types anything, so we retry up
 /// to ~30s × 1s. Returns None if the transcript never gets a real
@@ -473,6 +526,7 @@ pub async fn spawn(app: AppHandle) -> Result<u16> {
         .route("/quit", post(on_quit))
         .route("/hooks/session-start", post(on_session_start))
         .route("/hooks/session-end", post(on_session_end))
+        .route("/hooks/stop", post(on_stop))
         .route("/permissions/request", post(on_permission_request))
         .route("/permissions/respond", post(on_permission_respond))
         .route("/questions/request", post(on_question_request))

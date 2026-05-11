@@ -116,3 +116,10 @@ pub fn mcp_temp_dir() -> anyhow::Result<std::path::PathBuf> {
     std::fs::create_dir_all(&p)?;
     Ok(p)
 }
+
+pub fn skill_usage_dir() -> anyhow::Result<std::path::PathBuf> {
+    let d = ensure_data_dir()?;
+    let p = d.join("skill-usage");
+    std::fs::create_dir_all(&p)?;
+    Ok(p)
+}
