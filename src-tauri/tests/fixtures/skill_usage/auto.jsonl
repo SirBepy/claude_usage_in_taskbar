@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"fix the bug in auth"}]},"session_id":"sess-c","cwd":"C:/proj/baz"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"superpowers:systematic-debugging"}}],"usage":{"input_tokens":150,"output_tokens":25,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}},"session_id":"sess-c"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"skill body..."}]},"session_id":"sess-c"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Debugging..."}],"usage":{"input_tokens":800,"output_tokens":120,"cache_read_input_tokens":2000,"cache_creation_input_tokens":0}},"session_id":"sess-c"}

@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"/commit some changes"}]},"session_id":"sess-a","cwd":"C:/proj/foo"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"commit"}}],"usage":{"input_tokens":100,"output_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}},"session_id":"sess-a"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"skill body..."}]},"session_id":"sess-a"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Committing..."}],"usage":{"input_tokens":1200,"output_tokens":300,"cache_read_input_tokens":5000,"cache_creation_input_tokens":800}},"session_id":"sess-a"}
