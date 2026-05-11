@@ -1,6 +1,8 @@
 use serde::Serialize;
 use ts_rs::TS;
 
+pub mod parse;
+
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct SlashEntry {
     pub name: String,
