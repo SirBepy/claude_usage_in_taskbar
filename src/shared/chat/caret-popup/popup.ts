@@ -40,11 +40,11 @@ export class CaretSuggestPopup<T> {
       return;
     }
     const m = before.match(/(^|\n)([/@][^\s]*)$/);
-    if (!m) {
+    const token = m?.[2];
+    if (!token) {
       this.close();
       return;
     }
-    const token = m[2];
     const start = caret - token.length;
     this.tokenRange = [start, caret];
 
@@ -73,10 +73,12 @@ export class CaretSuggestPopup<T> {
         this.render();
         return true;
       case "Enter":
-      case "Tab":
+      case "Tab": {
         e.preventDefault();
-        this.pick(this.items[this.selectedIdx]);
+        const item = this.items[this.selectedIdx];
+        if (item !== undefined) this.pick(item);
         return true;
+      }
       case "Escape":
         e.preventDefault();
         this.close();
