@@ -16,6 +16,7 @@
 //! `ipc::<command>` shape used by `lib.rs` `invoke_handler!`.
 
 pub mod attachments;
+pub mod builtins;
 pub mod history;
 pub mod lifecycle;
 pub mod run;
@@ -25,6 +26,7 @@ pub mod run;
 // the parent `ipc.rs` `pub use chat::*;`). A named `pub use foo::bar`
 // re-exports `bar` only; the macro-generated sibling stays hidden.
 pub use attachments::*;
+pub use builtins::*;
 pub use history::*;
 pub use lifecycle::*;
 pub use run::*;

@@ -148,6 +148,7 @@ pub fn run() {
             ipc::start_session,
             ipc::send_message,
             ipc::cancel_turn,
+            ipc::clear_session,
             ipc::paste_image,
             ipc::read_attachment,
             ipc::takeover_manual,
