@@ -71,9 +71,12 @@ pub struct SkillDetail {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
-pub struct KnownSkill {
+pub struct InstalledSkill {
+    /// Canonical key matching what the Skill tool emits in `input.skill`.
+    /// User skills: bare folder name (e.g. "commit"). Plugin skills:
+    /// "<plugin>:<skill>" (e.g. "superpowers:brainstorming").
     pub skill: String,
-    pub total_invocations: u32,
-    /// ISO-8601 of the most recent invocation, or empty if unknown.
-    pub last_seen: String,
+    pub description: String,
+    /// Plugin name when sourced from a plugin cache, else None.
+    pub plugin: Option<String>,
 }

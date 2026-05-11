@@ -170,6 +170,7 @@ pub fn run() {
             ipc::list_project_files,
             ipc::get_skill_usage_week,
             ipc::get_skill_usage_detail,
+            ipc::list_installed_skills,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

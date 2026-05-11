@@ -356,6 +356,10 @@ export const api = {
       return { skill, invocations: { total: 0, manual: 0, skill: 0, auto: 0 }, events: [] };
     }
   },
+  listInstalledSkills: async (): Promise<import("../types/ipc.generated").InstalledSkill[]> => {
+    try { return (await invoke<import("../types/ipc.generated").InstalledSkill[]>("list_installed_skills")) || []; }
+    catch (e) { console.error("list_installed_skills failed", e); return []; }
+  },
   onSkillUsageChanged: (cb: () => void): Unlisten =>
     listenEvent("skill-usage-changed", () => cb()),
 };
