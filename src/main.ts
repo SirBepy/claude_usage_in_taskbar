@@ -19,6 +19,7 @@ import { renderFolderMappingView } from "./views/project-detail/subviews/folder-
 import { renderSessionsListView } from "./views/project-detail/subviews/sessions-list/sessions-list";
 import { renderSessionDetailView } from "./views/session-detail/session-detail";
 import { renderSettingsView } from "./views/settings/settings";
+import { renderSkillDetailView } from "./views/skill-detail/skill-detail";
 import { renderVisualsView } from "./views/settings/subviews/visuals/visuals";
 import { renderThemesView } from "./views/settings/subviews/themes/themes";
 import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
@@ -44,6 +45,7 @@ registerView("project-folder-mapping", renderFolderMappingView);
 registerView("project-sessions", renderSessionsListView);
 registerView("session-detail", renderSessionDetailView);
 registerView("settings", renderSettingsView);
+registerView("skill-detail", renderSkillDetailView);
 registerView("settings-visuals", renderVisualsView);
 registerView("settings-themes", renderThemesView);
 registerView("settings-notifications", renderNotificationsView);

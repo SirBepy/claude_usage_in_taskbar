@@ -1,0 +1,31 @@
+.view-skill-detail .view-body { padding: 16px 24px; max-width: 900px; margin: 0 auto; }
+.skill-detail-back { margin-bottom: 12px; }
+.skill-detail-back a { opacity: 0.7; text-decoration: none; }
+.skill-detail-back a:hover { opacity: 1; }
+
+.counters { display: flex; gap: 32px; margin: 16px 0; }
+.counter .value { font-size: 28px; font-weight: 600; }
+.counter .label { font-size: 11px; opacity: 0.6; text-transform: uppercase; }
+
+.source-pie { margin: 8px 0 24px 0; }
+
+.invocations { width: 100%; border-collapse: collapse; font-size: 12px; }
+.invocations th, .invocations td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #1f1f1f;
+}
+.invocations th { opacity: 0.7; font-weight: normal; }
+
+.skill-detail.empty,
+.view-skill-detail .empty {
+  opacity: 0.6;
+  font-style: italic;
+  padding: 16px;
+}
+.skill-detail.loading { opacity: 0.6; padding: 16px; }
+
+.badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; text-transform: uppercase; }
+.badge-manual { background: rgba(91, 141, 239, 0.2); color: #5b8def; }
+.badge-skill { background: rgba(140, 91, 239, 0.2); color: #8c5bef; }
+.badge-auto { background: rgba(136, 136, 136, 0.2); color: #aaa; }

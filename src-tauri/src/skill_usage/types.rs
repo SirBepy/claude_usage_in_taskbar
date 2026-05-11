@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum InvocationSource {
     Manual,
@@ -11,7 +11,7 @@ pub enum InvocationSource {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct TokenBreakdown {
     pub input: u64,
     pub output: u64,
@@ -26,7 +26,7 @@ impl TokenBreakdown {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct SkillUsageEvent {
     pub ts: String,
     pub skill: String,
@@ -37,7 +37,7 @@ pub struct SkillUsageEvent {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct InvocationCounts {
     pub total: u32,
     pub manual: u32,
@@ -46,7 +46,7 @@ pub struct InvocationCounts {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct SkillUsageEntry {
     pub skill: String,
     pub invocations: InvocationCounts,
@@ -55,14 +55,14 @@ pub struct SkillUsageEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct SkillUsageWeek {
     pub entries: Vec<SkillUsageEntry>,
     pub total_sessions: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
-#[ts(export, export_to = "../src/types/")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct SkillDetail {
     pub skill: String,
     pub invocations: InvocationCounts,
