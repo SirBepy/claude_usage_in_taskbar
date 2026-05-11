@@ -168,6 +168,8 @@ pub fn run() {
             ipc::mark_all_news_read,
             ipc::list_slash_commands,
             ipc::list_project_files,
+            ipc::get_skill_usage_week,
+            ipc::get_skill_usage_detail,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
