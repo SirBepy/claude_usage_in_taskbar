@@ -19,7 +19,7 @@ const LEGACY_MATCHER: &str = "aiusage-taskbar";
 /// Bump this when the shape of the entry we emit changes. Paired with
 /// `Settings::hook_install_version` so existing users get re-installed
 /// once on the next launch after an upgrade.
-pub const CURRENT_INSTALL_VERSION: u32 = 2;
+pub const CURRENT_INSTALL_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HookConfig {
@@ -38,7 +38,11 @@ pub fn merge_hooks(existing: &Value, cfg: &HookConfig) -> Value {
     let hooks = obj.entry("hooks".to_string()).or_insert_with(|| json!({}));
     if !hooks.is_object() { *hooks = json!({}); }
 
-    for (event, endpoint) in [("SessionStart", "session-start"), ("SessionEnd", "session-end")] {
+    for (event, endpoint) in [
+        ("SessionStart", "session-start"),
+        ("SessionEnd", "session-end"),
+        ("Stop", "stop"),
+    ] {
         let command = curl_command(cfg.port, endpoint);
         let entry = json!({
             "hooks": [{

@@ -101,3 +101,26 @@ fn refreshes_our_command_when_port_changes() {
     assert_eq!(arr.len(), 1);
     assert!(arr[0]["hooks"][0]["command"].as_str().unwrap().contains("27200"));
 }
+
+#[test]
+fn merges_stop_hook() {
+    let out = merge_hooks(&serde_json::json!({}), &HookConfig { port: 27182 });
+    let entry = &out["hooks"]["Stop"][0];
+    let cmd = entry["hooks"][0]["command"].as_str().unwrap();
+    assert!(cmd.contains("/hooks/stop"), "expected stop endpoint in {cmd}");
+    assert!(cmd.contains("27182"));
+    assert!(
+        entry.get("matcher").is_none(),
+        "Stop hook matcher filters tool names; we want all, so leave it out"
+    );
+}
+
+#[test]
+fn stop_hook_replaces_old_stop_entry_on_reinstall() {
+    let first = merge_hooks(&serde_json::json!({}), &HookConfig { port: 27182 });
+    let second = merge_hooks(&first, &HookConfig { port: 27183 });
+    let arr = second["hooks"]["Stop"].as_array().unwrap();
+    assert_eq!(arr.len(), 1, "should not duplicate our own Stop entry");
+    let cmd = arr[0]["hooks"][0]["command"].as_str().unwrap();
+    assert!(cmd.contains("27183"));
+}
