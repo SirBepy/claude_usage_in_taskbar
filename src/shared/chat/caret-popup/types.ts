@@ -6,8 +6,8 @@ export interface SuggestProvider<T> {
   onPick(item: T, textarea: HTMLTextAreaElement, tokenRange: [number, number]): void;
 }
 
-export interface PopupOptions<T> {
+export interface PopupOptions {
   anchor: HTMLElement;
   textarea: HTMLTextAreaElement;
-  provider: SuggestProvider<T>;
+  providers: SuggestProvider<unknown>[];
 }

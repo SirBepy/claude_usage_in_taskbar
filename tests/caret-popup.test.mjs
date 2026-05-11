@@ -10,7 +10,7 @@ function setup() {
   const items = ["commit", "caveman", "close"];
   const provider = {
     triggerChar: "/",
-    shouldTrigger: ({ textBefore }) => /(^|\n)\/[^\s]*$/.test(textBefore),
+    shouldTrigger: ({ textBefore }) => /(^|\s)\/[^\s]*$/.test(textBefore),
     query: (token) => items.filter((i) => i.startsWith(token.slice(1))),
     renderRow: (i, sel) => {
       const el = document.createElement("div");
@@ -20,7 +20,7 @@ function setup() {
     },
     onPick: vi.fn(),
   };
-  const popup = new CaretSuggestPopup({ anchor, textarea: ta, provider });
+  const popup = new CaretSuggestPopup({ anchor, textarea: ta, providers: [provider] });
   return { popup, ta, provider };
 }
 
@@ -33,12 +33,20 @@ describe("CaretSuggestPopup", () => {
     expect(popup.isOpen()).toBe(true);
   });
 
-  it("does not open mid-line", () => {
+  it("does not open mid-word (no whitespace before /)", () => {
+    const { popup, ta } = setup();
+    ta.value = "hello/c";
+    ta.selectionStart = ta.selectionEnd = 7;
+    popup.handleInput();
+    expect(popup.isOpen()).toBe(false);
+  });
+
+  it("opens after whitespace mid-line", () => {
     const { popup, ta } = setup();
     ta.value = "hello /c";
     ta.selectionStart = ta.selectionEnd = 8;
     popup.handleInput();
-    expect(popup.isOpen()).toBe(false);
+    expect(popup.isOpen()).toBe(true);
   });
 
   it("opens after newline", () => {
@@ -99,5 +107,53 @@ describe("CaretSuggestPopup", () => {
     expect(provider.onPick).toHaveBeenCalled();
     const [picked] = provider.onPick.mock.calls[0];
     expect(picked).toBe("caveman");
+  });
+});
+
+describe("CaretSuggestPopup multi-provider", () => {
+  it("routes / and @ to the right provider", () => {
+    const anchor = document.createElement("div");
+    const ta = document.createElement("textarea");
+    anchor.appendChild(ta);
+    document.body.appendChild(anchor);
+
+    const slash = {
+      triggerChar: "/",
+      shouldTrigger: ({ textBefore }) => /(^|\s)\/[^\s]*$/.test(textBefore),
+      query: (t) => [`SLASH:${t}`],
+      renderRow: (i, sel) => {
+        const el = document.createElement("div");
+        el.textContent = String(i);
+        el.className = sel ? "selected" : "";
+        return el;
+      },
+      onPick: vi.fn(),
+    };
+    const file = {
+      triggerChar: "@",
+      shouldTrigger: ({ textBefore }) => /(^|\s)@[^\s]*$/.test(textBefore),
+      query: (t) => [`FILE:${t}`],
+      renderRow: (i, sel) => {
+        const el = document.createElement("div");
+        el.textContent = String(i);
+        el.className = sel ? "selected" : "";
+        return el;
+      },
+      onPick: vi.fn(),
+    };
+    const popup = new CaretSuggestPopup({ anchor, textarea: ta, providers: [slash, file] });
+
+    ta.value = "/c";
+    ta.selectionStart = ta.selectionEnd = 2;
+    popup.handleInput();
+    popup.handleKey(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(slash.onPick).toHaveBeenCalled();
+    expect(file.onPick).not.toHaveBeenCalled();
+
+    ta.value = "@f";
+    ta.selectionStart = ta.selectionEnd = 2;
+    popup.handleInput();
+    popup.handleKey(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(file.onPick).toHaveBeenCalled();
   });
 });

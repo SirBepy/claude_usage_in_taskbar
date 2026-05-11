@@ -31,7 +31,7 @@ export class Composer {
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private slash: SlashProvider | null = null;
-  private popup: CaretSuggestPopup<unknown> | null = null;
+  private popup: CaretSuggestPopup | null = null;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -114,7 +114,7 @@ export class Composer {
       this.popup = new CaretSuggestPopup({
         anchor: this.root,
         textarea: this.textarea,
-        provider: this.slash as unknown as SuggestProvider<unknown>,
+        providers: [this.slash] as unknown as SuggestProvider<unknown>[],
       });
       this.textarea.addEventListener("keydown", this.onKey.bind(this));
       this.textarea.addEventListener("paste", this.onPaste.bind(this));

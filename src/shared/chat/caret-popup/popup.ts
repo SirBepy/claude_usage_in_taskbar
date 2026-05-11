@@ -1,15 +1,16 @@
-import type { PopupOptions } from "./types";
+import type { PopupOptions, SuggestProvider } from "./types";
 
-export class CaretSuggestPopup<T> {
-  private opts: PopupOptions<T>;
+export class CaretSuggestPopup {
+  private opts: PopupOptions;
   private el: HTMLDivElement;
-  private items: T[] = [];
+  private items: unknown[] = [];
   private selectedIdx = 0;
   private tokenRange: [number, number] = [0, 0];
+  private active: SuggestProvider<unknown> | null = null;
   private open = false;
   private onDocMouseDown: (e: MouseEvent) => void;
 
-  constructor(opts: PopupOptions<T>) {
+  constructor(opts: PopupOptions) {
     this.opts = opts;
     this.el = document.createElement("div");
     this.el.className = "caret-popup";
@@ -35,11 +36,18 @@ export class CaretSuggestPopup<T> {
     const caret = ta.selectionStart ?? ta.value.length;
     const before = ta.value.slice(0, caret);
 
-    if (!this.opts.provider.shouldTrigger({ textBefore: before, caretPos: caret })) {
+    let chosen: SuggestProvider<unknown> | null = null;
+    for (const p of this.opts.providers) {
+      if (p.shouldTrigger({ textBefore: before, caretPos: caret })) {
+        chosen = p;
+        break;
+      }
+    }
+    if (!chosen) {
       this.close();
       return;
     }
-    const m = before.match(/(^|\n)([/@][^\s]*)$/);
+    const m = before.match(/(^|\s)([/@][^\s]*)$/);
     const token = m?.[2];
     if (!token) {
       this.close();
@@ -48,12 +56,13 @@ export class CaretSuggestPopup<T> {
     const start = caret - token.length;
     this.tokenRange = [start, caret];
 
-    const results = this.opts.provider.query(token);
+    const results = chosen.query(token);
     if (!results.length) {
       this.close();
       return;
     }
     this.items = results;
+    this.active = chosen;
     this.selectedIdx = 0;
     this.open = true;
     this.render();
@@ -92,21 +101,24 @@ export class CaretSuggestPopup<T> {
     this.el.remove();
   }
 
-  private pick(item: T): void {
-    this.opts.provider.onPick(item, this.opts.textarea, this.tokenRange);
+  private pick(item: unknown): void {
+    this.active?.onPick(item, this.opts.textarea, this.tokenRange);
     this.close();
   }
 
   private close(): void {
     this.open = false;
+    this.active = null;
     this.el.hidden = true;
     this.el.replaceChildren();
   }
 
   private render(): void {
+    if (!this.active) return;
+    const active = this.active;
     this.el.hidden = false;
     const rows = this.items.map((it, i) => {
-      const row = this.opts.provider.renderRow(it, i === this.selectedIdx);
+      const row = active.renderRow(it, i === this.selectedIdx);
       row.addEventListener("mousedown", (e) => {
         e.preventDefault();
         this.pick(it);
