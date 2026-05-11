@@ -154,6 +154,15 @@ class SessionEventStore {
     await this.ensureListener(toId);
   }
 
+  bust(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (!entry) return;
+    entry.events = [];
+    entry.oldestSeq = null;
+    entry.hasMore = false;
+    entry.initialLoaded = false;
+  }
+
   pushSynthetic(sessionId: string, ev: ChatEvent): void {
     let entry = this.cache.get(sessionId);
     if (!entry) {

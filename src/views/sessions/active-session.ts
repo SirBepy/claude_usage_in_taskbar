@@ -58,7 +58,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
     </header>
     <div class="session-statusbar-host"></div>
-    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
+    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
     <div class="session-messages"></div>
     <div class="session-composer"></div>
   `;
@@ -158,6 +158,10 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     }
   });
   if (readOnly) {
+    pane.querySelector<HTMLButtonElement>(".refresh-btn")?.addEventListener("click", async () => {
+      sessionEvents.bust(sessionId);
+      await selectSession(sessionId, pane);
+    });
     pane.querySelector<HTMLButtonElement>(".takeover-btn")?.addEventListener("click", async () => {
       if (!confirm(`Take over manual session? This kills the external claude process (pid ${sess.pid}) so this app can resume the session.`)) return;
       try {
