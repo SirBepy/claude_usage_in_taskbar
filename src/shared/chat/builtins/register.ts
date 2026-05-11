@@ -1,7 +1,7 @@
 // Central handler registration. Imported by composer.ts for side-effects.
-// Each handler module is imported here so its side-effect assignment to
-// HANDLERS happens at module-load time.
+// Each handler module's import here triggers assignment to HANDLERS.
 
-// Handlers wired in later plan tasks. This file gets extended as each
-// handler module lands.
-export {};
+import { HANDLERS } from "./index";
+import { clearSession } from "./clear";
+
+HANDLERS.clear = clearSession;
