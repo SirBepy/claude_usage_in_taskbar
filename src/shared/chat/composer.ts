@@ -57,6 +57,11 @@ export class Composer {
   constructor(root: HTMLElement, opts: ComposerOptions) {
     this.root = root;
     this.opts = opts;
+    // Establish positioning context so the absolute-anchored popup lands
+    // above the composer instead of falling back to a distant ancestor.
+    if (getComputedStyle(this.root).position === "static") {
+      this.root.style.position = "relative";
+    }
     this.slash = new SlashProvider();
     void this.slash.start(opts.projectDir ?? null);
     this.render();

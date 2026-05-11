@@ -105,15 +105,15 @@ export class CaretSuggestPopup<T> {
 
   private render(): void {
     this.el.hidden = false;
-    this.el.replaceChildren(
-      ...this.items.map((it, i) => {
-        const row = this.opts.provider.renderRow(it, i === this.selectedIdx);
-        row.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          this.pick(it);
-        });
-        return row;
-      }),
-    );
+    const rows = this.items.map((it, i) => {
+      const row = this.opts.provider.renderRow(it, i === this.selectedIdx);
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        this.pick(it);
+      });
+      return row;
+    });
+    this.el.replaceChildren(...rows);
+    rows[this.selectedIdx]?.scrollIntoView?.({ block: "nearest" });
   }
 }
