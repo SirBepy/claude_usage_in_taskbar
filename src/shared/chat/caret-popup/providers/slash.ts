@@ -1,5 +1,6 @@
 import type { SlashEntry, SlashSource } from "../../../../types/ipc.generated";
 import { invoke } from "../../../ipc";
+import { setSlashEntries } from "../../slash-registry";
 import { match } from "../match";
 import type { SuggestProvider } from "../types";
 
@@ -75,6 +76,7 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
       console.error("[SlashProvider] list_slash_commands failed", e);
       this.cache = [];
     }
+    setSlashEntries(this.cache);
   }
 }
 

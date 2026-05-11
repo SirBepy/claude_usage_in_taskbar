@@ -2,6 +2,40 @@
  * History views.
  */
 
+/* Inline `/slash-command` mention coloring. Source kind comes from the shared
+ * slash registry; unknown names stay plain text. Future: clickable -> skills
+ * detail page. */
+.slash-mention {
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-size: 0.92em;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.slash-mention.slash-builtin {
+  color: #7cb6ff;
+  background: rgba(124, 182, 255, 0.10);
+  border-color: rgba(124, 182, 255, 0.25);
+}
+.slash-mention.slash-user-command,
+.slash-mention.slash-project-command {
+  color: #6ed6c8;
+  background: rgba(110, 214, 200, 0.10);
+  border-color: rgba(110, 214, 200, 0.25);
+}
+.slash-mention.slash-plugin-command {
+  color: #f0b67f;
+  background: rgba(240, 182, 127, 0.10);
+  border-color: rgba(240, 182, 127, 0.25);
+}
+.slash-mention.slash-user-skill,
+.slash-mention.slash-plugin-skill {
+  color: #c794f5;
+  background: rgba(199, 148, 245, 0.12);
+  border-color: rgba(199, 148, 245, 0.30);
+}
+
 .msg {
   margin-bottom: 12px;
   padding: 8px 12px;
@@ -98,6 +132,27 @@
 .copyable-block {
   position: relative;
   margin: 6px 0;
+}
+
+.card-block {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  padding-right: 36px;
+}
+
+.card-block blockquote {
+  margin: 0;
+  padding: 0;
+  border-left: none;
+  color: var(--text);
+  font-style: normal;
+}
+
+.card-block blockquote p {
+  margin: 0;
+  line-height: 1.5;
 }
 
 .copy-btn {
