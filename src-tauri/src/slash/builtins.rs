@@ -2,15 +2,12 @@ use super::{SlashEntry, SlashSource};
 
 pub fn all() -> Vec<SlashEntry> {
     vec![
-        e("help",        None,           "Show Claude Code help"),
-        e("clear",       None,           "Clear conversation context"),
-        e("model",       Some("<name>"), "Switch active model"),
-        e("init",        None,           "Initialize CLAUDE.md for the repo"),
-        e("config",      None,           "Open settings UI"),
-        e("permissions", None,           "Open permissions UI"),
-        e("exit",        None,           "Exit Claude Code"),
-        e("cost",        None,           "Show session token cost"),
-        e("compact",     None,           "Compact conversation history"),
+        e("help",        None, "Show supported commands"),
+        e("clear",       None, "End current session, start a fresh one"),
+        e("config",      None, "Open settings"),
+        e("permissions", None, "Open permissions settings"),
+        e("exit",        None, "Close this session"),
+        e("cost",        None, "Show running session cost"),
     ]
 }
 
