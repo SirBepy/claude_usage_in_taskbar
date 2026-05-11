@@ -36,6 +36,15 @@ export interface SessionMeta {
   hasUsage: boolean;
 }
 
+export interface CumulativeUsage {
+  input: number;
+  output: number;
+  cacheCreate: number;
+  cacheRead: number;
+  turns: number;
+  costUsd: number;
+}
+
 interface RenderedMessage {
   kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification";
   content?: ContentBlock[];
@@ -71,7 +80,12 @@ export class ChatRenderer {
   private streamingIndex: number | null = null;
   private sessionId: string | null = null;
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+  private _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
+
+  get cumulativeUsage(): CumulativeUsage {
+    return { ...this._cumulative };
+  }
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -90,6 +104,7 @@ export class ChatRenderer {
     this.dirtyIndices.clear();
     this.streamingIndex = null;
     this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+    this._cumulative = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
     this.container.innerHTML = "";
 
     this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
@@ -462,6 +477,12 @@ export class ChatRenderer {
         this.meta.hasUsage = true;
         if (ev.has_thinking) this.meta.hasThinking = true;
         if (ev.model) this.meta.model = ev.model;
+        this._cumulative.input += Number(ev.input_tokens) || 0;
+        this._cumulative.output += Number(ev.output_tokens) || 0;
+        this._cumulative.cacheCreate += Number(ev.cache_creation_input_tokens) || 0;
+        this._cumulative.cacheRead += Number(ev.cache_read_input_tokens) || 0;
+        this._cumulative.costUsd += Number(ev.total_cost_usd) || 0;
+        this._cumulative.turns += 1;
         this.onMetaUpdate?.(this.getMeta());
         return; // no DOM update needed
       }

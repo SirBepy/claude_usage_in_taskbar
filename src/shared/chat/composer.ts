@@ -9,6 +9,9 @@ import { CaretSuggestPopup } from "./caret-popup/popup";
 import { SlashProvider } from "./caret-popup/providers/slash";
 import { FileProvider } from "./caret-popup/providers/file";
 import type { SuggestProvider } from "./caret-popup/types";
+import type { ChatRenderer } from "./chat-renderer";
+import { parseBuiltin, HANDLERS, type BuiltinContext } from "./builtins";
+import "./builtins/register";
 import "./caret-popup/popup.css";
 
 interface Attachment {
@@ -20,6 +23,7 @@ interface Attachment {
 export interface ComposerOptions {
   onSend: (blocks: ContentBlock[]) => Promise<void> | void;
   projectDir?: string | null;
+  getRenderer?: () => ChatRenderer | null;
 }
 
 export class Composer {
@@ -193,10 +197,36 @@ export class Composer {
     });
   }
 
+  private builtinCtx(): BuiltinContext {
+    return {
+      sessionId: this.sessionId,
+      projectDir: this.opts.projectDir ?? null,
+      getRenderer: this.opts.getRenderer ?? (() => null),
+      pane: this.root.closest<HTMLElement>(".session-pane") ?? this.root.parentElement,
+    };
+  }
+
   private async send(): Promise<void> {
     if (this.disabled) return;
     const text = (this.textarea?.value ?? "").trim();
     if (!text && this.attachments.length === 0) return;
+
+    const builtin = parseBuiltin(text);
+    if (builtin) {
+      const handler = HANDLERS[builtin.name];
+      if (handler) {
+        try {
+          await handler(builtin, this.builtinCtx());
+        } catch (e) {
+          console.error("[builtin]", builtin.name, e);
+        }
+      }
+      if (this.textarea) this.textarea.value = "";
+      this.autoResize();
+      this.attachments = [];
+      this.renderAttachments();
+      return;
+    }
 
     const blocks: ContentBlock[] = [];
     if (text) blocks.push({ type: "text", text });
