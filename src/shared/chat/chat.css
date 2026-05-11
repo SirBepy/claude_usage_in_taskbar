@@ -41,6 +41,11 @@
 .msg.assistant {
   background: var(--surface);
   border: 1px solid var(--border);
+  position: relative;
+}
+
+.msg.assistant:hover .msg-copy-btn {
+  opacity: 1;
 }
 
 .msg.assistant.streaming::after {

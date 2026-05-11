@@ -577,14 +577,22 @@ export class ChatRenderer {
   private handleCopyClick = (e: MouseEvent): void => {
     const btn = (e.target as Element).closest(".copy-btn") as HTMLButtonElement | null;
     if (!btn) return;
+
+    let text = "";
     const block = btn.closest(".copyable-block");
-    if (!block) return;
+    if (block) {
+      const shikiPre = block.querySelector<HTMLElement>("pre.shiki");
+      const fallbackPre = block.querySelector<HTMLElement>("pre");
+      text = (shikiPre ?? fallbackPre)?.textContent ?? "";
+    } else {
+      const msg = btn.closest(".msg") as HTMLElement | null;
+      if (!msg) return;
+      const clone = msg.cloneNode(true) as HTMLElement;
+      clone.querySelector(".msg-copy-btn")?.remove();
+      text = clone.textContent ?? "";
+    }
 
-    const shikiPre = block.querySelector<HTMLElement>("pre.shiki");
-    const fallbackPre = block.querySelector<HTMLElement>("pre");
-    const text = (shikiPre ?? fallbackPre)?.textContent ?? "";
-
-    void navigator.clipboard.writeText(text).then(() => {
+    void navigator.clipboard.writeText(text.trim()).then(() => {
       const icon = btn.querySelector("i");
       if (!icon) return;
       icon.className = "ph ph-check";
@@ -603,7 +611,7 @@ export class ChatRenderer {
       case "user":
         return `<div class="msg user">${this.renderBlocks(m.content ?? [])}</div>`;
       case "assistant":
-        return `<div class="msg assistant${m.streaming ? " streaming" : ""}">${this.renderBlocks(m.content ?? [])}</div>`;
+        return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${this.renderBlocks(m.content ?? [])}</div>`;
       case "tool_use":
         return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></div>`;
       case "tool_result":
