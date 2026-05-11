@@ -8,6 +8,10 @@
 use claude_usage_tauri_lib::ipc::misc::GitInfo;
 use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
+use claude_usage_tauri_lib::skill_usage::types::{
+    InvocationCounts, InvocationSource, SkillDetail, SkillUsageEntry, SkillUsageEvent,
+    SkillUsageWeek, TokenBreakdown,
+};
 use claude_usage_tauri_lib::slash::{SlashEntry, SlashSource};
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
@@ -82,6 +86,15 @@ fn emit_ipc_types() {
     // slash autocomplete
     out.push_str(&decl::<SlashEntry>());
     out.push_str(&decl::<SlashSource>());
+
+    // skill usage
+    out.push_str(&decl::<InvocationSource>());
+    out.push_str(&decl::<TokenBreakdown>());
+    out.push_str(&decl::<SkillUsageEvent>());
+    out.push_str(&decl::<InvocationCounts>());
+    out.push_str(&decl::<SkillUsageEntry>());
+    out.push_str(&decl::<SkillUsageWeek>());
+    out.push_str(&decl::<SkillDetail>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {
