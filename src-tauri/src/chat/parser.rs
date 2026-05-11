@@ -263,6 +263,12 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         "result" => vec![],
         "rate_limit_event" => {
             let info = v.get("rate_limit_info").cloned().unwrap_or(Value::Null);
+            // status:"allowed" is the steady-state heartbeat claude -p emits
+            // every turn. Surface only the actual rate-limit failures.
+            let status = info.get("status").and_then(|s| s.as_str()).unwrap_or("");
+            if status == "allowed" {
+                return vec![];
+            }
             vec![ChatEvent::Notification {
                 kind: "rate_limit".into(),
                 body: info.to_string(),
