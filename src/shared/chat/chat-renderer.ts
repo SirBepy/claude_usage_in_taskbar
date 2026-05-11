@@ -89,6 +89,7 @@ export class ChatRenderer {
 
   constructor(container: HTMLElement) {
     this.container = container;
+    this.container.addEventListener("click", this.handleCopyClick);
   }
 
   /**
@@ -570,6 +571,28 @@ export class ChatRenderer {
     }
   }
 
+  private handleCopyClick = (e: MouseEvent): void => {
+    const btn = (e.target as Element).closest(".copy-btn") as HTMLButtonElement | null;
+    if (!btn) return;
+    const block = btn.closest(".copyable-block");
+    if (!block) return;
+
+    const shikiPre = block.querySelector<HTMLElement>("pre.shiki");
+    const fallbackPre = block.querySelector<HTMLElement>("pre");
+    const text = (shikiPre ?? fallbackPre)?.textContent ?? "";
+
+    void navigator.clipboard.writeText(text).then(() => {
+      const icon = btn.querySelector("i");
+      if (!icon) return;
+      icon.className = "ph ph-check";
+      btn.classList.add("copied");
+      setTimeout(() => {
+        icon.className = "ph ph-copy";
+        btn.classList.remove("copied");
+      }, 1500);
+    });
+  };
+
   private renderMessage(m: RenderedMessage): string {
     switch (m.kind) {
       case "system":
@@ -579,7 +602,7 @@ export class ChatRenderer {
       case "assistant":
         return `<div class="msg assistant${m.streaming ? " streaming" : ""}">${this.renderBlocks(m.content ?? [])}</div>`;
       case "tool_use":
-        return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre></div>`;
+        return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></div>`;
       case "tool_result":
         return `<div class="msg tool-result${m.is_error ? " error" : ""}">${m.output ? this.renderBlocks([m.output]) : ""}</div>`;
       case "notification":
@@ -596,7 +619,7 @@ export class ChatRenderer {
           case "text":
             return `<div class="block text">${renderMarkdown(b.text)}</div>`;
           case "code":
-            return `<pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre>`;
+            return `<div class="copyable-block"><pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre><button class="copy-btn" aria-label="Copy code"><i class="ph ph-copy"></i></button></div>`;
           case "image":
             return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
           default:

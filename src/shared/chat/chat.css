@@ -90,6 +90,50 @@
   color: var(--text-dim);
 }
 
+.copyable-block {
+  position: relative;
+  margin: 6px 0;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  padding: 0;
+  z-index: 1;
+}
+
+.copyable-block:hover .copy-btn {
+  opacity: 1;
+}
+
+.copy-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.copy-btn.copied {
+  color: var(--success);
+}
+
+.copy-btn i {
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+}
+
 .block.code {
   background: var(--bg);
   padding: 10px;
@@ -97,15 +141,16 @@
   overflow-x: auto;
   font-family: "Fira Code", monospace;
   font-size: 0.82rem;
-  margin: 6px 0;
+  margin: 0;
 }
 
-/* Shiki-highlighted code blocks (Phase 5d). The wrap div carries our
- * background; the inner <pre class="shiki"> from shiki only contributes
- * tokenized spans. Dark theme is hardcoded to github-dark for v1. */
+/* Shiki-highlighted code blocks. The wrap div carries our background;
+ * the inner <pre class="shiki"> from shiki only contributes tokenized spans.
+ * Margin is on the .copyable-block parent; this div has none. */
 .block.code.shiki-wrap {
   padding: 0;
   overflow: hidden;
+  margin: 0;
 }
 
 .block.code.shiki-wrap pre.shiki {
