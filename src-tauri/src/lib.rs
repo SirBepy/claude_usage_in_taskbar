@@ -1,5 +1,6 @@
 pub mod channels;
 pub mod characters;
+pub mod files;
 pub mod chat;
 pub mod auth;
 pub mod hooks;
@@ -163,6 +164,7 @@ pub fn run() {
             ipc::mark_news_read,
             ipc::mark_all_news_read,
             ipc::list_slash_commands,
+            ipc::list_project_files,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
