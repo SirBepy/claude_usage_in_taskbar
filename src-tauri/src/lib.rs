@@ -12,6 +12,7 @@ pub mod scheduler;
 pub mod scraping;
 pub mod sessions;
 pub mod settings;
+pub mod slash;
 pub mod state;
 pub mod tokens;
 pub mod tray;

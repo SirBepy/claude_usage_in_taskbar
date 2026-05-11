@@ -8,6 +8,7 @@
 use claude_usage_tauri_lib::ipc::misc::GitInfo;
 use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
+use claude_usage_tauri_lib::slash::{SlashEntry, SlashSource};
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
 use std::fs;
@@ -77,6 +78,10 @@ fn emit_ipc_types() {
 
     // news
     out.push_str(&decl::<NewsPost>());
+
+    // slash autocomplete
+    out.push_str(&decl::<SlashEntry>());
+    out.push_str(&decl::<SlashSource>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {
