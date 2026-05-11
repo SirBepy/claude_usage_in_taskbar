@@ -68,9 +68,9 @@ pub fn get_platform() -> String {
 
 #[tauri::command]
 pub fn get_app_version(app: AppHandle) -> String {
-    // tauri.conf.json is the source of truth (CI bumps it). Cargo.toml is
-    // synced in CI but may lag in dev. Fall back to CARGO_PKG_VERSION just
-    // in case Tauri ever returns an empty config version.
+    if option_env!("CI").is_none() {
+        return "local-build".to_string();
+    }
     let cfg = app.config().version.clone();
     cfg.filter(|v| !v.is_empty())
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
