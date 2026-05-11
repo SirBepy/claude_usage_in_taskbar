@@ -558,7 +558,10 @@ export class ChatRenderer {
           theme: "github-dark",
         });
         const safeLang = escapeHtml(lang);
-        pre.outerHTML = `<div class="block code shiki-wrap" data-lang="${safeLang}" data-highlighted="true">${html}</div>`;
+        const wrapper = document.createElement("div");
+        wrapper.className = "copyable-block";
+        wrapper.innerHTML = `<div class="block code shiki-wrap" data-lang="${safeLang}" data-highlighted="true">${html}</div><button class="copy-btn" aria-label="Copy code"><i class="ph ph-copy"></i></button>`;
+        pre.replaceWith(wrapper);
       } catch {
         code.dataset.highlighted = "true";
       }
@@ -619,7 +622,7 @@ export class ChatRenderer {
           case "text":
             return `<div class="block text">${renderMarkdown(b.text)}</div>`;
           case "code":
-            return `<div class="copyable-block"><pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre><button class="copy-btn" aria-label="Copy code"><i class="ph ph-copy"></i></button></div>`;
+            return `<pre class="block code"${b.language ? ` data-lang="${escapeHtml(b.language)}"` : ""}><code>${escapeHtml(b.text)}</code></pre>`;
           case "image":
             return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
           default:
