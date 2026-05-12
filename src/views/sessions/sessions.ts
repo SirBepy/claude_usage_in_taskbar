@@ -5,6 +5,8 @@ import { invoke } from "../../shared/ipc";
 import * as shortcuts from "../../shared/shortcuts";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
+import "./session-statusbar.css";
+import "./project-picker.css";
 import { startNewSession, launchNewSession } from "./pending-flow";
 import { selectSession } from "./active-session";
 import { state, resetState, setActiveSession } from "./state";

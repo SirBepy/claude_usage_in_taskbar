@@ -1,0 +1,118 @@
+/* ── Session statusline ──────────────────────────────────────────────────── */
+
+.session-statusbar-host {
+  flex-shrink: 0;
+}
+
+.session-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  min-height: 30px;
+  position: relative;
+}
+
+.sb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.73rem;
+  font-family: 'Fira Code', monospace;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.sb-chip i {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.sb-chip.sb-model { color: var(--primary); border-color: rgba(157, 125, 252, 0.2); }
+.sb-chip.sb-branch { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
+.sb-chip.sb-repo { color: var(--text-dim); }
+.sb-chip.sb-folder { color: var(--text-dim); }
+.sb-chip.sb-folder-btn { cursor: pointer; }
+.sb-chip.sb-folder-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); border-color: var(--border); }
+.sb-chip.sb-context { color: var(--text-dim); }
+.sb-chip.sb-context.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.3); }
+.sb-chip.sb-context.danger { color: #f87171; border-color: rgba(248, 113, 113, 0.3); }
+.sb-chip.sb-thinking.active { color: #a78bfa; border-color: rgba(167, 139, 250, 0.3); }
+.sb-chip.sb-duration { color: var(--text-dim); }
+.sb-chip.sb-cost { color: var(--text-dim); }
+
+.sb-sep {
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  background: var(--border, #2e2e40);
+  align-self: center;
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.sb-empty {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.sb-gear {
+  flex-shrink: 0;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  padding: 2px 4px;
+  font-size: 0.85rem;
+}
+
+.sb-gear:hover { opacity: 1; }
+
+.sb-popover {
+  position: absolute;
+  top: 100%;
+  right: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 140px;
+}
+
+.sb-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sb-popover-row:hover { background: var(--surface-alt); }
+
+.sb-popover-row input[type=checkbox] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
