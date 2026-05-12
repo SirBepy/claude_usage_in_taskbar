@@ -11,15 +11,12 @@
 // blocks survive across renders without re-tokenization.
 
 import MarkdownIt from "markdown-it";
-// shiki/bundle/web ships ~80 web-relevant languages and is ~10x smaller than
-// the default barrel "shiki" (which eagerly bundles every supported language,
-// including emacs-lisp/wasm/cpp - causing ~3 MB of chunk bloat).
-import { codeToHtml } from "shiki/bundle/web";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { escapeHtml } from "../escape-html";
 import { sessionEvents } from "./event-store";
-import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry";
 import { showView } from "../navigation";
+import { cleanUserBlocks, highlightSlashMentions, wrapBlockquotes } from "./chat-transforms";
+import { highlightCodeBlocks } from "./code-highlighter";
 
 const md = new MarkdownIt({
   html: false, // safe: don't let assistant output inject HTML
@@ -278,7 +275,7 @@ export class ChatRenderer {
       this.dirtyIndices = reindexed;
     }
 
-    void this.highlightCodeBlocks();
+    void highlightCodeBlocks(this.container);
   }
 
   /**
@@ -543,71 +540,14 @@ export class ChatRenderer {
       this.container.appendChild(frag);
     }
     // 3. Async syntax highlight pass + blockquote card wrapping.
-    void this.highlightCodeBlocks();
-    this.wrapBlockquotes();
+    void highlightCodeBlocks(this.container);
+    wrapBlockquotes(this.container);
   }
 
   private buildMessageEl(m: RenderedMessage): HTMLElement {
     const wrap = document.createElement("div");
     wrap.innerHTML = this.renderMessage(m);
     return wrap.firstElementChild as HTMLElement;
-  }
-
-  private wrapBlockquotes(): void {
-    const quotes = Array.from(
-      this.container.querySelectorAll<HTMLElement>(".msg.assistant blockquote:not([data-wrapped])"),
-    );
-    for (const bq of quotes) {
-      bq.dataset.wrapped = "true";
-      const wrapper = document.createElement("div");
-      wrapper.className = "copyable-block card-block";
-      bq.parentNode!.insertBefore(wrapper, bq);
-      wrapper.appendChild(bq);
-      const btn = document.createElement("button");
-      btn.className = "copy-btn";
-      btn.setAttribute("aria-label", "Copy");
-      btn.innerHTML = '<i class="ph ph-copy"></i>';
-      wrapper.appendChild(btn);
-    }
-  }
-
-  private async highlightCodeBlocks(): Promise<void> {
-    // Two paths produce <pre><code>: (1) renderBlocks emits
-    // <pre class="block code" data-lang="X"><code>...</code></pre>, and
-    // (2) markdown-it's fence renderer emits <pre><code class="language-X">
-    // ...</code></pre> with NO class on the <pre>. The selector must catch
-    // both, hence we walk via <code> (which always exists) up to its <pre>.
-    // The :not([data-highlighted]) guard means already-shiki'd blocks are
-    // skipped on subsequent passes (incremental render preserves them).
-    const codes = Array.from(
-      this.container.querySelectorAll<HTMLElement>("pre > code:not([data-highlighted])"),
-    );
-    for (let i = 0; i < codes.length; i++) {
-      const code = codes[i];
-      if (!code) continue;
-      const pre = code.parentElement as HTMLElement | null;
-      if (!pre || pre.tagName !== "PRE") continue;
-      const lang = pre.dataset.lang || extractFenceLang(code.className) || "text";
-      try {
-        const html = await codeToHtml(code.textContent ?? "", {
-          lang,
-          theme: "github-dark",
-        });
-        const safeLang = escapeHtml(lang);
-        const wrapper = document.createElement("div");
-        wrapper.className = "copyable-block";
-        wrapper.innerHTML = `<div class="block code shiki-wrap" data-lang="${safeLang}" data-highlighted="true">${html}</div><button class="copy-btn" aria-label="Copy code"><i class="ph ph-copy"></i></button>`;
-        pre.replaceWith(wrapper);
-      } catch {
-        code.dataset.highlighted = "true";
-      }
-      // Yield a macrotask between blocks so the browser can paint and stay
-      // responsive when a transcript carries many or huge fenced blocks.
-      // Each codeToHtml await is microtask-fast and won't yield on its own.
-      if (i + 1 < codes.length) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      }
-    }
   }
 
   private handleCopyClick = (e: MouseEvent): void => {
@@ -690,66 +630,4 @@ export class ChatRenderer {
 function renderMarkdown(text: string): string {
   // markdown-it with html:false escapes raw HTML; safe for untrusted input.
   return highlightSlashMentions(md.render(text));
-}
-
-function extractFenceLang(className: string): string | null {
-  const m = className.match(/language-(\S+)/);
-  return m ? m[1]! : null;
-}
-
-// Claude Code wraps slash-command prompts with internal tags like
-// `<command-name>`, `<command-message>`, `<command-args>`, and shells out
-// stdout via `<local-command-stdout>`. These are session bookkeeping, not
-// content the user wants to see in the chat.
-const COMMAND_TAG_RE = /<\/?(?:command-name|command-message|command-args|local-command-stdout)(?:\s[^>]*)?>/gi;
-
-// When the user invokes a skill, Claude Code appends the entire SKILL.md
-// body to the same user message AFTER `</command-args>`, followed by an
-// `ARGUMENTS: ...` line repeating what the user typed. Strip from the
-// `Base directory for this skill:` marker through end-of-text so the chat
-// shows just the user's input (which is already preserved inside the
-// command-args block).
-const SKILL_BODY_RE = /^Base directory for this skill:[\s\S]*$/m;
-
-function cleanUserBlocks(blocks: ContentBlock[]): ContentBlock[] {
-  const out: ContentBlock[] = [];
-  for (const b of blocks) {
-    if (b.type === "text") {
-      let stripped = b.text.replace(COMMAND_TAG_RE, "");
-      stripped = stripped.replace(SKILL_BODY_RE, "");
-      stripped = stripped.trim();
-      if (stripped.length === 0) continue;
-      out.push({ type: "text", text: stripped });
-    } else {
-      out.push(b);
-    }
-  }
-  return out;
-}
-
-// Wrap `/word` tokens in <span class="slash-mention slash-<kind>"> when the
-// name is in the shared slash registry. Only matches outside <a>/<code>/<pre>
-// (markdown-it already escapes user HTML, so we walk the rendered string at
-// the text-node level using a tag-skipping regex). Unknown names stay plain.
-const SLASH_MENTION_RE = /(^|[\s(>])\/([a-zA-Z][\w-]*(?::[a-zA-Z][\w-]*)?)\b/g;
-
-function highlightSlashMentions(html: string): string {
-  // Skip content inside <code>, <pre>, <a>. Split on these tags and only
-  // transform the chunks that are outside.
-  const parts = html.split(/(<(?:code|pre|a)(?:\s[^>]*)?>[\s\S]*?<\/(?:code|pre|a)>)/gi);
-  for (let i = 0; i < parts.length; i++) {
-    // Even indices are outside the protected tags; odd indices are matches.
-    if (i % 2 === 1) continue;
-    const part = parts[i];
-    if (!part) continue;
-    parts[i] = part.replace(SLASH_MENTION_RE, (_match, pre: string, raw: string) => {
-      const hit = lookupSlash(raw);
-      if (!hit) return `${pre}/${raw}`;
-      const cls = `slash-mention slash-${slashKindClass(hit.source)}`;
-      const target = skillDetailTarget(hit.name, hit.source);
-      const targetAttr = target ? ` data-skill-target="${escapeHtml(target)}"` : "";
-      return `${pre}<span class="${cls}" data-slash="${escapeHtml(raw)}"${targetAttr}>/${escapeHtml(raw)}</span>`;
-    });
-  }
-  return parts.join("");
 }
