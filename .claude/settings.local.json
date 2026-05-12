@@ -148,7 +148,14 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src-tauri\\\\src\" -Recurse -Filter \"*.rs\")",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "PowerShell(pnpm tsc *)"
+      "PowerShell(pnpm tsc *)",
+      "PowerShell(Get-ChildItem *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src\\\\shared\\\\chat\\\\event-store.ts\")",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src\\\\shared\\\\chat\\\\event-store.ts\"\\).Count; \\(Get-Content \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src\\\\views\\\\sessions\\\\active-session.ts\"\\).Count; \\(Get-Content \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\src\\\\views\\\\sessions\\\\sessions.css\"\\).Count)",
+      "Bash(where.exe claude *)",
+      "Bash(New-Item -Path \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\.for_bepy\\\\TOMORROWS_AI_PROMPT.md\" -ItemType File -Force)",
+      "Bash(Out-Null)",
+      "Bash(Get-Content *)"
     ]
   }
 }
