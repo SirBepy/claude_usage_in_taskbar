@@ -14,7 +14,7 @@ import {
 import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
 import { renderSidebar, refreshSessions } from "./sidebar";
 
-export function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
+function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
   pane.querySelector(".chat-loading-overlay")?.remove();
   if (getComputedStyle(pane).position === "static") {
     pane.style.position = "relative";

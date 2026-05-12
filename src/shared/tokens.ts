@@ -35,13 +35,7 @@ export interface ProjectAlias {
 
 export type AliasMap = Record<string, ProjectAlias | undefined>;
 
-export function formatTokens(n: number | null | undefined): string {
-  if (!n) return "0";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 10_000) return Math.round(n / 1000) + "K";
-  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
-  return String(n);
-}
+export { formatTokens } from "./formatters";
 
 export function tokensAllIn(t: { input: bigint; output: bigint; cache_read: bigint; cache_create: bigint }): number {
   return Number(t.input) + Number(t.output) + Number(t.cache_read) + Number(t.cache_create);

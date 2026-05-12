@@ -3,7 +3,8 @@ import { openSidemenu } from "../../shared/sidemenu";
 import "./projects.css";
 import { setTokenHistory } from "../../shared/state";
 import { openProjectDetail } from "../../shared/navigation";
-import { renderAvatar, hydrateCharacterAvatars, escapeProjHtml, type Avatar } from "../../shared/projects";
+import { renderAvatar, hydrateCharacterAvatars, type Avatar } from "../../shared/projects";
+import { escapeHtml } from "../../shared/escape-html";
 import { formatTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
 import { api, type ProjectGroup } from "../../shared/api";
@@ -19,10 +20,10 @@ export function projectCardHtml(g: ProjectGroup): string {
     g.any_automated ? `<span class="card-tag automated">⚙</span>` : "",
   ].filter(Boolean).join(" ");
   return `
-    <div class="project-card" data-cwd="${escapeProjHtml(g.path)}" data-project-id="${g.id || ""}">
+    <div class="project-card" data-cwd="${escapeHtml(g.path)}" data-project-id="${g.id || ""}">
       <div class="avatar">${avatar}</div>
       <div class="body">
-        <div class="name">${escapeProjHtml(displayName)}${tags ? ` <span class="card-tags">${tags}</span>` : ""}</div>
+        <div class="name">${escapeHtml(displayName)}${tags ? ` <span class="card-tags">${tags}</span>` : ""}</div>
         <div class="tokens">${tokens} tokens${lastSeen ? ` · ${lastSeen}` : ""}</div>
       </div>
     </div>

@@ -248,7 +248,7 @@ export async function renderPendingPane(
  * don't re-render the whole header to avoid losing the live messages
  * container the renderer is bound to.
  */
-export function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
+function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   const header = pane.querySelector<HTMLElement>(".session-header");
   if (!header) return;
   const sess = state.sessions.find((s) => s.session_id === sessionId);

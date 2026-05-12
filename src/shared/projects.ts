@@ -1,12 +1,13 @@
 /**
  * Project-path helpers.
- * Ported from src/dashboard.js (renderAvatar, basenameProj, escapeProjHtml)
+ * Ported from src/dashboard.js (renderAvatar, basenameProj)
  * and src/modules/stats.js (projectLabel, isSubagentCwd, isBlacklisted).
  */
 
 import type { AliasMap } from "./tokens";
 import { resolveMergeChain } from "./merges";
 import { api } from "./api";
+import { escapeHtml } from "./escape-html";
 
 export interface Avatar {
   kind?: "emoji" | "image" | "none" | "character";
@@ -41,28 +42,15 @@ export function projectLabel(cwd: string, aliases: AliasMap): string {
   return emoji && !name.startsWith(emoji) ? `${emoji} ${name}` : name;
 }
 
-export function escapeProjHtml(s: string | null | undefined): string {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => {
-    switch (c) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      case "'": return "&#39;";
-      default: return c;
-    }
-  });
-}
-
 export function renderAvatar(avatar: Avatar | undefined | null): string {
   if (!avatar || avatar.kind === "none") return "?";
-  if (avatar.kind === "emoji") return escapeProjHtml(avatar.value);
+  if (avatar.kind === "emoji") return escapeHtml(avatar.value ?? "");
   if (avatar.kind === "image") {
     const src = `file:///${String(avatar.value).replaceAll("\\", "/")}`;
     return `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:7px" alt="">`;
   }
   if (avatar.kind === "character") {
-    const id = escapeProjHtml(avatar.value);
+    const id = escapeHtml(avatar.value ?? "");
     return `<img class="char-avatar" data-character-id="${id}" alt="${id}" style="width:100%;height:100%;object-fit:cover;border-radius:7px;image-rendering:pixelated">`;
   }
   return "?";
