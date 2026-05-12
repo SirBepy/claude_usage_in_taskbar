@@ -1,5 +1,6 @@
 import { invoke } from "../../ipc";
 import { launchNewSession } from "../../../views/sessions/pending-flow";
+import { openModelEffortModal } from "../../../views/sessions/model-effort-modal";
 import type { BuiltinContext, BuiltinHandler } from "./index";
 
 let inflight = false;
@@ -19,10 +20,13 @@ export const clearSession: BuiltinHandler = async (_parsed, ctx: BuiltinContext)
         console.warn("[builtin /clear] clear_session IPC failed, continuing", e);
       }
     }
+    const projectName = deriveName(ctx.projectDir);
+    const config = await openModelEffortModal(ctx.projectDir, projectName);
+    if (!config) return;
     await launchNewSession(ctx.pane, {
       path: ctx.projectDir,
-      name: deriveName(ctx.projectDir),
-    });
+      name: projectName,
+    }, config);
   } finally {
     inflight = false;
   }

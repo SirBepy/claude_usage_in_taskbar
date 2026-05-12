@@ -17,7 +17,12 @@ pub enum RunError {
     NonZeroExit { code: i32, stderr: String },
     #[error("metered billing detected: {0} is set. `claude -p` would bill the metered Anthropic API instead of the Pro/Max subscription. Refusing to spawn. Unset {0} to use the subscription path, or run a non-`-p` interactive `claude` session in a terminal.")]
     MeteredBilling(String),
+    #[error("invalid model or effort: model={0}, effort={1}")]
+    InvalidConfig(String, String),
 }
+
+const VALID_MODELS: &[&str] = &["haiku", "sonnet", "opus"];
+const VALID_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 /// Env vars whose presence routes `claude -p` to metered billing instead of the
 /// Pro/Max subscription. Per https://code.claude.com/docs/en/authentication
@@ -61,6 +66,8 @@ pub fn run_turn<F>(
     cwd: &PathBuf,
     session_id: Option<&str>,
     prompt: &str,
+    model: &str,
+    effort: &str,
     pid_slot: Option<Arc<Mutex<Option<u32>>>>,
     mut on_event: F,
 ) -> Result<(), RunError>
@@ -68,6 +75,9 @@ where
     F: FnMut(ChatEvent),
 {
     check_metered_billing(&|k| std::env::var(k).ok())?;
+    if !VALID_MODELS.contains(&model) || !VALID_EFFORTS.contains(&effort) {
+        return Err(RunError::InvalidConfig(model.to_string(), effort.to_string()));
+    }
 
     // Write a per-turn .mcp.json so claude can find our permission-prompt MCP server.
     // The guard removes the file on drop regardless of how run_turn exits.
@@ -89,6 +99,7 @@ where
     if let Some(id) = session_id {
         cmd.arg("--resume").arg(id);
     }
+    cmd.arg("--model").arg(model).arg("--effort").arg(effort);
     // The prompt must be passed BEFORE `--mcp-config` because `--mcp-config`
     // is variadic (`<configs...>`) and would otherwise consume the prompt as
     // a second config value, leaving claude without a real prompt and
@@ -244,7 +255,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let mut got_session_started = false;
         let mut got_session_id = None;
-        run_turn(&cwd, None, "reply with the literal word OK", None, |ev| match ev {
+        run_turn(&cwd, None, "reply with the literal word OK", "opus", "high", None, |ev| match ev {
             ChatEvent::SessionStarted { session_id, .. } => {
                 got_session_started = true;
                 got_session_id = Some(session_id);

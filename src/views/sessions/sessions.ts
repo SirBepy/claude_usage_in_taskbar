@@ -8,6 +8,7 @@ import "./sessions.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
 import { startNewSession, launchNewSession } from "./pending-flow";
+import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
 import { state, resetState, setActiveSession } from "./state";
 import { loadSort, LS_SORT } from "./sessions-helpers";
@@ -134,7 +135,13 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       e.stopPropagation();
       const sid = menuBtn.dataset.sessionId;
       if (sid) openCtxMenu(sid, menuBtn, {
-        onNewHere: (project) => { void launchNewSession(pane, project); },
+        onNewHere: (project) => {
+          void (async () => {
+            const config = await openModelEffortModal(project.path, project.name);
+            if (!config) return;
+            await launchNewSession(pane, project, config);
+          })();
+        },
         onSelectAfterSend: (sid2) => { void selectSession(sid2, pane); },
       });
       return;

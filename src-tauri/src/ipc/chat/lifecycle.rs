@@ -105,11 +105,62 @@ pub async fn takeover_manual(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    let session_id = crate::chat::takeover::takeover(manual_pid, &state.instances, &state.settings)
-        .map_err(|e| e.to_string())?;
+    let (model, effort) = resolve_takeover_model_effort(manual_pid, &state);
+    let session_id = crate::chat::takeover::takeover(
+        manual_pid,
+        &model,
+        &effort,
+        &state.instances,
+        &state.settings,
+    )
+    .map_err(|e| e.to_string())?;
     // Surface the registry change so the sidebar refreshes.
     let _ = app.emit("instances-changed", ());
     Ok(session_id)
+}
+
+/// Resolve model+effort for takeover from settings.extra:
+/// 1. projectLastChoice[cwd_path] -> {model, effort}
+/// 2. effortPresets[].name == "Normal" -> {model, effort}
+/// 3. fall back to ("opus", "high")
+fn resolve_takeover_model_effort(manual_pid: u32, state: &AppState) -> (String, String) {
+    let entry = state.instances.list().into_iter().find(|i| i.pid == manual_pid);
+    let cwd_key = entry
+        .map(|e| e.cwd.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let settings = state.settings.lock().unwrap();
+    let extra = &settings.extra;
+
+    // 1. projectLastChoice[cwd_key]
+    if !cwd_key.is_empty() {
+        if let Some(map) = extra.get("projectLastChoice").and_then(|v| v.as_object()) {
+            if let Some(choice) = map.get(&cwd_key).and_then(|v| v.as_object()) {
+                let model = choice.get("model").and_then(|v| v.as_str()).unwrap_or("");
+                let effort = choice.get("effort").and_then(|v| v.as_str()).unwrap_or("");
+                if !model.is_empty() && !effort.is_empty() {
+                    return (model.to_string(), effort.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. Normal preset
+    if let Some(arr) = extra.get("effortPresets").and_then(|v| v.as_array()) {
+        for p in arr {
+            let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            if name == "Normal" {
+                let model = p.get("model").and_then(|v| v.as_str()).unwrap_or("");
+                let effort = p.get("effort").and_then(|v| v.as_str()).unwrap_or("");
+                if !model.is_empty() && !effort.is_empty() {
+                    return (model.to_string(), effort.to_string());
+                }
+            }
+        }
+    }
+
+    // 3. fallback
+    ("opus".to_string(), "high".to_string())
 }
 
 /// Respond to a pending permission request from the MCP server.

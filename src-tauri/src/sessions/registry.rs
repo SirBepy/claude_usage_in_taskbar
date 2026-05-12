@@ -63,6 +63,8 @@ impl Registry {
             ended_at: None,
             end_reason: None,
             busy: false,
+            model: String::new(),
+            effort: String::new(),
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
@@ -111,6 +113,8 @@ impl Registry {
             ended_at: None,
             end_reason: None,
             busy: false,
+            model: String::new(),
+            effort: String::new(),
         };
         guard.insert(session_id.to_string(), instance);
         project_id
@@ -149,6 +153,8 @@ impl Registry {
             ended_at: None,
             end_reason: None,
             busy: false,
+            model: String::new(),
+            effort: String::new(),
         };
         guard.insert(session_id.to_string(), instance);
     }
@@ -160,6 +166,25 @@ impl Registry {
         if let Some(i) = guard.get_mut(session_id) {
             i.busy = busy;
         }
+    }
+
+    /// Set both model and effort on a session entry. Returns true if the
+    /// entry was found.
+    pub fn set_model_effort(&self, session_id: &str, model: &str, effort: &str) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(i) = guard.get_mut(session_id) else { return false };
+        i.model = model.to_string();
+        i.effort = effort.to_string();
+        true
+    }
+
+    /// Set only the effort on a session entry. Returns true if the entry
+    /// was found.
+    pub fn set_effort(&self, session_id: &str, effort: &str) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(i) = guard.get_mut(session_id) else { return false };
+        i.effort = effort.to_string();
+        true
     }
 
     /// Marks an instance as ended. Idempotent: returns `true` only the

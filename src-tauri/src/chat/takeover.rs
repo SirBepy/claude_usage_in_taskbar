@@ -22,6 +22,8 @@ pub enum TakeoverError {
 /// call will issue `claude -p --resume <session_id>`.
 pub fn takeover(
     manual_pid: u32,
+    model: &str,
+    effort: &str,
     registry: &Registry,
     settings: &Mutex<Settings>,
 ) -> Result<String, TakeoverError> {
@@ -69,6 +71,7 @@ pub fn takeover(
     //    are reset.
     let now = Utc::now().to_rfc3339();
     registry.record_interactive_session(&session_id, &cwd, settings, &now);
+    registry.set_model_effort(&session_id, model, effort);
 
     Ok(session_id)
 }
@@ -88,7 +91,7 @@ mod tests {
     fn takeover_returns_not_found_for_unknown_pid() {
         let registry = Registry::new();
         let settings = fresh_settings();
-        let r = takeover(99999, &registry, &settings);
+        let r = takeover(99999, "opus", "high", &registry, &settings);
         assert!(matches!(r, Err(TakeoverError::NotFound(99999))));
     }
 
@@ -115,7 +118,7 @@ mod tests {
 
         // Takeover. (kill_tree on a non-existent pid is a no-op silent
         // failure - safe for tests.)
-        let result = takeover(manual_pid, &registry, &settings);
+        let result = takeover(manual_pid, "opus", "high", &registry, &settings);
         assert!(result.is_ok());
         let new_id = result.unwrap();
         assert_eq!(new_id, "abc-session-1");

@@ -52,6 +52,8 @@ async fn run_session_turn(
     session_id_in: Option<String>,
     cwd: String,
     prompt: String,
+    model: String,
+    effort: String,
     placeholder_id_in: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
@@ -118,12 +120,24 @@ async fn run_session_turn(
     // so the user doesn't see "Session started (model)" in the chat on every
     // turn. The first turn (initial_id None) still surfaces it once - that's
     // the only one that matters for the user.
+    // If this is an existing session, ensure the registry knows the model+effort
+    // (handles takeover paths where set_model_effort wasn't called before).
+    if let Some(ref id) = session_id_in {
+        state.instances.set_model_effort(id, &model, &effort);
+    }
+
     let is_resume_turn = initial_id.is_some();
+    let model_for_closure = model.clone();
+    let effort_for_closure = effort.clone();
+    let model_for_registry = model.clone();
+    let effort_for_registry = effort.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         run_turn(
             &cwd_path,
             initial_id.as_deref(),
             &prompt,
+            &model_for_closure,
+            &effort_for_closure,
             Some(slot_for_closure),
             |ev: ChatEvent| {
                 let mut just_captured: Option<String> = None;
@@ -138,6 +152,11 @@ async fn run_session_turn(
                             std::path::Path::new(&cwd_for_closure),
                             &project_id_for_closure,
                             &now_str_for_closure,
+                        );
+                        registry_for_closure.set_model_effort(
+                            session_id,
+                            &model_for_registry,
+                            &effort_for_registry,
                         );
                         registry_for_closure.set_busy(session_id, true);
                     }
@@ -197,11 +216,13 @@ async fn run_session_turn(
 pub async fn start_session(
     cwd: String,
     prompt: String,
+    model: String,
+    effort: String,
     placeholder_id: Option<String>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    run_session_turn(None, cwd, prompt, placeholder_id, state, app).await
+    run_session_turn(None, cwd, prompt, model, effort, placeholder_id, state, app).await
 }
 
 #[tauri::command]
@@ -213,7 +234,30 @@ pub async fn send_message(
     app: AppHandle,
 ) -> Result<String, String> {
     let prompt = blocks_to_prompt_text(&blocks);
-    run_session_turn(Some(session_id), cwd, prompt, None, state, app).await
+    let (model, effort) = {
+        let inst = state.instances.get(&session_id);
+        match inst {
+            Some(i) if !i.model.is_empty() && !i.effort.is_empty() => (i.model.clone(), i.effort.clone()),
+            _ => ("opus".to_string(), "high".to_string()),
+        }
+    };
+    run_session_turn(Some(session_id), cwd, prompt, model, effort, None, state, app).await
+}
+
+#[tauri::command]
+pub async fn set_session_effort(
+    session_id: String,
+    effort: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let valid = ["low", "medium", "high", "xhigh", "max"];
+    if !valid.contains(&effort.as_str()) {
+        return Err(format!("invalid effort: {effort}"));
+    }
+    state.instances.set_effort(&session_id, &effort);
+    let _ = app.emit("instances-changed", ());
+    Ok(())
 }
 
 #[tauri::command]

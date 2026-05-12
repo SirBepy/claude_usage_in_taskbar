@@ -8,6 +8,7 @@ import { state, setActiveSession } from "./state";
 import { projectName } from "./sessions-helpers";
 import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
+import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 
 /**
  * Generate a placeholder session id used to subscribe `chat:<id>` BEFORE
@@ -29,12 +30,16 @@ export async function startNewSession(pane: HTMLElement): Promise<void> {
   const project = await pickProject();
   if (!project) return;
   if (state.mountId !== myMount) return;
-  await launchNewSession(pane, project);
+  const config = await openModelEffortModal(project.path, project.name);
+  if (!config) return;
+  if (state.mountId !== myMount) return;
+  await launchNewSession(pane, project, config);
 }
 
 export async function launchNewSession(
   pane: HTMLElement,
   project: { path: string; name: string },
+  config: SessionConfig,
 ): Promise<void> {
   if (state.pendingNewSession) {
     if (state.pendingNewSession.realId !== null) {
@@ -55,7 +60,7 @@ export async function launchNewSession(
   };
   setActiveSession(placeholderId);
 
-  await renderPendingPane(pane, placeholderId, project);
+  await renderPendingPane(pane, placeholderId, project, config);
 
   // Re-render sidebar to show the pending row.
   const root = document.querySelector<HTMLElement>(".view-sessions");
@@ -78,6 +83,7 @@ export async function renderPendingPane(
   pane: HTMLElement,
   placeholderId: string,
   project: { path: string; name: string },
+  config: SessionConfig,
 ): Promise<void> {
   const myMount = state.mountId;
   pane.innerHTML = `
@@ -174,6 +180,8 @@ export async function renderPendingPane(
             const sessionId = await invoke<string>("start_session", {
               cwd: project.path,
               prompt: promptText,
+              model: config.model,
+              effort: config.effort,
               placeholderId,
             });
             if (state.mountId !== myMount) return;

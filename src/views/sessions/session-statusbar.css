@@ -116,3 +116,62 @@
   accent-color: var(--primary);
   cursor: pointer;
 }
+
+.sb-chip.sb-effort-btn,
+.sb-chip.sb-model-btn {
+  cursor: pointer;
+}
+
+.sb-chip.sb-effort.readonly {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.sb-effort-popover,
+.sb-model-popover {
+  position: absolute;
+  bottom: 32px;
+  right: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 200px;
+  z-index: 50;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+}
+
+.sb-effort-popover-label,
+.sb-model-popover-name {
+  font-size: 0.78rem;
+  color: var(--text);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.sb-effort-slider {
+  width: 100%;
+}
+
+.sb-effort-stops {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  gap: 4px;
+}
+
+.sb-effort-stop {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.sb-effort-stop.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sb-model-popover-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}

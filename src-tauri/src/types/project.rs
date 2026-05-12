@@ -75,6 +75,10 @@ pub struct Instance {
     /// renders this as "running" vs "idle/needs input". False at rest.
     #[serde(default)]
     pub busy: bool,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub effort: String,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a
@@ -152,6 +156,8 @@ mod tests {
             ended_at: None,
             end_reason: None,
             busy: false,
+            model: String::new(),
+            effort: String::new(),
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();

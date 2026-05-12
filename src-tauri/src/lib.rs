@@ -148,6 +148,7 @@ pub fn run() {
             ipc::invalidate_characters_cache,
             ipc::start_session,
             ipc::send_message,
+            ipc::set_session_effort,
             ipc::cancel_turn,
             ipc::clear_session,
             ipc::paste_image,

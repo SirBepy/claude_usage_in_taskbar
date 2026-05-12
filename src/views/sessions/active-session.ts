@@ -76,7 +76,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
     const fields = await loadStatuslineFields();
-    const sb = new SessionStatusbar(sbHost, sess.started_at, fields, sess.cwd ? String(sess.cwd) : null);
+    const sb = new SessionStatusbar(sbHost, sess.started_at, fields, {
+      cwd: sess.cwd ? String(sess.cwd) : null,
+      effort: sess.effort ?? "",
+      sessionId: sess.session_id,
+      readOnly: sess.kind === "external",
+    });
     state.statusbar = sb;
     // Fetch git info async (non-blocking, populates when ready).
     if (sess.cwd) {
