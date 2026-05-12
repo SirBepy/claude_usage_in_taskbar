@@ -5,6 +5,10 @@
 Add a settings panel where Joe can rename and edit the 3 effort presets
 (Light / Normal / Heavy) without hand-editing `settings.json`.
 
+## Dependency
+
+**Do todo 49 first.** `effortPresets` does not exist in `store.rs` or `settings.json` yet. This panel reads/writes that field. Implementing 42 without 49 means building a UI with nothing to back it.
+
 ## Context
 
 Deferred from the model/effort picker design at
