@@ -3,6 +3,8 @@ import { api } from "../../shared/api";
 import type { SkillDetail, SkillUsageEvent } from "../../types/ipc.generated";
 import { showView } from "../../shared/navigation";
 import { openSidemenu } from "../../shared/sidemenu";
+import { tokensAllIn } from "../../shared/tokens";
+import { buildPieSvg } from "../../shared/pie";
 import "./skill-detail.css";
 
 const SOURCE_COLORS = {
@@ -13,11 +15,6 @@ const SOURCE_COLORS = {
 
 function targetSkill(): string {
   return (window as unknown as { skillDetailTarget?: string }).skillDetailTarget ?? "";
-}
-
-function tokenTotal(e: SkillUsageEvent): number {
-  return Number(e.tokens.input) + Number(e.tokens.output)
-    + Number(e.tokens.cache_read) + Number(e.tokens.cache_create);
 }
 
 function formatTime(ts: string): string {
@@ -112,22 +109,9 @@ function sourcePie(d: SkillDetail): TemplateResult {
     { label: "Skill", n: d.invocations.skill, color: SOURCE_COLORS.skill },
     { label: "Auto", n: d.invocations.auto, color: SOURCE_COLORS.auto },
   ].filter((r) => r.n > 0);
-  const r = 50;
-  const cx = 60, cy = 60;
-  let acc = 0;
-  const slices = rows.map((row) => {
-    const start = (acc / total) * Math.PI * 2 - Math.PI / 2;
-    acc += row.n;
-    const end = (acc / total) * Math.PI * 2 - Math.PI / 2;
-    const large = (end - start) > Math.PI ? 1 : 0;
-    const x1 = cx + Math.cos(start) * r;
-    const y1 = cy + Math.sin(start) * r;
-    const x2 = cx + Math.cos(end) * r;
-    const y2 = cy + Math.sin(end) * r;
-    return `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z" fill="${row.color}" stroke="#0a0a0a" stroke-width="1.5" />`;
-  }).join("");
+  const slices = rows.map((r) => ({ value: r.n, color: r.color }));
   const wrap = document.createElement("div");
-  wrap.innerHTML = `<svg viewBox="0 0 120 120" width="120" height="120">${slices}</svg>`;
+  wrap.innerHTML = buildPieSvg(slices, total, { r: 50, cx: 60, cy: 60, size: 120 });
   return html`<div class="source-pie">${wrap}</div>`;
 }
 
@@ -136,7 +120,7 @@ function eventRow(e: SkillUsageEvent): TemplateResult {
     <tr>
       <td>${formatTime(e.ts)}</td>
       <td>${e.project}</td>
-      <td>${tokenTotal(e).toLocaleString()}</td>
+      <td>${tokensAllIn(e.tokens).toLocaleString()}</td>
       <td><span class="badge badge-${e.source}">${e.source}</span></td>
     </tr>
   `;

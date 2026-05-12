@@ -8,17 +8,11 @@
 
 import type { SlashEntry, SlashSource } from "../../types/ipc.generated";
 
-let _entries: SlashEntry[] = [];
 let _lookup = new Map<string, SlashSource>();
 
 export function setSlashEntries(entries: SlashEntry[]): void {
-  _entries = entries;
   _lookup = new Map();
   for (const e of entries) _lookup.set(e.name, e.source);
-}
-
-export function getSlashSource(name: string): SlashSource | null {
-  return _lookup.get(name) ?? null;
 }
 
 /**
@@ -53,10 +47,6 @@ export function skillDetailTarget(name: string, source: SlashSource): string | n
   if (source.kind === "user-skill") return name;
   if (source.kind === "plugin-skill") return `${(source as { plugin: string }).plugin}:${name}`;
   return null;
-}
-
-export function getSlashEntries(): SlashEntry[] {
-  return _entries;
 }
 
 /** CSS class suffix for a slash kind. Returns `"unknown"` for null. */

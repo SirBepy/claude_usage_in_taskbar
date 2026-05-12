@@ -2,6 +2,8 @@ import { html, render, type TemplateResult } from "lit-html";
 import { api } from "../../shared/api";
 import type { SkillUsageEntry, SkillUsageWeek } from "../../types/ipc.generated";
 import { showView } from "../../shared/navigation";
+import { tokensAllIn, formatTokens } from "../../shared/tokens";
+import { buildPieSvg } from "../../shared/pie";
 import "./skill-usage-widget.css";
 
 const PIE_COLORS = ["#5b8def", "#8c5bef", "#ef5b8c", "#efbf5b", "#5befbf", "#888"];
@@ -10,23 +12,12 @@ const TOP_N = 5;
 interface SortState { col: "tokens" | "inv" | "chats" | "perUse" | "skill"; dir: 1 | -1; }
 let sort: SortState = { col: "tokens", dir: -1 };
 
-function tokenTotal(e: SkillUsageEntry): number {
-  return Number(e.tokens.input) + Number(e.tokens.output)
-    + Number(e.tokens.cache_read) + Number(e.tokens.cache_create);
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
-  return n.toString();
-}
-
 function sortValue(e: SkillUsageEntry, col: SortState["col"]): number | string {
   switch (col) {
-    case "tokens": return tokenTotal(e);
+    case "tokens": return tokensAllIn(e.tokens);
     case "inv": return e.invocations.total;
     case "chats": return e.chats;
-    case "perUse": return e.invocations.total === 0 ? 0 : tokenTotal(e) / e.invocations.total;
+    case "perUse": return e.invocations.total === 0 ? 0 : tokensAllIn(e.tokens) / e.invocations.total;
     case "skill": return e.skill;
   }
 }
@@ -57,13 +48,13 @@ export function renderSkillUsageWidget(container: HTMLElement): () => void {
       return String(av).localeCompare(String(bv)) * sort.dir;
     });
 
-    const pieEntries = [...state.entries].sort((a, b) => tokenTotal(b) - tokenTotal(a));
+    const pieEntries = [...state.entries].sort((a, b) => tokensAllIn(b.tokens) - tokensAllIn(a.tokens));
     const top = pieEntries.slice(0, TOP_N);
     const rest = pieEntries.slice(TOP_N);
-    const restTotal = rest.reduce((sum, e) => sum + tokenTotal(e), 0);
+    const restTotal = rest.reduce((sum, e) => sum + tokensAllIn(e.tokens), 0);
     const pieRows: { label: string; tokens: number; color: string }[] = top.map((e, i) => ({
       label: e.skill,
-      tokens: tokenTotal(e),
+      tokens: tokensAllIn(e.tokens),
       color: PIE_COLORS[i] ?? PIE_COLORS[PIE_COLORS.length - 1]!,
     }));
     if (restTotal > 0) {
@@ -111,8 +102,8 @@ export function renderSkillUsageWidget(container: HTMLElement): () => void {
               <td>${e.invocations.total}</td>
               <td>${e.chats}</td>
               <td>${totalSessions === 0 ? "-" : Math.round((e.chats / totalSessions) * 100) + "%"}</td>
-              <td>${fmtTokens(tokenTotal(e))}</td>
-              <td>${e.invocations.total === 0 ? "-" : fmtTokens(Math.round(tokenTotal(e) / e.invocations.total))}</td>
+              <td>${formatTokens(tokensAllIn(e.tokens))}</td>
+              <td>${e.invocations.total === 0 ? "-" : formatTokens(Math.round(tokensAllIn(e.tokens) / e.invocations.total))}</td>
             </tr>
           `)}
         </tbody>
@@ -123,28 +114,15 @@ export function renderSkillUsageWidget(container: HTMLElement): () => void {
   function renderPie(rows: { label: string; tokens: number; color: string }[]): TemplateResult {
     const total = rows.reduce((s, r) => s + r.tokens, 0);
     if (total === 0) return html`<div class="pie-empty">No token data</div>`;
-    const r = 80;
-    const cx = 100, cy = 100;
-    let acc = 0;
-    const sliceSvgs = rows.map((row) => {
-      const start = (acc / total) * Math.PI * 2 - Math.PI / 2;
-      acc += row.tokens;
-      const end = (acc / total) * Math.PI * 2 - Math.PI / 2;
-      const large = (end - start) > Math.PI ? 1 : 0;
-      const x1 = cx + Math.cos(start) * r;
-      const y1 = cy + Math.sin(start) * r;
-      const x2 = cx + Math.cos(end) * r;
-      const y2 = cy + Math.sin(end) * r;
-      return `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z" fill="${row.color}" stroke="#0a0a0a" stroke-width="1.5" />`;
-    }).join("");
+    const slices = rows.map((r) => ({ value: r.tokens, color: r.color }));
     const wrap = document.createElement("div");
-    wrap.innerHTML = `<svg viewBox="0 0 200 200" width="200" height="200">${sliceSvgs}</svg>`;
+    wrap.innerHTML = buildPieSvg(slices, total, { r: 80, cx: 100, cy: 100, size: 200 });
     return html`
       <div class="pie-wrap">
         ${wrap}
         <ul class="pie-legend">
           ${rows.map((row) => html`
-            <li><span class="swatch" style="background:${row.color}"></span>${row.label} &mdash; ${fmtTokens(row.tokens)}</li>
+            <li><span class="swatch" style="background:${row.color}"></span>${row.label} &mdash; ${formatTokens(row.tokens)}</li>
           `)}
         </ul>
       </div>

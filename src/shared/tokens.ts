@@ -43,6 +43,10 @@ export function formatTokens(n: number | null | undefined): string {
   return String(n);
 }
 
+export function tokensAllIn(t: { input: bigint; output: bigint; cache_read: bigint; cache_create: bigint }): number {
+  return Number(t.input) + Number(t.output) + Number(t.cache_read) + Number(t.cache_create);
+}
+
 export function totalTok(r: TokenRecord): number {
   return (r.inputTokens || 0) + (r.outputTokens || 0) + (r.cacheReadTokens || 0) + (r.cacheCreationTokens || 0);
 }
