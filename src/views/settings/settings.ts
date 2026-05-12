@@ -298,9 +298,11 @@ export async function renderSettingsView(
   const navVisuals = root.querySelector<HTMLElement>("#nav-visuals");
   const navThemes = root.querySelector<HTMLElement>("#nav-themes");
   const navNotifs = root.querySelector<HTMLElement>("#nav-notifications");
+  const navPresets = root.querySelector<HTMLElement>("#nav-presets");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
   if (navThemes) navThemes.onclick = () => g().navigateTo("settings-themes");
   if (navNotifs) navNotifs.onclick = () => g().navigateTo("settings-notifications");
+  if (navPresets) navPresets.onclick = () => g().navigateTo("settings-presets");
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
   if (logoutBtn) logoutBtn.onclick = () => { void api.logout(); };
@@ -334,6 +336,14 @@ function template() {
           </div>
           <div class="nav-row" id="nav-themes">
             <span class="nav-row-label">Themes</span>
+            <span class="nav-row-arrow">›</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Agent</div>
+          <div class="nav-row" id="nav-presets">
+            <span class="nav-row-label">Session presets</span>
             <span class="nav-row-arrow">›</span>
           </div>
         </div>

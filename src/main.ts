@@ -24,6 +24,7 @@ import { renderSkillsView } from "./views/skills/skills";
 import { renderVisualsView } from "./views/settings/subviews/visuals/visuals";
 import { renderThemesView } from "./views/settings/subviews/themes/themes";
 import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
+import { renderPresetsView } from "./views/settings/subviews/presets/presets";
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
@@ -52,6 +53,7 @@ registerView("skills", renderSkillsView);
 registerView("settings-visuals", renderVisualsView);
 registerView("settings-themes", renderThemesView);
 registerView("settings-notifications", renderNotificationsView);
+registerView("settings-presets", renderPresetsView);
 
 const app = document.getElementById("app");
 if (!app) {

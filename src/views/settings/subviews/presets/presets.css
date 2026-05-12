@@ -1,0 +1,48 @@
+.view-settings-presets .presets-hint {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
+.view-settings-presets .presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.view-settings-presets .preset-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 110px;
+  gap: 8px;
+  align-items: center;
+}
+
+.view-settings-presets .preset-row .preset-name,
+.view-settings-presets .preset-row .preset-model,
+.view-settings-presets .preset-row .preset-effort {
+  padding: 6px 8px;
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.view-settings-presets .presets-error {
+  margin-top: 10px;
+  color: var(--danger, #ff4444);
+  font-size: 0.8rem;
+}
+
+.view-settings-presets .presets-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-settings-presets .presets-status {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
