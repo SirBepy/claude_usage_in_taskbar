@@ -9,7 +9,7 @@ pub fn scan(project_dir: &Path) -> Result<Vec<String>, String> {
     cmd.arg("-C")
         .arg(project_dir)
         .args(["ls-files", "-co", "--exclude-standard"]);
-    no_window(&mut cmd);
+    crate::util::process::hide_console(&mut cmd);
     let out = match cmd.output() {
         Ok(o) => o,
         Err(e) => {
@@ -30,13 +30,3 @@ pub fn scan(project_dir: &Path) -> Result<Vec<String>, String> {
     paths.truncate(5000);
     Ok(paths)
 }
-
-#[cfg(windows)]
-fn no_window(cmd: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    cmd.creation_flags(CREATE_NO_WINDOW);
-}
-
-#[cfg(not(windows))]
-fn no_window(_cmd: &mut Command) {}

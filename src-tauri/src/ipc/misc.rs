@@ -34,7 +34,6 @@ pub fn read_log_contents(log_path: &std::path::Path) -> Result<String, String> {
 /// The renderer writes this to the clipboard for bug reports.
 #[tauri::command]
 pub async fn read_log_file(app: AppHandle) -> Result<String, String> {
-    use tauri::Manager;
     let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     let product = app.package_info().name.clone();
     let log_path = log_dir.join(format!("{product}.log"));
@@ -146,7 +145,6 @@ pub async fn run_update_check(app: &AppHandle, auto_install: bool) -> serde_json
 
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
     use crate::types::AutoUpdateMode;
     let auto_install = app.state::<crate::state::AppState>()
         .settings.lock().unwrap().auto_update == AutoUpdateMode::Immediate;

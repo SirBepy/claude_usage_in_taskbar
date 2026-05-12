@@ -80,7 +80,7 @@ pub fn parse_transcript(path: &Path) -> Vec<SkillUsageEvent> {
                 let total_usage = next_assistant_usage(&lines, i);
                 let split = split_usage(&body_lengths, &total_usage);
 
-                let project = cwd.as_deref().map(basename).unwrap_or_default();
+                let project = cwd.as_deref().and_then(crate::notifications::rules::project_name_from_cwd).unwrap_or_default();
                 let ts = chrono::Utc::now()
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
@@ -292,13 +292,4 @@ fn split_usage(weights: &[usize], total: &TokenBreakdown) -> Vec<TokenBreakdown>
         out.push(piece);
     }
     out
-}
-
-fn basename(path: &str) -> String {
-    let trimmed = path.trim_end_matches(['/', '\\']);
-    trimmed
-        .rsplit(|c| c == '/' || c == '\\')
-        .next()
-        .unwrap_or(trimmed)
-        .to_string()
 }
