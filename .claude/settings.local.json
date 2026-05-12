@@ -155,7 +155,8 @@
       "Bash(where.exe claude *)",
       "Bash(New-Item -Path \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\.for_bepy\\\\TOMORROWS_AI_PROMPT.md\" -ItemType File -Force)",
       "Bash(Out-Null)",
-      "Bash(Get-Content *)"
+      "Bash(Get-Content *)",
+      "Bash(pnpm vitest *)"
     ]
   }
 }
