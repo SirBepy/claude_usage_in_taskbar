@@ -35,6 +35,15 @@
   background: rgba(199, 148, 245, 0.12);
   border-color: rgba(199, 148, 245, 0.30);
 }
+.slash-mention[data-skill-target] {
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.slash-mention[data-skill-target]:hover {
+  color: #e4ccff;
+  background: rgba(199, 148, 245, 0.22);
+  border-color: rgba(199, 148, 245, 0.55);
+}
 
 .msg {
   margin-bottom: 12px;
@@ -153,6 +162,26 @@
 .card-block blockquote p {
   margin: 0;
   line-height: 1.5;
+}
+
+.msg a {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  padding-bottom: 1px;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  border-radius: 2px;
+}
+
+.msg a:hover {
+  color: var(--text);
+  border-bottom-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.msg a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .copy-btn {

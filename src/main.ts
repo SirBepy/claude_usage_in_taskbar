@@ -28,6 +28,7 @@ import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
 import { installPermissionModalListener } from "./views/sessions/permission-modal";
+import { installExternalLinkInterceptor } from "./shared/external-links";
 import { invoke } from "./shared/ipc";
 import type { NewsPost } from "./types/ipc.generated";
 
@@ -75,6 +76,7 @@ function detachedSessionFromHash(): string | null {
 // listener is a no-op until either a permission-requested or question-requested
 // Tauri event fires from the hooks server.
 installPermissionModalListener();
+installExternalLinkInterceptor();
 
 const detachedSessionId = detachedSessionFromHash();
 if (detachedSessionId) {

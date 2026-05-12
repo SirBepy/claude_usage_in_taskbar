@@ -18,7 +18,8 @@ import { codeToHtml } from "shiki/bundle/web";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { escapeHtml } from "../escape-html";
 import { sessionEvents } from "./event-store";
-import { getSlashSource, slashKindClass } from "./slash-registry";
+import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry";
+import { showView } from "../navigation";
 
 const md = new MarkdownIt({
   html: false, // safe: don't let assistant output inject HTML
@@ -91,7 +92,22 @@ export class ChatRenderer {
   constructor(container: HTMLElement) {
     this.container = container;
     this.container.addEventListener("click", this.handleCopyClick);
+    this.container.addEventListener("click", this.handleSlashClick);
   }
+
+  private handleSlashClick = (e: MouseEvent): void => {
+    const span = (e.target as Element).closest<HTMLElement>(".slash-mention[data-skill-target]");
+    if (!span) return;
+    // Detached chat windows live on a `#detached?...` route - navigating
+    // would discard the chat. Skip; future: open the main window's view via
+    // Tauri instead.
+    if (window.location.hash.startsWith("#detached")) return;
+    const target = span.dataset.skillTarget;
+    if (!target) return;
+    e.preventDefault();
+    (window as unknown as { skillDetailTarget?: string }).skillDetailTarget = target;
+    showView("skill-detail");
+  };
 
   /**
    * Subscribe to live events for `sessionId` via the shared event store.
@@ -726,11 +742,13 @@ function highlightSlashMentions(html: string): string {
     if (i % 2 === 1) continue;
     const part = parts[i];
     if (!part) continue;
-    parts[i] = part.replace(SLASH_MENTION_RE, (_match, pre: string, name: string) => {
-      const source = getSlashSource(name);
-      if (!source) return `${pre}/${name}`;
-      const cls = `slash-mention slash-${slashKindClass(source)}`;
-      return `${pre}<span class="${cls}" data-slash="${escapeHtml(name)}">/${escapeHtml(name)}</span>`;
+    parts[i] = part.replace(SLASH_MENTION_RE, (_match, pre: string, raw: string) => {
+      const hit = lookupSlash(raw);
+      if (!hit) return `${pre}/${raw}`;
+      const cls = `slash-mention slash-${slashKindClass(hit.source)}`;
+      const target = skillDetailTarget(hit.name, hit.source);
+      const targetAttr = target ? ` data-skill-target="${escapeHtml(target)}"` : "";
+      return `${pre}<span class="${cls}" data-slash="${escapeHtml(raw)}"${targetAttr}>/${escapeHtml(raw)}</span>`;
     });
   }
   return parts.join("");
