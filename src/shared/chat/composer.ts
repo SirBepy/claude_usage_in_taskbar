@@ -26,6 +26,8 @@ export interface ComposerOptions {
   getRenderer?: () => ChatRenderer | null;
 }
 
+let _composerInstanceCount = 0;
+
 export class Composer {
   private root: HTMLElement;
   private opts: ComposerOptions;
@@ -38,6 +40,7 @@ export class Composer {
   private slash: SlashProvider | null = null;
   private file: FileProvider | null = null;
   private popup: CaretSuggestPopup | null = null;
+  private sending = false;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -74,6 +77,12 @@ export class Composer {
     this.file.start(opts.projectDir ?? null);
     this.render();
     document.addEventListener("keydown", this._globalKeydown);
+    _composerInstanceCount++;
+    if (_composerInstanceCount > 1) {
+      console.warn(
+        `[composer] ${_composerInstanceCount} instances alive — leak suspect`,
+      );
+    }
   }
 
   destroy(): void {
@@ -84,18 +93,28 @@ export class Composer {
     this.slash = null;
     this.file?.stop();
     this.file = null;
+    _composerInstanceCount = Math.max(0, _composerInstanceCount - 1);
   }
 
   setSessionId(id: string, opts: { readOnly?: boolean } = {}): void {
-    const draftText = this.textarea?.value ?? "";
+    const prevId = this.sessionId;
+    const inMemoryDraft = this.textarea?.value ?? "";
+    // Migrate any stored draft when a pending placeholder swaps to its real
+    // session id, so the persisted text follows the session across the rename.
+    if (prevId && prevId !== id) {
+      const prevStored = loadDraft(prevId);
+      if (prevStored && !loadDraft(id)) saveDraft(id, prevStored);
+      clearDraft(prevId);
+    }
     this.sessionId = id;
     this.disabled = !!opts.readOnly;
     this.render();
-    // Preserve in-progress draft across re-renders (e.g. when the user toggles
-    // takeover from read-only to interactive while typing).
-    if (this.textarea && draftText) {
-      this.textarea.value = draftText;
+    const stored = loadDraft(id);
+    const restored = inMemoryDraft || stored || "";
+    if (this.textarea && restored) {
+      this.textarea.value = restored;
       this.autoResize();
+      if (stored && !inMemoryDraft) saveDraft(id, stored);
     }
   }
 
@@ -131,6 +150,7 @@ export class Composer {
       this.textarea.addEventListener("input", () => {
         this.autoResize();
         this.popup?.handleInput();
+        this.persistDraft();
       });
       this.sendBtn?.addEventListener("click", () => void this.send());
     }
@@ -208,8 +228,13 @@ export class Composer {
 
   private async send(): Promise<void> {
     if (this.disabled) return;
+    if (this.sending) {
+      console.warn("[composer] re-entry blocked — double-fire suspect");
+      return;
+    }
     const text = (this.textarea?.value ?? "").trim();
     if (!text && this.attachments.length === 0) return;
+    this.sending = true;
 
     const builtin = parseBuiltin(text);
     if (builtin) {
@@ -225,6 +250,8 @@ export class Composer {
       this.autoResize();
       this.attachments = [];
       this.renderAttachments();
+      this.persistDraft();
+      this.sending = false;
       return;
     }
 
@@ -248,12 +275,52 @@ export class Composer {
     this.autoResize();
     this.attachments = [];
     this.renderAttachments();
+    this.persistDraft();
 
     try {
       await this.opts.onSend(blocks);
     } catch (err) {
       console.error("[Composer] onSend failed", err);
+    } finally {
+      this.sending = false;
     }
+  }
+
+  private persistDraft(): void {
+    if (!this.sessionId) return;
+    const text = this.textarea?.value ?? "";
+    if (text) saveDraft(this.sessionId, text);
+    else clearDraft(this.sessionId);
+  }
+}
+
+const DRAFT_PREFIX = "chat-draft:v1:";
+
+function draftKey(sessionId: string): string {
+  return DRAFT_PREFIX + sessionId;
+}
+
+function loadDraft(sessionId: string): string {
+  try {
+    return localStorage.getItem(draftKey(sessionId)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveDraft(sessionId: string, text: string): void {
+  try {
+    localStorage.setItem(draftKey(sessionId), text);
+  } catch {
+    /* quota or storage disabled - lose the draft, don't crash */
+  }
+}
+
+function clearDraft(sessionId: string): void {
+  try {
+    localStorage.removeItem(draftKey(sessionId));
+  } catch {
+    /* ignore */
   }
 }
 

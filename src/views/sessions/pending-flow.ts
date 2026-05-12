@@ -142,6 +142,7 @@ export async function renderPendingPane(
   // send_message against the real id captured from SessionStarted.
   const composerEl = pane.querySelector<HTMLElement>(".session-composer");
   if (composerEl) {
+    state.composer?.destroy();
     let started = false;
     state.composer = new Composer(composerEl, {
       projectDir: project.path,

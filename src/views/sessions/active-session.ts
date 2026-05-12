@@ -126,6 +126,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   // Attach composer
   const composerEl = pane.querySelector<HTMLElement>(".session-composer");
   if (composerEl) {
+    state.composer?.destroy();
     state.composer = new Composer(composerEl, {
       projectDir: sess.cwd ?? null,
       getRenderer: () => state.renderer,
