@@ -41,6 +41,22 @@
   padding: 0;
 }
 
+.history-date-sep {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 12px 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+  user-select: none;
+}
+
 .history-sidebar li {
   padding: 8px 12px;
   cursor: pointer;

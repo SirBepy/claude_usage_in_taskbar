@@ -44,6 +44,23 @@ async function fetchEntries(): Promise<void> {
   }
 }
 
+function dateBucket(secs: number | bigint | null | undefined): string {
+  if (!secs) return "Older";
+  const n = typeof secs === "bigint" ? Number(secs) : secs;
+  if (!n) return "Older";
+  const d = new Date(n * 1000);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 86400_000);
+  const startOf7Days = new Date(startOfToday.getTime() - 6 * 86400_000);
+  const startOf30Days = new Date(startOfToday.getTime() - 29 * 86400_000);
+  if (d >= startOfToday) return "Today";
+  if (d >= startOfYesterday) return "Yesterday";
+  if (d >= startOf7Days) return "Last 7 days";
+  if (d >= startOf30Days) return "Last 30 days";
+  return d.toLocaleString("default", { month: "long", year: "numeric" });
+}
+
 function renderList(listEl: HTMLElement): void {
   const filter = state.filter.toLowerCase();
   const filtered = state.entries.filter(
@@ -55,17 +72,33 @@ function renderList(listEl: HTMLElement): void {
     }</li>`;
     return;
   }
-  listEl.innerHTML = filtered
-    .map(
-      (e) =>
-        `<li data-session-id="${escapeHtml(e.session_id)}" class="${
-          e.session_id === state.selectedId ? "active" : ""
-        }">
-          <div class="history-row-title">${escapeHtml(projectNameFromCwd(e.cwd))}</div>
-          <div class="history-row-meta">${formatDate(e.ended_at ?? e.started_at)}</div>
-        </li>`,
-    )
-    .join("");
+
+  const html: string[] = [];
+  let lastBucket = "";
+  for (const e of filtered) {
+    const bucket = dateBucket(e.ended_at ?? e.started_at);
+    if (bucket !== lastBucket) {
+      lastBucket = bucket;
+      html.push(`<li class="history-date-sep" aria-hidden="true">${escapeHtml(bucket)}</li>`);
+    }
+    html.push(
+      `<li data-session-id="${escapeHtml(e.session_id)}" class="${
+        e.session_id === state.selectedId ? "active" : ""
+      }">
+        <div class="history-row-title">${escapeHtml(projectNameFromCwd(e.cwd))}</div>
+        <div class="history-row-meta">${formatTime(e.ended_at ?? e.started_at)}</div>
+      </li>`,
+    );
+  }
+  listEl.innerHTML = html.join("");
+}
+
+function formatTime(secs: number | bigint | null | undefined): string {
+  if (secs === null || secs === undefined) return "";
+  const n = typeof secs === "bigint" ? Number(secs) : secs;
+  if (!n) return "";
+  const d = new Date(n * 1000);
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDate(secs: number | bigint | null | undefined): string {
