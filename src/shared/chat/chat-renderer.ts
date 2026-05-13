@@ -467,9 +467,7 @@ export class ChatRenderer {
         // in cache_read_input_tokens, not input_tokens alone. Using only
         // input_tokens would show ~0% for any session with a warm cache.
         const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens);
-        if (totalCtx > this.meta.inputTokens) {
-          this.meta.inputTokens = totalCtx;
-        }
+        this.meta.inputTokens = totalCtx;
         this.meta.totalCostUsd += ev.total_cost_usd;
         this.meta.hasUsage = true;
         if (ev.has_thinking) this.meta.hasThinking = true;
