@@ -172,8 +172,11 @@ function renderShortcutsSection(container: HTMLElement): () => void {
   const re = () => {
     const defs = shortcuts.getAll();
     const globalDefs = defs.filter(d => !d.context && !d.todo);
-    const chatsDefs = defs.filter(d => d.context === "sessions" && !d.todo);
+    const chatsDefs = defs.filter(d => d.context === "sessions" && !d.todo && !d.id.startsWith("assign-slot-"));
+    const assignDefs = defs.filter(d => d.id.startsWith("assign-slot-") && !d.todo);
     const todoDefs = defs.filter(d => !!d.todo);
+    const slotMode = shortcuts.getChatSlotMode();
+    const isManual = slotMode === "manual";
 
     function kbdHtml(id: string): string {
       const binding = shortcuts.getBinding(id);
@@ -220,6 +223,17 @@ function renderShortcutsSection(container: HTMLElement): () => void {
       ${globalDefs.map(rowHtml).join("")}
       <div class="shortcut-group-header">Chats</div>
       ${chatsDefs.map(rowHtml).join("")}
+      <label class="shortcut-slot-mode-toggle">
+        <input type="checkbox" id="slot-mode-checkbox" ${isManual ? "checked" : ""}>
+        <span class="shortcut-slot-mode-label">
+          <strong>Manual slot assignment</strong>
+          <span class="shortcut-slot-mode-desc">${isManual
+            ? "Ctrl+Shift+1-9 pins a chat to a slot. Ctrl+1-9 opens the pinned chat."
+            : "Ctrl+1-9 opens chats by their sorted position."
+          }</span>
+        </span>
+      </label>
+      ${isManual ? `<div class="shortcut-group-header shortcut-group-header--sub">Slot assignment keys</div>${assignDefs.map(rowHtml).join("")}` : ""}
       <div class="shortcut-group-header">Coming Soon</div>
       ${todoDefs.map(rowHtml).join("")}
     `;
@@ -241,6 +255,14 @@ function renderShortcutsSection(container: HTMLElement): () => void {
         stopCapture();
       });
     });
+
+    const slotCheckbox = container.querySelector<HTMLInputElement>("#slot-mode-checkbox");
+    if (slotCheckbox) {
+      slotCheckbox.addEventListener("change", () => {
+        shortcuts.setChatSlotMode(slotCheckbox.checked ? "manual" : "auto");
+        re();
+      });
+    }
   };
 
   function startCapture(id: string): void {

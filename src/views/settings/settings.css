@@ -133,3 +133,42 @@
 .shortcut-group-header:first-child {
   margin-top: 0;
 }
+
+.shortcut-group-header--sub {
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+.shortcut-slot-mode-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  border-top: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+  margin: 8px 0 4px;
+}
+
+.shortcut-slot-mode-toggle input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.shortcut-slot-mode-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shortcut-slot-mode-label strong {
+  font-size: 0.82rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.shortcut-slot-mode-desc {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}

@@ -3,6 +3,7 @@ import { showView } from "../../shared/navigation";
 import { template, detachedTemplate } from "./template";
 import { invoke } from "../../shared/ipc";
 import * as shortcuts from "../../shared/shortcuts";
+import { showToast } from "../../shared/toast";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
 import "./session-statusbar.css";
@@ -80,6 +81,30 @@ export function selectSessionByIndex(index: number): void {
   if (id) void selectSession(id, _pane);
 }
 
+export function selectSessionBySlot(slot: number): void {
+  if (!_pane) return;
+  const sessionId = shortcuts.getSlotAssignment(slot);
+  if (!sessionId) {
+    showToast(`No chat assigned to slot ${slot} — press Ctrl+Shift+${slot} in a chat to assign it`);
+    return;
+  }
+  const exists = state.sessions.find(s => s.session_id === sessionId);
+  if (!exists) {
+    showToast(`Chat assigned to slot ${slot} is no longer active`);
+    return;
+  }
+  void selectSession(sessionId, _pane);
+}
+
+export function assignCurrentToSlot(slot: number): void {
+  const id = state.selectedId;
+  if (!id) { showToast("No active chat to assign"); return; }
+  shortcuts.setSlotAssignment(slot, id);
+  const sess = state.sessions.find(s => s.session_id === id);
+  const label = sess?.project_id ?? id.slice(0, 8);
+  showToast(`Slot ${slot} → ${label}`);
+}
+
 export function closeFocusedChat(): void {
   const id = state.selectedId;
   if (!id) return;
@@ -113,8 +138,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
   // Register chats-view shortcuts
   for (let i = 0; i < 9; i++) {
-    const idx = i;
-    shortcuts.register(`open-chat-${i + 1}`, () => selectSessionByIndex(idx));
+    const slot = i + 1;
+    shortcuts.register(`open-chat-${slot}`, () => {
+      if (shortcuts.getChatSlotMode() === "manual") {
+        selectSessionBySlot(slot);
+      } else {
+        selectSessionByIndex(i);
+      }
+    });
+    shortcuts.register(`assign-slot-${slot}`, () => assignCurrentToSlot(slot));
   }
   shortcuts.register("close-chat", closeFocusedChat);
 
@@ -214,7 +246,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   });
 
   return () => {
-    for (let i = 1; i <= 9; i++) shortcuts.unregister(`open-chat-${i}`);
+    for (let i = 1; i <= 9; i++) {
+      shortcuts.unregister(`open-chat-${i}`);
+      shortcuts.unregister(`assign-slot-${i}`);
+    }
     shortcuts.unregister("close-chat");
     if (unlistenCtrlHeld) { unlistenCtrlHeld(); unlistenCtrlHeld = null; }
     closeCtxMenu();

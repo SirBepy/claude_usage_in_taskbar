@@ -27,11 +27,24 @@ const SHORTCUT_DEFS: ShortcutDef[] = [
   { id: "open-chat-8", defaultKeys: "ctrl+8", label: "Open chat 8", description: "Open the 8th most recent chat", context: "sessions", suppressInInput: false },
   { id: "open-chat-9", defaultKeys: "ctrl+9", label: "Open chat 9", description: "Open the 9th most recent chat", context: "sessions", suppressInInput: false },
   { id: "close-chat",  defaultKeys: "ctrl+w", label: "Cancel active turn",  description: "Cancel the current running turn in the focused chat", context: "sessions", suppressInInput: true },
+
+  // Chats view - manual slot assignment (only active in manual mode)
+  { id: "assign-slot-1", defaultKeys: "ctrl+shift+1", label: "Assign to slot 1", description: "Pin the current chat to slot 1 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-2", defaultKeys: "ctrl+shift+2", label: "Assign to slot 2", description: "Pin the current chat to slot 2 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-3", defaultKeys: "ctrl+shift+3", label: "Assign to slot 3", description: "Pin the current chat to slot 3 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-4", defaultKeys: "ctrl+shift+4", label: "Assign to slot 4", description: "Pin the current chat to slot 4 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-5", defaultKeys: "ctrl+shift+5", label: "Assign to slot 5", description: "Pin the current chat to slot 5 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-6", defaultKeys: "ctrl+shift+6", label: "Assign to slot 6", description: "Pin the current chat to slot 6 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-7", defaultKeys: "ctrl+shift+7", label: "Assign to slot 7", description: "Pin the current chat to slot 7 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-8", defaultKeys: "ctrl+shift+8", label: "Assign to slot 8", description: "Pin the current chat to slot 8 (manual mode)", context: "sessions", suppressInInput: false },
+  { id: "assign-slot-9", defaultKeys: "ctrl+shift+9", label: "Assign to slot 9", description: "Pin the current chat to slot 9 (manual mode)", context: "sessions", suppressInInput: false },
 ];
 
 // ── Storage ────────────────────────────────────────────────────────────────
 
 const LS_KEY = "cc_shortcuts_bindings";
+const LS_SLOT_MODE = "cc_chat_slot_mode";
+const LS_SLOT_ASSIGNMENTS = "cc_chat_slot_assignments";
 
 let _bindingsCache: Record<string, string> | null = null;
 
@@ -125,6 +138,35 @@ export function resetBinding(id: string): void {
 export function hasOverride(id: string): boolean {
   const overrides = loadBindings();
   return Object.prototype.hasOwnProperty.call(overrides, id);
+}
+
+export type ChatSlotMode = "auto" | "manual";
+
+export function getChatSlotMode(): ChatSlotMode {
+  try { return (localStorage.getItem(LS_SLOT_MODE) as ChatSlotMode) || "auto"; }
+  catch { return "auto"; }
+}
+
+export function setChatSlotMode(mode: ChatSlotMode): void {
+  try { localStorage.setItem(LS_SLOT_MODE, mode); }
+  catch { /* ignore */ }
+}
+
+export function getSlotAssignment(slot: number): string | null {
+  try {
+    const raw = localStorage.getItem(LS_SLOT_ASSIGNMENTS);
+    const map: Record<number, string> = raw ? JSON.parse(raw) : {};
+    return map[slot] ?? null;
+  } catch { return null; }
+}
+
+export function setSlotAssignment(slot: number, sessionId: string): void {
+  try {
+    const raw = localStorage.getItem(LS_SLOT_ASSIGNMENTS);
+    const map: Record<number, string> = raw ? JSON.parse(raw) : {};
+    map[slot] = sessionId;
+    localStorage.setItem(LS_SLOT_ASSIGNMENTS, JSON.stringify(map));
+  } catch { /* ignore */ }
 }
 
 // ── Dispatcher (DOM — guarded for test environments) ──────────────────────
