@@ -110,11 +110,6 @@ export class SessionStatusbar {
     this.render();
   }
 
-  updateEffort(effort: string): void {
-    this.effort = effort;
-    this.render();
-  }
-
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
   }
