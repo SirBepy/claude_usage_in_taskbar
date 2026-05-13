@@ -13,7 +13,12 @@ import {
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
 import { renderSidebar, refreshSessions } from "./sidebar";
-import { addBackgroundSession, removeBackgroundSession } from "./permission-modal";
+import {
+  addBackgroundSession,
+  removeBackgroundSession,
+  isAutoAccept,
+  setAutoAccept,
+} from "./permission-modal";
 
 function isCloseCommand(blocks: ContentBlock[]): boolean {
   if (blocks.length !== 1) return false;
@@ -80,6 +85,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <header class="session-header">
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}</span>
+      ${readOnly ? "" : `<button class="icon-btn auto-accept-btn${isAutoAccept(sess.session_id) ? " is-on" : ""}" title="${isAutoAccept(sess.session_id) ? "Auto-accepting tool permissions. Click to disable." : "Auto-accept tool permissions for this session"}" aria-pressed="${isAutoAccept(sess.session_id) ? "true" : "false"}"><i class="ph ph-shield-check"></i></button>`}
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
       ${readOnly ? "" : '<button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>'}
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
@@ -195,6 +201,18 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   }
 
   // Wire header buttons
+  const autoBtn = pane.querySelector<HTMLButtonElement>(".auto-accept-btn");
+  if (autoBtn) {
+    autoBtn.addEventListener("click", () => {
+      const next = !isAutoAccept(sessionId);
+      setAutoAccept(sessionId, next);
+      autoBtn.classList.toggle("is-on", next);
+      autoBtn.setAttribute("aria-pressed", next ? "true" : "false");
+      autoBtn.title = next
+        ? "Auto-accepting tool permissions. Click to disable."
+        : "Auto-accept tool permissions for this session";
+    });
+  }
   pane.querySelector<HTMLButtonElement>(".detach-btn")?.addEventListener("click", async () => {
     try {
       await invoke<void>("detach_window", { sessionId });

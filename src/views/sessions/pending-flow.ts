@@ -9,6 +9,7 @@ import { projectName } from "./sessions-helpers";
 import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
+import { isAutoAccept, setAutoAccept } from "./permission-modal";
 
 /**
  * Generate a placeholder session id used to subscribe `chat:<id>` BEFORE
@@ -281,6 +282,33 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   if (meta && sess) {
     meta.textContent = projectName(sess);
   }
+  // Add auto-accept button (omitted from pending header; meaningless until
+  // realId is known). Insert before detach (which sits before cancel).
+  if (!header.querySelector(".auto-accept-btn")) {
+    const detachBtnEl = header.querySelector(".detach-btn");
+    const cancelBtn = header.querySelector(".cancel-btn");
+    const on = isAutoAccept(sessionId);
+    const autoBtn = document.createElement("button");
+    autoBtn.className = "icon-btn auto-accept-btn" + (on ? " is-on" : "");
+    autoBtn.title = on
+      ? "Auto-accepting tool permissions. Click to disable."
+      : "Auto-accept tool permissions for this session";
+    autoBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    autoBtn.innerHTML = '<i class="ph ph-shield-check"></i>';
+    autoBtn.addEventListener("click", () => {
+      const next = !isAutoAccept(sessionId);
+      setAutoAccept(sessionId, next);
+      autoBtn.classList.toggle("is-on", next);
+      autoBtn.setAttribute("aria-pressed", next ? "true" : "false");
+      autoBtn.title = next
+        ? "Auto-accepting tool permissions. Click to disable."
+        : "Auto-accept tool permissions for this session";
+    });
+    const anchor = detachBtnEl ?? cancelBtn;
+    if (anchor) header.insertBefore(autoBtn, anchor);
+    else header.appendChild(autoBtn);
+  }
+
   // Add detach button (was omitted from pending header). Insert before cancel.
   if (!header.querySelector(".detach-btn")) {
     const cancelBtn = header.querySelector(".cancel-btn");
