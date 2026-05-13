@@ -59,9 +59,11 @@
 }
 
 .msg.user {
-  background: var(--surface-alt);
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface-alt));
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
   align-self: flex-end;
   max-width: 85%;
+  margin-left: 32px;
 }
 
 /* Markdown lists default to padding-left: 40px which pushes long items past
@@ -85,6 +87,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   position: relative;
+  align-self: flex-start;
+  max-width: 92%;
+  margin-right: 32px;
 }
 
 .msg.assistant:hover .msg-copy-btn {
@@ -386,6 +391,49 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* ── Turn-steps collapsible group ───────────────────────────────────────── */
+
+.turn-steps {
+  margin-bottom: 10px;
+}
+
+.turn-steps-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 3px 10px;
+  user-select: none;
+  transition: color 0.12s, background 0.12s;
+  margin-bottom: 0;
+}
+
+.turn-steps-summary::-webkit-details-marker { display: none; }
+
+.turn-steps-summary:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 60%, var(--surface-alt));
+}
+
+.turn-steps-summary i {
+  font-size: 0.75rem;
+}
+
+.turn-steps[open] > .turn-steps-summary {
+  margin-bottom: 8px;
+}
+
+/* Working messages: dimmed during active turn and inside open details. */
+.msg--working {
+  opacity: 0.55;
 }
 
 /* Read-only option labels (inline rendering; interaction is in the modal) */

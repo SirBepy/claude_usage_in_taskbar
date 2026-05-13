@@ -59,6 +59,10 @@ export class ChatRenderer {
   private _bulkGen = 0;
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
+  /** Index of first message in the current active Claude turn (after the user message). */
+  private activeTurnStart: number | null = null;
+  /** Turns whose messages are ready to be collapsed in flushRender. */
+  private closeTurnQueue: { start: number; end: number }[] = [];
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
 
   get cumulativeUsage(): CumulativeUsage {
@@ -101,6 +105,8 @@ export class ChatRenderer {
     this._cumulative = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
     this.container.innerHTML = "";
 
+    this.activeTurnStart = null;
+    this.closeTurnQueue = [];
     this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
       this.handleEvent(ev);
     });
@@ -253,6 +259,15 @@ export class ChatRenderer {
       for (const idx of this.dirtyIndices) reindexed.add(idx + shift);
       this.dirtyIndices = reindexed;
     }
+    if (this.activeTurnStart !== null) {
+      this.activeTurnStart += shift;
+    }
+    if (this.closeTurnQueue.length > 0) {
+      this.closeTurnQueue = this.closeTurnQueue.map(({ start, end }) => ({
+        start: start + shift,
+        end: end + shift,
+      }));
+    }
 
     void highlightCodeBlocks(this.container);
   }
@@ -308,6 +323,8 @@ export class ChatRenderer {
     this.removeTopSentinel();
     this.streamingIndex = null;
     this.dirtyIndices.clear();
+    this.activeTurnStart = null;
+    this.closeTurnQueue = [];
     this.sessionId = null;
   }
 
@@ -390,6 +407,8 @@ export class ChatRenderer {
         touched = true;
         break;
       case "user_message": {
+        // Close any in-flight Claude turn before showing the new user message.
+        this.enqueueTurnClose();
         // Strip Claude Code slash-command wrapper tags (`<command-name>`,
         // `<command-message>`, `<command-args>`, `<local-command-stdout>`)
         // from user text so the chat doesn't show internal markup. Drop the
@@ -399,6 +418,8 @@ export class ChatRenderer {
         const cleaned = cleanUserBlocks(ev.content);
         if (cleaned.length === 0) break;
         this.messages.push({ kind: "user", content: cleaned, ts });
+        // Claude's response turn starts here (after the user message).
+        this.activeTurnStart = this.messages.length;
         touched = true;
         break;
       }
@@ -454,6 +475,7 @@ export class ChatRenderer {
         touched = true;
         break;
       case "session_ended":
+        this.enqueueTurnClose();
         this.messages.push({
           kind: "system",
           text: `Session ended${ev.exit_code !== null ? ` (exit ${ev.exit_code})` : ""}`,
@@ -519,9 +541,78 @@ export class ChatRenderer {
       }
       this.container.appendChild(frag);
     }
-    // 3. Async syntax highlight pass + blockquote card wrapping.
+    // 3. Apply msg--working class to all messages in the active Claude turn.
+    if (this.activeTurnStart !== null) {
+      for (let i = this.activeTurnStart; i < this.messageEls.length; i++) {
+        const el = this.messageEls[i];
+        const msg = this.messages[i];
+        if (el && msg && msg.kind !== "user") {
+          el.classList.add("msg--working");
+        }
+      }
+    }
+    // 4. Collapse completed turns (wraps intermediate messages in <details>).
+    this.processTurnCloseQueue();
+    // 5. Async syntax highlight pass + blockquote card wrapping.
     void highlightCodeBlocks(this.container);
     wrapBlockquotes(this.container);
+  }
+
+  private enqueueTurnClose(): void {
+    if (this.activeTurnStart === null) return;
+    this.closeTurnQueue.push({ start: this.activeTurnStart, end: this.messages.length });
+    this.activeTurnStart = null;
+  }
+
+  private processTurnCloseQueue(): void {
+    if (this.closeTurnQueue.length === 0) return;
+    for (const { start, end } of this.closeTurnQueue) {
+      this.applyTurnCollapse(start, end);
+    }
+    this.closeTurnQueue = [];
+  }
+
+  private applyTurnCollapse(start: number, end: number): void {
+    if (end <= start) return;
+
+    // Find the last assistant message in the range — this is the final answer.
+    let lastAssistantIdx = -1;
+    for (let i = end - 1; i >= start; i--) {
+      if (this.messages[i]?.kind === "assistant") {
+        lastAssistantIdx = i;
+        break;
+      }
+    }
+
+    // Number of intermediate messages (everything before the final answer).
+    const intermediateEnd = lastAssistantIdx === -1 ? end : lastAssistantIdx;
+    const intermediateCount = intermediateEnd - start;
+
+    // Promote the final answer out of working state.
+    if (lastAssistantIdx !== -1 && this.messageEls[lastAssistantIdx]) {
+      this.messageEls[lastAssistantIdx]!.classList.remove("msg--working");
+    }
+
+    if (intermediateCount === 0) return;
+
+    // Guard: skip if elements aren't in the DOM yet (shouldn't happen after
+    // flushRender, but be safe).
+    const firstEl = this.messageEls[start];
+    if (!firstEl || !firstEl.parentElement) return;
+
+    // Build the <details> wrapper and insert it before the first intermediate.
+    const details = document.createElement("details");
+    details.className = "turn-steps";
+    const summary = document.createElement("summary");
+    summary.className = "turn-steps-summary";
+    summary.innerHTML = `<i class="ph ph-wrench"></i> ${intermediateCount} step${intermediateCount !== 1 ? "s" : ""}`;
+    details.appendChild(summary);
+
+    firstEl.parentElement.insertBefore(details, firstEl);
+    for (let i = start; i < intermediateEnd; i++) {
+      const el = this.messageEls[i];
+      if (el) details.appendChild(el);
+    }
   }
 
   private buildMessageEl(m: RenderedMessage): HTMLElement {
