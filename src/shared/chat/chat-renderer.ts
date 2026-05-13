@@ -56,6 +56,7 @@ export class ChatRenderer {
   private unsubscribe: (() => void) | null = null;
   private streamingIndex: number | null = null;
   private sessionId: string | null = null;
+  private _bulkGen = 0;
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
@@ -353,6 +354,7 @@ export class ChatRenderer {
    * during this so the user sees the rolling render only once it lifts.
    */
   private async bulkLoadEvents(events: ChatEvent[]): Promise<void> {
+    const myGen = ++this._bulkGen;
     this.messages = [];
     this.messageEls = [];
     this.dirtyIndices.clear();
@@ -360,6 +362,7 @@ export class ChatRenderer {
     this.container.innerHTML = "";
     const CHUNK = 8;
     for (let i = 0; i < events.length; i += CHUNK) {
+      if (this._bulkGen !== myGen) return;
       for (let j = i; j < Math.min(i + CHUNK, events.length); j++) {
         this.handleEvent(events[j]!, { silent: true, skipScroll: true });
       }
@@ -368,6 +371,7 @@ export class ChatRenderer {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
+    if (this._bulkGen !== myGen) return;
     this.scrollToBottom();
   }
 

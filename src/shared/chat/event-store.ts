@@ -65,7 +65,6 @@ class SessionEventStore {
       this.cache.set(sessionId, entry);
     }
     await this.ensureListener(sessionId);
-    const liveDuringFetch = entry.events.length;
     try {
       const args: { sessionId: string; cwd?: string; messageLimit: number } = {
         sessionId,
@@ -73,8 +72,18 @@ class SessionEventStore {
       };
       if (cwd) args.cwd = cwd;
       const page = await invoke<HistoryPage>("load_history_page", args);
-      const liveTail = entry.events.slice(liveDuringFetch);
-      entry.events = [...page.events, ...liveTail];
+      // Filter live events (accumulated before + during the fetch) to only
+      // those strictly newer than the page's newest event by timestamp. This
+      // eliminates duplicates: events that arrived via the Tauri stream AND
+      // were already written to JSONL appear in both page.events and the live
+      // buffer; keeping only the strictly-newer tail avoids double-rendering.
+      const pageNewestTs = page.events.length > 0
+        ? Number((page.events[page.events.length - 1] as { timestamp?: number }).timestamp ?? 0)
+        : 0;
+      const liveAfterPage = entry.events.filter(
+        (ev) => Number((ev as { timestamp?: number }).timestamp ?? Infinity) > pageNewestTs
+      );
+      entry.events = [...page.events, ...liveAfterPage];
       entry.oldestSeq = Number(page.oldest_seq);
       entry.hasMore = page.has_more;
     } catch {
