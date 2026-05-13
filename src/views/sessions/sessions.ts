@@ -13,7 +13,7 @@ import { startNewSession, launchNewSession, discardDraft, resumeDraft } from "./
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
 import { state, resetState, setActiveSession } from "./state";
-import { loadSort, LS_SORT } from "./sessions-helpers";
+import { loadSort, LS_SORT, projectName } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
 
 let _pane: HTMLElement | null = null;
@@ -101,7 +101,7 @@ export function assignCurrentToSlot(slot: number): void {
   if (!id) { showToast("No active chat to assign"); return; }
   shortcuts.setSlotAssignment(slot, id);
   const sess = state.sessions.find(s => s.session_id === id);
-  const label = sess?.project_id ?? id.slice(0, 8);
+  const label = sess ? projectName(sess) : id.slice(0, 8);
   showToast(`Slot ${slot} → ${label}`);
 }
 
