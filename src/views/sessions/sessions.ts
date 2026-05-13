@@ -8,7 +8,7 @@ import "./sessions.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";
-import { startNewSession, launchNewSession } from "./pending-flow";
+import { startNewSession, launchNewSession, discardDraft } from "./pending-flow";
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
 import { state, resetState, setActiveSession } from "./state";
@@ -174,6 +174,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   }
 
   listEl.addEventListener("click", (e) => {
+    // Discard-draft button intercept (sits on the pending row, no session_id).
+    const discardBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-draft]");
+    if (discardBtn) {
+      e.stopPropagation();
+      discardDraft(pane);
+      updateThinkingBar();
+      return;
+    }
+
     // 3-dot menu button intercept
     const menuBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".session-row-menu-btn");
     if (menuBtn) {

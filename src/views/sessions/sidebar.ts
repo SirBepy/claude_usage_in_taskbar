@@ -98,16 +98,21 @@ export function renderSidebar(listEl: HTMLElement): void {
 
   let pendingRow = "";
   if (pending) {
+    const isPendingActive = state.selectedId === pending.placeholderId;
+    const activeCls = isPendingActive ? "active" : "";
     if (!pending.firstMessageSent) {
-      pendingRow = `<li class="active pending draft" data-pending="1" title="Draft — type a message to start">
+      pendingRow = `<li class="${activeCls} pending draft" data-pending="1" title="Draft — type a message to start">
         <i class="session-state-icon ph ph-note-pencil" title="Draft"></i>
         <div class="session-row-text">
           <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
-          <span class="session-row-subtitle">Draft</span>
+          <span class="session-row-subtitle">Draft New Chat</span>
         </div>
+        <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-draft="1">
+          <i class="ph ph-x-circle"></i>
+        </button>
       </li>`;
     } else {
-      pendingRow = `<li class="active pending" data-pending="1" title="Starting new session...">
+      pendingRow = `<li class="${activeCls} pending" data-pending="1" title="Starting new session...">
         <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
         <div class="session-row-text">
           <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>

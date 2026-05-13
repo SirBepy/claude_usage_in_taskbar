@@ -26,6 +26,40 @@ export function makePlaceholderId(): string {
   return `pending-${ts}-${rnd}`;
 }
 
+/**
+ * Discard the current draft (pending session that hasn't sent its first
+ * message yet). If the user is still viewing the draft pane, also clear it.
+ * If they've navigated to another session, leave that pane alone — just drop
+ * the pending state and refresh the sidebar.
+ *
+ * Safe to call on `firstMessageSent === true` too (used by close-session-btn
+ * during pending-pane lifetime), but in that case start_session is in flight
+ * and the renderer will catch up.
+ */
+export function discardDraft(pane: HTMLElement): void {
+  const pending = state.pendingNewSession;
+  if (!pending) return;
+  const wasOnDraft = state.selectedId === pending.placeholderId;
+  state.pendingNewSession = null;
+
+  if (wasOnDraft) {
+    if (state.renderer?.currentSessionId() === pending.placeholderId) {
+      state.renderer.detach();
+      state.renderer = null;
+    }
+    state.composer?.destroy();
+    state.composer = null;
+    setActiveSession(null);
+    pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+  }
+
+  const root = document.querySelector<HTMLElement>(".view-sessions");
+  if (root) {
+    const listEl = root.querySelector<HTMLElement>("#sessions-list");
+    if (listEl) renderSidebar(listEl);
+  }
+}
+
 export async function startNewSession(pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;
   const project = await pickProject();
