@@ -13,6 +13,10 @@ export interface PendingNewSession {
   // entry from the registry list (the pending row, now upgraded, represents
   // it). Cleared when start_session resolves.
   realId: string | null;
+  // False between `+ New chat` and the user actually sending the first
+  // message. While false, sidebar shows a draft row (no spinner) and the
+  // thinking bar stays hidden — no work is in flight yet.
+  firstMessageSent: boolean;
   // Snapshot of session_ids that existed in `state.sessions` at the moment
   // this pending entry was created. Sidebar uses it to filter out only the
   // *newcomer* row whose cwd matches `projectPath` (i.e. our own claude -p

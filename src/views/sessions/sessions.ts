@@ -34,7 +34,9 @@ function isCurrentSessionBusy(): boolean {
     if (pending.realId) {
       return !!(state.sessions.find(s => s.session_id === pending.realId)?.busy);
     }
-    // First turn not yet registered: show busy if the placeholder is active.
+    // First message not yet sent = draft, no work in flight.
+    if (!pending.firstMessageSent) return false;
+    // First message sent, awaiting realId: show busy if placeholder active.
     return state.selectedId === pending.placeholderId;
   }
   return !!(state.sessions.find(s => s.session_id === state.selectedId)?.busy);

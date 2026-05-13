@@ -98,13 +98,23 @@ export function renderSidebar(listEl: HTMLElement): void {
 
   let pendingRow = "";
   if (pending) {
-    pendingRow = `<li class="active pending" data-pending="1" title="Starting new session...">
-      <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
-      <div class="session-row-text">
-        <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
-        <span class="session-row-subtitle">starting...</span>
-      </div>
-    </li>`;
+    if (!pending.firstMessageSent) {
+      pendingRow = `<li class="active pending draft" data-pending="1" title="Draft — type a message to start">
+        <i class="session-state-icon ph ph-note-pencil" title="Draft"></i>
+        <div class="session-row-text">
+          <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
+          <span class="session-row-subtitle">Draft</span>
+        </div>
+      </li>`;
+    } else {
+      pendingRow = `<li class="active pending" data-pending="1" title="Starting new session...">
+        <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
+        <div class="session-row-text">
+          <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
+          <span class="session-row-subtitle">starting...</span>
+        </div>
+      </li>`;
+    }
   }
 
   listEl.innerHTML = pendingRow + realRows;

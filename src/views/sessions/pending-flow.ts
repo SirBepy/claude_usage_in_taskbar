@@ -58,6 +58,7 @@ export async function launchNewSession(
     projectPath: project.path,
     projectName: project.name,
     realId: null,
+    firstMessageSent: false,
     preExistingSessionIds: new Set(state.sessions.map(s => s.session_id)),
   };
   setActiveSession(placeholderId);
@@ -181,6 +182,13 @@ export async function renderPendingPane(
 
         if (!started) {
           started = true;
+          if (state.pendingNewSession) state.pendingNewSession.firstMessageSent = true;
+          // Re-render the sidebar so the draft row swaps to the spinner row.
+          const rootEarly = document.querySelector<HTMLElement>(".view-sessions");
+          if (rootEarly) {
+            const listEl = rootEarly.querySelector<HTMLElement>("#sessions-list");
+            if (listEl) renderSidebar(listEl);
+          }
           try {
             const sessionId = await invoke<string>("start_session", {
               cwd: project.path,
