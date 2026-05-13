@@ -27,6 +27,9 @@ pub async fn clear_session(
     // Mark the session ended in the registry so it disappears from the active list.
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     state.instances.mark_ended(&session_id, EndReason::Manual, &now);
+    // Drop the ended session from the on-disk snapshot too, so it doesn't
+    // reappear in the sidebar after the next app restart.
+    crate::sessions::persistence::save_snapshot_default(&state.instances);
 
     let _ = app.emit("instances-changed", state.instances.list());
     Ok(())

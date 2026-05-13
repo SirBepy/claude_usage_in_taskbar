@@ -257,6 +257,7 @@ pub fn run() {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     rehydrate_instances_from_session_files(&h);
+                    rehydrate_persisted_interactive_sessions(&h);
                     crate::sessions::detector::run(h).await
                 });
             }
@@ -480,6 +481,30 @@ fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
 
     let _ = app.emit("instances-changed", state.instances.list());
     log::info!("rehydrated {added} instance(s) from ~/.claude/sessions");
+}
+
+/// Restore previously persisted Interactive (Path C) sessions into the
+/// registry. Their claude processes don't run between turns, so the live-pid
+/// scan above misses them - they only live in our own snapshot file.
+fn rehydrate_persisted_interactive_sessions(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<crate::state::AppState>();
+    let path = match paths::interactive_sessions_file() {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("interactive_sessions_file path: {e}");
+            return;
+        }
+    };
+    let sessions = crate::sessions::persistence::load_snapshot(&path);
+    if sessions.is_empty() {
+        return;
+    }
+    let added = crate::sessions::persistence::populate_registry(&state.instances, sessions);
+    if added > 0 {
+        let _ = app.emit("instances-changed", state.instances.list());
+        log::info!("rehydrated {added} Interactive session(s) from snapshot");
+    }
 }
 
 /// Background loop that polls for new releases every 6h, doing nothing or

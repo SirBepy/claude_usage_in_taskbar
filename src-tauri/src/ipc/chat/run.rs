@@ -159,6 +159,13 @@ async fn run_session_turn(
                             &effort_for_registry,
                         );
                         registry_for_closure.set_busy(session_id, true);
+                        // Snapshot to disk so this session re-appears in the
+                        // sidebar after an app restart (Path C has no live
+                        // process between turns, so the live-pid rehydrate
+                        // would otherwise miss it).
+                        crate::sessions::persistence::save_snapshot_default(
+                            &registry_for_closure,
+                        );
                     }
                 }
                 // CRITICAL ordering for the new-session sidebar bug fix:
@@ -256,6 +263,7 @@ pub async fn set_session_effort(
         return Err(format!("invalid effort: {effort}"));
     }
     state.instances.set_effort(&session_id, &effort);
+    crate::sessions::persistence::save_snapshot_default(&state.instances);
     let _ = app.emit("instances-changed", ());
     Ok(())
 }

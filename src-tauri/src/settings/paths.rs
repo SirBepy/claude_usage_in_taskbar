@@ -110,6 +110,10 @@ pub fn news_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("news.json"))
 }
 
+pub fn interactive_sessions_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("interactive-sessions.json"))
+}
+
 pub fn mcp_temp_dir() -> anyhow::Result<std::path::PathBuf> {
     let d = ensure_data_dir()?;
     let p = d.join("mcp");
