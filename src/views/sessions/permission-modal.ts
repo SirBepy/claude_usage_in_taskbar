@@ -461,6 +461,25 @@ function showQuestionCard(payload: QuestionRequestedPayload): void {
   });
 }
 
+// ── Auto-accept (per-session) ──────────────────────────────────────────────
+//
+// When set for a session_id, permission-requested events for that session
+// auto-respond `allow` with the original input, skipping the modal. Reset on
+// every app launch (no persistence). AskUserQuestion-shaped requests are NOT
+// auto-answered (see gate in installPermissionModalListener below).
+
+const _autoAccept = new Map<string, boolean>();
+
+export function isAutoAccept(sessionId: string | undefined | null): boolean {
+  if (!sessionId) return false;
+  return _autoAccept.get(sessionId) === true;
+}
+
+export function setAutoAccept(sessionId: string, value: boolean): void {
+  if (value) _autoAccept.set(sessionId, true);
+  else _autoAccept.delete(sessionId);
+}
+
 // ── Session-ID gating ──────────────────────────────────────────────────────
 
 let _selectedSessionId: string | null = null;
@@ -495,8 +514,25 @@ export function installPermissionModalListener(): void {
   if (!ev?.listen) return;
 
   ev.listen<PermissionRequestedPayload>("permission-requested", (event) => {
-    if (!isForSelectedSession(event.payload.session_id)) return;
-    showPermissionCard(event.payload);
+    const payload = event.payload;
+    if (!isForSelectedSession(payload.session_id)) return;
+
+    if (
+      payload.session_id
+      && isAutoAccept(payload.session_id)
+      && extractQuestions(payload.input) === null
+    ) {
+      console.debug("[auto-accept] allowing", payload.tool_name, "for", payload.session_id);
+      void invoke("respond_permission", {
+        id: payload.id,
+        behavior: "allow",
+        updatedInput: payload.input ?? {},
+        message: null,
+      }).catch((e) => console.warn("[auto-accept] respond_permission failed:", e));
+      return;
+    }
+
+    showPermissionCard(payload);
   });
 
   ev.listen<QuestionRequestedPayload>("question-requested", (event) => {
