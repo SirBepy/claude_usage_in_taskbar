@@ -10,19 +10,11 @@
 // Code-block highlighting is guarded by `data-highlighted` so already-shiki'd
 // blocks survive across renders without re-tokenization.
 
-import MarkdownIt from "markdown-it";
-import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
-import { escapeHtml } from "../escape-html";
+import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { showView } from "../navigation";
-import { cleanUserBlocks, highlightSlashMentions, wrapBlockquotes } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
-
-const md = new MarkdownIt({
-  html: false, // safe: don't let assistant output inject HTML
-  linkify: true,
-  typographer: false,
-});
 
 export interface SessionMeta {
   model: string | null;
@@ -42,20 +34,6 @@ export interface CumulativeUsage {
   cacheRead: number;
   turns: number;
   costUsd: number;
-}
-
-interface RenderedMessage {
-  kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification";
-  content?: ContentBlock[];
-  text?: string; // for system/notification
-  tool?: string;
-  input?: unknown;
-  id?: string;
-  tool_use_id?: string;
-  output?: ContentBlock;
-  is_error?: boolean;
-  streaming?: boolean;
-  ts: number;
 }
 
 interface HandleEventOpts {
@@ -546,7 +524,7 @@ export class ChatRenderer {
 
   private buildMessageEl(m: RenderedMessage): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.innerHTML = this.renderMessage(m);
+    wrap.innerHTML = renderMessage(m);
     return wrap.firstElementChild as HTMLElement;
   }
 
@@ -588,46 +566,8 @@ export class ChatRenderer {
     });
   };
 
-  private renderMessage(m: RenderedMessage): string {
-    switch (m.kind) {
-      case "system":
-        return `<div class="msg system">${escapeHtml(m.text ?? "")}</div>`;
-      case "user":
-        return `<div class="msg user">${this.renderBlocks(m.content ?? [])}</div>`;
-      case "assistant":
-        return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${this.renderBlocks(m.content ?? [])}</div>`;
-      case "tool_use":
-        return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></div>`;
-      case "tool_result":
-        return `<div class="msg tool-result${m.is_error ? " error" : ""}">${m.output ? this.renderBlocks([m.output]) : ""}</div>`;
-      case "notification":
-        return `<div class="msg notification">${escapeHtml(m.text ?? "")}</div>`;
-      default:
-        return "";
-    }
-  }
-
-  private renderBlocks(blocks: ContentBlock[]): string {
-    return blocks
-      .map((b) => {
-        switch (b.type) {
-          case "text":
-            return `<div class="block text">${renderMarkdown(b.text)}</div>`;
-          case "image":
-            return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
-          default:
-            ((_: never) => "")(b);
-        }
-      })
-      .join("");
-  }
-
   private scrollToBottom(): void {
     this.container.scrollTop = this.container.scrollHeight;
   }
 }
 
-function renderMarkdown(text: string): string {
-  // markdown-it with html:false escapes raw HTML; safe for untrusted input.
-  return highlightSlashMentions(md.render(text));
-}

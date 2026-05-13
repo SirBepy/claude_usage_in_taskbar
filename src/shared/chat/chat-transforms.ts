@@ -1,6 +1,65 @@
+import MarkdownIt from "markdown-it";
 import type { ContentBlock } from "../../types/ipc.generated";
 import { escapeHtml } from "../escape-html";
 import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry";
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: false,
+});
+
+export interface RenderedMessage {
+  kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification";
+  content?: ContentBlock[];
+  text?: string;
+  tool?: string;
+  input?: unknown;
+  id?: string;
+  tool_use_id?: string;
+  output?: ContentBlock;
+  is_error?: boolean;
+  streaming?: boolean;
+  ts: number;
+}
+
+export function renderBlocks(blocks: ContentBlock[]): string {
+  return blocks
+    .map((b) => {
+      switch (b.type) {
+        case "text":
+          return `<div class="block text">${renderMarkdown(b.text)}</div>`;
+        case "image":
+          return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
+        default:
+          ((_: never) => "")(b);
+      }
+    })
+    .join("");
+}
+
+export function renderMessage(m: RenderedMessage): string {
+  switch (m.kind) {
+    case "system":
+      return `<div class="msg system">${escapeHtml(m.text ?? "")}</div>`;
+    case "user":
+      return `<div class="msg user">${renderBlocks(m.content ?? [])}</div>`;
+    case "assistant":
+      return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(m.content ?? [])}</div>`;
+    case "tool_use":
+      return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></div>`;
+    case "tool_result":
+      return `<div class="msg tool-result${m.is_error ? " error" : ""}">${m.output ? renderBlocks([m.output]) : ""}</div>`;
+    case "notification":
+      return `<div class="msg notification">${escapeHtml(m.text ?? "")}</div>`;
+    default:
+      return "";
+  }
+}
+
+function renderMarkdown(text: string): string {
+  return highlightSlashMentions(md.render(text));
+}
 
 // Claude Code wraps slash-command prompts with internal tags like
 // `<command-name>`, `<command-message>`, `<command-args>`, and shells out
