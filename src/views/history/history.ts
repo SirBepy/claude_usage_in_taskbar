@@ -116,12 +116,12 @@ async function selectHistorySession(sessionId: string, pane: HTMLElement): Promi
   state.selectedId = sessionId;
 
   pane.innerHTML = `
+    <div class="session-messages"></div>
     <div class="history-session-actions">
       <button class="btn-continue-chat">
         <i class="ph ph-play"></i> Continue this chat
       </button>
     </div>
-    <div class="session-messages"></div>
   `;
 
   const entry = state.entries.find(e => e.session_id === sessionId);
