@@ -7,6 +7,7 @@ import "../../shared/chat/chat.css";
 import "./sessions.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
+import "./model-effort-modal.css";
 import { startNewSession, launchNewSession } from "./pending-flow";
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
