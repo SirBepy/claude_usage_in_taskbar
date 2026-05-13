@@ -143,7 +143,6 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
             await launchNewSession(pane, project, config);
           })();
         },
-        onSelectAfterSend: (sid2) => { void selectSession(sid2, pane); },
       });
       return;
     }

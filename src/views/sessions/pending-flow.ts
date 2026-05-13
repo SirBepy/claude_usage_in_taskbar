@@ -91,6 +91,7 @@ export async function renderPendingPane(
     <header class="session-header">
       <span class="title">New chat</span>
       <span class="meta">${escapeHtml(project.name)} - ${escapeHtml(project.path)}</span>
+      <button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>
       <button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>
     </header>
     <div class="session-messages">
@@ -249,6 +250,17 @@ export async function renderPendingPane(
       console.error("[sessions] cancel_turn failed", err);
     }
   });
+
+  pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", async () => {
+    const realId = state.pendingNewSession?.realId;
+    const closeTarget = realId || placeholderId;
+    const sess = realId ? state.sessions.find(s => s.session_id === realId) : null;
+    if (sess?.busy) {
+      if (!confirm("A turn is in progress. Close and discard it?")) return;
+      try { await invoke<void>("cancel_turn", { sessionId: closeTarget }); } catch {}
+    }
+    try { await invoke<void>("clear_session", { sessionId: closeTarget }); } catch {}
+  });
 }
 
 /**
@@ -293,6 +305,23 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
         await invoke<void>("cancel_turn", { sessionId });
       } catch (err) {
         console.error("[sessions] cancel_turn failed", err);
+      }
+    });
+  }
+
+  // Same for the close-session button: rebind to the real id.
+  const closeBtn = header.querySelector<HTMLButtonElement>(".close-session-btn");
+  if (closeBtn) {
+    const fresh = closeBtn.cloneNode(true) as HTMLButtonElement;
+    closeBtn.replaceWith(fresh);
+    fresh.addEventListener("click", async () => {
+      const sess = state.sessions.find(s => s.session_id === sessionId);
+      if (sess?.busy) {
+        if (!confirm("A turn is in progress. Close and discard it?")) return;
+        try { await invoke<void>("cancel_turn", { sessionId }); } catch {}
+      }
+      try { await invoke<void>("clear_session", { sessionId }); } catch (err) {
+        console.error("[sessions] close chat failed", err);
       }
     });
   }

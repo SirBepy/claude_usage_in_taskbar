@@ -124,8 +124,6 @@ export function closeCtxMenu(): void {
 export interface CtxMenuActions {
   /** "New agent here" — start a new session in this row's cwd. */
   onNewHere: (project: { path: string; name: string }) => void;
-  /** "Run /close" — only wired for non-busy interactive rows. */
-  onSelectAfterSend: (sessionId: string) => void;
 }
 
 export function openCtxMenu(
@@ -151,22 +149,19 @@ export function openCtxMenu(
   });
   menu.appendChild(newItem);
 
-  // "Run /close" — interactive non-busy only
-  if (sess.kind === "interactive" && !sess.busy) {
+  // "Close chat" — interactive only. Plain close; if busy, confirm-and-cancel first.
+  if (sess.kind === "interactive") {
     const closeItem = document.createElement("button");
     closeItem.className = "session-ctx-item";
-    closeItem.innerHTML = '<i class="ph ph-door-open"></i> Run /close';
+    closeItem.innerHTML = '<i class="ph ph-x-circle"></i> Close chat';
     closeItem.addEventListener("click", async () => {
       closeCtxMenu();
-      try {
-        await invoke<void>("send_message", {
-          sessionId,
-          cwd: String(sess.cwd ?? "."),
-          blocks: [{ type: "text", text: "/close" }],
-        });
-        actions.onSelectAfterSend(sessionId);
-      } catch (err) {
-        console.error("[sessions] send /close failed", err);
+      if (sess.busy) {
+        if (!confirm("A turn is in progress. Close and discard it?")) return;
+        try { await invoke<void>("cancel_turn", { sessionId }); } catch {}
+      }
+      try { await invoke<void>("clear_session", { sessionId }); } catch (err) {
+        console.error("[sessions] close chat failed", err);
       }
     });
     menu.appendChild(closeItem);

@@ -13,6 +13,32 @@ import {
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
 import { renderSidebar, refreshSessions } from "./sidebar";
+import { addBackgroundSession, removeBackgroundSession } from "./permission-modal";
+
+function isCloseCommand(blocks: ContentBlock[]): boolean {
+  if (blocks.length !== 1) return false;
+  const b = blocks[0];
+  if (!b || b.type !== "text") return false;
+  return b.text.trim() === "/close";
+}
+
+function dismountActivePane(): void {
+  state.statusbar?.destroy();
+  state.statusbar = null;
+  state.renderer?.detach();
+  state.renderer = null;
+  state.composer?.destroy();
+  state.composer = null;
+  setActiveSession(null);
+  const pane = document.querySelector<HTMLElement>(".session-pane #session-pane")
+    ?? document.querySelector<HTMLElement>("#session-pane");
+  if (pane) pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+  const root = document.querySelector<HTMLElement>(".view-sessions");
+  if (root) {
+    const listEl = root.querySelector<HTMLElement>("#sessions-list");
+    if (listEl) renderSidebar(listEl);
+  }
+}
 
 function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
   pane.querySelector(".chat-loading-overlay")?.remove();
@@ -63,14 +89,6 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <div class="session-messages"></div>
     <div class="session-composer"></div>
   `;
-
-  // Capture dirty file baseline for session-scoped commit detection.
-  let baselineDirtyFiles: string[] = [];
-  if (sess.cwd) {
-    invoke<string[]>("get_git_dirty", { cwd: String(sess.cwd) })
-      .then(files => { baselineDirtyFiles = files; })
-      .catch(() => {});
-  }
 
   // Mount statusbar.
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
@@ -143,6 +161,23 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
           content: blocks,
           timestamp: BigInt(Date.now()),
         } as ChatEvent);
+
+        // `/close`: dismount the pane immediately and let the skill run in
+        // the background. AskUserQuestion modals still surface (background
+        // gate). When the turn ends, clear the session from the registry.
+        if (isCloseCommand(blocks)) {
+          const cwd = String(sess.cwd ?? ".");
+          addBackgroundSession(sessionId);
+          dismountActivePane();
+          invoke<void>("send_message", { sessionId, cwd, blocks })
+            .catch(err => console.error("[sessions] background /close send_message failed", err))
+            .finally(() => {
+              removeBackgroundSession(sessionId);
+              invoke<void>("clear_session", { sessionId }).catch(() => {});
+            });
+          return;
+        }
+
         try {
           await invoke<void>("send_message", {
             sessionId,
@@ -175,85 +210,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   });
   if (!readOnly) {
     pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", async () => {
-      const myMount = state.mountId;
-
       const currentSess = state.sessions.find(s => s.session_id === sessionId);
       if (currentSess?.busy) {
         if (!confirm("A turn is in progress. Close and discard it?")) return;
         await invoke<void>("cancel_turn", { sessionId });
-        await invoke<void>("clear_session", { sessionId });
-        return;
       }
-
-      if (!sess.cwd) {
-        await invoke<void>("clear_session", { sessionId });
-        return;
-      }
-
-      let currentDirty: string[] = [];
-      try {
-        currentDirty = await invoke<string[]>("get_git_dirty", { cwd: String(sess.cwd) });
-      } catch {
-        await invoke<void>("clear_session", { sessionId });
-        return;
-      }
-      if (state.mountId !== myMount) return;
-
-      const newDirty = currentDirty.filter(f => !baselineDirtyFiles.includes(f));
-
-      if (newDirty.length === 0) {
-        await invoke<void>("clear_session", { sessionId });
-        return;
-      }
-
-      const choice = await showCloseConfirmModal(pane, newDirty.length);
-      if (state.mountId !== myMount) return;
-
-      if (choice === "cancel") return;
-
-      if (choice === "close-only") {
-        await invoke<void>("clear_session", { sessionId });
-        return;
-      }
-
-      // "commit" - show closing banner, hide composer
-      const composerEl = pane.querySelector<HTMLElement>(".session-composer");
-      if (composerEl) composerEl.style.display = "none";
-
-      const banner = document.createElement("div");
-      banner.className = "session-closing-banner";
-      banner.innerHTML = `
-        <i class="ph ph-hourglass"></i>
-        <span class="closing-banner-text">Closing session…</span>
-        <button type="button" class="cancel-closing-btn">Cancel</button>
-      `;
-      pane.insertBefore(banner, composerEl ?? null);
-
-      sessionEvents.pushSynthetic(sessionId, {
-        type: "user_message",
-        content: [{ type: "text", text: "/close /commit" }],
-        timestamp: BigInt(Date.now()),
-      } as ChatEvent);
-
-      banner.querySelector<HTMLButtonElement>(".cancel-closing-btn")?.addEventListener("click", async () => {
-        banner.remove();
-        if (composerEl) composerEl.style.display = "";
-        await invoke<void>("cancel_turn", { sessionId });
-      });
-
-      try {
-        await invoke<void>("send_message", {
-          sessionId,
-          cwd: String(sess.cwd ?? "."),
-          blocks: [{ type: "text", text: "/close /commit" } as ContentBlock],
-        });
-        if (state.mountId !== myMount) return;
-        await invoke<void>("clear_session", { sessionId });
-      } catch {
-        if (state.mountId !== myMount) return;
-        banner.remove();
-        if (composerEl) composerEl.style.display = "";
-      }
+      await invoke<void>("clear_session", { sessionId });
     });
   }
   if (readOnly) {
@@ -289,29 +251,3 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   }
 }
 
-function showCloseConfirmModal(
-  pane: HTMLElement,
-  changedCount: number,
-): Promise<"commit" | "close-only" | "cancel"> {
-  return new Promise(resolve => {
-    const overlay = document.createElement("div");
-    overlay.className = "close-confirm-overlay";
-    const noun = changedCount === 1 ? "file" : "files";
-    overlay.innerHTML = `
-      <div class="close-confirm-dialog">
-        <i class="ph ph-git-branch close-confirm-icon"></i>
-        <div class="close-confirm-title">Uncommitted changes</div>
-        <div class="close-confirm-body">${changedCount} ${noun} changed this session. Commit before closing?</div>
-        <div class="close-confirm-actions">
-          <button class="btn-ccd-cancel">Cancel</button>
-          <button class="btn-ccd-skip">Close without committing</button>
-          <button class="btn-ccd-commit">Commit &amp; Close</button>
-        </div>
-      </div>
-    `;
-    overlay.querySelector(".btn-ccd-cancel")?.addEventListener("click", () => { overlay.remove(); resolve("cancel"); });
-    overlay.querySelector(".btn-ccd-skip")?.addEventListener("click", () => { overlay.remove(); resolve("close-only"); });
-    overlay.querySelector(".btn-ccd-commit")?.addEventListener("click", () => { overlay.remove(); resolve("commit"); });
-    pane.appendChild(overlay);
-  });
-}
