@@ -1,5 +1,7 @@
 import { html, render } from "lit-html";
 import { invoke } from "../../../../shared/ipc";
+import { getSettings, setSettings } from "../../../../shared/state";
+import { api } from "../../../../shared/api";
 import { escapeHtml } from "../../../../shared/escape-html";
 import "./presets.css";
 
@@ -139,8 +141,9 @@ export async function renderPresetsView(root: HTMLElement): Promise<() => void> 
           return;
         }
         try {
-          const cur = await invoke<Record<string, unknown>>("get_settings");
-          await invoke("save_settings", { updated: { ...cur, effortPresets: fresh } });
+          const cur = { ...getSettings(), effortPresets: fresh };
+          setSettings(cur);
+          await api.saveSettings(cur);
           const status = root.querySelector<HTMLElement>("#presetsStatus");
           if (status) {
             status.textContent = "Saved";
