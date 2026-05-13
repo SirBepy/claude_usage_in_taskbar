@@ -45,20 +45,22 @@ async function fetchEntries(): Promise<void> {
 }
 
 function dateBucket(secs: number | bigint | null | undefined): string {
-  if (!secs) return "Older";
+  if (!secs) return "Unknown date";
   const n = typeof secs === "bigint" ? Number(secs) : secs;
-  if (!n) return "Older";
+  if (!n) return "Unknown date";
   const d = new Date(n * 1000);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfYesterday = new Date(startOfToday.getTime() - 86400_000);
-  const startOf7Days = new Date(startOfToday.getTime() - 6 * 86400_000);
-  const startOf30Days = new Date(startOfToday.getTime() - 29 * 86400_000);
   if (d >= startOfToday) return "Today";
   if (d >= startOfYesterday) return "Yesterday";
-  if (d >= startOf7Days) return "Last 7 days";
-  if (d >= startOf30Days) return "Last 30 days";
-  return d.toLocaleString("default", { month: "long", year: "numeric" });
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 function renderList(listEl: HTMLElement): void {
