@@ -38,10 +38,11 @@ export async function saveStatuslineFields(fields: string[]): Promise<void> {
   }
 }
 
-export function modelContextWindow(_model: string | null): number {
-  // Claude Code caps all sessions at 200K regardless of model capacity.
-  // The init line does not carry context_window, so we can't read it from
-  // the stream. 200K matches observed behavior across Sonnet 4.6 sessions.
+export function modelContextWindow(model: string | null): number {
+  // Opus 4.7 has a 1M token context window; all other current models use 200K.
+  // Claude Code does not emit context_window in the stream-json init line,
+  // so we derive it from the model name.
+  if (model && model.includes("opus-4-7")) return 1_000_000;
   return 200_000;
 }
 
