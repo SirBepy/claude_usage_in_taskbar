@@ -77,6 +77,12 @@ function detachedSessionFromHash(): string | null {
 // of whether this is the main window or a detached single-session window. The
 // listener is a no-op until either a permission-requested or question-requested
 // Tauri event fires from the hooks server.
+// Signal to the Rust boot watchdog that the webview loaded successfully.
+// If this never fires within ~6s, the watchdog reloads the window. Recovers
+// from WebView2 "can't reach this page" caused by an unreachable start URL
+// at boot (autostart racing the network / vite dev server).
+void invoke("frontend_ready").catch(() => {});
+
 installPermissionModalListener();
 installExternalLinkInterceptor();
 

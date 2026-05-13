@@ -22,6 +22,11 @@ pub struct AppState {
     pub hook_registration_pending: Mutex<bool>,
     pub update_state: Mutex<serde_json::Value>,
     pub should_quit: Arc<AtomicBool>,
+    /// Set to true the first time the webview JS sends `frontend_ready`.
+    /// Watchdog spawned in lib.rs reloads the main window if this never flips
+    /// (covers WebView2 showing a "can't reach this page" error when the
+    /// dev/prod start URL fails at boot, e.g. autostart racing with the network).
+    pub frontend_alive: Arc<AtomicBool>,
     /// Pending permission / question requests from the MCP server subprocess.
     /// Key = UUID generated per request; value = oneshot sender that resolves
     /// the blocked HTTP handler when the user responds via IPC.
@@ -48,6 +53,7 @@ impl AppState {
             hook_registration_pending: Mutex::new(false),
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
             should_quit: Arc::new(AtomicBool::new(false)),
+            frontend_alive: Arc::new(AtomicBool::new(false)),
             pending: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }

@@ -172,6 +172,7 @@ pub fn run() {
             ipc::get_skill_usage_week,
             ipc::get_skill_usage_detail,
             ipc::list_installed_skills,
+            ipc::frontend_ready,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");
@@ -279,6 +280,45 @@ pub fn run() {
                     }
                 });
             }
+            // Webview boot watchdog. If `frontend_ready` IPC never fires
+            // within ~6s, force-navigate the main window back to the start
+            // URL. Covers: WebView2 showing "localhost refused to connect"
+            // when the start URL was unreachable at boot (autostart racing
+            // a slow vite dev server, or just no network when something
+            // upstream needed it). Retries every 5s for up to 2 minutes.
+            {
+                let h = app.handle().clone();
+                let alive = app.state::<AppState>().frontend_alive.clone();
+                tauri::async_runtime::spawn(async move {
+                    use std::sync::atomic::Ordering;
+                    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+                    let mut attempts = 0u32;
+                    while !alive.load(Ordering::SeqCst) && attempts < 24 {
+                        attempts += 1;
+                        let url = boot_start_url();
+                        if let Some(w) = h.get_webview_window("main") {
+                            log::warn!(
+                                "frontend not ready after {}s; reloading main webview -> {}",
+                                6 + (attempts - 1) * 5,
+                                url
+                            );
+                            if let Ok(parsed) = url.parse::<tauri::Url>() {
+                                let _ = w.navigate(parsed);
+                            }
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    }
+                    if alive.load(Ordering::SeqCst) {
+                        if attempts > 0 {
+                            log::info!("frontend recovered after {attempts} reload attempt(s)");
+                        }
+                    } else {
+                        log::error!(
+                            "frontend never reported ready after {attempts} reload attempts; giving up"
+                        );
+                    }
+                });
+            }
             // Auto-trigger login if no session on first launch.
             {
                 use crate::state::AppState;
@@ -316,6 +356,20 @@ pub fn run() {
                 crate::channels::kill_all(app_handle);
             }
         });
+}
+
+/// URL the main webview was originally loaded from. Mirrors what Tauri's
+/// internal host serves for `WebviewUrl::App("index.html")` (the value in
+/// `tauri.conf.json`). Used by the boot watchdog to reload the window if
+/// WebView2 ends up on an error page.
+fn boot_start_url() -> String {
+    if cfg!(dev) {
+        "http://localhost:1420/index.html".to_string()
+    } else if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+        "tauri://localhost/index.html".to_string()
+    } else {
+        "http://tauri.localhost/index.html".to_string()
+    }
 }
 
 /// Re-writes `~/.claude/settings.json` if the user already accepted hook

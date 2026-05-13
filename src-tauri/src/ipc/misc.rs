@@ -56,6 +56,17 @@ pub async fn copy_logs(app: AppHandle) -> Result<(), String> {
     app.clipboard().write_text(contents).map_err(|e| e.to_string())
 }
 
+/// Frontend signals it loaded successfully. Watchdog in lib.rs::setup uses
+/// this to detect a stalled webview (WebView2 "can't reach this page" error)
+/// and trigger a reload. Idempotent; safe to call from every page load.
+#[tauri::command]
+pub fn frontend_ready(app: AppHandle) {
+    use std::sync::atomic::Ordering;
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        state.frontend_alive.store(true, Ordering::SeqCst);
+    }
+}
+
 #[tauri::command]
 pub fn get_platform() -> String {
     match std::env::consts::OS {
