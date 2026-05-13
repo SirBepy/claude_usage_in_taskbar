@@ -18,6 +18,51 @@ import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sid
 let _pane: HTMLElement | null = null;
 let _pendingOpenPicker = false;
 
+// ── Thinking indicator ────────────────────────────────────────────────────────
+
+const THINKING_VERBS = [
+  "Thinking", "Brainstorming", "Analyzing", "Pondering", "Computing",
+  "Reflecting", "Synthesizing", "Reasoning", "Considering", "Processing",
+  "Deliberating", "Formulating", "Examining", "Theorizing", "Musing",
+];
+let _verbIdx = 0;
+let _verbTimer: number | null = null;
+
+function isCurrentSessionBusy(): boolean {
+  const pending = state.pendingNewSession;
+  if (pending) {
+    if (pending.realId) {
+      return !!(state.sessions.find(s => s.session_id === pending.realId)?.busy);
+    }
+    // First turn not yet registered: show busy if the placeholder is active.
+    return state.selectedId === pending.placeholderId;
+  }
+  return !!(state.sessions.find(s => s.session_id === state.selectedId)?.busy);
+}
+
+export function updateThinkingBar(): void {
+  const pane = _pane;
+  if (!pane) return;
+  const bar = pane.querySelector<HTMLElement>(".session-thinking");
+  if (!bar) return;
+  const busy = isCurrentSessionBusy();
+  if (busy) {
+    if (bar.hasAttribute("hidden")) {
+      bar.removeAttribute("hidden");
+      _verbIdx = Math.floor(Math.random() * THINKING_VERBS.length);
+      const tick = (): void => {
+        bar.textContent = THINKING_VERBS[_verbIdx % THINKING_VERBS.length] + "…";
+        _verbIdx++;
+      };
+      tick();
+      _verbTimer = window.setInterval(tick, 1800);
+    }
+  } else {
+    bar.setAttribute("hidden", "");
+    if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
+  }
+}
+
 export function triggerNewSessionGlobal(): void {
   if (_pane) {
     void startNewSession(_pane);
@@ -78,6 +123,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   // Initial load
   await refreshSessions();
   renderSidebar(listEl);
+  updateThinkingBar();
 
   // Subscribe to live registry updates
   const ev = window.__TAURI__?.event;
@@ -87,6 +133,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       await refreshSessions();
       if (state.mountId !== myMount) return;
       renderSidebar(listEl);
+      updateThinkingBar();
       // If the previously-selected session vanished (e.g. takeover renamed it,
       // or it was ended externally), clear the pane to avoid stale content.
       // Skip this check while a new-session turn is pending: state.selectedId
@@ -124,11 +171,6 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     });
   }
 
-  // Wire row clicks (delegated). Block clicks while a new-session turn is
-  // pending so the user can't accidentally navigate away from the in-flight
-  // chat (which would orphan the renderer subscription and surface the bug
-  // we just fixed). The pending row itself has no data-session-id so it's
-  // naturally non-clickable.
   listEl.addEventListener("click", (e) => {
     // 3-dot menu button intercept
     const menuBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".session-row-menu-btn");
@@ -147,11 +189,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       return;
     }
 
-    if (state.pendingNewSession) return;
     const li = (e.target as HTMLElement).closest<HTMLLIElement>("li[data-session-id]");
     if (!li) return;
     const id = li.dataset.sessionId;
-    if (id) void selectSession(id, pane);
+    if (id) void (async () => { await selectSession(id, pane); updateThinkingBar(); })();
   });
 
   return () => {
@@ -169,6 +210,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
  * both the main view and the detached-window entry.
  */
 function teardownState(): void {
+  if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
   _pane = null;
   if (state.unlistenInstances) {
     try { state.unlistenInstances(); } catch { /* ignore */ }

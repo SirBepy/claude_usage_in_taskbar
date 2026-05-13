@@ -87,6 +87,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <div class="session-statusbar-host"></div>
     ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
     <div class="session-messages"></div>
+    <div class="session-thinking" hidden></div>
     <div class="session-composer"></div>
   `;
 

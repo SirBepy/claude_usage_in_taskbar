@@ -100,6 +100,7 @@ export async function renderPendingPane(
         <p>Type a message below to start a new session in <strong>${escapeHtml(project.name)}</strong>.</p>
       </div>
     </div>
+    <div class="session-thinking" hidden></div>
     <div class="session-composer"></div>
   `;
 
@@ -133,7 +134,8 @@ export async function renderPendingPane(
       }
       if (state.mountId !== myMount) return;
       if (state.pendingNewSession) state.pendingNewSession.realId = realId;
-      if (state.renderer && state.renderer.currentSessionId() === placeholderId) {
+      const isStillActive = state.selectedId === placeholderId;
+      if (isStillActive && state.renderer && state.renderer.currentSessionId() === placeholderId) {
         await state.renderer.swapSubscription(realId);
       }
       const root = document.querySelector<HTMLElement>(".view-sessions");
@@ -188,11 +190,13 @@ export async function renderPendingPane(
             });
             if (state.mountId !== myMount) return;
             if (sessionId) {
-              if (state.renderer && state.renderer.currentSessionId() !== sessionId) {
+              // Only update the pane if user hasn't navigated to a different session.
+              const isStillActive = state.selectedId === placeholderId || state.selectedId === sessionId;
+              if (isStillActive && state.renderer && state.renderer.currentSessionId() !== sessionId) {
                 await state.renderer.swapSubscription(sessionId);
               }
-              if (state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
-              setActiveSession(sessionId);
+              if (isStillActive && state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
+              if (isStillActive) setActiveSession(sessionId);
               state.pendingNewSession = null;
               await refreshSessions();
               if (state.mountId !== myMount) return;
@@ -201,7 +205,7 @@ export async function renderPendingPane(
                 const listEl = root2.querySelector<HTMLElement>("#sessions-list");
                 if (listEl) renderSidebar(listEl);
               }
-              rebindPaneHeader(pane, sessionId);
+              if (isStillActive) rebindPaneHeader(pane, sessionId);
             }
           } catch (err) {
             console.error("[sessions] start_session failed", err);

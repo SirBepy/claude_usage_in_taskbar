@@ -516,6 +516,39 @@
   user-select: text;
 }
 
+.session-thinking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 20px 5px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-style: italic;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.session-thinking[hidden] {
+  display: none;
+}
+
+.session-thinking::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 1; }
+}
+
 .session-composer {
   border-top: 1px solid var(--border);
   padding: 10px 12px 12px;
