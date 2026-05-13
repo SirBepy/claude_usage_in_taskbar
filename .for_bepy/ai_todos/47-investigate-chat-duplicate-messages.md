@@ -1,5 +1,17 @@
 # Investigate chat duplicate messages / two-chat split
 
+## Status (2026-05-13)
+
+Hypothesis 3 confirmed and partially fixed in commit `ddcd374`. Root cause for the visible duplicate sidebar row: when we spawn `claude -p`, the SessionStart hook fires inside that process and POSTs to `/hooks/session-start` before our chat IPC parses the stream-json `system init`. Hooks-server registers it as `External` (pid not in `state.channels`), sidebar renders the External row alongside the pending placeholder. Fix: `sidebar.ts` now snapshots pre-existing session_ids when pending starts and filters cwd-matching newcomers until `pending.realId` resolves.
+
+Still open and need Joe to confirm post-fix:
+
+- Hypothesis 1 (button double-bind): static analysis didn't reproduce it; the `sending` re-entry guard already blocks intra-instance double-fire.
+- Hypothesis 2 (two Composer instances): static analysis found `destroy()` is always called before `new Composer()`. If `_composerInstanceCount > 1` warning fires in console, this hypothesis is back on the table.
+- Hypothesis 4 (rendering-side double): static analysis didn't find a path. Trailing `assistant` line in live `-p` has `stop_reason:null` → `streaming=true`, so the `result` line's `streaming=false` finalize correctly REPLACES the streaming row (verified against `.for_bepy/spike_fixtures/print_resume_turn1.txt`). No fixture exists for `--include-partial-messages` though, so this isn't airtight.
+
+If "same reply rendered twice" persists after `ddcd374`, capture stream-json output of the failing turn (`claude -p --include-partial-messages` on the actual prompt) and add it as a fixture under `src-tauri/tests/fixtures/`, then write a parser+renderer test that replays it and asserts message count.
+
 ## Goal
 
 In `/local-session-chat` (and likely any Sessions pane), one user Send results in two assistant replies, sometimes in two separate session entries. Joe also reports seeing the same Claude reply rendered twice in the UI. Find root cause, land a real fix (not just defensive guards).
