@@ -17,15 +17,15 @@ const SHORTCUT_DEFS: ShortcutDef[] = [
   { id: "go-chats",   defaultKeys: "ctrl+shift+c",  label: "Go to Chats",    description: "Navigate to the Chats view",             suppressInInput: true },
 
   // Chats view
-  { id: "open-chat-1", defaultKeys: "ctrl+1", label: "Open chat 1", description: "Open the most recent chat",    context: "sessions", suppressInInput: true },
-  { id: "open-chat-2", defaultKeys: "ctrl+2", label: "Open chat 2", description: "Open the 2nd most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-3", defaultKeys: "ctrl+3", label: "Open chat 3", description: "Open the 3rd most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-4", defaultKeys: "ctrl+4", label: "Open chat 4", description: "Open the 4th most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-5", defaultKeys: "ctrl+5", label: "Open chat 5", description: "Open the 5th most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-6", defaultKeys: "ctrl+6", label: "Open chat 6", description: "Open the 6th most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-7", defaultKeys: "ctrl+7", label: "Open chat 7", description: "Open the 7th most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-8", defaultKeys: "ctrl+8", label: "Open chat 8", description: "Open the 8th most recent chat", context: "sessions", suppressInInput: true },
-  { id: "open-chat-9", defaultKeys: "ctrl+9", label: "Open chat 9", description: "Open the 9th most recent chat", context: "sessions", suppressInInput: true },
+  { id: "open-chat-1", defaultKeys: "ctrl+1", label: "Open chat 1", description: "Open the most recent chat",    context: "sessions", suppressInInput: false },
+  { id: "open-chat-2", defaultKeys: "ctrl+2", label: "Open chat 2", description: "Open the 2nd most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-3", defaultKeys: "ctrl+3", label: "Open chat 3", description: "Open the 3rd most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-4", defaultKeys: "ctrl+4", label: "Open chat 4", description: "Open the 4th most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-5", defaultKeys: "ctrl+5", label: "Open chat 5", description: "Open the 5th most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-6", defaultKeys: "ctrl+6", label: "Open chat 6", description: "Open the 6th most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-7", defaultKeys: "ctrl+7", label: "Open chat 7", description: "Open the 7th most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-8", defaultKeys: "ctrl+8", label: "Open chat 8", description: "Open the 8th most recent chat", context: "sessions", suppressInInput: false },
+  { id: "open-chat-9", defaultKeys: "ctrl+9", label: "Open chat 9", description: "Open the 9th most recent chat", context: "sessions", suppressInInput: false },
   { id: "close-chat",  defaultKeys: "ctrl+w", label: "Cancel active turn",  description: "Cancel the current running turn in the focused chat", context: "sessions", suppressInInput: true },
 ];
 
