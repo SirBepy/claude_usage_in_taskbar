@@ -62,6 +62,10 @@ export function getActiveView(): string {
   return activeView;
 }
 
+export function setActiveView(name: string): void {
+  activeView = name;
+}
+
 export function backFromSubview(): void {
   const origin = getProjectSubviewStack().pop() || "project-detail";
   showView(origin);

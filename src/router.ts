@@ -1,4 +1,5 @@
 import { html, render } from "lit-html";
+import { setActiveView } from "./shared/navigation";
 
 type RenderFn = (
   root: HTMLElement,
@@ -43,6 +44,7 @@ function showLegacyView(name: string): void {
 
 export async function navigateTo(name: string): Promise<void> {
   if (!currentRoot) return;
+  setActiveView(name);
   currentTeardown?.();
   currentTeardown = null;
   const view = views.get(name);
