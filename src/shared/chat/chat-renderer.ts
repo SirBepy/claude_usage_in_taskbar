@@ -239,7 +239,9 @@ export class ChatRenderer {
     // message so the sentinel keeps its place at the very top.
     const firstExisting = this.messageEls[0] ?? null;
     if (firstExisting) {
-      this.container.insertBefore(frag, firstExisting);
+      // messageEls[0] may be inside a <details> turn-group; walk up to the
+      // direct child of container so we prepend before the group, not inside it.
+      this.container.insertBefore(frag, this.rootChildOf(firstExisting));
     } else if (this.topSentinel && this.topSentinel.parentNode === this.container) {
       // No existing messages but sentinel present: append after sentinel.
       this.container.appendChild(frag);
@@ -501,7 +503,13 @@ export class ChatRenderer {
         this._cumulative.costUsd += Number(ev.total_cost_usd) || 0;
         this._cumulative.turns += 1;
         this.onMetaUpdate?.(this.getMeta());
-        return; // no DOM update needed
+        // turn_usage is the definitive signal that Claude has finished a turn.
+        // Enqueue collapse so the working steps fold up after the next flush.
+        this.enqueueTurnClose();
+        if (!opts.silent) {
+          this.flushRender();
+        }
+        return;
       }
       default:
         break; // unknown variant, ignore for forward compat
@@ -605,7 +613,11 @@ export class ChatRenderer {
     details.className = "turn-steps";
     const summary = document.createElement("summary");
     summary.className = "turn-steps-summary";
-    summary.innerHTML = `<i class="ph ph-wrench"></i> ${intermediateCount} step${intermediateCount !== 1 ? "s" : ""}`;
+    const toolCalls = this.messages.slice(start, intermediateEnd).filter(m => m.kind === "tool_use").length;
+    const label = toolCalls > 0
+      ? `${toolCalls} tool call${toolCalls !== 1 ? "s" : ""}`
+      : `${intermediateCount} step${intermediateCount !== 1 ? "s" : ""}`;
+    summary.innerHTML = `<i class="ph ph-wrench"></i> ${label}`;
     details.appendChild(summary);
 
     firstEl.parentElement.insertBefore(details, firstEl);
@@ -613,6 +625,14 @@ export class ChatRenderer {
       const el = this.messageEls[i];
       if (el) details.appendChild(el);
     }
+  }
+
+  private rootChildOf(el: HTMLElement): HTMLElement {
+    let n = el;
+    while (n.parentElement && n.parentElement !== this.container) {
+      n = n.parentElement as HTMLElement;
+    }
+    return n;
   }
 
   private buildMessageEl(m: RenderedMessage): HTMLElement {
