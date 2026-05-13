@@ -9,7 +9,7 @@ import "./sessions.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";
-import { startNewSession, launchNewSession, discardDraft, resumeDraft } from "./pending-flow";
+import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
 import { state, resetState, setActiveSession } from "./state";
@@ -18,6 +18,11 @@ import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sid
 
 let _pane: HTMLElement | null = null;
 let _pendingOpenPicker = false;
+let _pendingHistoryResume: string | null = null;
+
+export function queueHistoryResume(sessionId: string): void {
+  _pendingHistoryResume = sessionId;
+}
 
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
@@ -117,6 +122,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   // Reset state on each mount; bump mountId so any pending async work from
   // a prior mount sees a stale id and bails.
   const myMount = resetState();
+  loadAndRestorePendingSession();
 
   render(template(), root);
 
@@ -158,6 +164,17 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   await refreshSessions();
   renderSidebar(listEl);
   updateThinkingBar();
+
+  // If the user clicked "Continue this chat" in the History view, auto-select
+  // the resumed session (it was registered in the registry before navigation).
+  if (_pendingHistoryResume) {
+    const sid = _pendingHistoryResume;
+    _pendingHistoryResume = null;
+    if (state.sessions.find(s => s.session_id === sid)) {
+      await selectSession(sid, pane);
+      updateThinkingBar();
+    }
+  }
 
   // Subscribe to live registry updates
   const ev = window.__TAURI__?.event;

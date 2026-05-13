@@ -101,3 +101,28 @@
   flex: 1;
   overflow-y: auto;
 }
+
+.history-session-actions {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn-continue-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: var(--primary);
+  color: var(--bg);
+  border: none;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-continue-chat:hover {
+  opacity: 0.85;
+}

@@ -157,6 +157,7 @@ pub fn run() {
             ipc::load_history,
             ipc::load_history_page,
             ipc::list_history,
+            ipc::register_historical_session,
             ipc::detach_window,
             ipc::reattach_window,
             ipc::get_git_info,

@@ -295,6 +295,29 @@ pub(crate) fn blocks_to_prompt_text(blocks: &[ContentBlock]) -> String {
     out.trim_end().to_string()
 }
 
+/// Register a historical (ended) session as an Interactive entry in the
+/// registry so the Sessions view can find and display it. Called by the
+/// History view "Continue this chat" flow before navigating back to Sessions.
+#[tauri::command]
+pub async fn register_historical_session(
+    session_id: String,
+    cwd: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    super::attachments::validate_session_id(&session_id)?;
+    let cwd_path = PathBuf::from(&cwd);
+    let now_str = Utc::now().to_rfc3339();
+    let project_id = {
+        let mut s = state.settings.lock().unwrap();
+        let (pid, _) = crate::settings::upsert_project_for_cwd(&mut s, &cwd_path, &now_str);
+        pid
+    };
+    state.instances.upsert_interactive(&session_id, &cwd_path, &project_id, &now_str);
+    let _ = app.emit("instances-changed", ());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

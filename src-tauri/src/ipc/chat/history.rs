@@ -109,6 +109,7 @@ pub async fn list_history(
             entries.push(crate::types::chat::HistoryEntry {
                 session_id: title.clone(),
                 project_id: proj_slug.clone(),
+                cwd: crate::tokens::decode_cwd(&proj_slug),
                 title,
                 started_at,
                 ended_at,

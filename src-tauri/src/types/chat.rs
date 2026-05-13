@@ -71,6 +71,7 @@ pub enum ChatEvent {
 pub struct HistoryEntry {
     pub session_id: String,
     pub project_id: String,
+    pub cwd: String,
     pub title: String,
     pub started_at: i64,
     pub ended_at: Option<i64>,
