@@ -1,3 +1,5 @@
+@~/.claude/snippets/auto-commit.md
+
 # Claude Companion (formerly Claude AI Usage Toolbar)
 
 Cross-platform Tauri 2 app for Claude Code users. Originally a usage tracker;
