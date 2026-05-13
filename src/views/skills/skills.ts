@@ -15,7 +15,8 @@ function filtered(): InstalledSkill[] {
     (s) =>
       s.skill.toLowerCase().includes(q) ||
       (s.description || "").toLowerCase().includes(q) ||
-      (s.plugin || "").toLowerCase().includes(q),
+      (s.plugin || "").toLowerCase().includes(q) ||
+      (s.project || "").toLowerCase().includes(q),
   );
 }
 
@@ -65,7 +66,9 @@ function template(loading: boolean): TemplateResult {
                           <span class="skill-name">${s.skill}</span>
                           ${s.plugin
                             ? html`<span class="skill-plugin">${s.plugin}</span>`
-                            : html`<span class="skill-plugin user">user</span>`}
+                            : s.project
+                              ? html`<span class="skill-plugin project">${s.project}</span>`
+                              : html`<span class="skill-plugin user">user</span>`}
                         </div>
                         ${s.description
                           ? html`<div class="skill-desc">${s.description}</div>`

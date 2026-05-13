@@ -91,6 +91,8 @@ function sourceLabel(s: SlashSource): string {
       return "proj";
     case "user-skill":
       return "skill";
+    case "project-skill":
+      return (s as { project: string }).project;
     case "plugin-skill":
       return `plugin:${(s as { plugin: string }).plugin}`;
     case "plugin-command":

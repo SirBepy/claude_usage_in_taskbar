@@ -21,6 +21,9 @@ pub enum SlashSource {
     UserCommand,
     ProjectCommand,
     UserSkill,
+    /// Skill defined under a project's `.claude/skills/`. `project` is the
+    /// project directory's basename (used as the display tag in the UI).
+    ProjectSkill { project: String },
     PluginSkill { plugin: String },
     PluginCommand { plugin: String },
 }

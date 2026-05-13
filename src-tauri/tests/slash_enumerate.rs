@@ -28,7 +28,7 @@ fn scans_user_commands_skills_and_project_commands() {
     )
     .unwrap();
 
-    let out = scan_dirs(home.path(), Some(proj.path()));
+    let out = scan_dirs(home.path(), &[proj.path()]);
 
     let has = |name: &str, want_source: &dyn Fn(&SlashSource) -> bool| {
         out.iter().any(|e| e.name == name && want_source(&e.source))
@@ -41,6 +41,30 @@ fn scans_user_commands_skills_and_project_commands() {
     let commit = out.iter().find(|e| e.name == "commit").unwrap();
     assert_eq!(commit.description, "stage + commit");
     assert_eq!(commit.args.as_deref(), Some("<flag>"));
+}
+
+#[test]
+fn scans_project_skills_tagged_with_project_basename() {
+    let home = tempfile::tempdir().unwrap();
+    let proj_root = tempfile::tempdir().unwrap();
+    let proj = proj_root.path().join("my_app");
+    fs::create_dir_all(&proj).unwrap();
+
+    fs::create_dir_all(proj.join(".claude/skills/local-thing")).unwrap();
+    fs::write(
+        proj.join(".claude/skills/local-thing/SKILL.md"),
+        "---\nname: local-thing\ndescription: project-scoped skill\n---\nbody\n",
+    )
+    .unwrap();
+
+    let out = scan_dirs(home.path(), &[proj.as_path()]);
+
+    let entry = out.iter().find(|e| e.name == "local-thing").unwrap();
+    match &entry.source {
+        SlashSource::ProjectSkill { project } => assert_eq!(project, "my_app"),
+        other => panic!("expected ProjectSkill, got {other:?}"),
+    }
+    assert_eq!(entry.description, "project-scoped skill");
 }
 
 #[test]
@@ -63,7 +87,7 @@ fn scans_plugin_skills_and_commands() {
     )
     .unwrap();
 
-    let out = scan_dirs(home.path(), None);
+    let out = scan_dirs(home.path(), &[]);
 
     let plugin_skill = out.iter().find(|e| e.name == "foo").unwrap();
     match &plugin_skill.source {
@@ -81,7 +105,7 @@ fn scans_plugin_skills_and_commands() {
 #[test]
 fn includes_builtins() {
     let home = tempfile::tempdir().unwrap();
-    let out = scan_dirs(home.path(), None);
+    let out = scan_dirs(home.path(), &[]);
     assert!(out.iter().any(|e| e.name == "help" && matches!(e.source, SlashSource::Builtin)));
     assert!(out.iter().any(|e| e.name == "clear"));
 }
@@ -89,6 +113,6 @@ fn includes_builtins() {
 #[test]
 fn missing_dirs_are_swallowed() {
     let home = tempfile::tempdir().unwrap();
-    let out = scan_dirs(home.path(), None);
+    let out = scan_dirs(home.path(), &[]);
     assert!(!out.is_empty(), "should at least return builtins");
 }

@@ -5,19 +5,33 @@ use super::parse::{extract_args, parse_frontmatter};
 use super::{builtins, SlashEntry, SlashSource};
 
 pub fn scan_all(project_dir: Option<&Path>) -> Vec<SlashEntry> {
+    let projects: Vec<&Path> = project_dir.into_iter().collect();
+    scan_all_multi(&projects)
+}
+
+/// Variant of `scan_all` that accepts multiple project dirs. Used by the
+/// global Skills view to merge project skills from every known project.
+pub fn scan_all_multi(project_dirs: &[&Path]) -> Vec<SlashEntry> {
     let Some(home) = dirs::home_dir() else {
         return builtins::all();
     };
-    scan_dirs(&home.join(".claude"), project_dir)
+    scan_dirs(&home.join(".claude"), project_dirs)
 }
 
-pub fn scan_dirs(home_claude: &Path, project_dir: Option<&Path>) -> Vec<SlashEntry> {
+pub fn scan_dirs(home_claude: &Path, project_dirs: &[&Path]) -> Vec<SlashEntry> {
     let mut out = builtins::all();
     scan_commands(&home_claude.join("commands"), &SlashSource::UserCommand, &mut out);
     scan_skills(&home_claude.join("skills"), &SlashSource::UserSkill, &mut out);
     scan_plugins(&home_claude.join("plugins/cache"), &mut out);
-    if let Some(p) = project_dir {
+    for p in project_dirs {
         scan_commands(&p.join(".claude/commands"), &SlashSource::ProjectCommand, &mut out);
+        let project_name = p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let skill_src = SlashSource::ProjectSkill { project: project_name };
+        scan_skills(&p.join(".claude/skills"), &skill_src, &mut out);
     }
     out
 }

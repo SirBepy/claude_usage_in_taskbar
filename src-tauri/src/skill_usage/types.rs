@@ -74,9 +74,12 @@ pub struct SkillDetail {
 pub struct InstalledSkill {
     /// Canonical key matching what the Skill tool emits in `input.skill`.
     /// User skills: bare folder name (e.g. "commit"). Plugin skills:
-    /// "<plugin>:<skill>" (e.g. "superpowers:brainstorming").
+    /// "<plugin>:<skill>" (e.g. "superpowers:brainstorming"). Project skills:
+    /// bare folder name (project disambiguation is in `project`).
     pub skill: String,
     pub description: String,
     /// Plugin name when sourced from a plugin cache, else None.
     pub plugin: Option<String>,
+    /// Project basename when sourced from a project's `.claude/skills/`, else None.
+    pub project: Option<String>,
 }
