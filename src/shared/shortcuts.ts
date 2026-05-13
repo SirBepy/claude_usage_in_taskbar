@@ -85,7 +85,10 @@ export function normalizeEvent(e: {
   let key = e.key.toLowerCase();
   if (key === "control" || key === "shift" || key === "alt" || key === "meta") return "";
   // Shift+digit produces "!", "@", etc. on standard keyboards - normalize back to the digit.
-  if (e.shiftKey && SHIFT_DIGIT_MAP[e.key]) key = SHIFT_DIGIT_MAP[e.key];
+  if (e.shiftKey) {
+    const mapped = SHIFT_DIGIT_MAP[e.key];
+    if (mapped) key = mapped;
+  }
   const parts: string[] = [];
   if (e.ctrlKey || e.metaKey) parts.push("ctrl");
   if (e.shiftKey) parts.push("shift");
