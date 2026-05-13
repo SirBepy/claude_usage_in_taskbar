@@ -165,17 +165,37 @@ fn resolve_takeover_model_effort(manual_pid: u32, state: &AppState) -> (String, 
 
 /// Respond to a pending permission request from the MCP server.
 /// Looks up the oneshot sender in the shared pending map and resolves it.
+///
+/// Per Claude Code's `--permission-prompt-tool` contract, the resolved JSON
+/// MUST match one of:
+///   - `{"behavior": "allow", "updatedInput": <object>}` — updatedInput is
+///     the (possibly modified) tool input. Claude rejects `null` here.
+///   - `{"behavior": "deny", "message": <string>}` — message is shown to
+///     claude as the rejection reason; required (validation error if missing).
+///
+/// For question-shaped permissions (AskUserQuestion / ask_user_question) the
+/// frontend uses `behavior: "deny"` + `message` to relay the user's chosen
+/// answer back to claude as text, since headless `claude -p` has no native
+/// way to receive structured answers from the built-in tool.
 #[tauri::command]
 pub async fn respond_permission(
     id: String,
     behavior: String,
     updated_input: Option<Value>,
+    message: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if behavior != "allow" && behavior != "deny" {
-        return Err(format!("invalid behavior: {behavior:?} (must be 'allow' or 'deny')"));
-    }
-    let val = serde_json::json!({"behavior": behavior, "updatedInput": updated_input});
+    let val = match behavior.as_str() {
+        "allow" => serde_json::json!({
+            "behavior": "allow",
+            "updatedInput": updated_input.unwrap_or_else(|| serde_json::json!({})),
+        }),
+        "deny" => serde_json::json!({
+            "behavior": "deny",
+            "message": message.unwrap_or_else(|| "Denied by user.".to_string()),
+        }),
+        _ => return Err(format!("invalid behavior: {behavior:?} (must be 'allow' or 'deny')")),
+    };
     let tx = state.pending.lock().await.remove(&id);
     match tx {
         Some(tx) => {
