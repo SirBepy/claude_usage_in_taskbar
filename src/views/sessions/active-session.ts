@@ -87,6 +87,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}</span>
       ${readOnly ? "" : `<button class="icon-btn auto-accept-btn${isAutoAccept(sess.session_id) ? " is-on" : ""}" title="${isAutoAccept(sess.session_id) ? "Auto-accepting tool permissions. Click to disable." : "Auto-accept tool permissions for this session"}" aria-pressed="${isAutoAccept(sess.session_id) ? "true" : "false"}"><i class="ph ph-shield-check"></i></button>`}
+      <button class="icon-btn open-terminal-btn" title="Open this chat in an external terminal (survives app restart)"><i class="ph ph-terminal-window"></i></button>
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
       ${readOnly ? "" : '<button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>'}
       ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
@@ -214,6 +215,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         : "Auto-accept tool permissions for this session";
     });
   }
+  pane.querySelector<HTMLButtonElement>(".open-terminal-btn")?.addEventListener("click", async () => {
+    try {
+      await invoke<void>("open_session_in_terminal", { sessionId });
+    } catch (err) {
+      console.error("[sessions] open_session_in_terminal failed", err);
+      alert(`Failed to open terminal: ${err}`);
+    }
+  });
   pane.querySelector<HTMLButtonElement>(".detach-btn")?.addEventListener("click", async () => {
     try {
       await invoke<void>("detach_window", { sessionId });

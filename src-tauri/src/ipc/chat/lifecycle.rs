@@ -95,6 +95,142 @@ pub async fn reattach_window(session_id: String, app: AppHandle) -> Result<(), S
     Ok(())
 }
 
+/// Open the given chat session in an external terminal window, running
+/// `claude --resume <session_id>` in the session's cwd. Independent of the
+/// Tauri app process - survives app restarts (Path C per-turn model means
+/// the claude jsonl is the source of truth; both this app and the external
+/// terminal can resume the same session, just not simultaneously).
+///
+/// Platform behavior:
+/// - Windows: prefers Windows Terminal (`wt.exe`); falls back to `cmd.exe`.
+/// - macOS: `osascript` driving Terminal.app.
+/// - Linux: tries `gnome-terminal`, `konsole`, `xterm` in order.
+#[tauri::command]
+pub async fn open_session_in_terminal(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    let entry = state
+        .instances
+        .get(&session_id)
+        .ok_or_else(|| format!("session {session_id} not found in registry"))?;
+    let cwd = entry.cwd.clone();
+    if !cwd.exists() {
+        return Err(format!("cwd does not exist: {}", cwd.display()));
+    }
+    spawn_terminal_for_session(&session_id, &cwd).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_terminal_for_session(
+    session_id: &str,
+    cwd: &std::path::Path,
+) -> std::io::Result<()> {
+    use std::process::Command;
+    let cwd_str = cwd.to_string_lossy().to_string();
+    // Try Windows Terminal first.
+    let wt_result = Command::new("wt.exe")
+        .args([
+            "-d",
+            &cwd_str,
+            "cmd.exe",
+            "/K",
+            &format!("claude --resume {session_id}"),
+        ])
+        .spawn();
+    if wt_result.is_ok() {
+        return Ok(());
+    }
+    // Fall back to bare cmd.exe in a new console window.
+    Command::new("cmd.exe")
+        .arg("/C")
+        .arg("start")
+        .arg("")
+        .arg("cmd.exe")
+        .arg("/K")
+        .arg(format!("claude --resume {session_id}"))
+        .current_dir(cwd)
+        .spawn()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_terminal_for_session(
+    session_id: &str,
+    cwd: &std::path::Path,
+) -> std::io::Result<()> {
+    use std::process::Command;
+    // AppleScript escaping: backslash + double-quotes.
+    let cwd_esc = cwd.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let id_esc = session_id.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "tell application \"Terminal\" to do script \"cd \\\"{cwd_esc}\\\" && claude --resume {id_esc}\""
+    );
+    Command::new("osascript").arg("-e").arg(&script).spawn()?;
+    // Bring Terminal.app forward.
+    let _ = Command::new("osascript")
+        .arg("-e")
+        .arg("tell application \"Terminal\" to activate")
+        .spawn();
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_terminal_for_session(
+    session_id: &str,
+    cwd: &std::path::Path,
+) -> std::io::Result<()> {
+    use std::process::Command;
+    let cwd_str = cwd.to_string_lossy().to_string();
+    let candidates: &[(&str, &[&str])] = &[
+        ("gnome-terminal", &["--working-directory"]),
+        ("konsole", &["--workdir"]),
+        ("xfce4-terminal", &["--working-directory"]),
+        ("xterm", &[]),
+    ];
+    for (bin, dir_flag) in candidates {
+        let mut cmd = Command::new(bin);
+        match bin {
+            &"gnome-terminal" => {
+                cmd.arg(format!("{}={}", dir_flag[0], cwd_str))
+                    .arg("--")
+                    .arg("bash")
+                    .arg("-c")
+                    .arg(format!("claude --resume {session_id}; exec bash"));
+            }
+            &"konsole" => {
+                cmd.arg(dir_flag[0])
+                    .arg(&cwd_str)
+                    .arg("-e")
+                    .arg("bash")
+                    .arg("-c")
+                    .arg(format!("claude --resume {session_id}; exec bash"));
+            }
+            &"xfce4-terminal" => {
+                cmd.arg(format!("{}={}", dir_flag[0], cwd_str))
+                    .arg("-e")
+                    .arg(format!("bash -c 'claude --resume {session_id}; exec bash'"));
+            }
+            _ => {
+                cmd.current_dir(cwd)
+                    .arg("-e")
+                    .arg("bash")
+                    .arg("-c")
+                    .arg(format!("claude --resume {session_id}; exec bash"));
+            }
+        }
+        if cmd.spawn().is_ok() {
+            return Ok(());
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "no supported terminal emulator found (tried gnome-terminal, konsole, xfce4-terminal, xterm)",
+    ))
+}
+
 /// Promote a Manual (External) session to Interactive. Kills the external
 /// claude process so this app's per-turn `--resume` calls don't race the
 /// external one for JSONL writes. Returns the session_id of the now-Interactive

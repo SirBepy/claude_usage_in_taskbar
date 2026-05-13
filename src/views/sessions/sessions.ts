@@ -12,7 +12,7 @@ import "./model-effort-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
-import { state, resetState, setActiveSession } from "./state";
+import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
 
@@ -172,6 +172,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     _pendingHistoryResume = null;
     if (state.sessions.find(s => s.session_id === sid)) {
       await selectSession(sid, pane);
+      updateThinkingBar();
+    }
+  } else if (!state.pendingNewSession && !state.selectedId) {
+    // Restore the last-viewed session across reloads. Skipped when a pending
+    // draft was just restored (it owns the active pane) or when history-resume
+    // already picked one above.
+    const lastId = loadLastSelectedSession();
+    if (lastId && state.sessions.find(s => s.session_id === lastId)) {
+      await selectSession(lastId, pane);
       updateThinkingBar();
     }
   }

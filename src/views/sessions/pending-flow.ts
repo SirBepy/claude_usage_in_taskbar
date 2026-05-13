@@ -4,7 +4,7 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
-import { state, setActiveSession } from "./state";
+import { state, setActiveSession, type PendingNewSession } from "./state";
 import { projectName } from "./sessions-helpers";
 import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
@@ -28,6 +28,60 @@ export function makePlaceholderId(): string {
   return `pending-${ts}-${rnd}`;
 }
 
+// Persist pending session draft across page reloads / HMR.
+const PENDING_SESSION_KEY = "pending-session:v1";
+
+function savePendingSession(pending: PendingNewSession): void {
+  try {
+    const serialized = {
+      placeholderId: pending.placeholderId,
+      projectPath: pending.projectPath,
+      projectName: pending.projectName,
+      config: pending.config,
+      realId: pending.realId,
+      firstMessageSent: pending.firstMessageSent,
+      preExistingSessionIds: Array.from(pending.preExistingSessionIds),
+    };
+    localStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(serialized));
+  } catch {
+    /* quota or storage disabled */
+  }
+}
+
+function loadPendingSession(): PendingNewSession | null {
+  try {
+    const raw = localStorage.getItem(PENDING_SESSION_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return {
+      placeholderId: obj.placeholderId,
+      projectPath: obj.projectPath,
+      projectName: obj.projectName,
+      config: obj.config,
+      realId: obj.realId,
+      firstMessageSent: obj.firstMessageSent,
+      preExistingSessionIds: new Set(obj.preExistingSessionIds),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingSession(): void {
+  try {
+    localStorage.removeItem(PENDING_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadAndRestorePendingSession(): void {
+  const pending = loadPendingSession();
+  if (pending) {
+    state.pendingNewSession = pending;
+  }
+}
+
 /**
  * Discard the current draft (pending session that hasn't sent its first
  * message yet). If the user is still viewing the draft pane, also clear it.
@@ -43,6 +97,7 @@ export function discardDraft(pane: HTMLElement): void {
   if (!pending) return;
   const wasOnDraft = state.selectedId === pending.placeholderId;
   state.pendingNewSession = null;
+  clearPendingSession();
 
   if (wasOnDraft) {
     state.statusbar?.destroy();
@@ -124,6 +179,7 @@ export async function launchNewSession(
     }
     // No message sent yet - abandon the empty pending session silently.
     state.pendingNewSession = null;
+    clearPendingSession();
   }
 
   const placeholderId = makePlaceholderId();
@@ -136,6 +192,7 @@ export async function launchNewSession(
     firstMessageSent: false,
     preExistingSessionIds: new Set(state.sessions.map(s => s.session_id)),
   };
+  savePendingSession(state.pendingNewSession);
   setActiveSession(placeholderId);
 
   await renderPendingPane(pane, placeholderId, project, config);
@@ -237,7 +294,10 @@ export async function renderPendingPane(
         unsubPlaceholderWatch = null;
       }
       if (state.mountId !== myMount) return;
-      if (state.pendingNewSession) state.pendingNewSession.realId = realId;
+      if (state.pendingNewSession) {
+        state.pendingNewSession.realId = realId;
+        savePendingSession(state.pendingNewSession);
+      }
       const isStillActive = state.selectedId === placeholderId;
       if (isStillActive && state.renderer && state.renderer.currentSessionId() === placeholderId) {
         await state.renderer.swapSubscription(realId);
@@ -309,6 +369,7 @@ export async function renderPendingPane(
               if (isStillActive && state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
               if (isStillActive) setActiveSession(sessionId);
               state.pendingNewSession = null;
+              clearPendingSession();
               await refreshSessions();
               if (state.mountId !== myMount) return;
               const root2 = document.querySelector<HTMLElement>(".view-sessions");
@@ -423,6 +484,28 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
     const anchor = detachBtnEl ?? cancelBtn;
     if (anchor) header.insertBefore(autoBtn, anchor);
     else header.appendChild(autoBtn);
+  }
+
+  // Add open-in-terminal button (omitted from pending header; no real
+  // session_id to resume until now). Insert before detach/cancel.
+  if (!header.querySelector(".open-terminal-btn")) {
+    const cancelBtn = header.querySelector(".cancel-btn");
+    const detachBtnExisting = header.querySelector(".detach-btn");
+    const termBtn = document.createElement("button");
+    termBtn.className = "icon-btn open-terminal-btn";
+    termBtn.title = "Open this chat in an external terminal (survives app restart)";
+    termBtn.innerHTML = '<i class="ph ph-terminal-window"></i>';
+    termBtn.addEventListener("click", async () => {
+      try {
+        await invoke<void>("open_session_in_terminal", { sessionId });
+      } catch (err) {
+        console.error("[sessions] open_session_in_terminal failed", err);
+        alert(`Failed to open terminal: ${err}`);
+      }
+    });
+    const anchor = detachBtnExisting ?? cancelBtn;
+    if (anchor) header.insertBefore(termBtn, anchor);
+    else header.appendChild(termBtn);
   }
 
   // Add detach button (was omitted from pending header). Insert before cancel.

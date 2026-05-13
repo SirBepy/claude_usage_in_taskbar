@@ -78,13 +78,37 @@ export function resetState(): number {
   return id;
 }
 
+const LS_LAST_SELECTED = "cc_last_selected_session";
+
 /**
  * Single point of truth for the active session id. Mutating
  * `state.selectedId` directly without notifying permission-modal would
  * silently gate-out modals for the new session. Always go through this
  * helper.
+ *
+ * Side-effect: persists the id to localStorage so the next mount can
+ * restore the last-viewed chat after a reload / app restart. Pending
+ * placeholder ids (prefix "pending-") are not persisted - they are tracked
+ * via the separate pending-session storage in pending-flow.ts.
  */
 export function setActiveSession(id: string | null): void {
   state.selectedId = id;
   setSelectedSessionId(id);
+  try {
+    if (id && !id.startsWith("pending-")) {
+      localStorage.setItem(LS_LAST_SELECTED, id);
+    } else if (id === null) {
+      localStorage.removeItem(LS_LAST_SELECTED);
+    }
+  } catch {
+    /* quota or storage disabled */
+  }
+}
+
+export function loadLastSelectedSession(): string | null {
+  try {
+    return localStorage.getItem(LS_LAST_SELECTED);
+  } catch {
+    return null;
+  }
 }

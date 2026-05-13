@@ -160,6 +160,7 @@ pub fn run() {
             ipc::register_historical_session,
             ipc::detach_window,
             ipc::reattach_window,
+            ipc::open_session_in_terminal,
             ipc::get_git_info,
             ipc::get_git_dirty,
             ipc::respond_permission,
