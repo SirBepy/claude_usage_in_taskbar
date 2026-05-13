@@ -57,6 +57,7 @@ export async function launchNewSession(
     projectPath: project.path,
     projectName: project.name,
     realId: null,
+    preExistingSessionIds: new Set(state.sessions.map(s => s.session_id)),
   };
   setActiveSession(placeholderId);
 

@@ -13,6 +13,13 @@ export interface PendingNewSession {
   // entry from the registry list (the pending row, now upgraded, represents
   // it). Cleared when start_session resolves.
   realId: string | null;
+  // Snapshot of session_ids that existed in `state.sessions` at the moment
+  // this pending entry was created. Sidebar uses it to filter out only the
+  // *newcomer* row whose cwd matches `projectPath` (i.e. our own claude -p
+  // spawn registered as External by the SessionStart hook before our chat
+  // IPC captures the real session_id). Pre-existing rows in the same cwd
+  // stay visible.
+  preExistingSessionIds: Set<string>;
 }
 
 export interface SessionsState {

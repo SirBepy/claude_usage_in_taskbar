@@ -60,6 +60,15 @@ export function renderSidebar(listEl: HTMLElement): void {
   let visible = state.sessions;
   if (pending?.realId) {
     visible = visible.filter(s => s.session_id !== pending.realId);
+  } else if (pending) {
+    // Pre-resolution window: the SessionStart hook on our own `claude -p`
+    // spawn registers an External entry before chat IPC captures the real
+    // session_id. Hide that newcomer row so it doesn't double-render
+    // alongside the pending placeholder. Pre-existing sessions in the same
+    // cwd stay visible.
+    visible = visible.filter(s =>
+      !(String(s.cwd) === pending.projectPath && !pending.preExistingSessionIds.has(s.session_id))
+    );
   }
 
   const filtered = visible.filter(s =>
