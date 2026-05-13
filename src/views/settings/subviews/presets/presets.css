@@ -20,6 +20,8 @@
 .view-settings-presets .preset-row .preset-name,
 .view-settings-presets .preset-row .preset-model,
 .view-settings-presets .preset-row .preset-effort {
+  width: 100%;
+  min-width: 0;
   padding: 6px 8px;
   background: var(--surface-alt);
   color: var(--text);

@@ -140,7 +140,7 @@ export async function renderPresetsView(root: HTMLElement): Promise<() => void> 
         }
         try {
           const cur = await invoke<Record<string, unknown>>("get_settings");
-          await invoke("save_settings", { settings: { ...cur, effortPresets: fresh } });
+          await invoke("save_settings", { updated: { ...cur, effortPresets: fresh } });
           const status = root.querySelector<HTMLElement>("#presetsStatus");
           if (status) {
             status.textContent = "Saved";
