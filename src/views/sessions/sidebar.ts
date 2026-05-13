@@ -12,6 +12,7 @@ import {
   loadStateStyle,
 } from "./sessions-helpers";
 import { state } from "./state";
+import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 
 export function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external");
@@ -80,10 +81,25 @@ export function renderSidebar(listEl: HTMLElement): void {
   const sorted = sortSessions(filtered, sort, unread);
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
+  const isManualSlots = getChatSlotMode() === "manual";
+  const slotBySession: Record<string, number> = {};
+  if (isManualSlots) {
+    for (let slot = 1; slot <= 9; slot++) {
+      const sid = getSlotAssignment(slot);
+      if (sid) slotBySession[sid] = slot;
+    }
+  }
+
   const realRows = sorted.map((s, i) => {
     const isActive = s.session_id === state.selectedId;
     const indicator = statusIndicator(s, unread, style, escapeHtml);
-    const kbdHint = i < 9 ? ` data-kbd-hint="${i + 1}"` : "";
+    let kbdHint = "";
+    if (isManualSlots) {
+      const slot = slotBySession[s.session_id];
+      if (slot) kbdHint = ` data-kbd-hint="${slot}"`;
+    } else {
+      if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
+    }
     return `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""}">
       ${indicator}
       <div class="session-row-text">

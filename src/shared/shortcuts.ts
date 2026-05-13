@@ -70,6 +70,11 @@ const ctrlHeldCallbacks = new Set<(held: boolean) => void>();
 
 // ── Pure helpers (exported for tests) ─────────────────────────────────────
 
+const SHIFT_DIGIT_MAP: Record<string, string> = {
+  "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
+  "^": "6", "&": "7", "*": "8", "(": "9", ")": "0",
+};
+
 export function normalizeEvent(e: {
   ctrlKey: boolean;
   shiftKey: boolean;
@@ -77,8 +82,10 @@ export function normalizeEvent(e: {
   metaKey: boolean;
   key: string;
 }): string {
-  const key = e.key.toLowerCase();
+  let key = e.key.toLowerCase();
   if (key === "control" || key === "shift" || key === "alt" || key === "meta") return "";
+  // Shift+digit produces "!", "@", etc. on standard keyboards - normalize back to the digit.
+  if (e.shiftKey && SHIFT_DIGIT_MAP[e.key]) key = SHIFT_DIGIT_MAP[e.key];
   const parts: string[] = [];
   if (e.ctrlKey || e.metaKey) parts.push("ctrl");
   if (e.shiftKey) parts.push("shift");
