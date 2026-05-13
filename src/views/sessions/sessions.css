@@ -309,6 +309,28 @@
   flex-shrink: 0;
 }
 
+.session-header .auto-accept-btn {
+  position: relative;
+}
+
+.session-header .auto-accept-btn.is-on {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 6px;
+}
+
+.session-header .auto-accept-btn.is-on::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 0 2px var(--surface-alt);
+}
+
 .readonly-banner {
   background: rgba(251, 191, 36, 0.08);
   border-bottom: 1px solid rgba(251, 191, 36, 0.25);
