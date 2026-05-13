@@ -58,6 +58,7 @@ function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
 }
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
+  if (state.selectedId === sessionId) return;
   const myMount = state.mountId;
   setActiveSession(sessionId);
 
