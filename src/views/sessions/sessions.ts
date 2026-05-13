@@ -8,7 +8,7 @@ import "./sessions.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";
-import { startNewSession, launchNewSession, discardDraft } from "./pending-flow";
+import { startNewSession, launchNewSession, discardDraft, resumeDraft } from "./pending-flow";
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession } from "./active-session";
 import { state, resetState, setActiveSession } from "./state";
@@ -197,6 +197,13 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
           })();
         },
       });
+      return;
+    }
+
+    // Draft row click: re-open the pending pane.
+    const draftLi = (e.target as HTMLElement).closest<HTMLLIElement>("li.pending.draft");
+    if (draftLi) {
+      void (async () => { await resumeDraft(pane); updateThinkingBar(); })();
       return;
     }
 

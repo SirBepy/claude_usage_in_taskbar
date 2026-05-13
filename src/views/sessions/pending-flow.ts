@@ -60,6 +60,42 @@ export function discardDraft(pane: HTMLElement): void {
   }
 }
 
+/**
+ * Re-open the current draft pending pane (used when the user has navigated
+ * to another chat and clicks the draft row to come back). Tears down whatever
+ * is currently in the pane and re-renders the pending pane with the original
+ * placeholder + project + config. Textarea content is not preserved.
+ *
+ * No-op if there is no pending session or if the first message has already
+ * been sent (in which case the row is "starting…", not a clickable draft).
+ */
+export async function resumeDraft(pane: HTMLElement): Promise<void> {
+  const pending = state.pendingNewSession;
+  if (!pending || pending.firstMessageSent) return;
+  if (state.selectedId === pending.placeholderId) return;
+
+  state.statusbar?.destroy();
+  state.statusbar = null;
+  state.renderer?.detach();
+  state.renderer = null;
+  state.composer?.destroy();
+  state.composer = null;
+
+  setActiveSession(pending.placeholderId);
+  await renderPendingPane(
+    pane,
+    pending.placeholderId,
+    { path: pending.projectPath, name: pending.projectName },
+    pending.config,
+  );
+
+  const root = document.querySelector<HTMLElement>(".view-sessions");
+  if (root) {
+    const listEl = root.querySelector<HTMLElement>("#sessions-list");
+    if (listEl) renderSidebar(listEl);
+  }
+}
+
 export async function startNewSession(pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;
   const project = await pickProject();
@@ -91,6 +127,7 @@ export async function launchNewSession(
     placeholderId,
     projectPath: project.path,
     projectName: project.name,
+    config,
     realId: null,
     firstMessageSent: false,
     preExistingSessionIds: new Set(state.sessions.map(s => s.session_id)),

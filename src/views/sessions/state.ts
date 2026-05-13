@@ -3,11 +3,15 @@ import type { ChatRenderer } from "../../shared/chat/chat-renderer";
 import type { Composer } from "../../shared/chat/composer";
 import { setSelectedSessionId } from "./permission-modal";
 import type { SessionStatusbar } from "./session-statusbar";
+import type { SessionConfig } from "./model-effort-modal";
 
 export interface PendingNewSession {
   placeholderId: string;
   projectPath: string;
   projectName: string;
+  // Model + effort chosen via openModelEffortModal at launch. Stored so we
+  // can re-render the pending pane on resume after the user navigates away.
+  config: SessionConfig;
   // Once the real session_id is captured from the first SessionStarted event,
   // we record it here so refreshSessions/renderSidebar can suppress the real
   // entry from the registry list (the pending row, now upgraded, represents
