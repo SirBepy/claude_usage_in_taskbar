@@ -2,6 +2,7 @@ node_modules/
 dist/
 target/
 src-tauri/target-tests/
+src-tauri/target-export/
 src-tauri/src-tauri/
 **/gen/schemas/
 *.log
