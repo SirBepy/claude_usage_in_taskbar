@@ -167,7 +167,7 @@ export async function openModelEffortModal(
           ? { ...(cur["projectLastChoice"] as Record<string, unknown>) }
           : {};
         lc[projectPath] = { model, effort };
-        await invoke("save_settings", { settings: { ...cur, projectLastChoice: lc } });
+        await invoke("save_settings", { updated: { ...cur, projectLastChoice: lc } });
       } catch (e) {
         console.error("[model-effort-modal] save_settings failed", e);
       }

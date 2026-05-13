@@ -10,6 +10,8 @@ import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
+import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
+import type { GitInfo } from "../../types/ipc.generated";
 
 /**
  * Generate a placeholder session id used to subscribe `chat:<id>` BEFORE
@@ -43,6 +45,8 @@ export function discardDraft(pane: HTMLElement): void {
   state.pendingNewSession = null;
 
   if (wasOnDraft) {
+    state.statusbar?.destroy();
+    state.statusbar = null;
     if (state.renderer?.currentSessionId() === pending.placeholderId) {
       state.renderer.detach();
       state.renderer = null;
@@ -167,6 +171,7 @@ export async function renderPendingPane(
       <button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>
       <button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>
     </header>
+    <div class="session-statusbar-host"></div>
     <div class="session-messages">
       <div class="session-pending-hint">
         <i class="ph ph-paper-plane-tilt"></i>
@@ -177,11 +182,37 @@ export async function renderPendingPane(
     <div class="session-composer"></div>
   `;
 
+  // Mount the statusbar. While the placeholder is active, effort is readonly
+  // (no real session_id yet for set_session_effort to target). rebindPaneHeader
+  // flips it editable once realId arrives.
+  const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
+  if (sbHost) {
+    const fields = await loadStatuslineFields();
+    const sb = new SessionStatusbar(sbHost, null, fields, {
+      cwd: project.path,
+      effort: config.effort,
+      sessionId: placeholderId,
+      readOnly: true,
+    });
+    state.statusbar = sb;
+    invoke<GitInfo>("get_git_info", { cwd: project.path })
+      .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
+      .catch(() => { /* no git, fields stay hidden */ });
+  }
+
   if (state.renderer) state.renderer.detach();
   const messagesEl = pane.querySelector<HTMLElement>(".session-messages");
   if (messagesEl) {
     const renderer = new ChatRenderer(messagesEl);
     state.renderer = renderer;
+    // Wire meta updates to the statusbar so model/tokens/etc appear once
+    // the first stream-json arrives.
+    const sbForRenderer = state.statusbar;
+    if (sbForRenderer) {
+      renderer.onMetaUpdate = (meta) => {
+        if (state.statusbar === sbForRenderer) sbForRenderer.updateMeta(meta);
+      };
+    }
     // Attach to the placeholder channel BEFORE invoke - this is the whole
     // point: we must not miss the SessionStarted event Rust mirrors on the
     // placeholder channel. Once it arrives, the renderer's handleEvent
@@ -354,6 +385,12 @@ export async function renderPendingPane(
  * container the renderer is bound to.
  */
 function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
+  // Pin the statusbar to the real session_id and unlock effort.
+  if (state.statusbar) {
+    state.statusbar.setSessionId(sessionId);
+    state.statusbar.setReadOnlyEffort(false);
+  }
+
   const header = pane.querySelector<HTMLElement>(".session-header");
   if (!header) return;
   const sess = state.sessions.find((s) => s.session_id === sessionId);

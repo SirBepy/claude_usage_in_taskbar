@@ -16,7 +16,6 @@ export const ALL_STATUSLINE_FIELDS = [
   { key: "context",  label: "Context %" },
   { key: "thinking", label: "Thinking" },
   { key: "duration", label: "Duration" },
-  { key: "cost",     label: "Cost (estimate)" },
 ];
 
 const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -33,7 +32,7 @@ export async function loadStatuslineFields(): Promise<string[]> {
 export async function saveStatuslineFields(fields: string[]): Promise<void> {
   try {
     const s = await invoke<Record<string, unknown>>("get_settings");
-    await invoke("save_settings", { settings: { ...s, statuslineFields: fields } });
+    await invoke("save_settings", { updated: { ...s, statuslineFields: fields } });
   } catch (e) {
     console.error("[statusbar] save fields failed", e);
   }
@@ -110,6 +109,16 @@ export class SessionStatusbar {
     this.render();
   }
 
+  setSessionId(id: string): void {
+    this.sessionId = id;
+  }
+
+  setReadOnlyEffort(readOnly: boolean): void {
+    if (this.readOnlyEffort === readOnly) return;
+    this.readOnlyEffort = readOnly;
+    this.render();
+  }
+
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
   }
@@ -156,9 +165,6 @@ export class SessionStatusbar {
     }
     if (f.includes("duration") && this.startedAt) {
       claudeChips.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${formatDuration(this.startedAt)}</span>`);
-    }
-    if (f.includes("cost") && this.meta.hasUsage) {
-      claudeChips.push(`<span class="sb-chip sb-cost" title="Local API-rate estimate, not an actual charge"><i class="ph ph-coin"></i>$${this.meta.totalCostUsd.toFixed(4)}</span>`);
     }
 
     const sep = gitChips.length > 0 && claudeChips.length > 0
