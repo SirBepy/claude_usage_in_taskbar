@@ -936,12 +936,16 @@
   to { transform: rotate(360deg); }
 }
 
-/* Ctrl-held keyboard hint badges */
+/* Ctrl-held keyboard hint badges — rendered over the more-options button */
+#sessions-list.kbd-hint-active li[data-kbd-hint] .session-row-menu-btn {
+  visibility: hidden;
+}
+
 #sessions-list.kbd-hint-active li[data-kbd-hint]::before {
   content: attr(data-kbd-hint);
   position: absolute;
   top: 50%;
-  left: 4px;
+  right: 4px;
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
