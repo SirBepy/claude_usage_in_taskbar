@@ -141,7 +141,20 @@ export function renderSidebar(listEl: HTMLElement): void {
     }
   }
 
-  listEl.innerHTML = pendingRow + realRows;
+  const parkedRows = state.parkedDrafts.map(d =>
+    `<li class="parked-draft" data-placeholder-id="${escapeHtml(d.placeholderId)}" title="Parked draft — click to resume">
+      <i class="session-state-icon ph ph-note-pencil" title="Parked draft"></i>
+      <div class="session-row-text">
+        <span class="session-row-project">${escapeHtml(d.projectName || "New session")}</span>
+        <span class="session-row-subtitle">Draft New Chat</span>
+      </div>
+      <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-parked="${escapeHtml(d.placeholderId)}">
+        <i class="ph ph-x-circle"></i>
+      </button>
+    </li>`
+  ).join("");
+
+  listEl.innerHTML = pendingRow + parkedRows + realRows;
 }
 
 // ── Per-row 3-dot context menu ───────────────────────────────────────────────

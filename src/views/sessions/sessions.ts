@@ -256,6 +256,35 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   }
 
   listEl.addEventListener("click", (e) => {
+    // Discard parked draft (X on a parked row).
+    const discardParkedBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-parked]");
+    if (discardParkedBtn) {
+      e.stopPropagation();
+      const pid = discardParkedBtn.dataset.discardParked;
+      if (pid) {
+        state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== pid);
+        renderSidebar(listEl);
+      }
+      return;
+    }
+
+    // Click on a parked draft row body: resume it as a new draft.
+    const parkedLi = (e.target as HTMLElement).closest<HTMLLIElement>("li.parked-draft[data-placeholder-id]");
+    if (parkedLi) {
+      const pid = parkedLi.dataset.placeholderId;
+      if (pid) {
+        const draft = state.parkedDrafts.find(d => d.placeholderId === pid);
+        if (draft) {
+          state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== pid);
+          void (async () => {
+            await launchNewSession(pane, { path: draft.projectPath, name: draft.projectName }, draft.config);
+            updateThinkingBar();
+          })();
+        }
+      }
+      return;
+    }
+
     // Discard-draft button intercept (sits on the pending row, no session_id).
     const discardBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-draft]");
     if (discardBtn) {

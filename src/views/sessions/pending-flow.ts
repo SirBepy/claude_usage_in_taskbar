@@ -4,7 +4,7 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
-import { state, setActiveSession, type PendingNewSession } from "./state";
+import { state, setActiveSession, type PendingNewSession, type ParkedDraft } from "./state";
 import { projectName } from "./sessions-helpers";
 import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
@@ -193,14 +193,20 @@ export async function launchNewSession(
   project: { path: string; name: string },
   config: SessionConfig,
 ): Promise<void> {
-  // The user must always be able to start a new chat, even when a previous
-  // pending session is mid-flight or stuck on "starting...". Drop the old
-  // pending state and let the backend `claude -p` keep running; if it ever
-  // emits SessionStarted, the resulting Interactive session will simply
-  // appear as a normal sidebar row. The old start_session callback is
-  // self-guarded below against clobbering whatever pending now occupies
-  // state.pendingNewSession.
+  // If there's an unsent draft, park it as a sidebar row the user can return
+  // to or dismiss manually. If it already sent its first message ("starting...")
+  // just drop the frontend tracking — the backend process keeps running and
+  // will surface as a normal session row once SessionStarted fires.
   if (state.pendingNewSession) {
+    if (!state.pendingNewSession.firstMessageSent) {
+      const parked: ParkedDraft = {
+        placeholderId: state.pendingNewSession.placeholderId,
+        projectPath: state.pendingNewSession.projectPath,
+        projectName: state.pendingNewSession.projectName,
+        config: state.pendingNewSession.config,
+      };
+      state.parkedDrafts = [...state.parkedDrafts, parked];
+    }
     state.pendingNewSession = null;
     clearPendingSession();
   }
