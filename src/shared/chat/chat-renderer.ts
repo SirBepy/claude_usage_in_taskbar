@@ -541,11 +541,12 @@ export class ChatRenderer {
         touched = true;
         break;
       case "turn_usage": {
-        // Total context = input + cache_creation + cache_read.
-        // Claude Code uses prompt caching aggressively, so most context lives
-        // in cache_read_input_tokens, not input_tokens alone. Using only
-        // input_tokens would show ~0% for any session with a warm cache.
-        const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens);
+        // Total context = input + cache_creation + cache_read + output.
+        // Output tokens from this turn enter the conversation history and will
+        // be loaded (as cache_read) in the next turn, so they already consume
+        // context. Including them here matches Claude's own "X% remaining"
+        // warning, which accounts for the full accumulated history.
+        const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens) + Number(ev.output_tokens);
         this.meta.inputTokens = totalCtx;
         this.meta.totalCostUsd += ev.total_cost_usd;
         this.meta.hasUsage = true;
