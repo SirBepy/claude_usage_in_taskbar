@@ -162,7 +162,16 @@
       "Bash(Select-Object -First 3 FullName)",
       "PowerShell(Remove-Item *)",
       "Bash(CARGO_TARGET_DIR=src-tauri/target-export cargo check --manifest-path src-tauri/Cargo.toml)",
-      "Bash(CARGO_TARGET_DIR=src-tauri/target-export cargo test --manifest-path src-tauri/Cargo.toml -p claude-usage-tauri --lib persistence)"
+      "Bash(CARGO_TARGET_DIR=src-tauri/target-export cargo test --manifest-path src-tauri/Cargo.toml -p claude-usage-tauri --lib persistence)",
+      "Skill(local-session-chat)",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Skill(superpowers:using-git-worktrees)",
+      "Bash(echo \"EXIT:$?\")",
+      "Skill(commit)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\tecno\" -Recurse -Filter \"*statusline*\" -ErrorAction SilentlyContinue)",
+      "Bash(Head 20)"
     ]
   }
 }
