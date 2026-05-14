@@ -195,6 +195,10 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
             // streamingIndex pointing at the row across turn boundaries.
             let Some(message) = v.get("message") else { return vec![]; };
             let Some(content_val) = message.get("content") else { return vec![]; };
+            let has_thinking = content_val
+                .as_array()
+                .map(|arr| arr.iter().any(|b| b.get("type").and_then(|t| t.as_str()) == Some("thinking")))
+                .unwrap_or(false);
             let content = extract_content_blocks(content_val);
             let model = message.get("model").and_then(|s| s.as_str()).map(|s| s.to_string());
             let usage = message.get("usage");
@@ -233,7 +237,7 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                     cache_read_input_tokens: cache_read,
                     total_cost_usd: 0.0,
                     duration_ms: 0,
-                    has_thinking: false,
+                    has_thinking,
                     model,
                 });
             }
@@ -443,6 +447,18 @@ mod tests {
         match usage {
             Some(ChatEvent::TurnUsage { has_thinking, .. }) => assert!(has_thinking),
             _ => panic!("expected TurnUsage with has_thinking=true"),
+        }
+    }
+
+    #[test]
+    fn jsonl_assistant_with_thinking_block_sets_has_thinking() {
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"...","signature":"sig"},{"type":"text","text":"answer"}],"stop_reason":"end_turn","model":"claude-opus-4-7","usage":{"input_tokens":100,"output_tokens":20}},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { has_thinking, .. }) => assert!(*has_thinking, "JSONL thinking block must set has_thinking"),
+            _ => panic!("expected TurnUsage"),
         }
     }
 
