@@ -41,6 +41,7 @@ function savePendingSession(pending: PendingNewSession): void {
       realId: pending.realId,
       firstMessageSent: pending.firstMessageSent,
       preExistingSessionIds: Array.from(pending.preExistingSessionIds),
+      firstMessageSentAt: pending.firstMessageSentAt,
     };
     localStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(serialized));
   } catch {
@@ -61,6 +62,7 @@ function loadPendingSession(): PendingNewSession | null {
       realId: obj.realId,
       firstMessageSent: obj.firstMessageSent,
       preExistingSessionIds: new Set(obj.preExistingSessionIds),
+      firstMessageSentAt: obj.firstMessageSentAt ?? null,
     };
   } catch {
     return null;
@@ -75,11 +77,31 @@ function clearPendingSession(): void {
   }
 }
 
+// If a restored pending entry has been "starting..." for longer than this,
+// the previous app instance died before SessionStarted arrived (the Rust
+// runner is per-turn and does NOT survive a process restart). Drop it so
+// the user doesn't see a phantom spinner row that nothing in this process
+// will ever resolve.
+const STUCK_PENDING_TIMEOUT_MS = 90_000;
+
 export function loadAndRestorePendingSession(): void {
   const pending = loadPendingSession();
-  if (pending) {
-    state.pendingNewSession = pending;
+  if (!pending) return;
+  if (
+    pending.firstMessageSent &&
+    !pending.realId &&
+    pending.firstMessageSentAt !== null &&
+    Date.now() - pending.firstMessageSentAt > STUCK_PENDING_TIMEOUT_MS
+  ) {
+    clearPendingSession();
+    return;
   }
+  // Backfill timestamp for entries persisted by older app builds so they
+  // also benefit from the auto-discard on the next restart.
+  if (pending.firstMessageSent && pending.firstMessageSentAt === null) {
+    pending.firstMessageSentAt = Date.now();
+  }
+  state.pendingNewSession = pending;
 }
 
 /**
@@ -191,6 +213,7 @@ export async function launchNewSession(
     realId: null,
     firstMessageSent: false,
     preExistingSessionIds: new Set(state.sessions.map(s => s.session_id)),
+    firstMessageSentAt: null,
   };
   savePendingSession(state.pendingNewSession);
   setActiveSession(placeholderId);
@@ -344,7 +367,11 @@ export async function renderPendingPane(
 
         if (!started) {
           started = true;
-          if (state.pendingNewSession) state.pendingNewSession.firstMessageSent = true;
+          if (state.pendingNewSession) {
+            state.pendingNewSession.firstMessageSent = true;
+            state.pendingNewSession.firstMessageSentAt = Date.now();
+            savePendingSession(state.pendingNewSession);
+          }
           // Re-render the sidebar so the draft row swaps to the spinner row.
           const rootEarly = document.querySelector<HTMLElement>(".view-sessions");
           if (rootEarly) {

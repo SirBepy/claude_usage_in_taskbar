@@ -110,6 +110,21 @@ export function assignCurrentToSlot(slot: number): void {
   showToast(`Slot ${slot} → ${label}`);
 }
 
+function discardStuckPending(pane: HTMLElement): void {
+  const pending = state.pendingNewSession;
+  if (!pending) return;
+  if (!confirm("Discard this stuck session attempt?")) return;
+  void (async () => {
+    const target = pending.realId ?? pending.placeholderId;
+    try { await invoke<void>("cancel_turn", { sessionId: target }); } catch { /* best-effort */ }
+    if (pending.realId) {
+      try { await invoke<void>("clear_session", { sessionId: pending.realId }); } catch { /* best-effort */ }
+    }
+    discardDraft(pane);
+    updateThinkingBar();
+  })();
+}
+
 export function closeFocusedChat(): void {
   const id = state.selectedId;
   if (!id) return;
@@ -241,6 +256,17 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       return;
     }
 
+    // Discard-stuck button: visible on the "starting..." pending row so the
+    // user can bail out when start_session never completes (typically after
+    // the app crashed mid-spawn and the pending state was restored from
+    // localStorage on the next launch).
+    const stuckBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-stuck]");
+    if (stuckBtn) {
+      e.stopPropagation();
+      discardStuckPending(pane);
+      return;
+    }
+
     // 3-dot menu button intercept
     const menuBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".session-row-menu-btn");
     if (menuBtn) {
@@ -270,9 +296,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     if (startingLi && startingLi.dataset.pending === "1") {
       const pending = state.pendingNewSession;
       if (pending && pending.firstMessageSent && !pending.realId) {
-        if (!confirm("Session is still starting. Discard this attempt and try again?")) return;
-        discardDraft(pane);
-        updateThinkingBar();
+        discardStuckPending(pane);
       }
       return;
     }

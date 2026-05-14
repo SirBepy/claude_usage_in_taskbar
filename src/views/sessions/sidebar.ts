@@ -128,12 +128,15 @@ export function renderSidebar(listEl: HTMLElement): void {
         </button>
       </li>`;
     } else {
-      pendingRow = `<li class="${activeCls} pending" data-pending="1" title="Starting new session...">
+      pendingRow = `<li class="${activeCls} pending" data-pending="1" title="Starting new session... click X to discard if stuck">
         <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
         <div class="session-row-text">
           <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
           <span class="session-row-subtitle">starting...</span>
         </div>
+        <button class="session-row-menu-btn icon-btn" title="Discard stuck session" data-discard-stuck="1">
+          <i class="ph ph-x-circle"></i>
+        </button>
       </li>`;
     }
   }

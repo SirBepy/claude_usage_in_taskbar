@@ -28,6 +28,10 @@ export interface PendingNewSession {
   // IPC captures the real session_id). Pre-existing rows in the same cwd
   // stay visible.
   preExistingSessionIds: Set<string>;
+  // Wall-clock ms when firstMessageSent flipped to true. Used at restore
+  // time to auto-discard pending entries whose start_session RPC died with
+  // the previous app instance (firstMessageSent && !realId && stale).
+  firstMessageSentAt: number | null;
 }
 
 export interface SessionsState {
