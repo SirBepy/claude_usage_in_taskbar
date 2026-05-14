@@ -30,6 +30,9 @@ const THINKING_VERBS = [
   "Thinking", "Brainstorming", "Analyzing", "Pondering", "Computing",
   "Reflecting", "Synthesizing", "Reasoning", "Considering", "Processing",
   "Deliberating", "Formulating", "Examining", "Theorizing", "Musing",
+  "Investigating", "Planning", "Exploring", "Crafting", "Evaluating",
+  "Generating", "Contemplating", "Inferring", "Calculating", "Researching",
+  "Strategizing", "Conceptualizing", "Working", "Iterating", "Revising",
 ];
 let _verbIdx = 0;
 let _verbTimer: number | null = null;
@@ -37,13 +40,19 @@ let _verbTimer: number | null = null;
 function isCurrentSessionBusy(): boolean {
   const pending = state.pendingNewSession;
   if (pending) {
+    // selectedId stays as placeholderId for the whole turn; only applies to
+    // the pane that's actually showing the pending session.
+    if (state.selectedId !== pending.placeholderId) {
+      // User switched to a different session — check that session instead.
+      return !!(state.sessions.find(s => s.session_id === state.selectedId)?.busy);
+    }
     if (pending.realId) {
       return !!(state.sessions.find(s => s.session_id === pending.realId)?.busy);
     }
     // First message not yet sent = draft, no work in flight.
     if (!pending.firstMessageSent) return false;
     // First message sent, awaiting realId: show busy if placeholder active.
-    return state.selectedId === pending.placeholderId;
+    return true;
   }
   return !!(state.sessions.find(s => s.session_id === state.selectedId)?.busy);
 }
@@ -63,7 +72,7 @@ export function updateThinkingBar(): void {
         _verbIdx++;
       };
       tick();
-      _verbTimer = window.setInterval(tick, 1800);
+      _verbTimer = window.setInterval(tick, 3500);
     }
   } else {
     bar.setAttribute("hidden", "");
