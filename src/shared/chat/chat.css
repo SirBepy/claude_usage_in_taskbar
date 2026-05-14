@@ -266,6 +266,14 @@
   max-width: 320px;
   max-height: 320px;
   background: var(--surface-alt);
+  cursor: pointer;
+  border-radius: 6px;
+  margin-top: 6px;
+  transition: opacity 0.12s;
+}
+
+.block.image.attachment-img:hover {
+  opacity: 0.88;
 }
 
 .block.image.attachment-img.missing {

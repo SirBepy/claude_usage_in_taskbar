@@ -31,19 +31,30 @@ async function hydrateAttachments(el: HTMLElement): Promise<void> {
     const name = chip.dataset.filename ?? path.split(/[\\/]/).pop() ?? "file";
     try {
       const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
-      chipData.set(chip, data);
-      chip.classList.remove("loading");
+      if (!document.contains(chip)) continue;
       if (data.mime.startsWith("image/")) {
-        chip.classList.add("previewable");
-        chip.innerHTML = `<img class="chip-thumb" src="data:${escapeHtml(data.mime)};base64,${escapeHtml(data.base64)}" alt="${escapeHtml(name)}"><span class="chip-name">${escapeHtml(name)}</span>`;
-      } else if (data.mime === "application/pdf") {
-        chip.classList.add("previewable");
-        chip.innerHTML = `<i class="ph ph-file-pdf"></i><span class="chip-name">${escapeHtml(name)}</span>`;
-      } else if (data.mime.startsWith("text/") || data.mime === "application/json") {
-        chip.classList.add("previewable");
-        chip.innerHTML = `<i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+        const img = document.createElement("img");
+        img.className = "block image attachment-img";
+        img.src = `data:${escapeHtml(data.mime)};base64,${escapeHtml(data.base64)}`;
+        img.alt = name;
+        img.title = "Click to enlarge";
+        const { mime, base64 } = data;
+        img.addEventListener("click", () => {
+          openLightbox({ type: "image", mime, base64, filename: name });
+        });
+        chip.replaceWith(img);
       } else {
-        chip.innerHTML = `<i class="ph ph-file"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+        chipData.set(chip, data);
+        chip.classList.remove("loading");
+        if (data.mime === "application/pdf") {
+          chip.classList.add("previewable");
+          chip.innerHTML = `<i class="ph ph-file-pdf"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+        } else if (data.mime.startsWith("text/") || data.mime === "application/json") {
+          chip.classList.add("previewable");
+          chip.innerHTML = `<i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+        } else {
+          chip.innerHTML = `<i class="ph ph-file"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+        }
       }
     } catch {
       chip.innerHTML = `<i class="ph ph-warning"></i><span class="chip-name">${escapeHtml(name)}</span>`;

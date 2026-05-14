@@ -210,23 +210,32 @@ export class Composer {
   private onDragOver = (e: DragEvent): void => {
     if (!e.dataTransfer?.types.includes("Files")) return;
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = "copy";
     this.root.classList.add("drag-over");
   };
 
   private onDragLeave = (e: DragEvent): void => {
+    e.stopPropagation();
     if (e.relatedTarget && this.root.contains(e.relatedTarget as Node)) return;
     this.root.classList.remove("drag-over");
   };
 
   private onDrop = async (e: DragEvent): Promise<void> => {
     e.preventDefault();
+    e.stopPropagation();
     this.root.classList.remove("drag-over");
     if (!e.dataTransfer?.files.length) return;
     for (const file of Array.from(e.dataTransfer.files)) {
       await this.attachBlob(file, file.name);
     }
   };
+
+  async dropFiles(files: Iterable<File>): Promise<void> {
+    for (const file of files) {
+      await this.attachBlob(file, file.name);
+    }
+  }
 
   private renderAttachments(): void {
     if (!this.attachmentsEl) return;

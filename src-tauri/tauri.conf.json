@@ -21,7 +21,8 @@
         "minWidth": 360,
         "resizable": true,
         "visible": false,
-        "decorations": true
+        "decorations": true,
+        "drag-drop-enabled": false
       }
     ],
     "security": {

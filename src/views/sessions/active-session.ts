@@ -28,6 +28,7 @@ function isCloseCommand(blocks: ContentBlock[]): boolean {
 }
 
 let _externalWatchedId: string | null = null;
+let _paneDropCleanup: (() => void) | null = null;
 
 export function unwatchCurrentExternalSession(): void {
   if (_externalWatchedId) {
@@ -68,6 +69,8 @@ function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   if (state.selectedId === sessionId) return;
+  _paneDropCleanup?.();
+  _paneDropCleanup = null;
   // Unwatch any previous external session if we're switching to a different one.
   if (_externalWatchedId && _externalWatchedId !== sessionId) {
     void invoke<void>("unwatch_session_transcript", { sessionId: _externalWatchedId }).catch(() => {});
@@ -214,6 +217,35 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       },
     });
     state.composer.setSessionId(sessionId, { readOnly });
+
+    const onPaneDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      pane.classList.add("drag-over");
+    };
+    const onPaneDragLeave = (e: DragEvent) => {
+      if (e.relatedTarget && pane.contains(e.relatedTarget as Node)) return;
+      pane.classList.remove("drag-over");
+    };
+    const onPaneDrop = async (e: Event) => {
+      e.preventDefault();
+      pane.classList.remove("drag-over");
+      const drag = e as DragEvent;
+      if (!drag.dataTransfer?.files.length) return;
+      const composer = state.composer;
+      if (!composer) return;
+      await composer.dropFiles(Array.from(drag.dataTransfer.files));
+    };
+    pane.addEventListener("dragover", onPaneDragOver);
+    pane.addEventListener("dragleave", onPaneDragLeave);
+    pane.addEventListener("drop", onPaneDrop);
+    _paneDropCleanup = () => {
+      pane.removeEventListener("dragover", onPaneDragOver);
+      pane.removeEventListener("dragleave", onPaneDragLeave);
+      pane.removeEventListener("drop", onPaneDrop);
+      pane.classList.remove("drag-over");
+    };
   }
 
   // Wire header buttons
