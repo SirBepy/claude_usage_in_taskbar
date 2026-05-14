@@ -36,4 +36,11 @@ describe("renderBlocks — file token handling", () => {
     expect(html).not.toContain("attachment-chip");
     expect(html).toContain("just regular text");
   });
+
+  it("handles Windows absolute paths with drive letter colon", () => {
+    const html = renderBlocks([{ type: "text", text: "<file:C:\\Users\\data\\uuid.pdf::report.pdf>" }]);
+    expect(html).toContain("attachment-chip");
+    expect(html).toContain('data-attachment-path="C:\\Users\\data\\uuid.pdf"');
+    expect(html).toContain("report.pdf");
+  });
 });

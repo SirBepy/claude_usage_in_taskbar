@@ -11,7 +11,7 @@ const md = new MarkdownIt({
 
 // Matches <file:PATH> or <file:PATH::DISPLAYNAME> tokens in user message text.
 // Group 1 = path, group 2 = display name (optional).
-const FILE_TOKEN_RE = /<file:([^>:]+)(?:::([^>]*))?>/g;
+const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 
 function renderTextBlock(text: string): string {
   FILE_TOKEN_RE.lastIndex = 0;
