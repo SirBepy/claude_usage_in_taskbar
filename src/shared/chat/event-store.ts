@@ -204,6 +204,11 @@ class SessionEventStore {
     entry.unlisten = await ev.listen<ChatEvent>(`chat:${sessionId}`, (e) => {
       const cur = this.cache.get(sessionId);
       if (!cur) return;
+      // claude -p --resume replays the full conversation history including past
+      // user messages. Those arrive here as live events and would duplicate what
+      // pushSynthetic already added (current turn) or loadInitial loads from
+      // JSONL (history). Drop all user_message events from the live stream.
+      if (e.payload.type === "user_message") return;
       cur.events.push(e.payload);
       cur.subscribers.forEach((fn) => {
         try { fn(e.payload); } catch { /* ignore */ }
