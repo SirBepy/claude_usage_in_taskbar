@@ -324,7 +324,33 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     if (id) void (async () => { await selectSession(id, pane); updateThinkingBar(); })();
   });
 
+  const onViewDragOver = (e: DragEvent) => {
+    if (!e.dataTransfer?.types.includes("Files")) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    view.classList.add("drag-over");
+  };
+  const onViewDragLeave = (e: DragEvent) => {
+    if (e.relatedTarget && view.contains(e.relatedTarget as Node)) return;
+    view.classList.remove("drag-over");
+  };
+  const onViewDrop = async (e: Event) => {
+    e.preventDefault();
+    view.classList.remove("drag-over");
+    const drag = e as DragEvent;
+    if (!drag.dataTransfer?.files.length) return;
+    if (!state.composer) return;
+    await state.composer.dropFiles(Array.from(drag.dataTransfer.files));
+  };
+  view.addEventListener("dragover", onViewDragOver);
+  view.addEventListener("dragleave", onViewDragLeave);
+  view.addEventListener("drop", onViewDrop);
+
   return () => {
+    view.removeEventListener("dragover", onViewDragOver);
+    view.removeEventListener("dragleave", onViewDragLeave);
+    view.removeEventListener("drop", onViewDrop);
+    view.classList.remove("drag-over");
     for (let i = 1; i <= 9; i++) {
       shortcuts.unregister(`open-chat-${i}`);
       shortcuts.unregister(`assign-slot-${i}`);
