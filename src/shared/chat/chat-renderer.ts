@@ -33,16 +33,18 @@ async function hydrateAttachments(el: HTMLElement): Promise<void> {
       const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
       if (!document.contains(chip)) continue;
       if (data.mime.startsWith("image/")) {
+        const thumb = document.createElement("div");
+        thumb.className = "sent-attachment-thumb";
         const img = document.createElement("img");
-        img.className = "block image attachment-img";
         img.src = `data:${escapeHtml(data.mime)};base64,${escapeHtml(data.base64)}`;
         img.alt = name;
         img.title = "Click to enlarge";
+        thumb.appendChild(img);
         const { mime, base64 } = data;
-        img.addEventListener("click", () => {
+        thumb.addEventListener("click", () => {
           openLightbox({ type: "image", mime, base64, filename: name });
         });
-        chip.replaceWith(img);
+        chip.replaceWith(thumb);
       } else {
         chipData.set(chip, data);
         chip.classList.remove("loading");

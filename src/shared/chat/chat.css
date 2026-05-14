@@ -284,6 +284,38 @@
   padding: 8px;
 }
 
+/* Sent-message attachment thumbnails (same look as composer preview, no X) */
+
+.sent-attachment-thumb {
+  display: inline-block;
+  position: relative;
+  width: 80px;
+  height: 80px;
+  cursor: pointer;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 2px 2px 0 0;
+  vertical-align: top;
+  flex-shrink: 0;
+}
+
+.sent-attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.sent-attachment-thumb:hover img {
+  border-color: var(--primary);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
 /* Composer */
 
 .composer-attachments {
