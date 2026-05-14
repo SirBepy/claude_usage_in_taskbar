@@ -225,6 +225,7 @@ export class Composer {
     e.preventDefault();
     e.stopPropagation();
     this.root.classList.remove("drag-over");
+    this.root.closest(".view-sessions")?.classList.remove("drag-over");
     if (!e.dataTransfer?.files.length) return;
     for (const file of Array.from(e.dataTransfer.files)) {
       await this.attachBlob(file, file.name);
