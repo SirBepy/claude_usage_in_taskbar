@@ -178,11 +178,6 @@ export async function resumeDraft(pane: HTMLElement): Promise<void> {
 }
 
 export async function startNewSession(pane: HTMLElement): Promise<void> {
-  // If a draft exists (user hasn't sent yet), just bring it into view.
-  if (state.pendingNewSession && !state.pendingNewSession.firstMessageSent) {
-    await resumeDraft(pane);
-    return;
-  }
   const myMount = state.mountId;
   const project = await pickProject();
   if (!project) return;
@@ -198,13 +193,14 @@ export async function launchNewSession(
   project: { path: string; name: string },
   config: SessionConfig,
 ): Promise<void> {
-  // If the previous pending has already submitted its first message (i.e. it's
-  // "starting..." with a backend process in flight), drop the frontend tracking
-  // here. The backend `claude -p` keeps running and will appear as a normal
-  // sidebar row when SessionStarted fires. If it's still just a draft (nothing
-  // sent), keep it - startNewSession redirects there instead, and launchNewSession
-  // is only called directly from the context menu with an explicit project choice.
-  if (state.pendingNewSession?.firstMessageSent) {
+  // The user must always be able to start a new chat, even when a previous
+  // pending session is mid-flight or stuck on "starting...". Drop the old
+  // pending state and let the backend `claude -p` keep running; if it ever
+  // emits SessionStarted, the resulting Interactive session will simply
+  // appear as a normal sidebar row. The old start_session callback is
+  // self-guarded below against clobbering whatever pending now occupies
+  // state.pendingNewSession.
+  if (state.pendingNewSession) {
     state.pendingNewSession = null;
     clearPendingSession();
   }
