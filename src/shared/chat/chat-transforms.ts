@@ -9,6 +9,39 @@ const md = new MarkdownIt({
   typographer: false,
 });
 
+// Matches <file:PATH> or <file:PATH::DISPLAYNAME> tokens in user message text.
+// Group 1 = path, group 2 = display name (optional).
+const FILE_TOKEN_RE = /<file:([^>:]+)(?:::([^>]*))?>/g;
+
+function renderTextBlock(text: string): string {
+  FILE_TOKEN_RE.lastIndex = 0;
+  if (!FILE_TOKEN_RE.test(text)) {
+    FILE_TOKEN_RE.lastIndex = 0;
+    return `<div class="block text">${renderMarkdown(text)}</div>`;
+  }
+  FILE_TOKEN_RE.lastIndex = 0;
+  const parts: string[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = FILE_TOKEN_RE.exec(text)) !== null) {
+    if (match.index > last) {
+      const seg = text.slice(last, match.index).trim();
+      if (seg) parts.push(`<div class="block text">${renderMarkdown(seg)}</div>`);
+    }
+    const path = match[1] ?? "";
+    const name = match[2] ?? path.split(/[\\/]/).pop() ?? path;
+    parts.push(attachmentChipHtml(path, name));
+    last = match.index + match[0].length;
+  }
+  const tail = text.slice(last).trim();
+  if (tail) parts.push(`<div class="block text">${renderMarkdown(tail)}</div>`);
+  return parts.join("");
+}
+
+function attachmentChipHtml(path: string, name: string): string {
+  return `<div class="attachment-chip" data-attachment-path="${escapeHtml(path)}" data-filename="${escapeHtml(name)}"><i class="ph ph-file"></i><span class="chip-name">${escapeHtml(name)}</span></div>`;
+}
+
 export interface RenderedMessage {
   kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification";
   content?: ContentBlock[];
@@ -28,7 +61,7 @@ export function renderBlocks(blocks: ContentBlock[]): string {
     .map((b) => {
       switch (b.type) {
         case "text":
-          return `<div class="block text">${renderMarkdown(b.text)}</div>`;
+          return renderTextBlock(b.text);
         case "image":
           return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
         default:
