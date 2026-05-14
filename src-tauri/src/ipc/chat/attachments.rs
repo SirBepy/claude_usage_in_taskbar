@@ -47,6 +47,11 @@ pub(crate) fn write_attachment(
         "image/webp" => "webp",
         "image/bmp" => "bmp",
         "image/svg+xml" => "svg",
+        "application/pdf" => "pdf",
+        "text/plain" => "txt",
+        "text/markdown" => "md",
+        "text/csv" => "csv",
+        "application/json" | "text/json" => "json",
         _ => "bin",
     };
     let filename = format!("{}.{}", uuid::Uuid::new_v4(), ext);
@@ -60,6 +65,19 @@ pub(crate) fn write_attachment(
 /// claude reads it via its Read tool.
 #[tauri::command]
 pub async fn paste_image(
+    session_id: String,
+    base64_data: String,
+    mime: String,
+) -> Result<String, String> {
+    let root = crate::settings::paths::data_dir().map_err(|e| e.to_string())?;
+    let path = write_attachment(&root, &session_id, &base64_data, &mime)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Same as `paste_image` but accepts any MIME type, not just images.
+/// The composer uses this for drag-dropped files.
+#[tauri::command]
+pub async fn paste_attachment(
     session_id: String,
     base64_data: String,
     mime: String,
@@ -100,6 +118,9 @@ pub async fn read_attachment(path: String) -> Result<AttachmentData, String> {
         Some("webp") => "image/webp",
         Some("bmp") => "image/bmp",
         Some("svg") => "image/svg+xml",
+        Some("pdf") => "application/pdf",
+        Some("txt") | Some("md") | Some("csv") => "text/plain",
+        Some("json") => "application/json",
         _ => "application/octet-stream",
     }
     .to_string();
@@ -167,6 +188,22 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let bad = write_attachment(tmp.path(), "sess", "!!!not-base64!!!", "image/png");
         assert!(bad.is_err());
+    }
+
+    #[test]
+    fn write_attachment_handles_non_image_mimes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let b64 = "aGVsbG8="; // "hello"
+        let pdf = write_attachment(tmp.path(), "s1", b64, "application/pdf").unwrap();
+        assert_eq!(pdf.extension().and_then(|e| e.to_str()), Some("pdf"));
+        let txt = write_attachment(tmp.path(), "s1", b64, "text/plain").unwrap();
+        assert_eq!(txt.extension().and_then(|e| e.to_str()), Some("txt"));
+        let md = write_attachment(tmp.path(), "s1", b64, "text/markdown").unwrap();
+        assert_eq!(md.extension().and_then(|e| e.to_str()), Some("md"));
+        let json = write_attachment(tmp.path(), "s1", b64, "application/json").unwrap();
+        assert_eq!(json.extension().and_then(|e| e.to_str()), Some("json"));
+        let csv = write_attachment(tmp.path(), "s1", b64, "text/csv").unwrap();
+        assert_eq!(csv.extension().and_then(|e| e.to_str()), Some("csv"));
     }
 
     #[test]

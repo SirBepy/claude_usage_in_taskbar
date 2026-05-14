@@ -27,6 +27,15 @@ function isCloseCommand(blocks: ContentBlock[]): boolean {
   return b.text.trim() === "/close";
 }
 
+let _externalWatchedId: string | null = null;
+
+export function unwatchCurrentExternalSession(): void {
+  if (_externalWatchedId) {
+    void invoke<void>("unwatch_session_transcript", { sessionId: _externalWatchedId }).catch(() => {});
+    _externalWatchedId = null;
+  }
+}
+
 function dismountActivePane(): void {
   state.statusbar?.destroy();
   state.statusbar = null;
@@ -59,6 +68,11 @@ function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   if (state.selectedId === sessionId) return;
+  // Unwatch any previous external session if we're switching to a different one.
+  if (_externalWatchedId && _externalWatchedId !== sessionId) {
+    void invoke<void>("unwatch_session_transcript", { sessionId: _externalWatchedId }).catch(() => {});
+    _externalWatchedId = null;
+  }
   const myMount = state.mountId;
   setActiveSession(sessionId);
 
@@ -248,8 +262,15 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     });
   }
   if (readOnly) {
+    // Start real-time file watcher: new JSONL lines emit chat:<id> events
+    // which the renderer's existing subscriber picks up automatically.
+    _externalWatchedId = sessionId;
+    void invoke<void>("watch_session_transcript", { sessionId, cwd: sess.cwd ?? null }).catch(() => {});
+
     pane.querySelector<HTMLButtonElement>(".refresh-btn")?.addEventListener("click", async () => {
       sessionEvents.bust(sessionId);
+      // Clear selectedId so selectSession doesn't bail on the equality check.
+      setActiveSession(null);
       await selectSession(sessionId, pane);
     });
     pane.querySelector<HTMLButtonElement>(".takeover-btn")?.addEventListener("click", async () => {

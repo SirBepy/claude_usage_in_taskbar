@@ -11,7 +11,7 @@ import "./project-picker.css";
 import "./model-effort-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { openModelEffortModal } from "./model-effort-modal";
-import { selectSession } from "./active-session";
+import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
@@ -326,6 +326,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
  */
 function teardownState(): void {
   if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
+  unwatchCurrentExternalSession();
   _pane = null;
   if (state.unlistenInstances) {
     try { state.unlistenInstances(); } catch { /* ignore */ }
