@@ -602,6 +602,12 @@
 
 .composer-attachments .attachment img {
   cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.composer-attachments .attachment img:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px var(--primary), 0 4px 14px rgba(0, 0, 0, 0.28);
 }
 
 /* Drag-over state */
