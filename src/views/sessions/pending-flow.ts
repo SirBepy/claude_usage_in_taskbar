@@ -193,13 +193,14 @@ export async function launchNewSession(
   project: { path: string; name: string },
   config: SessionConfig,
 ): Promise<void> {
+  // The user must always be able to start a new chat, even when a previous
+  // pending session is mid-flight or stuck on "starting...". Drop the old
+  // pending state and let the backend `claude -p` keep running; if it ever
+  // emits SessionStarted, the resulting Interactive session will simply
+  // appear as a normal sidebar row. The old start_session callback is
+  // self-guarded below against clobbering whatever pending now occupies
+  // state.pendingNewSession.
   if (state.pendingNewSession) {
-    if (state.pendingNewSession.realId !== null) {
-      // A turn is already in flight - cannot interrupt.
-      alert("Another new session is still starting; please wait for it to finish.");
-      return;
-    }
-    // No message sent yet - abandon the empty pending session silently.
     state.pendingNewSession = null;
     clearPendingSession();
   }
@@ -317,7 +318,10 @@ export async function renderPendingPane(
         unsubPlaceholderWatch = null;
       }
       if (state.mountId !== myMount) return;
-      if (state.pendingNewSession) {
+      // Only mutate pending state if it still belongs to OUR placeholder. If
+      // the user has since started another new chat, state.pendingNewSession
+      // points at a different draft now and must not be touched.
+      if (state.pendingNewSession?.placeholderId === placeholderId) {
         state.pendingNewSession.realId = realId;
         savePendingSession(state.pendingNewSession);
       }
@@ -395,8 +399,12 @@ export async function renderPendingPane(
               }
               if (isStillActive && state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
               if (isStillActive) setActiveSession(sessionId);
-              state.pendingNewSession = null;
-              clearPendingSession();
+              // Same guard as the SessionStarted subscriber: don't clobber a
+              // newer pending the user has since started.
+              if (state.pendingNewSession?.placeholderId === placeholderId) {
+                state.pendingNewSession = null;
+                clearPendingSession();
+              }
               await refreshSessions();
               if (state.mountId !== myMount) return;
               const root2 = document.querySelector<HTMLElement>(".view-sessions");

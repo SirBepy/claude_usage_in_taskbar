@@ -291,12 +291,20 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       return;
     }
 
-    // Starting pending row click: offer to discard stuck session.
+    // Starting pending row click. Two cases:
+    //   - realId already known (SessionStarted fired): navigate to the real
+    //     session so the user can see what's going on. The pending row stays
+    //     visible until start_session resolves; click on the X button (handled
+    //     above via [data-discard-stuck]) is still the only way to abort.
+    //   - realId not yet known: leave the click as a no-op. The X button on
+    //     the row handles discard; clicking the row body shouldn't trigger a
+    //     destructive confirm dialog.
     const startingLi = (e.target as HTMLElement).closest<HTMLLIElement>("li.pending:not(.draft)");
     if (startingLi && startingLi.dataset.pending === "1") {
       const pending = state.pendingNewSession;
-      if (pending && pending.firstMessageSent && !pending.realId) {
-        discardStuckPending(pane);
+      const realId = pending?.realId;
+      if (realId) {
+        void (async () => { await selectSession(realId, pane); updateThinkingBar(); })();
       }
       return;
     }
