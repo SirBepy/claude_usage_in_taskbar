@@ -180,24 +180,6 @@ export function openCtxMenu(
   });
   menu.appendChild(newItem);
 
-  // "Close chat" — interactive only. Plain close; if busy, confirm-and-cancel first.
-  if (sess.kind === "interactive") {
-    const closeItem = document.createElement("button");
-    closeItem.className = "session-ctx-item";
-    closeItem.innerHTML = '<i class="ph ph-x-circle"></i> Close chat';
-    closeItem.addEventListener("click", async () => {
-      closeCtxMenu();
-      if (sess.busy) {
-        if (!confirm("A turn is in progress. Close and discard it?")) return;
-        try { await invoke<void>("cancel_turn", { sessionId }); } catch {}
-      }
-      try { await invoke<void>("clear_session", { sessionId }); } catch (err) {
-        console.error("[sessions] close chat failed", err);
-      }
-    });
-    menu.appendChild(closeItem);
-  }
-
   // "Open in VS Code"
   const codeItem = document.createElement("button");
   codeItem.className = "session-ctx-item";
@@ -222,6 +204,24 @@ export function openCtxMenu(
       void navigator.clipboard.writeText(String(sess.pid));
     });
     menu.appendChild(pidItem);
+  }
+
+  // "Close" — interactive only
+  if (sess.kind === "interactive") {
+    const closeItem = document.createElement("button");
+    closeItem.className = "session-ctx-item";
+    closeItem.innerHTML = '<i class="ph ph-x"></i> Close';
+    closeItem.addEventListener("click", async () => {
+      closeCtxMenu();
+      if (sess.busy) {
+        if (!confirm("A turn is in progress. Close and discard it?")) return;
+        try { await invoke<void>("cancel_turn", { sessionId }); } catch {}
+      }
+      try { await invoke<void>("clear_session", { sessionId }); } catch (err) {
+        console.error("[sessions] close chat failed", err);
+      }
+    });
+    menu.appendChild(closeItem);
   }
 
   document.body.appendChild(menu);
