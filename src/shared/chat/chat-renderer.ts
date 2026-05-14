@@ -15,6 +15,52 @@ import { sessionEvents } from "./event-store";
 import { showView } from "../navigation";
 import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
+import { invoke } from "../ipc";
+import { escapeHtml } from "../escape-html";
+import { openLightbox, type LightboxContent } from "./lightbox";
+
+// WeakMap so GC can collect chips when their container is removed.
+const chipData = new WeakMap<HTMLElement, { mime: string; base64: string }>();
+
+async function hydrateAttachments(el: HTMLElement): Promise<void> {
+  const chips = Array.from(el.querySelectorAll<HTMLElement>(".attachment-chip[data-attachment-path]"));
+  for (const chip of chips) {
+    const path = chip.dataset.attachmentPath;
+    if (!path) continue;
+    const name = chip.dataset.filename ?? path.split(/[\\/]/).pop() ?? "file";
+    try {
+      const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
+      chipData.set(chip, data);
+      chip.classList.remove("loading");
+      if (data.mime.startsWith("image/")) {
+        chip.classList.add("previewable");
+        chip.innerHTML = `<img class="chip-thumb" src="data:${escapeHtml(data.mime)};base64,${escapeHtml(data.base64)}" alt="${escapeHtml(name)}"><span class="chip-name">${escapeHtml(name)}</span>`;
+      } else if (data.mime === "application/pdf") {
+        chip.classList.add("previewable");
+        chip.innerHTML = `<i class="ph ph-file-pdf"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+      } else if (data.mime.startsWith("text/") || data.mime === "application/json") {
+        chip.classList.add("previewable");
+        chip.innerHTML = `<i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+      } else {
+        chip.innerHTML = `<i class="ph ph-file"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+      }
+    } catch {
+      chip.innerHTML = `<i class="ph ph-warning"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+    }
+  }
+}
+
+function chipToLightboxContent(chip: HTMLElement): LightboxContent | null {
+  const data = chipData.get(chip);
+  if (!data) return null;
+  const name = chip.dataset.filename;
+  if (data.mime.startsWith("image/")) return { type: "image", mime: data.mime, base64: data.base64, filename: name };
+  if (data.mime === "application/pdf") return { type: "pdf", base64: data.base64, filename: name };
+  if (data.mime.startsWith("text/") || data.mime === "application/json") {
+    try { return { type: "text", content: atob(data.base64), filename: name }; } catch { return null; }
+  }
+  return null;
+}
 
 export interface SessionMeta {
   model: string | null;
@@ -73,6 +119,7 @@ export class ChatRenderer {
     this.container = container;
     this.container.addEventListener("click", this.handleCopyClick);
     this.container.addEventListener("click", this.handleSlashClick);
+    this.container.addEventListener("click", this.handleAttachmentClick);
   }
 
   private handleSlashClick = (e: MouseEvent): void => {
@@ -87,6 +134,13 @@ export class ChatRenderer {
     e.preventDefault();
     (window as unknown as { skillDetailTarget?: string }).skillDetailTarget = target;
     showView("skill-detail");
+  };
+
+  private handleAttachmentClick = (e: MouseEvent): void => {
+    const chip = (e.target as Element).closest<HTMLElement>(".attachment-chip.previewable");
+    if (!chip) return;
+    const content = chipToLightboxContent(chip);
+    if (content) openLightbox(content);
   };
 
   /**
@@ -638,7 +692,11 @@ export class ChatRenderer {
   private buildMessageEl(m: RenderedMessage): HTMLElement {
     const wrap = document.createElement("div");
     wrap.innerHTML = renderMessage(m);
-    return wrap.firstElementChild as HTMLElement;
+    const el = wrap.firstElementChild as HTMLElement;
+    if (el.querySelector(".attachment-chip[data-attachment-path]")) {
+      void hydrateAttachments(el);
+    }
+    return el;
   }
 
   private handleCopyClick = (e: MouseEvent): void => {
