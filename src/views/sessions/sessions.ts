@@ -265,6 +265,18 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       return;
     }
 
+    // Starting pending row click: offer to discard stuck session.
+    const startingLi = (e.target as HTMLElement).closest<HTMLLIElement>("li.pending:not(.draft)");
+    if (startingLi && startingLi.dataset.pending === "1") {
+      const pending = state.pendingNewSession;
+      if (pending && pending.firstMessageSent && !pending.realId) {
+        if (!confirm("Session is still starting. Discard this attempt and try again?")) return;
+        discardDraft(pane);
+        updateThinkingBar();
+      }
+      return;
+    }
+
     const li = (e.target as HTMLElement).closest<HTMLLIElement>("li[data-session-id]");
     if (!li) return;
     const id = li.dataset.sessionId;
