@@ -116,9 +116,19 @@ pub async fn fetch_summary(article_url: &str) -> Result<Option<String>> {
     Ok(parse_summary(&body))
 }
 
+/// Site-wide boilerplate that anthropic.com injects as `<meta name="description">`
+/// on every page regardless of article content.
+const GENERIC_SUMMARY_PREFIXES: &[&str] = &[
+    "Anthropic is an AI safety and research company",
+];
+
+pub fn is_generic_summary(s: &str) -> bool {
+    GENERIC_SUMMARY_PREFIXES.iter().any(|p| s.starts_with(p))
+}
+
 /// Pulls Anthropic's own one-sentence TLDR from `<meta name="description">`.
-/// Falls back to og:description, then twitter:description (all three are
-/// always identical on anthropic.com today, but cheap to be robust).
+/// Falls back to og:description, then twitter:description. Returns None for
+/// known site-wide boilerplate descriptions that aren't article-specific.
 pub fn parse_summary(html: &str) -> Option<String> {
     let doc = Html::parse_document(html);
     let candidates = [
@@ -130,7 +140,7 @@ pub fn parse_summary(html: &str) -> Option<String> {
         let Ok(sel) = Selector::parse(q) else { continue };
         if let Some(content) = doc.select(&sel).next().and_then(|m| m.value().attr("content")) {
             let trimmed = content.trim();
-            if !trimmed.is_empty() {
+            if !trimmed.is_empty() && !is_generic_summary(trimmed) {
                 return Some(trimmed.to_string());
             }
         }
@@ -225,6 +235,21 @@ mod tests {
     fn summary_returns_none_when_no_meta_description() {
         let html = r#"<html><head><title>x</title></head></html>"#;
         assert_eq!(parse_summary(html), None);
+    }
+
+    #[test]
+    fn summary_filters_anthropic_site_wide_boilerplate() {
+        let html = r#"<html><head>
+            <meta name="description" content="Anthropic is an AI safety and research company working on AI systems that are safe, beneficial, and understandable.">
+        </head></html>"#;
+        assert_eq!(parse_summary(html), None, "boilerplate must return None");
+    }
+
+    #[test]
+    fn is_generic_summary_matches_prefix_only() {
+        assert!(is_generic_summary("Anthropic is an AI safety and research company that does stuff"));
+        assert!(!is_generic_summary("Claude Opus 4.7 brings improved reasoning."));
+        assert!(!is_generic_summary(""));
     }
 
     #[test]

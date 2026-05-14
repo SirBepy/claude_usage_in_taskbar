@@ -29,11 +29,11 @@ pub async fn poll_once(app: &AppHandle) -> anyhow::Result<()> {
     let scraped = news::fetch_index().await?;
     let new_slugs = news::store::merge_scraped(&mut store, scraped);
 
-    // Fetch the article-page summary for any post that doesn't have one yet.
-    // This covers brand-new slugs and back-fills posts that were stored under
-    // an older build that didn't capture summaries.
+    // Fetch the article-page summary for posts that either have no summary yet
+    // or have a cached generic site-wide description (one-time cleanup).
     let needs_summary: Vec<(String, String)> = store.posts.iter()
-        .filter(|p| p.summary.is_none())
+        .filter(|p| p.summary.is_none()
+            || p.summary.as_deref().is_some_and(news::scraper::is_generic_summary))
         .map(|p| (p.slug.clone(), p.url.clone()))
         .collect();
     for (slug, url) in needs_summary {
