@@ -12,6 +12,7 @@ import {
   saveUnreadSet,
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
+import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import {
   addBackgroundSession,
@@ -120,9 +121,18 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
     const fields = await loadStatuslineFields();
+    let effortDisplay = sess.effort ?? "";
+    if (!effortDisplay && sess.kind === "external" && sess.cwd) {
+      try {
+        const settings = await invoke<Record<string, unknown>>("get_settings");
+        const last = readLastChoice(settings, String(sess.cwd));
+        const normal = readPresets(settings).find((p) => p.name === "Normal");
+        effortDisplay = last?.effort ?? normal?.effort ?? "";
+      } catch { /* leave blank */ }
+    }
     const sb = new SessionStatusbar(sbHost, sess.started_at, fields, {
       cwd: sess.cwd ? String(sess.cwd) : null,
-      effort: sess.effort ?? "",
+      effort: effortDisplay,
       sessionId: sess.session_id,
       readOnly: sess.kind === "external",
     });
