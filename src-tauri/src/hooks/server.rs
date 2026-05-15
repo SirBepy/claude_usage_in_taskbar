@@ -290,15 +290,22 @@ async fn on_session_end(
     );
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let state = ctx.app.state::<AppState>();
-    // Skip Interactive sessions (Path C). Each `claude -p` turn fires
+    // Skip busy Interactive sessions (Path C). Each `claude -p` turn fires
     // SessionStart on spawn and SessionEnd on exit; treating that as the
     // session lifecycle would mark our Interactive entry ended after the
-    // first turn, dropping it from the live sidebar. Interactive lifecycle
-    // is owned by the chat IPC layer (start_session / cancel_turn /
-    // app-quit cleanup).
-    let kind = state.instances.get(&payload.session_id).map(|i| i.kind);
-    if kind == Some(crate::sessions::kinds::InstanceKind::Interactive) {
-        log::debug!("ignoring SessionEnd for Interactive session {}", payload.session_id);
+    // first turn, dropping it from the live sidebar.
+    //
+    // `busy` distinguishes the two cases: Path C sets busy=true before the
+    // child process starts (and `SessionEnd` fires while the process is still
+    // alive, before our `set_busy(false)` call). Terminal continuations of an
+    // Interactive session (e.g. `claude --resume` in a separate shell followed
+    // by `/close`) never set busy on our side, so busy=false. Marking those
+    // ended is correct: the terminal session is over and the pane should clear.
+    let inst = state.instances.get(&payload.session_id);
+    let is_interactive = inst.as_ref().map(|i| i.kind) == Some(crate::sessions::kinds::InstanceKind::Interactive);
+    let is_busy = inst.map(|i| i.busy).unwrap_or(false);
+    if is_interactive && is_busy {
+        log::debug!("ignoring SessionEnd for busy Interactive session {}", payload.session_id);
         return StatusCode::NO_CONTENT;
     }
     if state.instances.mark_ended(&payload.session_id, crate::types::EndReason::HookSessionEnd, &now) {

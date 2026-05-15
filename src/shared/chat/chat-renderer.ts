@@ -13,7 +13,7 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { showView } from "../navigation";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage, isCompactUserMessage } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
 import { openLightbox } from "./lightbox";
 import { hydrateAttachments, chipToLightboxContent } from "./attachment-hydrator";
@@ -391,6 +391,14 @@ export class ChatRenderer {
       case "user_message": {
         // Close any in-flight Claude turn before showing the new user message.
         this.enqueueTurnClose();
+        // /compact injects the summary back as a user message — show a system
+        // notice instead so the multi-KB summary doesn't appear as a chat bubble.
+        if (isCompactUserMessage(ev.content)) {
+          this.messages.push({ kind: "system", text: "Conversation compacted", ts });
+          this.activeTurnStart = this.messages.length;
+          touched = true;
+          break;
+        }
         // Strip Claude Code slash-command wrapper tags (`<command-name>`,
         // `<command-message>`, `<command-args>`, `<local-command-stdout>`)
         // from user text so the chat doesn't show internal markup. Drop the

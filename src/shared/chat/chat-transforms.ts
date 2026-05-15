@@ -100,6 +100,16 @@ function renderMarkdown(text: string): string {
 // content the user wants to see in the chat.
 const COMMAND_TAG_RE = /<\/?(?:command-name|command-message|command-args|local-command-stdout)(?:\s[^>]*)?>/gi;
 
+// When /compact runs, Claude Code injects the generated summary back into the
+// conversation as a user message with this wrapper. The summary can be thousands
+// of characters; rendering it as a normal user bubble is confusing and noisy.
+// Detect the wrapper and replace with a compact system notice instead.
+const COMPACT_COMMAND_RE = /<command-name>compact<\/command-name>/i;
+
+export function isCompactUserMessage(blocks: ContentBlock[]): boolean {
+  return blocks.some(b => b.type === "text" && COMPACT_COMMAND_RE.test(b.text));
+}
+
 // When the user invokes a skill, Claude Code appends the entire SKILL.md
 // body to the same user message AFTER `</command-args>`, followed by an
 // `ARGUMENTS: ...` line repeating what the user typed. Strip from the
@@ -157,6 +167,9 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
     case "session_started":
       return { kind: "system", text: `Session started${ev.model ? ` (${ev.model})` : ""}`, ts };
     case "user_message": {
+      if (isCompactUserMessage(ev.content)) {
+        return { kind: "system", text: "Conversation compacted", ts };
+      }
       const cleaned = cleanUserBlocks(ev.content);
       if (cleaned.length === 0) return null;
       return { kind: "user", content: cleaned, ts };
