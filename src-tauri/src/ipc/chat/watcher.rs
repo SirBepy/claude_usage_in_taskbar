@@ -125,7 +125,7 @@ pub async fn watch_session_transcript(
 
             offset = new_offset;
             for ev in new_events {
-                let _ = app.emit(&format!("chat:{sid}"), ev);
+                let _ = app.emit(&format!("chat-watch:{sid}"), ev);
             }
         }
     });

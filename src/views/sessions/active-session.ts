@@ -29,12 +29,13 @@ function isCloseCommand(blocks: ContentBlock[]): boolean {
   return b.text.trim() === "/close";
 }
 
-let _externalWatchedId: string | null = null;
+let _watchedId: string | null = null;
 
 export function unwatchCurrentExternalSession(): void {
-  if (_externalWatchedId) {
-    void invoke<void>("unwatch_session_transcript", { sessionId: _externalWatchedId }).catch(() => {});
-    _externalWatchedId = null;
+  if (_watchedId) {
+    void invoke<void>("unwatch_session_transcript", { sessionId: _watchedId }).catch(() => {});
+    sessionEvents.stopWatchListener(_watchedId);
+    _watchedId = null;
   }
 }
 
@@ -72,10 +73,11 @@ function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   if (state.selectedId === sessionId) return;
-  // Unwatch any previous external session if we're switching to a different one.
-  if (_externalWatchedId && _externalWatchedId !== sessionId) {
-    void invoke<void>("unwatch_session_transcript", { sessionId: _externalWatchedId }).catch(() => {});
-    _externalWatchedId = null;
+  // Unwatch any previously watched session if we're switching to a different one.
+  if (_watchedId && _watchedId !== sessionId) {
+    void invoke<void>("unwatch_session_transcript", { sessionId: _watchedId }).catch(() => {});
+    sessionEvents.stopWatchListener(_watchedId);
+    _watchedId = null;
   }
   const myMount = state.mountId;
   setActiveSession(sessionId);
@@ -269,12 +271,16 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       void closeChat(sessionId);
     });
   }
-  if (readOnly) {
-    // Start real-time file watcher: new JSONL lines emit chat:<id> events
-    // which the renderer's existing subscriber picks up automatically.
-    _externalWatchedId = sessionId;
-    void invoke<void>("watch_session_transcript", { sessionId, cwd: sess.cwd ?? null }).catch(() => {});
+  // Start real-time file watcher for all sessions. External sessions get new
+  // messages this way; Interactive sessions also need it so that turns
+  // continued in a terminal appear in the UI. Watcher emits chat-watch:<id>
+  // events; the store's ensureWatchListener deduplicates against runner events.
+  _watchedId = sessionId;
+  void invoke<void>("watch_session_transcript", { sessionId, cwd: sess.cwd ?? null })
+    .then(() => sessionEvents.ensureWatchListener(sessionId))
+    .catch(() => {});
 
+  if (readOnly) {
     pane.querySelector<HTMLButtonElement>(".refresh-btn")?.addEventListener("click", async () => {
       sessionEvents.bust(sessionId);
       // Clear selectedId so selectSession doesn't bail on the equality check.

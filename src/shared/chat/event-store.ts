@@ -31,6 +31,7 @@ interface CacheEntry {
   loadingOlder: boolean;
   initialLoaded: boolean;
   unlisten: Unlisten | null;
+  unlistenWatch: Unlisten | null;
   subscribers: Set<EventListener>;
 }
 
@@ -192,6 +193,7 @@ class SessionEventStore {
       loadingOlder: false,
       initialLoaded: false,
       unlisten: null,
+      unlistenWatch: null,
       subscribers: new Set(),
     };
   }
@@ -214,6 +216,41 @@ class SessionEventStore {
         try { fn(e.payload); } catch { /* ignore */ }
       });
     });
+  }
+
+  // Subscribes to chat-watch:<id> events emitted by the JSONL file watcher.
+  // Unlike the runner channel, user_messages are allowed through (they come
+  // from terminal input, not from claude -p re-emission). Events are
+  // deduplicated against the existing cache by timestamp+type to prevent
+  // doubling events the runner already pushed for app-driven turns.
+  async ensureWatchListener(sessionId: string): Promise<void> {
+    const entry = this.cache.get(sessionId);
+    if (!entry || entry.unlistenWatch) return;
+    const ev = window.__TAURI__?.event;
+    if (!ev?.listen) return;
+    entry.unlistenWatch = await ev.listen<ChatEvent>(`chat-watch:${sessionId}`, (e) => {
+      const cur = this.cache.get(sessionId);
+      if (!cur) return;
+      const payload = e.payload;
+      const ts = (payload as { timestamp?: bigint }).timestamp;
+      if (ts !== undefined) {
+        const already = cur.events.some(
+          (ex) => (ex as { timestamp?: bigint }).timestamp === ts && ex.type === payload.type
+        );
+        if (already) return;
+      }
+      cur.events.push(payload);
+      cur.subscribers.forEach((fn) => {
+        try { fn(payload); } catch { /* ignore */ }
+      });
+    });
+  }
+
+  stopWatchListener(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (!entry?.unlistenWatch) return;
+    try { entry.unlistenWatch(); } catch { /* ignore */ }
+    entry.unlistenWatch = null;
   }
 }
 
