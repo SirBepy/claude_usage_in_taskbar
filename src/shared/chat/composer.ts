@@ -108,6 +108,11 @@ export class Composer {
       const prevStored = loadDraft(prevId);
       if (prevStored && !loadDraft(id)) saveDraft(id, prevStored);
       clearDraft(prevId);
+      const prevAttMeta = loadAttachmentsMeta(prevId);
+      if (prevAttMeta.length && loadAttachmentsMeta(id).length === 0) {
+        saveAttachmentsMeta(id, prevAttMeta);
+      }
+      clearAttachmentsMeta(prevId);
     }
     this.sessionId = id;
     this.disabled = !!opts.readOnly;
@@ -119,6 +124,46 @@ export class Composer {
       this.autoResize();
       if (stored && !inMemoryDraft) saveDraft(id, stored);
     }
+    // Refresh DOM so any in-memory attachments are visible in the rebuilt
+    // .composer-attachments host, then async-rehydrate any persisted metas
+    // from disk.
+    this.renderAttachments();
+    void this.restoreAttachments(id);
+  }
+
+  private async restoreAttachments(sid: string): Promise<void> {
+    const metas = loadAttachmentsMeta(sid);
+    if (metas.length === 0) return;
+    const existingPaths = new Set(this.attachments.map(a => a.path).filter(Boolean));
+    const restored: Attachment[] = [];
+    for (const m of metas) {
+      if (existingPaths.has(m.path)) continue;
+      try {
+        const r = await invoke<{ mime: string; base64: string }>("read_attachment", { path: m.path });
+        restored.push({ mime: m.mime || r.mime, data: r.base64, path: m.path, filename: m.filename });
+      } catch {
+        // Backing file gone (GC'd or deleted). Drop silently.
+      }
+    }
+    if (this.sessionId !== sid) return;
+    if (restored.length === 0) {
+      // All metas turned out to be dead; clean the LS entry.
+      const stillHave = this.attachments.some(a => a.path && metas.find(m => m.path === a.path));
+      if (!stillHave) clearAttachmentsMeta(sid);
+      return;
+    }
+    this.attachments = [...this.attachments, ...restored];
+    this.renderAttachments();
+    this.persistAttachments();
+  }
+
+  private persistAttachments(): void {
+    if (!this.sessionId) return;
+    const metas = this.attachments
+      .filter((a): a is Attachment & { path: string } => typeof a.path === "string" && a.path.length > 0)
+      .map(a => ({ path: a.path, mime: a.mime, filename: a.filename }));
+    if (metas.length) saveAttachmentsMeta(this.sessionId, metas);
+    else clearAttachmentsMeta(this.sessionId);
   }
 
   private render(): void {
@@ -206,6 +251,7 @@ export class Composer {
     }
     this.attachments.push({ mime: blob.type || "application/octet-stream", data, path, filename });
     this.renderAttachments();
+    this.persistAttachments();
   }
 
   private onDragOver = (e: DragEvent): void => {
@@ -270,6 +316,7 @@ export class Composer {
         e.stopPropagation();
         this.attachments.splice(i, 1);
         this.renderAttachments();
+        this.persistAttachments();
       });
       div.appendChild(rm);
       this.attachmentsEl!.appendChild(div);
@@ -310,6 +357,7 @@ export class Composer {
       this.attachments = [];
       this.renderAttachments();
       this.persistDraft();
+      this.persistAttachments();
       this.sending = false;
       return;
     }
@@ -332,6 +380,7 @@ export class Composer {
     this.attachments = [];
     this.renderAttachments();
     this.persistDraft();
+    this.persistAttachments();
 
     try {
       await this.opts.onSend(blocks);
@@ -384,6 +433,7 @@ function clearDraft(sessionId: string): void {
  *  up draft localStorage for a session id whose composer is gone. */
 export function discardComposerDraft(sessionId: string): void {
   clearDraft(sessionId);
+  clearAttachmentsMeta(sessionId);
 }
 
 /** Move a stored draft from one session id to another. Used when a parked
@@ -392,6 +442,51 @@ export function moveComposerDraft(fromId: string, toId: string): void {
   const text = loadDraft(fromId);
   if (text) saveDraft(toId, text);
   clearDraft(fromId);
+  const metas = loadAttachmentsMeta(fromId);
+  if (metas.length) saveAttachmentsMeta(toId, metas);
+  clearAttachmentsMeta(fromId);
+}
+
+// ── Attachment metadata persistence ────────────────────────────────────────
+//
+// Only paths + mime + filename are stored, not the base64 bytes - those are
+// re-read from disk via the `read_attachment` IPC on restore. Keeps LS small
+// and avoids hitting the 5-10MB quota when a draft has several screenshots.
+const ATT_PREFIX = "chat-att:v1:";
+interface AttachmentMeta { path: string; mime: string; filename: string; }
+
+function attKey(sessionId: string): string {
+  return ATT_PREFIX + sessionId;
+}
+
+function loadAttachmentsMeta(sessionId: string): AttachmentMeta[] {
+  try {
+    const raw = localStorage.getItem(attKey(sessionId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((m): m is AttachmentMeta =>
+      m && typeof m.path === "string" && typeof m.mime === "string" && typeof m.filename === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveAttachmentsMeta(sessionId: string, metas: AttachmentMeta[]): void {
+  try {
+    localStorage.setItem(attKey(sessionId), JSON.stringify(metas));
+  } catch {
+    /* quota or storage disabled - lose the meta, don't crash */
+  }
+}
+
+function clearAttachmentsMeta(sessionId: string): void {
+  try {
+    localStorage.removeItem(attKey(sessionId));
+  } catch {
+    /* ignore */
+  }
 }
 
 
