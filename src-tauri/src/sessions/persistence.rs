@@ -113,7 +113,12 @@ pub fn populate_registry(registry: &Registry, sessions: Vec<PersistedInteractive
         if !s.model.is_empty() || !s.effort.is_empty() {
             registry.set_model_effort(&s.session_id, &s.model, &s.effort);
         }
-        if let Some(name) = s.name {
+        let resolved_name = s.name.or_else(|| {
+            crate::tokens::transcript_for_session(&s.cwd, &s.session_id)
+                .as_deref()
+                .and_then(|p| crate::tokens::first_user_prompt(p, 60))
+        });
+        if let Some(name) = resolved_name {
             registry.set_name(&s.session_id, name);
         }
         added += 1;

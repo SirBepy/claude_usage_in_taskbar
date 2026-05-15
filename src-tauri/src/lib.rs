@@ -505,6 +505,7 @@ fn rehydrate_persisted_interactive_sessions(app: &tauri::AppHandle) {
     }
     let added = crate::sessions::persistence::populate_registry(&state.instances, sessions);
     if added > 0 {
+        crate::sessions::persistence::save_snapshot_default(&state.instances);
         let _ = app.emit("instances-changed", state.instances.list());
         log::info!("rehydrated {added} Interactive session(s) from snapshot");
     }
