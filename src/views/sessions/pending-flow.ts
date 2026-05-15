@@ -31,29 +31,16 @@ export function makePlaceholderId(): string {
 }
 
 
-// If a restored pending entry has been "starting..." for longer than this,
-// the previous app instance died before SessionStarted arrived (the Rust
-// runner is per-turn and does NOT survive a process restart). Drop it so
-// the user doesn't see a phantom spinner row that nothing in this process
-// will ever resolve.
-const STUCK_PENDING_TIMEOUT_MS = 90_000;
-
 export function loadAndRestorePendingSession(): void {
   const pending = loadPendingSession();
   if (!pending) return;
-  if (
-    pending.firstMessageSent &&
-    !pending.realId &&
-    pending.firstMessageSentAt !== null &&
-    Date.now() - pending.firstMessageSentAt > STUCK_PENDING_TIMEOUT_MS
-  ) {
+  // If the first message was already sent, the IPC promise that would have
+  // resolved the session_id and called clearPendingSession is dead (page
+  // reloaded). Clear it so the real session surfaces from the registry
+  // instead of being hidden by the sidebar's cwd-suppression filter.
+  if (pending.firstMessageSent) {
     clearPendingSession();
     return;
-  }
-  // Backfill timestamp for entries persisted by older app builds so they
-  // also benefit from the auto-discard on the next restart.
-  if (pending.firstMessageSent && pending.firstMessageSentAt === null) {
-    pending.firstMessageSentAt = Date.now();
   }
   state.pendingNewSession = pending;
 }
