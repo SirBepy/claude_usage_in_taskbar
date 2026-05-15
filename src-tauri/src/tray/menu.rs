@@ -10,7 +10,7 @@ use anyhow::Result;
 use chrono::Utc;
 use std::time::{Duration, Instant};
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use tauri::{AppHandle, Listener, Manager};
 
@@ -66,6 +66,10 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                     tauri::async_runtime::spawn(async move {
                         let _ = crate::ipc::download_and_install_update(h).await;
                     });
+                }
+                id if id.starts_with("bulk-effort-") => {
+                    let effort = id.trim_start_matches("bulk-effort-").to_string();
+                    bulk_apply_effort(app.clone(), effort);
                 }
                 _ => {}
             }
@@ -256,11 +260,45 @@ fn build_menu(app: &AppHandle, mute_all: bool, update: &serde_json::Value) -> Re
         _ => {}
     }
 
+    let bulk_effort = SubmenuBuilder::new(app, "Set all sessions to...")
+        .item(&MenuItemBuilder::with_id("bulk-effort-low", "Low").build(app)?)
+        .item(&MenuItemBuilder::with_id("bulk-effort-medium", "Medium").build(app)?)
+        .item(&MenuItemBuilder::with_id("bulk-effort-high", "High").build(app)?)
+        .item(&MenuItemBuilder::with_id("bulk-effort-xhigh", "Xhigh").build(app)?)
+        .item(&MenuItemBuilder::with_id("bulk-effort-max", "Max").build(app)?)
+        .build()?;
+
     let menu = builder
+        .separator()
+        .item(&bulk_effort)
         .separator()
         .item(&MenuItemBuilder::with_id("quit", "Quit").build(app)?)
         .build()?;
     Ok(menu)
+}
+
+fn bulk_apply_effort(app: AppHandle, effort: String) {
+    use crate::sessions::kinds::InstanceKind;
+    use tauri::Emitter;
+    let valid = ["low", "medium", "high", "xhigh", "max"];
+    if !valid.contains(&effort.as_str()) {
+        log::warn!("bulk-effort: ignoring invalid effort {effort}");
+        return;
+    }
+    let state = app.state::<AppState>();
+    let mut changed = 0usize;
+    for inst in state.instances.list() {
+        if matches!(inst.kind, InstanceKind::Interactive) && inst.ended_at.is_none() {
+            if state.instances.set_effort(&inst.session_id, &effort) {
+                changed += 1;
+            }
+        }
+    }
+    if changed > 0 {
+        crate::sessions::persistence::save_snapshot_default(&state.instances);
+        let _ = app.emit("instances-changed", ());
+        log::info!("bulk-effort: set {changed} Interactive session(s) to {effort}");
+    }
 }
 
 fn toggle_mute_all(app: AppHandle) {
