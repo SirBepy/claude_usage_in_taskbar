@@ -2,7 +2,7 @@ import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
-import { Composer } from "../../shared/chat/composer";
+import { Composer, discardComposerDraft } from "../../shared/chat/composer";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { state, setActiveSession, type ParkedDraft } from "./state";
 import { projectName } from "./sessions-helpers";
@@ -74,6 +74,7 @@ export function discardDraft(pane: HTMLElement): void {
   const wasOnDraft = state.selectedId === pending.placeholderId;
   state.pendingNewSession = null;
   clearPendingSession();
+  discardComposerDraft(pending.placeholderId);
 
   if (wasOnDraft) {
     state.statusbar?.destroy();

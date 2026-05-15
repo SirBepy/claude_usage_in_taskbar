@@ -10,6 +10,7 @@ import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
+import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
@@ -263,6 +264,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       const pid = discardParkedBtn.dataset.discardParked;
       if (pid) {
         state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== pid);
+        discardComposerDraft(pid);
         renderSidebar(listEl);
       }
       return;
@@ -275,9 +277,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       if (pid) {
         const draft = state.parkedDrafts.find(d => d.placeholderId === pid);
         if (draft) {
+          const oldPid = draft.placeholderId;
           state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== pid);
           void (async () => {
             await launchNewSession(pane, { path: draft.projectPath, name: draft.projectName }, draft.config);
+            const newPid = state.pendingNewSession?.placeholderId;
+            if (newPid && newPid !== oldPid) {
+              moveComposerDraft(oldPid, newPid);
+              state.composer?.setSessionId(newPid, { readOnly: false });
+            }
             updateThinkingBar();
           })();
         }

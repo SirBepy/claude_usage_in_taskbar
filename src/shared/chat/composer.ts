@@ -380,6 +380,20 @@ function clearDraft(sessionId: string): void {
   }
 }
 
+/** External callers (sidebar park/discard, pending-flow discard) can clean
+ *  up draft localStorage for a session id whose composer is gone. */
+export function discardComposerDraft(sessionId: string): void {
+  clearDraft(sessionId);
+}
+
+/** Move a stored draft from one session id to another. Used when a parked
+ *  draft is resumed under a fresh placeholderId so the user keeps their text. */
+export function moveComposerDraft(fromId: string, toId: string): void {
+  const text = loadDraft(fromId);
+  if (text) saveDraft(toId, text);
+  clearDraft(fromId);
+}
+
 
 
 function openPreviewIfSupported(a: Attachment): void {
