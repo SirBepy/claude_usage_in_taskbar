@@ -131,10 +131,12 @@ async fn run_session_turn(
     let effort_for_closure = effort.clone();
     let model_for_registry = model.clone();
     let effort_for_registry = effort.clone();
+    let tracking_id_for_closure = placeholder_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         run_turn(
             &cwd_path,
             initial_id.as_deref(),
+            &tracking_id_for_closure,
             &prompt,
             &model_for_closure,
             &effort_for_closure,

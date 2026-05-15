@@ -498,7 +498,7 @@ export function removeBackgroundSession(id: string): void {
 }
 
 function isForSelectedSession(eventSessionId: string | undefined): boolean {
-  if (!eventSessionId) return true;
+  if (!eventSessionId) return false;
   if (_selectedSessionId === eventSessionId) return true;
   return _backgroundSessionIds.has(eventSessionId);
 }

@@ -65,6 +65,7 @@ pub fn check_metered_billing(env_get: &dyn Fn(&str) -> Option<String>) -> Result
 pub fn run_turn<F>(
     cwd: &PathBuf,
     session_id: Option<&str>,
+    tracking_id: &str,
     prompt: &str,
     model: &str,
     effort: &str,
@@ -82,7 +83,7 @@ where
     // Write a per-turn .mcp.json so claude can find our permission-prompt MCP server.
     // The guard removes the file on drop regardless of how run_turn exits.
     let turn_id = uuid::Uuid::new_v4().to_string();
-    let mcp_json_path = write_mcp_config(&turn_id, session_id);
+    let mcp_json_path = write_mcp_config(&turn_id, tracking_id);
     struct McpConfigGuard(Option<PathBuf>);
     impl Drop for McpConfigGuard {
         fn drop(&mut self) {
@@ -189,16 +190,15 @@ where
 /// Write a temporary .mcp.json file for the current turn and return its path.
 /// Returns None if the app-data dir is unavailable (non-fatal; permission
 /// relay simply won't be wired up for this turn).
-fn write_mcp_config(turn_id: &str, session_id: Option<&str>) -> Option<PathBuf> {
+fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
     let mcp_dir = crate::settings::paths::mcp_temp_dir().ok()?;
     let exe = std::env::current_exe().ok()?;
-    let sid = session_id.unwrap_or("").to_string();
     let config = serde_json::json!({
         "mcpServers": {
             "cc_companion": {
                 "command": exe.to_string_lossy(),
                 "args": ["--mcp-permission"],
-                "env": {"CC_SESSION_ID": sid}
+                "env": {"CC_SESSION_ID": tracking_id}
             }
         }
     });
