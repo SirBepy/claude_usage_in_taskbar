@@ -176,13 +176,34 @@ function renderQuestionUI(opts: QuestionUIOpts): void {
   const { questions } = opts;
 
   const selections = new Map<number, Selection>();
+  const freeText = new Map<number, string>();
   questions.forEach((q, i) => {
     if (q.multiSelect) selections.set(i, new Set<string>());
   });
 
+  // Lift the bottom of the messages list above the card so the latest
+  // message stays visible, and remember scroll state so we can restore it
+  // when the card dismisses.
+  const messagesEl = document.querySelector<HTMLElement>(".session-messages");
+  const savedScrollTop = messagesEl?.scrollTop ?? 0;
+  const savedPaddingBottom = messagesEl?.style.paddingBottom ?? "";
+  let resizeObs: ResizeObserver | null = null;
+  const syncMessagesPadding = (): void => {
+    if (!messagesEl) return;
+    const card = host.querySelector<HTMLElement>(".prompt-card");
+    if (!card) return;
+    messagesEl.style.paddingBottom = `${card.offsetHeight + 12}px`;
+    messagesEl.scrollTop = messagesEl.scrollHeight - messagesEl.clientHeight;
+  };
+
   const teardown = () => {
     clearHost();
     document.removeEventListener("keydown", escHandler);
+    if (resizeObs) { try { resizeObs.disconnect(); } catch { /* ignore */ } resizeObs = null; }
+    if (messagesEl) {
+      messagesEl.style.paddingBottom = savedPaddingBottom;
+      messagesEl.scrollTop = savedScrollTop;
+    }
   };
 
   const escHandler = (e: KeyboardEvent) => {
@@ -196,9 +217,14 @@ function renderQuestionUI(opts: QuestionUIOpts): void {
   const submit = () => {
     const answers: Answers = {};
     questions.forEach((q, i) => {
+      const typed = (freeText.get(i) ?? "").trim();
       const s = selections.get(i);
       if (q.multiSelect) {
-        answers[q.question] = Array.from((s as Set<string> | undefined) ?? []);
+        const set = Array.from((s as Set<string> | undefined) ?? []);
+        if (typed) set.push(typed);
+        answers[q.question] = set;
+      } else if (typed) {
+        answers[q.question] = typed;
       } else if (typeof s === "string") {
         answers[q.question] = s;
       }
@@ -215,6 +241,7 @@ function renderQuestionUI(opts: QuestionUIOpts): void {
   const isQuestionAnswered = (qi: number): boolean => {
     const q = questions[qi];
     if (!q?.options?.length) return true;
+    if ((freeText.get(qi) ?? "").trim()) return true;
     const s = selections.get(qi);
     if (q.multiSelect) return s instanceof Set && s.size > 0;
     return typeof s === "string";
@@ -274,12 +301,17 @@ function renderQuestionUI(opts: QuestionUIOpts): void {
       `;
     }).join("");
 
+    const typedValue = freeText.get(activeTab) ?? "";
     const body = `
       ${tabsHtml}
       <div class="prompt-q" role="tabpanel">
         <div class="prompt-q__head">${qHeaderTag}${modeHtml}</div>
         <div class="prompt-q__text">${escapeHtml(q?.question ?? "")}</div>
         <div class="prompt-q__opts">${rows}</div>
+        <label class="prompt-q__other">
+          <span class="prompt-q__other-label">Or write something:</span>
+          <textarea class="prompt-q__other-input" rows="1" placeholder="Type your own answer...">${escapeHtml(typedValue)}</textarea>
+        </label>
       </div>
     `;
 
@@ -330,10 +362,49 @@ function renderQuestionUI(opts: QuestionUIOpts): void {
       });
     });
 
+    const otherEl = host.querySelector<HTMLTextAreaElement>(".prompt-q__other-input");
+    if (otherEl) {
+      const autoSize = () => {
+        otherEl.style.height = "auto";
+        otherEl.style.height = `${Math.min(otherEl.scrollHeight, 160)}px`;
+      };
+      autoSize();
+      otherEl.addEventListener("input", () => {
+        freeText.set(activeTab, otherEl.value);
+        autoSize();
+        const allAnsweredNow = questions.every((_, i) => isQuestionAnswered(i));
+        const submitBtn = host.querySelector<HTMLButtonElement>('[data-act="submit"]');
+        if (submitBtn) submitBtn.disabled = !allAnsweredNow;
+        const tabBtn = host.querySelector<HTMLElement>(`.prompt-tab[data-tab="${activeTab}"]`);
+        if (tabBtn) {
+          tabBtn.classList.toggle("is-answered", isQuestionAnswered(activeTab));
+          const dotIcon = tabBtn.querySelector("i");
+          if (dotIcon) dotIcon.className = isQuestionAnswered(activeTab) ? "ph-fill ph-check-circle" : "ph ph-circle";
+        }
+        syncMessagesPadding();
+      });
+      otherEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          if (questions.every((_, i) => isQuestionAnswered(i))) submit();
+        }
+      });
+    }
+
     host.querySelector<HTMLButtonElement>('[data-act="submit"]')
       ?.addEventListener("click", submit);
     host.querySelector<HTMLButtonElement>('[data-act="cancel"]')
       ?.addEventListener("click", cancel);
+
+    // Defer until layout, then size the messages padding to match the card.
+    requestAnimationFrame(() => syncMessagesPadding());
+    if (!resizeObs && messagesEl && typeof ResizeObserver !== "undefined") {
+      const card = host.querySelector<HTMLElement>(".prompt-card");
+      if (card) {
+        resizeObs = new ResizeObserver(() => syncMessagesPadding());
+        resizeObs.observe(card);
+      }
+    }
   };
 
   render();
