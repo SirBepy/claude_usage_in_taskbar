@@ -18,6 +18,15 @@
 
 import { invoke } from "../../shared/ipc";
 import { escapeHtml } from "../../shared/escape-html";
+import { state } from "./state";
+import {
+  buildRule,
+  describeRule,
+  isDestructive,
+  loadRulesForCwd,
+  matchesRule,
+  withAddedRule,
+} from "./permission-rules";
 import "./permission-modal.css";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -453,6 +462,9 @@ function showPermissionCard(payload: PermissionRequestedPayload): void {
 
   // Generic permission gate (Bash/Edit/Write/etc.)
   const { host } = ensureHost();
+  const cwd = resolveCwdForSession(payload.session_id);
+  const rule = buildRule(payload.tool_name, payload.input);
+  const canRemember = cwd !== null && !isDestructive(payload.tool_name, payload.input);
 
   const respond = async (behavior: "allow" | "deny") => {
     clearHost();
@@ -470,6 +482,19 @@ function showPermissionCard(payload: PermissionRequestedPayload): void {
       console.warn("respond_permission failed:", e);
     }
   };
+
+  const alwaysAllow = async () => {
+    if (!cwd) { void respond("allow"); return; }
+    try {
+      const settings = await invoke<Record<string, unknown>>("get_settings");
+      const updated = withAddedRule(settings, cwd, rule);
+      await invoke("save_settings", { updated });
+    } catch (e) {
+      console.warn("[perm-rules] save rule failed:", e);
+    }
+    void respond("allow");
+  };
+
   const escHandler = (e: KeyboardEvent) => {
     if (e.key === "Escape") void respond("deny");
   };
@@ -490,8 +515,14 @@ function showPermissionCard(payload: PermissionRequestedPayload): void {
       <pre class="prompt-card__pre"></pre>
     </details>
   `;
+  const alwaysBtnHtml = canRemember
+    ? `<button type="button" class="btn btn-tertiary" data-act="always" title="${escapeHtml(describeRule(rule))}">
+        <i class="ph ph-shield-check"></i> Always Allow
+      </button>`
+    : "";
   const footer = `
     <button type="button" class="btn btn-secondary" data-act="deny">Deny</button>
+    ${alwaysBtnHtml}
     <button type="button" class="btn btn-primary" data-act="allow">
       <i class="ph ph-check"></i> Allow
     </button>
@@ -504,6 +535,8 @@ function showPermissionCard(payload: PermissionRequestedPayload): void {
     .addEventListener("click", () => void respond("allow"));
   host.querySelector<HTMLButtonElement>('[data-act="deny"]')!
     .addEventListener("click", () => void respond("deny"));
+  host.querySelector<HTMLButtonElement>('[data-act="always"]')
+    ?.addEventListener("click", () => void alwaysAllow());
 }
 
 // ── Question event ─────────────────────────────────────────────────────────
@@ -553,6 +586,51 @@ export function setAutoAccept(sessionId: string, value: boolean): void {
 }
 
 // ── Session-ID gating ──────────────────────────────────────────────────────
+
+/** Resolve the cwd for a session_id from runtime state. Used to look up the
+ *  project's remembered permission rules. Real sessions live in
+ *  `state.sessions`; the pending placeholder of a brand-new chat lives in
+ *  `state.pendingNewSession.projectPath`. */
+function resolveCwdForSession(sessionId: string | undefined): string | null {
+  if (!sessionId) return null;
+  const inst = state.sessions.find((s) => s.session_id === sessionId);
+  if (inst?.cwd) return String(inst.cwd);
+  if (state.pendingNewSession?.placeholderId === sessionId) {
+    return state.pendingNewSession.projectPath;
+  }
+  return null;
+}
+
+async function autoAllowIfRemembered(
+  payload: PermissionRequestedPayload,
+): Promise<boolean> {
+  if (extractQuestions(payload.input) !== null) return false;
+  if (isDestructive(payload.tool_name, payload.input)) return false;
+  const cwd = resolveCwdForSession(payload.session_id);
+  if (!cwd) return false;
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = await invoke<Record<string, unknown>>("get_settings");
+  } catch {
+    return false;
+  }
+  const rules = loadRulesForCwd(settings, cwd);
+  const hit = rules.find((r) => matchesRule(r, payload.tool_name, payload.input));
+  if (!hit) return false;
+  try {
+    await invoke("respond_permission", {
+      id: payload.id,
+      behavior: "allow",
+      updatedInput: payload.input ?? {},
+      message: null,
+    });
+    console.debug("[perm-rules] auto-allow", payload.tool_name, "matched", hit.raw);
+    return true;
+  } catch (e) {
+    console.warn("[perm-rules] auto-allow respond failed:", e);
+    return false;
+  }
+}
 
 let _selectedSessionId: string | null = null;
 const _backgroundSessionIds = new Set<string>();
@@ -604,7 +682,14 @@ export function installPermissionModalListener(): void {
       return;
     }
 
-    showPermissionCard(payload);
+    // Per-project remembered rules. If the user previously hit "Always Allow"
+    // for this tool/input pattern, auto-respond and skip the modal. Bypasses
+    // destructive Bash commands so a blanket `Bash::` rule never silently
+    // approves `rm -rf`.
+    void (async () => {
+      if (await autoAllowIfRemembered(payload)) return;
+      showPermissionCard(payload);
+    })();
   });
 
   ev.listen<QuestionRequestedPayload>("question-requested", (event) => {

@@ -122,6 +122,19 @@
   align-items: center;
   gap: 6px;
 }
+.prompt-card__footer .btn-tertiary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.prompt-card__footer .btn-tertiary:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.prompt-card__footer .btn-tertiary i {
+  font-size: 0.95rem;
+}
 
 /* Permission details disclosure (raw tool input JSON, hidden by default). */
 .prompt-card__details summary {

@@ -24,6 +24,7 @@ const LEGACY_VIEWS = [
   "settings-themes",
   "settings-notifications",
   "settings-presets",
+  "settings-permissions",
   "settings-sync",
   "project-detail",
   "graph-detail",

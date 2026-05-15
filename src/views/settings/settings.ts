@@ -169,11 +169,13 @@ export async function renderSettingsView(
   const navThemes = root.querySelector<HTMLElement>("#nav-themes");
   const navNotifs = root.querySelector<HTMLElement>("#nav-notifications");
   const navPresets = root.querySelector<HTMLElement>("#nav-presets");
+  const navPermissions = root.querySelector<HTMLElement>("#nav-permissions");
   const navShortcuts = root.querySelector<HTMLElement>("#nav-shortcuts");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
   if (navThemes) navThemes.onclick = () => g().navigateTo("settings-themes");
   if (navNotifs) navNotifs.onclick = () => g().navigateTo("settings-notifications");
   if (navPresets) navPresets.onclick = () => g().navigateTo("settings-presets");
+  if (navPermissions) navPermissions.onclick = () => g().navigateTo("settings-permissions");
   if (navShortcuts) navShortcuts.onclick = () => g().navigateTo("settings-shortcuts");
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
@@ -213,6 +215,10 @@ function template() {
           <div class="section-title">Agent</div>
           <div class="nav-row" id="nav-presets">
             <span class="nav-row-label">Session presets</span>
+            <span class="nav-row-arrow">›</span>
+          </div>
+          <div class="nav-row" id="nav-permissions">
+            <span class="nav-row-label">Permissions</span>
             <span class="nav-row-arrow">›</span>
           </div>
         </div>

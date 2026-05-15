@@ -26,6 +26,7 @@ import { renderThemesView } from "./views/settings/subviews/themes/themes";
 import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
 import { renderPresetsView } from "./views/settings/subviews/presets/presets";
 import { renderShortcutsView } from "./views/settings/subviews/shortcuts/shortcuts";
+import { renderPermissionsView } from "./views/settings/subviews/permissions/permissions";
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
@@ -56,6 +57,7 @@ registerView("settings-themes", renderThemesView);
 registerView("settings-notifications", renderNotificationsView);
 registerView("settings-presets", renderPresetsView);
 registerView("settings-shortcuts", renderShortcutsView);
+registerView("settings-permissions", renderPermissionsView);
 
 const app = document.getElementById("app");
 if (!app) {
