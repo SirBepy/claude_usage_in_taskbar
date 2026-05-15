@@ -171,7 +171,9 @@
       "Bash(echo \"EXIT:$?\")",
       "Skill(commit)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\tecno\" -Recurse -Filter \"*statusline*\" -ErrorAction SilentlyContinue)",
-      "Bash(Head 20)"
+      "Bash(Head 20)",
+      "Skill(delete)",
+      "Bash(Select-Object -First 5)"
     ]
   }
 }
