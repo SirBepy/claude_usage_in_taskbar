@@ -5,7 +5,7 @@ import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer, discardComposerDraft } from "../../shared/chat/composer";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { state, setActiveSession, type ParkedDraft } from "./state";
-import { projectName } from "./sessions-helpers";
+import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
@@ -337,6 +337,11 @@ export async function renderPendingPane(
             state.pendingNewSession.firstMessageSentAt = Date.now();
             savePendingSession(state.pendingNewSession);
           }
+          // The "type a message to start..." hint is only meaningful while
+          // the pane is empty. Once a message has been sent it overlaps with
+          // the real conversation, so strip it immediately rather than
+          // waiting for the next pane rebuild.
+          pane.querySelector(".session-pending-hint")?.remove();
           // Re-render the sidebar so the draft row swaps to the spinner row.
           const rootEarly = document.querySelector<HTMLElement>(".view-sessions");
           if (rootEarly) {
@@ -446,10 +451,17 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   const header = pane.querySelector<HTMLElement>(".session-header");
   if (!header) return;
   const sess = state.sessions.find((s) => s.session_id === sessionId);
+  const title = header.querySelector<HTMLElement>(".title");
+  if (title && sess) {
+    title.textContent = sessionSubtitle(sess);
+  }
   const meta = header.querySelector<HTMLElement>(".meta");
   if (meta && sess) {
     meta.textContent = projectName(sess);
   }
+  // Once we have a real session id, also strip the pending hint if it's
+  // somehow still hanging around (defensive — onSend usually removes it).
+  pane.querySelector(".session-pending-hint")?.remove();
   // Add auto-accept button (omitted from pending header; meaningless until
   // realId is known). Insert before detach (which sits before cancel).
   if (!header.querySelector(".auto-accept-btn")) {
