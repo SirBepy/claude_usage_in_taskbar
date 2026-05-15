@@ -8,6 +8,7 @@ import { queueHistoryResume } from "../sessions/sessions";
 import "../../shared/chat/chat.css";
 import "./history.css";
 import type { ChatEvent, HistoryEntry } from "../../types/ipc.generated";
+import { cwdToProjectName } from "../sessions/sessions-helpers";
 
 interface HistoryState {
   mountId: number;
@@ -26,9 +27,6 @@ let state: HistoryState = {
 };
 let nextMountId = 1;
 
-function projectNameFromCwd(cwd: string): string {
-  return cwd.split(/[/\\]/).filter(Boolean).pop() ?? cwd;
-}
 
 async function fetchEntries(): Promise<void> {
   try {
@@ -66,7 +64,7 @@ function dateBucket(secs: number | bigint | null | undefined): string {
 function renderList(listEl: HTMLElement): void {
   const filter = state.filter.toLowerCase();
   const filtered = state.entries.filter(
-    (e) => !filter || projectNameFromCwd(e.cwd).toLowerCase().includes(filter) || e.session_id.toLowerCase().includes(filter),
+    (e) => !filter || cwdToProjectName(e.cwd).toLowerCase().includes(filter) || e.session_id.toLowerCase().includes(filter),
   );
   if (filtered.length === 0) {
     listEl.innerHTML = `<li class="history-empty-row">${
@@ -87,7 +85,7 @@ function renderList(listEl: HTMLElement): void {
       `<li data-session-id="${escapeHtml(e.session_id)}" class="${
         e.session_id === state.selectedId ? "active" : ""
       }">
-        <div class="history-row-title">${escapeHtml(projectNameFromCwd(e.cwd))}</div>
+        <div class="history-row-title">${escapeHtml(cwdToProjectName(e.cwd))}</div>
         <div class="history-row-meta">${formatTime(e.ended_at ?? e.started_at)}</div>
       </li>`,
     );
@@ -103,13 +101,6 @@ function formatTime(secs: number | bigint | null | undefined): string {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatDate(secs: number | bigint | null | undefined): string {
-  if (secs === null || secs === undefined) return "";
-  const n = typeof secs === "bigint" ? Number(secs) : secs;
-  if (!n) return "";
-  const d = new Date(n * 1000);
-  return d.toLocaleString();
-}
 
 async function selectHistorySession(sessionId: string, pane: HTMLElement): Promise<void> {
   const myMount = state.mountId;

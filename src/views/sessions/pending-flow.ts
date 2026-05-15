@@ -4,13 +4,15 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
-import { state, setActiveSession, type PendingNewSession, type ParkedDraft } from "./state";
+import { state, setActiveSession, type ParkedDraft } from "./state";
 import { projectName } from "./sessions-helpers";
 import { pickProject } from "./project-picker";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
+import { closeChat } from "./close-chat";
 import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
+import { savePendingSession, loadPendingSession, clearPendingSession } from "./pending-draft-storage";
 import type { GitInfo } from "../../types/ipc.generated";
 
 /**
@@ -28,54 +30,6 @@ export function makePlaceholderId(): string {
   return `pending-${ts}-${rnd}`;
 }
 
-// Persist pending session draft across page reloads / HMR.
-const PENDING_SESSION_KEY = "pending-session:v1";
-
-function savePendingSession(pending: PendingNewSession): void {
-  try {
-    const serialized = {
-      placeholderId: pending.placeholderId,
-      projectPath: pending.projectPath,
-      projectName: pending.projectName,
-      config: pending.config,
-      realId: pending.realId,
-      firstMessageSent: pending.firstMessageSent,
-      preExistingSessionIds: Array.from(pending.preExistingSessionIds),
-      firstMessageSentAt: pending.firstMessageSentAt,
-    };
-    localStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(serialized));
-  } catch {
-    /* quota or storage disabled */
-  }
-}
-
-function loadPendingSession(): PendingNewSession | null {
-  try {
-    const raw = localStorage.getItem(PENDING_SESSION_KEY);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    return {
-      placeholderId: obj.placeholderId,
-      projectPath: obj.projectPath,
-      projectName: obj.projectName,
-      config: obj.config,
-      realId: obj.realId,
-      firstMessageSent: obj.firstMessageSent,
-      preExistingSessionIds: new Set(obj.preExistingSessionIds),
-      firstMessageSentAt: obj.firstMessageSentAt ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function clearPendingSession(): void {
-  try {
-    localStorage.removeItem(PENDING_SESSION_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 // If a restored pending entry has been "starting..." for longer than this,
 // the previous app instance died before SessionStarted arrived (the Rust
@@ -468,15 +422,10 @@ export async function renderPendingPane(
     }
   });
 
-  pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", async () => {
+  pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", () => {
     const realId = state.pendingNewSession?.realId;
     const closeTarget = realId || placeholderId;
-    const sess = realId ? state.sessions.find(s => s.session_id === realId) : null;
-    if (sess?.busy) {
-      if (!confirm("A turn is in progress. Close and discard it?")) return;
-      try { await invoke<void>("cancel_turn", { sessionId: closeTarget }); } catch {}
-    }
-    try { await invoke<void>("clear_session", { sessionId: closeTarget }); } catch {}
+    void closeChat(closeTarget);
   });
 }
 
@@ -586,15 +535,6 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   if (closeBtn) {
     const fresh = closeBtn.cloneNode(true) as HTMLButtonElement;
     closeBtn.replaceWith(fresh);
-    fresh.addEventListener("click", async () => {
-      const sess = state.sessions.find(s => s.session_id === sessionId);
-      if (sess?.busy) {
-        if (!confirm("A turn is in progress. Close and discard it?")) return;
-        try { await invoke<void>("cancel_turn", { sessionId }); } catch {}
-      }
-      try { await invoke<void>("clear_session", { sessionId }); } catch (err) {
-        console.error("[sessions] close chat failed", err);
-      }
-    });
+    fresh.addEventListener("click", () => { void closeChat(sessionId); });
   }
 }

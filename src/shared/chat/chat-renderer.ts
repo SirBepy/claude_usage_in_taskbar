@@ -13,68 +13,10 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { showView } from "../navigation";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
-import { invoke } from "../ipc";
-import { escapeHtml } from "../escape-html";
-import { openLightbox, type LightboxContent } from "./lightbox";
-
-// WeakMap so GC can collect chips when their container is removed.
-const chipData = new WeakMap<HTMLElement, { mime: string; base64: string }>();
-
-async function hydrateAttachments(el: HTMLElement): Promise<void> {
-  const chips = Array.from(el.querySelectorAll<HTMLElement>(".attachment-chip[data-attachment-path]"));
-  for (const chip of chips) {
-    if (!document.contains(chip)) continue;
-    const path = chip.dataset.attachmentPath;
-    if (!path) continue;
-    const name = chip.dataset.filename ?? path.split(/[\\/]/).pop() ?? "file";
-    try {
-      const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
-      if (!document.contains(chip)) continue;
-      if (data.mime.startsWith("image/")) {
-        const thumb = document.createElement("div");
-        thumb.className = "sent-attachment-thumb";
-        const img = document.createElement("img");
-        img.src = `data:${escapeHtml(data.mime)};base64,${escapeHtml(data.base64)}`;
-        img.alt = name;
-        img.title = "Click to enlarge";
-        thumb.appendChild(img);
-        const { mime, base64 } = data;
-        thumb.addEventListener("click", () => {
-          openLightbox({ type: "image", mime, base64, filename: name });
-        });
-        chip.replaceWith(thumb);
-      } else {
-        chipData.set(chip, data);
-        chip.classList.remove("loading");
-        if (data.mime === "application/pdf") {
-          chip.classList.add("previewable");
-          chip.innerHTML = `<i class="ph ph-file-pdf"></i><span class="chip-name">${escapeHtml(name)}</span>`;
-        } else if (data.mime.startsWith("text/") || data.mime === "application/json") {
-          chip.classList.add("previewable");
-          chip.innerHTML = `<i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span>`;
-        } else {
-          chip.innerHTML = `<i class="ph ph-file"></i><span class="chip-name">${escapeHtml(name)}</span>`;
-        }
-      }
-    } catch {
-      chip.innerHTML = `<i class="ph ph-warning"></i><span class="chip-name">${escapeHtml(name)}</span>`;
-    }
-  }
-}
-
-function chipToLightboxContent(chip: HTMLElement): LightboxContent | null {
-  const data = chipData.get(chip);
-  if (!data) return null;
-  const name = chip.dataset.filename;
-  if (data.mime.startsWith("image/")) return { type: "image", mime: data.mime, base64: data.base64, filename: name };
-  if (data.mime === "application/pdf") return { type: "pdf", base64: data.base64, filename: name };
-  if (data.mime.startsWith("text/") || data.mime === "application/json") {
-    try { return { type: "text", content: atob(data.base64), filename: name }; } catch { return null; }
-  }
-  return null;
-}
+import { openLightbox } from "./lightbox";
+import { hydrateAttachments, chipToLightboxContent } from "./attachment-hydrator";
 
 export interface SessionMeta {
   model: string | null;
@@ -291,7 +233,7 @@ export class ChatRenderer {
     const frag = document.createDocumentFragment();
 
     for (const ev of events) {
-      const msg = this.eventToRenderedMessage(ev);
+      const msg = eventToRenderedMessage(ev);
       if (!msg) continue;
       newMessages.push(msg);
       const el = this.buildMessageEl(msg);
@@ -342,36 +284,6 @@ export class ChatRenderer {
     void highlightCodeBlocks(this.container);
   }
 
-  /**
-   * Pure mapping from a ChatEvent to a RenderedMessage. Mirrors the cases in
-   * handleEvent that produce a row but does NOT mutate any renderer state.
-   * Returns null for events that shouldn't render a row (e.g. turn_usage,
-   * empty user_message after command-tag stripping).
-   */
-  private eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
-    const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
-    switch (ev.type) {
-      case "session_started":
-        return { kind: "system", text: `Session started${ev.model ? ` (${ev.model})` : ""}`, ts };
-      case "user_message": {
-        const cleaned = cleanUserBlocks(ev.content);
-        if (cleaned.length === 0) return null;
-        return { kind: "user", content: cleaned, ts };
-      }
-      case "assistant_message":
-        return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
-      case "tool_use":
-        return { kind: "tool_use", tool: ev.tool_name, input: ev.input, id: ev.id, ts };
-      case "tool_result":
-        return { kind: "tool_result", tool_use_id: ev.tool_use_id, output: ev.output, is_error: ev.is_error, ts };
-      case "notification":
-        return { kind: "notification", text: ev.body, ts: Date.now() };
-      case "session_ended":
-        return { kind: "system", text: `Session ended${ev.exit_code !== null ? ` (exit ${ev.exit_code})` : ""}`, ts };
-      default:
-        return null;
-    }
-  }
 
   private findScroller(): HTMLElement | null {
     let n: HTMLElement | null = this.container;

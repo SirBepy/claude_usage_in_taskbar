@@ -1,57 +1,17 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
+import {
+  MODELS,
+  EFFORTS,
+  DEFAULT_PRESETS,
+  type Preset as EffortPreset,
+  type SessionConfig,
+  readPresets,
+  readLastChoice,
+} from "../../shared/effort-presets";
 
-export interface SessionConfig {
-  model: string;
-  effort: string;
-}
-
-export interface EffortPreset {
-  name: string;
-  model: string;
-  effort: string;
-}
-
-const MODELS = ["haiku", "sonnet", "opus"] as const;
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-
-const DEFAULT_PRESETS: EffortPreset[] = [
-  { name: "Light", model: "sonnet", effort: "low" },
-  { name: "Normal", model: "opus", effort: "high" },
-  { name: "Heavy", model: "opus", effort: "max" },
-];
-
-function readPresets(settings: Record<string, unknown>): EffortPreset[] {
-  const raw = settings["effortPresets"];
-  if (!Array.isArray(raw)) return DEFAULT_PRESETS;
-  const out: EffortPreset[] = [];
-  for (const p of raw) {
-    if (p && typeof p === "object") {
-      const o = p as Record<string, unknown>;
-      const name = typeof o.name === "string" ? o.name : "";
-      const model = typeof o.model === "string" ? o.model : "";
-      const effort = typeof o.effort === "string" ? o.effort : "";
-      if (name && MODELS.includes(model as typeof MODELS[number]) && EFFORTS.includes(effort as typeof EFFORTS[number])) {
-        out.push({ name, model, effort });
-      }
-    }
-  }
-  return out.length === 3 ? out : DEFAULT_PRESETS;
-}
-
-function readLastChoice(settings: Record<string, unknown>, projectPath: string): SessionConfig | null {
-  const map = settings["projectLastChoice"];
-  if (!map || typeof map !== "object") return null;
-  const entry = (map as Record<string, unknown>)[projectPath];
-  if (!entry || typeof entry !== "object") return null;
-  const e = entry as Record<string, unknown>;
-  const model = typeof e.model === "string" ? e.model : "";
-  const effort = typeof e.effort === "string" ? e.effort : "";
-  if (MODELS.includes(model as typeof MODELS[number]) && EFFORTS.includes(effort as typeof EFFORTS[number])) {
-    return { model, effort };
-  }
-  return null;
-}
+export type { SessionConfig };
+export type { EffortPreset };
 
 export async function openModelEffortModal(
   projectPath: string,

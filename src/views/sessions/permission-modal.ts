@@ -18,6 +18,7 @@
 
 import { invoke } from "../../shared/ipc";
 import { escapeHtml } from "../../shared/escape-html";
+import "./permission-modal.css";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import type { Instance } from "../../types/ipc.generated";
+import { closeChat } from "./close-chat";
 import {
   projectName,
   sessionSubtitle,
@@ -227,15 +228,9 @@ export function openCtxMenu(
     const closeItem = document.createElement("button");
     closeItem.className = "session-ctx-item";
     closeItem.innerHTML = '<i class="ph ph-x"></i> Close';
-    closeItem.addEventListener("click", async () => {
+    closeItem.addEventListener("click", () => {
       closeCtxMenu();
-      if (sess.busy) {
-        if (!confirm("A turn is in progress. Close and discard it?")) return;
-        try { await invoke<void>("cancel_turn", { sessionId }); } catch {}
-      }
-      try { await invoke<void>("clear_session", { sessionId }); } catch (err) {
-        console.error("[sessions] close chat failed", err);
-      }
+      void closeChat(sessionId);
     });
     menu.appendChild(closeItem);
   }

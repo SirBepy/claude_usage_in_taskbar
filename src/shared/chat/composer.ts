@@ -5,6 +5,7 @@
 
 import { invoke } from "../ipc";
 import type { ContentBlock } from "../../types/ipc.generated";
+import { mimeToIcon } from "./attachment-hydrator";
 import { CaretSuggestPopup } from "./caret-popup/popup";
 import { SlashProvider } from "./caret-popup/providers/slash";
 import { FileProvider } from "./caret-popup/providers/file";
@@ -253,7 +254,7 @@ export class Composer {
         img.addEventListener("click", () => openLightbox({ type: "image", mime: a.mime, base64: a.data, filename: a.filename }));
         div.appendChild(img);
       } else {
-        const icon = fileIcon(a.mime);
+        const icon = mimeToIcon(a.mime);
         div.innerHTML = `<i class="ph ${icon}"></i>`;
         const label = document.createElement("span");
         label.textContent = a.filename;
@@ -379,11 +380,7 @@ function clearDraft(sessionId: string): void {
   }
 }
 
-function fileIcon(mime: string): string {
-  if (mime === "application/pdf") return "ph-file-pdf";
-  if (mime.startsWith("text/") || mime === "application/json") return "ph-file-text";
-  return "ph-file";
-}
+
 
 function openPreviewIfSupported(a: Attachment): void {
   if (!a.data) return;

@@ -3,6 +3,14 @@ import { invoke } from "../../../../shared/ipc";
 import { getSettings, setSettings } from "../../../../shared/state";
 import { api } from "../../../../shared/api";
 import { escapeHtml } from "../../../../shared/escape-html";
+import {
+  MODELS,
+  EFFORTS,
+  type Preset,
+  isModel,
+  isEffort,
+  readPresets,
+} from "../../../../shared/effort-presets";
 import "./presets.css";
 
 interface LegacyGlobals {
@@ -11,48 +19,6 @@ interface LegacyGlobals {
 
 function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
-}
-
-interface Preset {
-  name: string;
-  model: string;
-  effort: string;
-}
-
-const MODELS = ["haiku", "sonnet", "opus"] as const;
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-
-const DEFAULT_PRESETS: Preset[] = [
-  { name: "Light", model: "sonnet", effort: "low" },
-  { name: "Normal", model: "opus", effort: "high" },
-  { name: "Heavy", model: "opus", effort: "max" },
-];
-
-function isModel(v: unknown): v is typeof MODELS[number] {
-  return typeof v === "string" && (MODELS as readonly string[]).includes(v);
-}
-function isEffort(v: unknown): v is typeof EFFORTS[number] {
-  return typeof v === "string" && (EFFORTS as readonly string[]).includes(v);
-}
-
-function readPresets(settings: Record<string, unknown>): Preset[] {
-  const raw = settings["effortPresets"];
-  if (!Array.isArray(raw)) return [...DEFAULT_PRESETS];
-  const out: Preset[] = [];
-  for (const p of raw) {
-    if (p && typeof p === "object") {
-      const o = p as Record<string, unknown>;
-      const name = typeof o.name === "string" ? o.name : "";
-      const model = isModel(o.model) ? o.model : "";
-      const effort = isEffort(o.effort) ? o.effort : "";
-      if (name && model && effort) out.push({ name, model, effort });
-    }
-  }
-  while (out.length < 3) {
-    const d = DEFAULT_PRESETS[out.length]!;
-    out.push({ ...d });
-  }
-  return out.slice(0, 3);
 }
 
 function rowTemplate(p: Preset, i: number) {
@@ -124,7 +90,7 @@ export async function renderPresetsView(root: HTMLElement): Promise<() => void> 
   } catch (e) {
     console.error("[presets] get_settings failed", e);
   }
-  const presets = readPresets(settings);
+  const presets = readPresets(settings, { padWithDefaults: true });
 
   function rerender(errMsg: string | null = null) {
     render(template(presets, errMsg), root);

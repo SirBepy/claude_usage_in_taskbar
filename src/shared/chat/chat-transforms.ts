@@ -1,5 +1,5 @@
 import MarkdownIt from "markdown-it";
-import type { ContentBlock } from "../../types/ipc.generated";
+import type { ContentBlock, ChatEvent } from "../../types/ipc.generated";
 import { escapeHtml } from "../escape-html";
 import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry";
 
@@ -149,6 +149,31 @@ export function highlightSlashMentions(html: string): string {
     });
   }
   return parts.join("");
+}
+
+export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
+  const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
+  switch (ev.type) {
+    case "session_started":
+      return { kind: "system", text: `Session started${ev.model ? ` (${ev.model})` : ""}`, ts };
+    case "user_message": {
+      const cleaned = cleanUserBlocks(ev.content);
+      if (cleaned.length === 0) return null;
+      return { kind: "user", content: cleaned, ts };
+    }
+    case "assistant_message":
+      return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
+    case "tool_use":
+      return { kind: "tool_use", tool: ev.tool_name, input: ev.input, id: ev.id, ts };
+    case "tool_result":
+      return { kind: "tool_result", tool_use_id: ev.tool_use_id, output: ev.output, is_error: ev.is_error, ts };
+    case "notification":
+      return { kind: "notification", text: ev.body, ts: Date.now() };
+    case "session_ended":
+      return { kind: "system", text: `Session ended${ev.exit_code !== null ? ` (exit ${ev.exit_code})` : ""}`, ts };
+    default:
+      return null;
+  }
 }
 
 export function wrapBlockquotes(container: HTMLElement): void {

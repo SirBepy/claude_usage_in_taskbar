@@ -13,6 +13,11 @@ export function projectName(i: Instance): string {
   return parts[parts.length - 1] ?? cwd;
 }
 
+export function cwdToProjectName(cwd: string): string {
+  const parts = String(cwd ?? "").split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? cwd;
+}
+
 export function sessionSubtitle(i: Instance): string {
   return i.name || "New chat";
 }

@@ -2,6 +2,7 @@ import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo } from "../../types/ipc.generated";
+import { EFFORTS } from "../../shared/effort-presets";
 
 // ── Statusline helpers ────────────────────────────────────────────────────────
 
@@ -18,7 +19,6 @@ export const ALL_STATUSLINE_FIELDS = [
   { key: "duration", label: "Duration" },
 ];
 
-const VALID_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export async function loadStatuslineFields(): Promise<string[]> {
   try {
@@ -184,13 +184,13 @@ export class SessionStatusbar {
       </div>
     ` : "";
 
-    const effortIdx = Math.max(0, VALID_EFFORTS.indexOf(this.effort as typeof VALID_EFFORTS[number]));
+    const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
     const effortPopoverHtml = this.effortPopoverOpen ? `
       <div class="sb-effort-popover">
         <div class="sb-effort-popover-label">Effort</div>
-        <input type="range" class="sb-effort-slider" min="0" max="${VALID_EFFORTS.length - 1}" step="1" value="${effortIdx}">
+        <input type="range" class="sb-effort-slider" min="0" max="${EFFORTS.length - 1}" step="1" value="${effortIdx}">
         <div class="sb-effort-stops">
-          ${VALID_EFFORTS.map((e, i) => `<span class="sb-effort-stop${i === effortIdx ? " active" : ""}">${escapeHtml(e)}</span>`).join("")}
+          ${EFFORTS.map((e, i) => `<span class="sb-effort-stop${i === effortIdx ? " active" : ""}">${escapeHtml(e)}</span>`).join("")}
         </div>
       </div>
     ` : "";
@@ -241,7 +241,7 @@ export class SessionStatusbar {
       const slider = this.container.querySelector<HTMLInputElement>(".sb-effort-slider");
       slider?.addEventListener("change", () => {
         const i = Number(slider.value);
-        const next = VALID_EFFORTS[i];
+        const next = EFFORTS[i];
         if (!next || !this.sessionId) return;
         const sid = this.sessionId;
         const newEffort = next;

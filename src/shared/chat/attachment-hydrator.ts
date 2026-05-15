@@ -1,0 +1,61 @@
+import { invoke } from "../ipc";
+import { escapeHtml } from "../escape-html";
+import { openLightbox, type LightboxContent } from "./lightbox";
+
+const chipData = new WeakMap<HTMLElement, { mime: string; base64: string }>();
+
+export function mimeToIcon(mime: string): string {
+  if (mime === "application/pdf") return "ph-file-pdf";
+  if (mime.startsWith("text/") || mime === "application/json") return "ph-file-text";
+  return "ph-file";
+}
+
+export async function hydrateAttachments(el: HTMLElement): Promise<void> {
+  const chips = Array.from(el.querySelectorAll<HTMLElement>(".attachment-chip[data-attachment-path]"));
+  for (const chip of chips) {
+    if (!document.contains(chip)) continue;
+    const path = chip.dataset.attachmentPath;
+    if (!path) continue;
+    const name = chip.dataset.filename ?? path.split(/[\\/]/).pop() ?? "file";
+    try {
+      const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
+      if (!document.contains(chip)) continue;
+      if (data.mime.startsWith("image/")) {
+        const thumb = document.createElement("div");
+        thumb.className = "sent-attachment-thumb";
+        const img = document.createElement("img");
+        img.src = `data:${escapeHtml(data.mime)};base64,${escapeHtml(data.base64)}`;
+        img.alt = name;
+        img.title = "Click to enlarge";
+        thumb.appendChild(img);
+        const { mime, base64 } = data;
+        thumb.addEventListener("click", () => {
+          openLightbox({ type: "image", mime, base64, filename: name });
+        });
+        chip.replaceWith(thumb);
+      } else {
+        chipData.set(chip, data);
+        chip.classList.remove("loading");
+        const icon = mimeToIcon(data.mime);
+        if (data.mime === "application/pdf" || data.mime.startsWith("text/") || data.mime === "application/json") {
+          chip.classList.add("previewable");
+        }
+        chip.innerHTML = `<i class="ph ${escapeHtml(icon)}"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+      }
+    } catch {
+      chip.innerHTML = `<i class="ph ph-warning"></i><span class="chip-name">${escapeHtml(name)}</span>`;
+    }
+  }
+}
+
+export function chipToLightboxContent(chip: HTMLElement): LightboxContent | null {
+  const data = chipData.get(chip);
+  if (!data) return null;
+  const name = chip.dataset.filename;
+  if (data.mime.startsWith("image/")) return { type: "image", mime: data.mime, base64: data.base64, filename: name };
+  if (data.mime === "application/pdf") return { type: "pdf", base64: data.base64, filename: name };
+  if (data.mime.startsWith("text/") || data.mime === "application/json") {
+    try { return { type: "text", content: atob(data.base64), filename: name }; } catch { return null; }
+  }
+  return null;
+}

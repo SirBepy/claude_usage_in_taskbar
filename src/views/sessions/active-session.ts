@@ -19,6 +19,7 @@ import {
   isAutoAccept,
   setAutoAccept,
 } from "./permission-modal";
+import { closeChat } from "./close-chat";
 
 function isCloseCommand(blocks: ContentBlock[]): boolean {
   if (blocks.length !== 1) return false;
@@ -36,7 +37,7 @@ export function unwatchCurrentExternalSession(): void {
   }
 }
 
-function dismountActivePane(): void {
+export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
   state.statusbar?.destroy();
   state.statusbar = null;
   state.renderer?.detach();
@@ -47,10 +48,12 @@ function dismountActivePane(): void {
   const pane = document.querySelector<HTMLElement>(".session-pane #session-pane")
     ?? document.querySelector<HTMLElement>("#session-pane");
   if (pane) pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
-  const root = document.querySelector<HTMLElement>(".view-sessions");
-  if (root) {
-    const listEl = root.querySelector<HTMLElement>("#sessions-list");
-    if (listEl) renderSidebar(listEl);
+  if (opts?.rerenderSidebar !== false) {
+    const root = document.querySelector<HTMLElement>(".view-sessions");
+    if (root) {
+      const listEl = root.querySelector<HTMLElement>("#sessions-list");
+      if (listEl) renderSidebar(listEl);
+    }
   }
 }
 
@@ -252,13 +255,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     }
   });
   if (!readOnly) {
-    pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", async () => {
-      const currentSess = state.sessions.find(s => s.session_id === sessionId);
-      if (currentSess?.busy) {
-        if (!confirm("A turn is in progress. Close and discard it?")) return;
-        await invoke<void>("cancel_turn", { sessionId });
-      }
-      await invoke<void>("clear_session", { sessionId });
+    pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", () => {
+      void closeChat(sessionId);
     });
   }
   if (readOnly) {
