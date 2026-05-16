@@ -15,6 +15,11 @@ import { parseBuiltin, HANDLERS, type BuiltinContext } from "./builtins";
 import "./builtins/register";
 import "./caret-popup/popup.css";
 import { openLightbox } from "./lightbox";
+import {
+  loadDraft, saveDraft, clearDraft,
+  loadAttachmentsMeta, saveAttachmentsMeta, clearAttachmentsMeta,
+} from "./composer-persistence";
+export { discardComposerDraft, moveComposerDraft } from "./composer-persistence";
 
 interface Attachment {
   mime: string;
@@ -398,98 +403,6 @@ export class Composer {
     else clearDraft(this.sessionId);
   }
 }
-
-const DRAFT_PREFIX = "chat-draft:v1:";
-
-function draftKey(sessionId: string): string {
-  return DRAFT_PREFIX + sessionId;
-}
-
-function loadDraft(sessionId: string): string {
-  try {
-    return localStorage.getItem(draftKey(sessionId)) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function saveDraft(sessionId: string, text: string): void {
-  try {
-    localStorage.setItem(draftKey(sessionId), text);
-  } catch {
-    /* quota or storage disabled - lose the draft, don't crash */
-  }
-}
-
-function clearDraft(sessionId: string): void {
-  try {
-    localStorage.removeItem(draftKey(sessionId));
-  } catch {
-    /* ignore */
-  }
-}
-
-/** External callers (sidebar park/discard, pending-flow discard) can clean
- *  up draft localStorage for a session id whose composer is gone. */
-export function discardComposerDraft(sessionId: string): void {
-  clearDraft(sessionId);
-  clearAttachmentsMeta(sessionId);
-}
-
-/** Move a stored draft from one session id to another. Used when a parked
- *  draft is resumed under a fresh placeholderId so the user keeps their text. */
-export function moveComposerDraft(fromId: string, toId: string): void {
-  const text = loadDraft(fromId);
-  if (text) saveDraft(toId, text);
-  clearDraft(fromId);
-  const metas = loadAttachmentsMeta(fromId);
-  if (metas.length) saveAttachmentsMeta(toId, metas);
-  clearAttachmentsMeta(fromId);
-}
-
-// ── Attachment metadata persistence ────────────────────────────────────────
-//
-// Only paths + mime + filename are stored, not the base64 bytes - those are
-// re-read from disk via the `read_attachment` IPC on restore. Keeps LS small
-// and avoids hitting the 5-10MB quota when a draft has several screenshots.
-const ATT_PREFIX = "chat-att:v1:";
-interface AttachmentMeta { path: string; mime: string; filename: string; }
-
-function attKey(sessionId: string): string {
-  return ATT_PREFIX + sessionId;
-}
-
-function loadAttachmentsMeta(sessionId: string): AttachmentMeta[] {
-  try {
-    const raw = localStorage.getItem(attKey(sessionId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((m): m is AttachmentMeta =>
-      m && typeof m.path === "string" && typeof m.mime === "string" && typeof m.filename === "string"
-    );
-  } catch {
-    return [];
-  }
-}
-
-function saveAttachmentsMeta(sessionId: string, metas: AttachmentMeta[]): void {
-  try {
-    localStorage.setItem(attKey(sessionId), JSON.stringify(metas));
-  } catch {
-    /* quota or storage disabled - lose the meta, don't crash */
-  }
-}
-
-function clearAttachmentsMeta(sessionId: string): void {
-  try {
-    localStorage.removeItem(attKey(sessionId));
-  } catch {
-    /* ignore */
-  }
-}
-
-
 
 function openPreviewIfSupported(a: Attachment): void {
   if (!a.data) return;
