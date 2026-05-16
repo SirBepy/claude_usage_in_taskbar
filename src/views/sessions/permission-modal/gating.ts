@@ -1,0 +1,92 @@
+import { invoke } from "../../../shared/ipc";
+import { state } from "../state";
+import { isDestructive, loadRulesForCwd, matchesRule } from "../permission-rules";
+import { extractQuestions } from "./question-ui";
+import type { PermissionRequestedPayload } from "./types";
+
+// ── Auto-accept (per-session) ──────────────────────────────────────────────
+//
+// When set for a session_id, permission-requested events for that session
+// auto-respond `allow` with the original input, skipping the modal. Reset on
+// every app launch (no persistence). AskUserQuestion-shaped requests are NOT
+// auto-answered (see gate in installPermissionModalListener).
+
+const _autoAccept = new Map<string, boolean>();
+
+export function isAutoAccept(sessionId: string | undefined | null): boolean {
+  if (!sessionId) return false;
+  return _autoAccept.get(sessionId) === true;
+}
+
+export function setAutoAccept(sessionId: string, value: boolean): void {
+  if (value) _autoAccept.set(sessionId, true);
+  else _autoAccept.delete(sessionId);
+}
+
+// ── Session-ID gating ──────────────────────────────────────────────────────
+
+let _selectedSessionId: string | null = null;
+const _backgroundSessionIds = new Set<string>();
+
+export function setSelectedSessionId(id: string | null): void {
+  _selectedSessionId = id;
+}
+
+export function addBackgroundSession(id: string): void {
+  _backgroundSessionIds.add(id);
+}
+
+export function removeBackgroundSession(id: string): void {
+  _backgroundSessionIds.delete(id);
+}
+
+export function isForSelectedSession(eventSessionId: string | undefined): boolean {
+  if (!eventSessionId) return false;
+  if (_selectedSessionId === eventSessionId) return true;
+  return _backgroundSessionIds.has(eventSessionId);
+}
+
+/** Resolve the cwd for a session_id from runtime state. Used to look up the
+ *  project's remembered permission rules. Real sessions live in
+ *  `state.sessions`; the pending placeholder of a brand-new chat lives in
+ *  `state.pendingNewSession.projectPath`. */
+export function resolveCwdForSession(sessionId: string | undefined): string | null {
+  if (!sessionId) return null;
+  const inst = state.sessions.find((s) => s.session_id === sessionId);
+  if (inst?.cwd) return String(inst.cwd);
+  if (state.pendingNewSession?.placeholderId === sessionId) {
+    return state.pendingNewSession.projectPath;
+  }
+  return null;
+}
+
+export async function autoAllowIfRemembered(
+  payload: PermissionRequestedPayload,
+): Promise<boolean> {
+  if (extractQuestions(payload.input) !== null) return false;
+  if (isDestructive(payload.tool_name, payload.input)) return false;
+  const cwd = resolveCwdForSession(payload.session_id);
+  if (!cwd) return false;
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = await invoke<Record<string, unknown>>("get_settings");
+  } catch {
+    return false;
+  }
+  const rules = loadRulesForCwd(settings, cwd);
+  const hit = rules.find((r) => matchesRule(r, payload.tool_name, payload.input));
+  if (!hit) return false;
+  try {
+    await invoke("respond_permission", {
+      id: payload.id,
+      behavior: "allow",
+      updatedInput: payload.input ?? {},
+      message: null,
+    });
+    console.debug("[perm-rules] auto-allow", payload.tool_name, "matched", hit.raw);
+    return true;
+  } catch (e) {
+    console.warn("[perm-rules] auto-allow respond failed:", e);
+    return false;
+  }
+}
