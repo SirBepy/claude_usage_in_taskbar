@@ -14,7 +14,7 @@ import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/compo
 import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
-import { loadSort, LS_SORT, projectName } from "./sessions-helpers";
+import { loadSort, LS_SORT, projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
 
 let _pane: HTMLElement | null = null;
@@ -219,6 +219,17 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       if (state.mountId !== myMount) return;
       renderSidebar(listEl);
       updateThinkingBar();
+      // Live-update the pane header title when the session name resolves.
+      if (state.selectedId && !state.pendingNewSession) {
+        const sess = state.sessions.find((s) => s.session_id === state.selectedId);
+        if (sess) {
+          const titleEl = pane.querySelector<HTMLElement>(".session-header .title");
+          if (titleEl) {
+            const newTitle = sessionSubtitle(sess);
+            if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
+          }
+        }
+      }
       // If the previously-selected session vanished (e.g. takeover renamed it,
       // or it was ended externally), clear the pane to avoid stale content.
       // Skip this check while a new-session turn is pending: state.selectedId
@@ -459,8 +470,17 @@ export async function renderDetachedSession(
     state.unlistenInstances = await ev.listen("instances-changed", async () => {
       if (state.mountId !== myMount) return;
       await refreshSessions();
-      // We don't have a sidebar to refresh here, but a follow-up could
-      // re-render the header meta line.
+      // Live-update the pane header title when the session name resolves.
+      if (state.selectedId) {
+        const sess = state.sessions.find((s) => s.session_id === state.selectedId);
+        if (sess) {
+          const titleEl = pane.querySelector<HTMLElement>(".session-header .title");
+          if (titleEl) {
+            const newTitle = sessionSubtitle(sess);
+            if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
+          }
+        }
+      }
     });
   }
 
