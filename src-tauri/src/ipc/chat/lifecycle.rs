@@ -108,6 +108,7 @@ pub async fn reattach_window(session_id: String, app: AppHandle) -> Result<(), S
 #[tauri::command]
 pub async fn open_session_in_terminal(
     session_id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
@@ -120,6 +121,12 @@ pub async fn open_session_in_terminal(
         return Err(format!("cwd does not exist: {}", cwd.display()));
     }
     spawn_terminal_for_session(&session_id, &cwd).map_err(|e| e.to_string())?;
+    // Hand the session over to the terminal: convert it to External so the app
+    // shows a read-only view with a Take Over button instead of an active
+    // composer, and so the terminal's SessionEnd no longer kills our entry.
+    if state.instances.externalize_session(&session_id) {
+        let _ = app.emit("instances-changed", state.instances.list());
+    }
     Ok(())
 }
 

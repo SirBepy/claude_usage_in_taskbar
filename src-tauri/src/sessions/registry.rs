@@ -187,6 +187,20 @@ impl Registry {
         true
     }
 
+    /// Convert an Interactive session to External so the terminal owns it after
+    /// "Open in Terminal". Sets pid=0 (terminal will update it via `set_pid`
+    /// when its SessionStart hook fires). Returns true if the entry was found
+    /// and actually changed.
+    pub fn externalize_session(&self, session_id: &str) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(inst) = guard.get_mut(session_id) else { return false };
+        if inst.kind == InstanceKind::External { return false; }
+        inst.kind = InstanceKind::External;
+        inst.pid = 0;
+        inst.busy = false;
+        true
+    }
+
     /// Marks an instance as ended. Idempotent: returns `true` only the
     /// first time (when `end_reason` flips from None to Some).
     pub fn mark_ended(&self, session_id: &str, reason: EndReason, when: &str) -> bool {

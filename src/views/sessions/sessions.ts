@@ -247,6 +247,21 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
         setActiveSession(null);
         pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
       }
+      // If the selected session's kind changed (e.g. Interactive -> External
+      // after "Open in Terminal"), the pane must re-render to show the correct
+      // read-only UI. Detect by comparing pane DOM vs current kind.
+      if (!state.pendingNewSession && state.selectedId) {
+        const updatedSess = state.sessions.find((s) => s.session_id === state.selectedId);
+        if (updatedSess) {
+          const paneIsReadOnly = !!pane.querySelector(".readonly-banner");
+          const sessIsReadOnly = updatedSess.kind === "external";
+          if (paneIsReadOnly !== sessIsReadOnly) {
+            const reloadId = state.selectedId;
+            setActiveSession(null);
+            await selectSession(reloadId, pane);
+          }
+        }
+      }
     });
   }
 
