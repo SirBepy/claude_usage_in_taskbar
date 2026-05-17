@@ -224,8 +224,12 @@ class SessionEventStore {
   // deduplicated against the existing cache by timestamp+type to prevent
   // doubling events the runner already pushed for app-driven turns.
   async ensureWatchListener(sessionId: string): Promise<void> {
-    const entry = this.cache.get(sessionId);
-    if (!entry || entry.unlistenWatch) return;
+    let entry = this.cache.get(sessionId);
+    if (!entry) {
+      entry = this.makeEntry();
+      this.cache.set(sessionId, entry);
+    }
+    if (entry.unlistenWatch) return;
     const ev = window.__TAURI__?.event;
     if (!ev?.listen) return;
     entry.unlistenWatch = await ev.listen<ChatEvent>(`chat-watch:${sessionId}`, (e) => {

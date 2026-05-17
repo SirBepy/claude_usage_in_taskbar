@@ -278,7 +278,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   _watchedId = sessionId;
   void invoke<void>("watch_session_transcript", { sessionId, cwd: sess.cwd ?? null })
     .then(() => sessionEvents.ensureWatchListener(sessionId))
-    .catch(() => {});
+    .catch((err) => console.warn("[sessions] watch_session_transcript failed:", err));
 
   if (readOnly) {
     pane.querySelector<HTMLButtonElement>(".refresh-btn")?.addEventListener("click", async () => {

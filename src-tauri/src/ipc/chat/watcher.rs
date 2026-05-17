@@ -1,9 +1,12 @@
 //! Real-time file watcher for external (read-only) session transcripts.
 //!
 //! When the Sessions view opens an External session, `watch_session_transcript`
-//! tails its JSONL file from EOF and emits `chat:<id>` Tauri events for every
-//! new complete line. The frontend event store already listens on `chat:<id>`,
-//! so the renderer receives and renders new messages without any extra wiring.
+//! tails its JSONL file from EOF and emits `chat-watch:<id>` Tauri events for
+//! every new complete line. The frontend event store listens on `chat-watch:<id>`
+//! via `ensureWatchListener` and forwards events to the renderer.
+//!
+//! If the JSONL doesn't exist yet (session just opened, user hasn't typed
+//! anything), we watch the expected project directory for the file to appear.
 //!
 //! `unwatch_session_transcript` drops the watcher and aborts the tail task.
 
@@ -24,8 +27,12 @@ fn watchers() -> &'static Mutex<HashMap<String, WatchHandle>> {
     W.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Start tailing `session_id`'s JSONL transcript from the current EOF,
-/// emitting a `chat:<session_id>` Tauri event for each new complete line.
+/// Start tailing `session_id`'s JSONL transcript, emitting
+/// `chat-watch:<session_id>` Tauri events for each new complete line.
+///
+/// If the transcript doesn't exist yet (session just opened), watches the
+/// expected project directory and picks up the file when it appears.
+///
 /// Idempotent: calling again replaces any existing watcher for the session.
 #[tauri::command]
 pub async fn watch_session_transcript(
@@ -38,53 +45,90 @@ pub async fn watch_session_transcript(
     // Replace any existing watcher for this session.
     stop_watcher(&session_id);
 
-    let path = tauri::async_runtime::spawn_blocking({
-        let sid = session_id.clone();
-        let c = cwd.clone();
-        move || crate::chat::history::locate_transcript(&sid, c.as_deref())
+    let sid = session_id.clone();
+    let c = cwd.clone();
+
+    // Locate transcript. If not found, derive the expected parent directory
+    // from cwd so we can watch for the file to appear when it's first written.
+    let (watch_dir, found_path) = tauri::async_runtime::spawn_blocking(move || {
+        match crate::chat::history::locate_transcript(&sid, c.as_deref()) {
+            Ok(p) => {
+                let parent = p.parent().map(|d| d.to_path_buf());
+                (parent, Some(p))
+            }
+            Err(_) => {
+                // File not created yet. Derive expected parent from cwd.
+                let parent = c.as_deref().and_then(|cwd_str| {
+                    let projects = crate::tokens::claude_projects_dir()?;
+                    let encoded = crate::tokens::encode_cwd_as_project_dir(
+                        std::path::Path::new(cwd_str),
+                    );
+                    Some(projects.join(encoded))
+                });
+                (parent, None)
+            }
+        }
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string())?;
 
-    // Tail from current EOF so we only emit new events, not history.
-    let initial_offset = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let watch_dir = watch_dir.ok_or_else(|| {
+        format!("transcript not found for session {session_id} and no cwd to derive watch dir")
+    })?;
+
+    // Ensure the directory exists (Claude creates it on first write; creating
+    // it early lets the FS watcher attach before any events fire).
+    let _ = std::fs::create_dir_all(&watch_dir);
+
+    let initial_offset = found_path
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(16);
 
-    let watched_path = path.clone();
     let mut watcher =
         notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
-                let is_write = matches!(
-                    event.kind,
-                    EventKind::Modify(_) | EventKind::Create(_)
-                );
-                if is_write && event.paths.iter().any(|p| p == &watched_path) {
+                // Fire on any write/create in the watched directory.
+                // Filtering by exact path is skipped to avoid case-sensitivity
+                // mismatches on Windows where notify may return different
+                // path casing than locate_transcript.
+                if matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_)) {
                     let _ = tx.blocking_send(());
                 }
             }
         })
         .map_err(|e| format!("notify watcher: {e}"))?;
 
-    // Watch the parent directory (more reliable than watching the file itself).
-    let parent = path
-        .parent()
-        .ok_or("transcript has no parent directory")?;
     watcher
-        .watch(parent, RecursiveMode::NonRecursive)
+        .watch(&watch_dir, RecursiveMode::NonRecursive)
         .map_err(|e| format!("watch: {e}"))?;
 
     let sid = session_id.clone();
-    let task_path = path.clone();
+    let expected_file = watch_dir.join(format!("{session_id}.jsonl"));
     let task = tokio::spawn(async move {
+        let mut resolved_path = found_path;
         let mut offset = initial_offset;
 
         while rx.recv().await.is_some() {
             // Drain burst: multiple FS events may fire for one logical write.
             while rx.try_recv().is_ok() {}
 
+            // If we haven't located the file yet, check whether it appeared.
+            if resolved_path.is_none() {
+                if expected_file.exists() {
+                    resolved_path = Some(expected_file.clone());
+                    offset = 0; // read from beginning of newly-created file
+                } else {
+                    continue;
+                }
+            }
+
+            let path = resolved_path.as_ref().unwrap().clone();
             let (new_events, new_offset) = tauri::async_runtime::spawn_blocking({
-                let p = task_path.clone();
+                let p = path.clone();
                 let cur = offset;
                 move || -> (Vec<crate::types::chat::ChatEvent>, u64) {
                     let mut f = match File::open(&p) {
