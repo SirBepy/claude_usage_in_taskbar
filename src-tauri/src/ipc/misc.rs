@@ -23,7 +23,9 @@ pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html?chatswindow=1#sessions".into()),
     )
     .title("Claude Chats")
-    .inner_size(1000.0, 720.0)
+    // First-launch default. Subsequent opens use the size saved by
+    // tauri-plugin-window-state.
+    .inner_size(1280.0, 860.0)
     .min_inner_size(600.0, 400.0)
     .resizable(true)
     .build()
