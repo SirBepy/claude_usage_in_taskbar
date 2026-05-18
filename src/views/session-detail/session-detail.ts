@@ -2,18 +2,11 @@ import { html, render } from "lit-html";
 import { showToast } from "../../shared/toast";
 import { backFromSubview } from "../../shared/navigation";
 import { getCurrentSessionRecord, getProjectDetailState, getSettings } from "../../shared/state";
-import { renderAvatar as renderAvatarHtml } from "../../shared/projects";
+import { renderAvatar as renderAvatarHtml, hydrateCharacterAvatars } from "../../shared/projects";
 import { formatTokens } from "../../shared/tokens";
 import { api } from "../../shared/api";
 import "./session-detail.css";
 
-import type { Avatar } from "../../shared/projects";
-
-interface ProjectCfg {
-  path: string;
-  name?: string;
-  avatar?: Avatar;
-}
 
 interface SessionRecord {
   session_id?: string;
@@ -157,15 +150,17 @@ export async function renderSessionDetailView(
 
   const cwd = getProjectDetailState().cwd || "";
   const settings = getSettings();
-  const configured = ((settings.projects as ProjectCfg[] | undefined) || []).find((p) => p.path === cwd);
-  const avatar = configured?.avatar || {
+  const configured = (settings.projects || []).find((p: { path: string }) => p.path === cwd) as { path: string; name?: string; avatar?: unknown } | undefined;
+  const avatar = (configured?.avatar as Parameters<typeof renderAvatarHtml>[0]) || {
     kind: "emoji" as const,
     value: (configured?.name || cwd || "?").charAt(0),
   };
   const avatarEl = document.getElementById("sessionDetailAvatar");
   const titleEl = document.getElementById("sessionDetailTitle");
-  const pathEl = document.getElementById("sessionDetailPath");
-  if (avatarEl) avatarEl.innerHTML = renderAvatarHtml(avatar);
+  if (avatarEl) {
+    avatarEl.innerHTML = renderAvatarHtml(avatar);
+    void hydrateCharacterAvatars(avatarEl);
+  }
   if (titleEl) {
     if (isLive(r)) {
       const label = (r.name && r.name.trim()) || `Live session ${(r.session_id || "").slice(0, 8) || "?"}`;
@@ -175,7 +170,6 @@ export async function renderSessionDetailView(
       titleEl.textContent = sid.slice(0, 8) || r.date || "unknown";
     }
   }
-  if (pathEl) pathEl.textContent = cwd;
 
   const backBtn = root.querySelector<HTMLButtonElement>("#sessionDetailBackBtn");
   if (backBtn) backBtn.onclick = () => backFromSubview();
@@ -210,7 +204,6 @@ function template() {
           <div class="avatar-mini" id="sessionDetailAvatar">?</div>
           <div class="project-detail-titles">
             <h2 id="sessionDetailTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Session</h2>
-            <div class="project-detail-path" id="sessionDetailPath"></div>
           </div>
         </div>
         <div style="width:32px"></div>

@@ -3,7 +3,7 @@ import "./sessions-list.css";
 import { formatTokens, totalTok } from "../../../../shared/tokens";
 import { timeAgo } from "../../../../shared/time";
 import type { TokenRecord } from "../../../../shared/tokens";
-import { renderAvatar, projectLabel } from "../../../../shared/projects";
+import { renderAvatar, projectLabel, hydrateCharacterAvatars } from "../../../../shared/projects";
 import { getProjectDetailState, getSettings, getTokenHistory } from "../../../../shared/state";
 import { backFromSubview, openSessionDetail } from "../../../../shared/navigation";
 
@@ -18,10 +18,11 @@ export function populateProjectSubviewHeader(prefix: string): void {
   const aliases = settings.projectAliases || {};
   const avatarEl = document.getElementById(`${prefix}Avatar`);
   const titleEl = document.getElementById(`${prefix}Title`);
-  const pathEl = document.getElementById(`${prefix}Path`);
-  if (avatarEl) avatarEl.innerHTML = renderAvatar(avatar);
+  if (avatarEl) {
+    avatarEl.innerHTML = renderAvatar(avatar);
+    void hydrateCharacterAvatars(avatarEl);
+  }
   if (titleEl) titleEl.textContent = projectLabel(cwd, aliases);
-  if (pathEl) pathEl.textContent = cwd;
 }
 
 export function renderAllSessionsList(cwd: string): void {
@@ -95,7 +96,6 @@ function template() {
           <div class="avatar-mini" id="allSessionsAvatar">?</div>
           <div class="project-detail-titles">
             <h2 id="allSessionsTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Project</h2>
-            <div class="project-detail-path" id="allSessionsPath"></div>
           </div>
         </div>
         <div style="width:32px"></div>
