@@ -72,6 +72,10 @@ body {
   font-size: 1.1rem;
 }
 
+body.chats-window-mode .icon-btn.burger {
+  display: none;
+}
+
 @keyframes icon-btn-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

@@ -2,9 +2,11 @@ use tauri::{AppHandle, Manager};
 
 #[tauri::command]
 pub fn open_dashboard(app: AppHandle) {
+    use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.set_focus();
+        let _ = w.emit("navigate-to-dashboard", ());
     }
 }
 
@@ -18,7 +20,7 @@ pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
     tauri::WebviewWindowBuilder::new(
         &app,
         "chats",
-        tauri::WebviewUrl::App("index.html#sessions".into()),
+        tauri::WebviewUrl::App("index.html?chatswindow=1#sessions".into()),
     )
     .title("Claude Chats")
     .inner_size(1000.0, 720.0)
