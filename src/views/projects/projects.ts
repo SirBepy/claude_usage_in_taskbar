@@ -168,12 +168,9 @@ function template() {
         </button>
         <h2>Projects</h2>
         <div class="projects-sort">
-          <label for="projectsSortSelect" class="projects-sort-label">Sort by</label>
           <select id="projectsSortSelect" class="projects-sort-select">
             <option value="recent">Recently used</option>
-            <option value="live">Running instances</option>
             <option value="name">Name</option>
-            <option value="tokens">Tokens used</option>
           </select>
         </div>
       </div>

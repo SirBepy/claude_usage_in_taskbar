@@ -2,7 +2,7 @@ import { html, render } from "lit-html";
 import "./project-detail.css";
 import { formatTokens, totalTok } from "../../shared/tokens";
 import type { TokenRecord } from "../../shared/tokens";
-import { projectLabel, renderAvatar } from "../../shared/projects";
+import { projectLabel, renderAvatar, hydrateCharacterAvatars } from "../../shared/projects";
 import { resolveMergeChain, doMerge } from "../../shared/merges";
 import { timeAgo } from "../../shared/time";
 import {
@@ -34,7 +34,10 @@ function setHeader(cwd: string): void {
   const avatarEl = document.getElementById("projectDetailAvatar");
   const pathEl = document.getElementById("projectDetailHeaderPath");
   const titleEl = document.getElementById("projectDetailTitle");
-  if (avatarEl) avatarEl.innerHTML = renderAvatar(avatar);
+  if (avatarEl) {
+    avatarEl.innerHTML = renderAvatar(avatar);
+    void hydrateCharacterAvatars(avatarEl);
+  }
   if (pathEl) pathEl.textContent = cwd || "";
   if (titleEl) titleEl.textContent = projectLabel(cwd, aliases);
 }
@@ -238,6 +241,7 @@ export function renderProjectDetailContent(): void {
         value: (configured?.name || cwd || "?").charAt(0),
       },
     );
+    void hydrateCharacterAvatars(avatarEl);
     pathEl.textContent = cwd;
   }
 
