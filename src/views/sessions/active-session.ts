@@ -3,7 +3,7 @@ import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
-import type { ChatEvent, ContentBlock, GitInfo } from "../../types/ipc.generated";
+import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import {
   projectName,
@@ -11,7 +11,7 @@ import {
   loadUnreadSet,
   saveUnreadSet,
 } from "./sessions-helpers";
-import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
+import { SessionStatusbar, loadStatuslineFields, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import {
@@ -139,9 +139,10 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       readOnly: sess.kind === "external",
     });
     state.statusbar = sb;
-    // Fetch git info async (non-blocking, populates when ready).
+    // Fetch git info async (cache-first; instantly populated by constructor
+    // when cwd is a revisit, this just refreshes in case branch changed).
     if (sess.cwd) {
-      invoke<GitInfo>("get_git_info", { cwd: String(sess.cwd) })
+      fetchGitInfo(String(sess.cwd))
         .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
         .catch(() => { /* no git, fields just stay hidden */ });
     }

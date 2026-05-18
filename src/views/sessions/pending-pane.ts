@@ -3,14 +3,14 @@ import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
-import type { ChatEvent, ContentBlock, GitInfo } from "../../types/ipc.generated";
+import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import type { SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
 import { closeChat } from "./close-chat";
-import { SessionStatusbar, loadStatuslineFields } from "./session-statusbar";
+import { SessionStatusbar, loadStatuslineFields, fetchGitInfo } from "./session-statusbar";
 import { savePendingSession, clearPendingSession } from "./pending-draft-storage";
 
 function rebuildSidebar(): void {
@@ -53,7 +53,7 @@ export async function renderPendingPane(
       readOnly: true,
     });
     state.statusbar = sb;
-    invoke<GitInfo>("get_git_info", { cwd: project.path })
+    fetchGitInfo(project.path)
       .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
       .catch(() => {});
   }

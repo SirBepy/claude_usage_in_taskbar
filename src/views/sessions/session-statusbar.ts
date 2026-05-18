@@ -63,6 +63,35 @@ export function formatDuration(startedAt: string): string {
   return `${s}s`;
 }
 
+// ── Cross-mount caches ───────────────────────────────────────────────────────
+// Switching between chats re-creates the statusbar each time. These caches
+// avoid the visible "empty bar → chips pop in" flash by keeping the last
+// known values around for re-use on the next mount, while still firing a
+// background refresh (stale-while-revalidate for git).
+
+const gitInfoCache = new Map<string, GitInfo>();
+const gitInflight = new Map<string, Promise<GitInfo>>();
+const metaCache = new Map<string, SessionMeta>();
+
+export function getCachedGitInfo(cwd: string): GitInfo | undefined {
+  return gitInfoCache.get(cwd);
+}
+
+export function fetchGitInfo(cwd: string): Promise<GitInfo> {
+  let p = gitInflight.get(cwd);
+  if (!p) {
+    p = invoke<GitInfo>("get_git_info", { cwd })
+      .then((info) => { gitInfoCache.set(cwd, info); gitInflight.delete(cwd); return info; })
+      .catch((e) => { gitInflight.delete(cwd); throw e; });
+    gitInflight.set(cwd, p);
+  }
+  return p;
+}
+
+export function getCachedMeta(sessionId: string): SessionMeta | undefined {
+  return metaCache.get(sessionId);
+}
+
 // ── SessionStatusbar ─────────────────────────────────────────────────────────
 
 export interface StatusbarOptions {
@@ -72,11 +101,15 @@ export interface StatusbarOptions {
   readOnly?: boolean;
 }
 
+const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+
 export class SessionStatusbar {
   private container: HTMLElement;
   private fields: string[];
-  private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+  private meta: SessionMeta = EMPTY_META;
   private gitInfo: GitInfo = { branch: null, repo: null };
+  private gitInfoLoaded = false;
+  private metaLoaded = false;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
@@ -86,6 +119,10 @@ export class SessionStatusbar {
   private popoverOpen = false;
   private effortPopoverOpen = false;
   private modelPopoverOpen = false;
+  // Tracks which chip keys have already been rendered with real data, so the
+  // fade-in animation only plays the first time a chip appears - not on every
+  // duration tick or popover toggle.
+  private animatedKeys = new Set<string>();
 
   constructor(container: HTMLElement, startedAt: string | null, fields: string[], opts: StatusbarOptions = {}) {
     this.container = container;
@@ -96,17 +133,35 @@ export class SessionStatusbar {
     this.sessionId = opts.sessionId ?? null;
     this.readOnlyEffort = opts.readOnly ?? false;
     this.container.className = "session-statusbar";
+
+    // Warm from caches before first paint so revisits avoid the empty flash.
+    if (this.cwd) {
+      const cached = gitInfoCache.get(this.cwd);
+      if (cached) { this.gitInfo = cached; this.gitInfoLoaded = true; }
+    } else {
+      // No cwd = no git data is ever coming; skip the skeleton entirely.
+      this.gitInfoLoaded = true;
+    }
+    if (this.sessionId) {
+      const cached = metaCache.get(this.sessionId);
+      if (cached) { this.meta = cached; this.metaLoaded = true; }
+    }
+
     this.render();
     if (this.fields.includes("duration")) this.startDurationTimer();
   }
 
   updateMeta(meta: SessionMeta): void {
     this.meta = meta;
+    this.metaLoaded = true;
+    if (this.sessionId) metaCache.set(this.sessionId, meta);
     this.render();
   }
 
   updateGitInfo(info: GitInfo): void {
     this.gitInfo = info;
+    this.gitInfoLoaded = true;
+    if (this.cwd) gitInfoCache.set(this.cwd, info);
     this.render();
   }
 
@@ -124,8 +179,28 @@ export class SessionStatusbar {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
   }
 
+  // Targeted duration-text update. Avoids a full re-render every second,
+  // which would replay the fade-in animation on every chip.
+  private tickDuration(): void {
+    if (!this.startedAt) return;
+    const el = this.container.querySelector<HTMLElement>(".sb-duration .sb-duration-text");
+    if (el) el.textContent = formatDuration(this.startedAt);
+  }
+
   private startDurationTimer(): void {
-    this.durationTimer = setInterval(() => this.render(), 1000);
+    this.durationTimer = setInterval(() => this.tickDuration(), 1000);
+  }
+
+  private skeletonChip(key: string, extraClass: string, iconClass: string, width: string): string {
+    return `<span class="sb-chip sb-skeleton ${extraClass}" data-skeleton="${key}" style="min-width:${width}"><i class="ph ${iconClass}"></i><span class="sb-skel-bar"></span></span>`;
+  }
+
+  // Marks a key as "seen with real data". Returns the class fragment for the
+  // chip - " sb-fadein" only on first real appearance, "" thereafter.
+  private animClass(key: string): string {
+    if (this.animatedKeys.has(key)) return "";
+    this.animatedKeys.add(key);
+    return " sb-fadein";
   }
 
   private render(): void {
@@ -133,39 +208,55 @@ export class SessionStatusbar {
 
     // Git group: branch, repo, folder
     const gitChips: string[] = [];
-    if (f.includes("branch") && this.gitInfo.branch) {
-      gitChips.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
+    if (f.includes("branch")) {
+      if (this.gitInfo.branch) {
+        gitChips.push(`<span class="sb-chip sb-branch${this.animClass("branch")}"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
+      } else if (!this.gitInfoLoaded) {
+        gitChips.push(this.skeletonChip("branch", "sb-branch", "ph-git-branch", "60px"));
+      }
     }
-    if (f.includes("repo") && this.gitInfo.repo) {
-      gitChips.push(`<span class="sb-chip sb-repo"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
+    if (f.includes("repo")) {
+      if (this.gitInfo.repo) {
+        gitChips.push(`<span class="sb-chip sb-repo${this.animClass("repo")}"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
+      } else if (!this.gitInfoLoaded) {
+        gitChips.push(this.skeletonChip("repo", "sb-repo", "ph-folder-simple", "80px"));
+      }
     }
     if (f.includes("folder") && this.cwd) {
       const folderName = this.cwd.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? this.cwd;
       const cwdEsc = escapeHtml(this.cwd);
-      gitChips.push(`<span class="sb-chip sb-folder sb-folder-btn" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`);
+      gitChips.push(`<span class="sb-chip sb-folder sb-folder-btn${this.animClass("folder")}" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`);
     }
 
-    // Claude group: model, effort, context, thinking, duration, cost
+    // Claude group: model, effort, context, thinking, duration
     const claudeChips: string[] = [];
-    if (f.includes("model") && this.meta.model) {
-      claudeChips.push(`<span class="sb-chip sb-model sb-model-btn" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
+    if (f.includes("model")) {
+      if (this.meta.model) {
+        claudeChips.push(`<span class="sb-chip sb-model sb-model-btn${this.animClass("model")}" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
+      } else if (!this.metaLoaded) {
+        claudeChips.push(this.skeletonChip("model", "sb-model", "ph-robot", "70px"));
+      }
     }
     if (f.includes("effort") && this.effort) {
       const cls = this.readOnlyEffort ? " readonly" : " sb-effort-btn";
-      claudeChips.push(`<span class="sb-chip sb-effort${cls}" role="button" tabindex="0"><i class="ph ph-gauge"></i>${escapeHtml(this.effort)}</span>`);
+      claudeChips.push(`<span class="sb-chip sb-effort${cls}${this.animClass("effort")}" role="button" tabindex="0"><i class="ph ph-gauge"></i>${escapeHtml(this.effort)}</span>`);
     }
-    if (f.includes("context") && this.meta.inputTokens > 0) {
-      const window = modelContextWindow(this.meta.model);
-      const raw = (this.meta.inputTokens / window) * 100;
-      const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
-      const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
-      claudeChips.push(`<span class="sb-chip sb-context${cls}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens"><i class="ph ph-stack"></i>${pctStr}%</span>`);
+    if (f.includes("context")) {
+      if (this.meta.inputTokens > 0) {
+        const window = modelContextWindow(this.meta.model);
+        const raw = (this.meta.inputTokens / window) * 100;
+        const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
+        const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
+        claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens"><i class="ph ph-stack"></i>${pctStr}%</span>`);
+      } else if (!this.metaLoaded) {
+        claudeChips.push(this.skeletonChip("context", "sb-context", "ph-stack", "40px"));
+      }
     }
     if (f.includes("thinking") && this.meta.hasThinking) {
-      claudeChips.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
+      claudeChips.push(`<span class="sb-chip sb-thinking active${this.animClass("thinking")}"><i class="ph ph-brain"></i>thinking</span>`);
     }
     if (f.includes("duration") && this.startedAt) {
-      claudeChips.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${formatDuration(this.startedAt)}</span>`);
+      claudeChips.push(`<span class="sb-chip sb-duration${this.animClass("duration")}"><i class="ph ph-timer"></i><span class="sb-duration-text">${formatDuration(this.startedAt)}</span></span>`);
     }
 
     const sep = gitChips.length > 0 && claudeChips.length > 0
