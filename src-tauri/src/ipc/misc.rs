@@ -17,19 +17,25 @@ pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
         existing.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
-    tauri::WebviewWindowBuilder::new(
+    // Build hidden so tauri-plugin-window-state has a chance to restore the
+    // saved size + position before the window is ever painted. Without this
+    // the window flashes briefly at the inner_size default in the OS-default
+    // spot, then jumps to its remembered geometry. Show right after build
+    // (the plugin restores state synchronously during window creation).
+    let window = tauri::WebviewWindowBuilder::new(
         &app,
         "session-chats",
         tauri::WebviewUrl::App("index.html?chatswindow=1#sessions".into()),
     )
     .title("Claude Chats")
-    // First-launch default. Subsequent opens use the size saved by
-    // tauri-plugin-window-state.
     .inner_size(1280.0, 860.0)
     .min_inner_size(600.0, 400.0)
     .resizable(true)
+    .visible(false)
     .build()
     .map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
 
