@@ -89,6 +89,7 @@ pub fn run() {
             ipc::save_settings,
             ipc::auth_status,
             ipc::open_dashboard,
+            ipc::open_chats_window,
             ipc::quit_app,
             ipc::logout,
             ipc::poll_now,

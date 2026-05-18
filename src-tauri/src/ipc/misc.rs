@@ -9,6 +9,27 @@ pub fn open_dashboard(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("chats") {
+        let _ = existing.show();
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "chats",
+        tauri::WebviewUrl::App("index.html#sessions".into()),
+    )
+    .title("Claude Chats")
+    .inner_size(1000.0, 720.0)
+    .min_inner_size(600.0, 400.0)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn quit_app(app: AppHandle) {
     use std::sync::atomic::Ordering;
     if let Some(state) = app.try_state::<crate::state::AppState>() {
