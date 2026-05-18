@@ -105,6 +105,11 @@ function renderMarkdown(text: string): string {
 // content the user wants to see in the chat.
 const COMMAND_TAG_RE = /<\/?(?:command-name|command-message|command-args|local-command-stdout)(?:\s[^>]*)?>/gi;
 
+// Background-task completion events the harness injects as synthetic
+// user-role messages when `run_in_background: true` finishes. Multi-line
+// XML-ish block; strip the whole thing including contents.
+const TASK_NOTIFICATION_RE = /<task-notification[\s\S]*?<\/task-notification>/gi;
+
 // When /compact runs, Claude Code injects the generated summary back into the
 // conversation as a user message with this wrapper. The summary can be thousands
 // of characters; rendering it as a normal user bubble is confusing and noisy.
@@ -129,6 +134,7 @@ export function cleanUserBlocks(blocks: ContentBlock[]): ContentBlock[] {
     if (b.type === "text") {
       let stripped = b.text.replace(COMMAND_TAG_RE, "");
       stripped = stripped.replace(SKILL_BODY_RE, "");
+      stripped = stripped.replace(TASK_NOTIFICATION_RE, "");
       stripped = stripped.trim();
       if (stripped.length === 0) continue;
       out.push({ type: "text", text: stripped });

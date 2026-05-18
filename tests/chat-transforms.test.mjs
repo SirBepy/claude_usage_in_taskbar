@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderBlocks, renderMessage } from "../src/shared/chat/chat-transforms.ts";
+import { renderBlocks, renderMessage, cleanUserBlocks } from "../src/shared/chat/chat-transforms.ts";
 
 describe("renderBlocks — file token handling", () => {
   it("converts a standalone <file:path::name> token to an attachment-chip", () => {
@@ -94,5 +94,21 @@ describe("renderMessage — tool_use branches to edit-window for file mutations"
     });
     expect(html).not.toContain("edit-window");
     expect(html).toContain("<pre>");
+  });
+});
+
+describe("cleanUserBlocks — strips background-task notifications", () => {
+  it("drops a user message containing only a task-notification block", () => {
+    const out = cleanUserBlocks([{ type: "text", text: "<task-notification>\n<task-id>abc</task-id>\n<status>completed</status>\n<summary>did the thing</summary>\n</task-notification>" }]);
+    expect(out).toEqual([]);
+  });
+
+  it("strips task-notification but preserves surrounding user text", () => {
+    const out = cleanUserBlocks([{ type: "text", text: "hey before\n<task-notification><status>done</status></task-notification>\nhey after" }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].text).toContain("hey before");
+    expect(out[0].text).toContain("hey after");
+    expect(out[0].text).not.toContain("task-notification");
+    expect(out[0].text).not.toContain("status");
   });
 });
