@@ -17,6 +17,7 @@ import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, event
 import { highlightCodeBlocks } from "./code-highlighter";
 import { openLightbox } from "./lightbox";
 import { hydrateAttachments, chipToLightboxContent } from "./attachment-hydrator";
+import { parseFileEdit, type FileEditView } from "./file-edits";
 
 export interface SessionMeta {
   model: string | null;
@@ -65,7 +66,13 @@ export class ChatRenderer {
   private activeTurnStart: number | null = null;
   /** Turns whose messages are ready to be collapsed in flushRender. */
   private closeTurnQueue: { start: number; end: number }[] = [];
+  /** Chronological list of file-mutation tool_use calls in this session. */
+  private fileEdits: FileEditView[] = [];
+  /** Last activity string fired via onActivityUpdate (de-dupe). */
+  private lastActivity: string | null = null;
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
+  public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
+  public onActivityUpdate: ((activity: string | null) => void) | null = null;
 
   get cumulativeUsage(): CumulativeUsage {
     return { ...this._cumulative };
@@ -113,6 +120,10 @@ export class ChatRenderer {
     this.streamingIndex = null;
     this.meta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
     this._cumulative = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
+    this.fileEdits = [];
+    this.lastActivity = null;
+    this.onFileEditsChanged?.([]);
+    this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
 
     this.activeTurnStart = null;
@@ -307,6 +318,7 @@ export class ChatRenderer {
     this.dirtyIndices.clear();
     this.activeTurnStart = null;
     this.closeTurnQueue = [];
+    this.setActivity(null);
     this.sessionId = null;
   }
 
@@ -337,6 +349,55 @@ export class ChatRenderer {
     return { ...this.meta };
   }
 
+  getFileEdits(): FileEditView[] {
+    return [...this.fileEdits];
+  }
+
+  private describeActivity(toolName: string, input: unknown): string {
+    const obj = (input && typeof input === "object") ? input as Record<string, unknown> : {};
+    const fp = typeof obj.file_path === "string"
+      ? obj.file_path
+      : typeof obj.notebook_path === "string"
+        ? obj.notebook_path
+        : "";
+    const basename = fp ? fp.split(/[\\/]/).pop() ?? fp : "";
+    let s: string;
+    switch (toolName) {
+      case "Edit":
+      case "MultiEdit":
+      case "NotebookEdit":
+        s = `Editing ${basename}`;
+        break;
+      case "Write":
+        s = `Writing ${basename}`;
+        break;
+      case "Read":
+        s = `Reading ${basename}`;
+        break;
+      case "Bash": {
+        const cmd = typeof obj.command === "string" ? obj.command : "";
+        const cmdShort = cmd.length > 40 ? cmd.slice(0, 40) + "…" : cmd;
+        s = `Running: ${cmdShort}`;
+        break;
+      }
+      case "Grep":
+      case "Glob": {
+        const pat = typeof obj.pattern === "string" ? obj.pattern : "";
+        s = `Searching ${pat}`;
+        break;
+      }
+      default:
+        s = `Calling ${toolName}`;
+    }
+    return s.length > 60 ? s.slice(0, 59) + "…" : s;
+  }
+
+  private setActivity(a: string | null): void {
+    if (this.lastActivity === a) return;
+    this.lastActivity = a;
+    this.onActivityUpdate?.(a);
+  }
+
   /**
    * Replace the message list with the given history (read-only path used by
    * the History view). Chunked render with event-loop yields between batches
@@ -358,6 +419,10 @@ export class ChatRenderer {
     this.messageEls = [];
     this.dirtyIndices.clear();
     this.streamingIndex = null;
+    this.fileEdits = [];
+    this.lastActivity = null;
+    this.onFileEditsChanged?.([]);
+    this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
     const CHUNK = 8;
     for (let i = 0; i < events.length; i += CHUNK) {
@@ -414,6 +479,9 @@ export class ChatRenderer {
         break;
       }
       case "assistant_message": {
+        // Clear activity on first stream chunk OR final non-streaming chunk so the
+        // thinking bar stops showing a stale tool action while claude is talking.
+        if (!ev.streaming || this.streamingIndex === null) this.setActivity(null);
         const msg: RenderedMessage = {
           kind: "assistant",
           content: ev.content,
@@ -440,7 +508,7 @@ export class ChatRenderer {
         touched = true;
         break;
       }
-      case "tool_use":
+      case "tool_use": {
         this.messages.push({
           kind: "tool_use",
           tool: ev.tool_name,
@@ -448,8 +516,15 @@ export class ChatRenderer {
           id: ev.id,
           ts,
         });
+        const view = parseFileEdit(ev.tool_name, ev.input);
+        if (view) {
+          this.fileEdits.push(view);
+          this.onFileEditsChanged?.(this.getFileEdits());
+        }
+        this.setActivity(this.describeActivity(ev.tool_name, ev.input));
         touched = true;
         break;
+      }
       case "tool_result":
         this.messages.push({
           kind: "tool_result",
@@ -492,6 +567,7 @@ export class ChatRenderer {
         this._cumulative.costUsd += Number(ev.total_cost_usd) || 0;
         this._cumulative.turns += 1;
         this.onMetaUpdate?.(this.getMeta());
+        this.setActivity(null);
         // turn_usage is the definitive signal that Claude has finished a turn.
         // Enqueue collapse so the working steps fold up after the next flush.
         this.enqueueTurnClose();
