@@ -105,9 +105,11 @@ if (detachedSessionId) {
   mountRouter(app);
   initBoot();
 
-  void window.__TAURI__?.event?.listen("navigate-to-dashboard", () => {
-    void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("dashboard");
-  });
+  if (!document.body.classList.contains("chats-window-mode")) {
+    void window.__TAURI__?.event?.listen("navigate-to-dashboard", () => {
+      void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("dashboard");
+    });
+  }
 
   // Sidemenu wiring (ported from legacy dashboard.js). Burger buttons inside
   // migrated views wire openSidemenu on render; these bindings cover the
