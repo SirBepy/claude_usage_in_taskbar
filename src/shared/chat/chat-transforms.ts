@@ -2,6 +2,8 @@ import MarkdownIt from "markdown-it";
 import type { ContentBlock, ChatEvent } from "../../types/ipc.generated";
 import { escapeHtml } from "../escape-html";
 import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry";
+import { parseFileEdit } from "./file-edits";
+import { renderEditWindow } from "./edit-window";
 
 const md = new MarkdownIt({
   html: false,
@@ -79,8 +81,11 @@ export function renderMessage(m: RenderedMessage): string {
       return `<div class="msg user">${renderBlocks(m.content ?? [])}</div>`;
     case "assistant":
       return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(m.content ?? [])}</div>`;
-    case "tool_use":
+    case "tool_use": {
+      const view = parseFileEdit(m.tool ?? "", m.input);
+      if (view) return `<div class="msg tool-use tool-use--file">${renderEditWindow(view)}</div>`;
       return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></div>`;
+    }
     case "tool_result":
       return `<div class="msg tool-result${m.is_error ? " error" : ""}">${m.output ? renderBlocks([m.output]) : ""}</div>`;
     case "notification":
