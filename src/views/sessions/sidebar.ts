@@ -241,17 +241,18 @@ export function openCtxMenu(
     menu.appendChild(pidItem);
   }
 
-  // "Close" — interactive only
-  if (sess.kind === "interactive") {
-    const closeItem = document.createElement("button");
-    closeItem.className = "session-ctx-item";
-    closeItem.innerHTML = '<i class="ph ph-x"></i> Close';
-    closeItem.addEventListener("click", () => {
-      closeCtxMenu();
-      void closeChat(sessionId);
-    });
-    menu.appendChild(closeItem);
-  }
+  // "Close" — kills the underlying claude process (per-turn child for
+  // interactive sessions, the user's terminal claude pid for external)
+  // and drops the row from the sidebar. clear_session handles both kinds.
+  const closeItem = document.createElement("button");
+  closeItem.className = "session-ctx-item";
+  const closeLabel = sess.kind === "external" ? "Close (kill terminal)" : "Close";
+  closeItem.innerHTML = `<i class="ph ph-x"></i> ${closeLabel}`;
+  closeItem.addEventListener("click", () => {
+    closeCtxMenu();
+    void closeChat(sessionId);
+  });
+  menu.appendChild(closeItem);
 
   document.body.appendChild(menu);
   activeCtxMenu = menu;

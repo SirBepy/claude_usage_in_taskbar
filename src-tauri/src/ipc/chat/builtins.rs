@@ -24,6 +24,16 @@ pub async fn clear_session(
         }
     }
 
+    // For external sessions (the user's own `claude` terminal), kill the
+    // claude process tree by its registered pid so closing the chat row
+    // actually terminates the underlying CLI. Interactive sessions are
+    // handled by the per-turn kill above; only external needs this step.
+    if let Some(inst) = state.instances.get(&session_id) {
+        if inst.kind == crate::sessions::kinds::InstanceKind::External && inst.pid != 0 {
+            let _ = crate::channels::kill::kill_tree(inst.pid);
+        }
+    }
+
     // Mark the session ended in the registry so it disappears from the active list.
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     state.instances.mark_ended(&session_id, EndReason::Manual, &now);
