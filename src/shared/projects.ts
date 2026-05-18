@@ -58,18 +58,21 @@ export function renderAvatar(avatar: Avatar | undefined | null): string {
 
 /**
  * Resolves data URLs for any rendered character avatars within `root`.
- * Call after `renderAvatar` output is in the DOM. Idempotent: skips imgs
- * that already have a `src`.
+ * Call after `renderAvatar` output is in the DOM. Idempotent per character id:
+ * skips imgs already hydrated for their current `data-character-id`.
  */
 export async function hydrateCharacterAvatars(root: HTMLElement | Document = document): Promise<void> {
   const imgs = root.querySelectorAll<HTMLImageElement>("img.char-avatar[data-character-id]");
   for (const img of Array.from(imgs)) {
-    if (img.src) continue;
     const id = img.dataset.characterId;
     if (!id) continue;
+    if (img.dataset.hydrated === id) continue;
     try {
       const url = await api.characterAssetUrl(id, "icon.png");
-      if (url) img.src = url;
+      if (url) {
+        img.src = url;
+        img.dataset.hydrated = id;
+      }
     } catch (e) {
       console.warn("[avatar] failed to load character icon", id, e);
     }
