@@ -83,6 +83,15 @@
   margin: 0;
 }
 
+/* Paragraph spacing inside chat bubbles — breathing room between paras while
+   trimming the trailing margin on the last one to keep bubble padding tight. */
+.msg p {
+  margin: 0 0 8px 0;
+}
+.msg p:last-child {
+  margin-bottom: 0;
+}
+
 .msg.assistant {
   background: var(--surface);
   border: 1px solid var(--border);
