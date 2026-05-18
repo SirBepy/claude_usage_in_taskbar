@@ -374,11 +374,13 @@
   border-bottom: 1px solid rgba(251, 191, 36, 0.25);
   color: #fbbf24;
   font-size: 0.82rem;
-  padding: 8px 16px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  height: 44px;
+  box-sizing: border-box;
 }
 
 .readonly-banner i {

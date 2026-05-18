@@ -2,10 +2,11 @@
 
 .session-statusbar-host {
   flex-shrink: 0;
-  /* Reserve the statusbar's final height up front so the readonly banner /
-     messages list don't briefly mount flush against the header while the
-     async SessionStatusbar constructor is still running. */
-  min-height: 30px;
+  /* Fixed height (not min-height) so the host can never grow once chips
+     render. Matches .session-statusbar's final height exactly, so the
+     readonly banner sits at its final Y from the moment the pane mounts. */
+  height: 32px;
+  box-sizing: border-box;
 }
 
 .session-statusbar {
@@ -15,7 +16,8 @@
   padding: 4px 12px;
   background: var(--surface-alt);
   border-bottom: 1px solid var(--border);
-  min-height: 30px;
+  height: 32px;
+  box-sizing: border-box;
   position: relative;
 }
 
