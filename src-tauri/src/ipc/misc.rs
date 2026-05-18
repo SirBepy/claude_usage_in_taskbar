@@ -12,14 +12,14 @@ pub fn open_dashboard(app: AppHandle) {
 
 #[tauri::command]
 pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
-    if let Some(existing) = app.get_webview_window("chats") {
+    if let Some(existing) = app.get_webview_window("session-chats") {
         let _ = existing.show();
         existing.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
     tauri::WebviewWindowBuilder::new(
         &app,
-        "chats",
+        "session-chats",
         tauri::WebviewUrl::App("index.html?chatswindow=1#sessions".into()),
     )
     .title("Claude Chats")

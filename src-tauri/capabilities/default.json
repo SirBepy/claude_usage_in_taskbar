@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
   "description": "Capability for the main dashboard window",
-  "windows": ["main", "session-*", "chats"],
+  "windows": ["main", "session-*"],
   "permissions": [
     "core:default",
     "core:event:default",
