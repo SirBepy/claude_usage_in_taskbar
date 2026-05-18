@@ -197,6 +197,24 @@ export function openCtxMenu(
   });
   menu.appendChild(newItem);
 
+  // "Open project in dashboard" — focuses (or opens) the main window and
+  // navigates to this session's project detail view.
+  if (sess.cwd) {
+    const sessCwd = String(sess.cwd);
+    const dashItem = document.createElement("button");
+    dashItem.className = "session-ctx-item";
+    dashItem.innerHTML = '<i class="ph ph-squares-four"></i> Open project in dashboard';
+    dashItem.addEventListener("click", async () => {
+      closeCtxMenu();
+      try {
+        await invoke<void>("open_dashboard_project", { cwd: sessCwd });
+      } catch (e) {
+        console.error("[ctx-menu] open_dashboard_project failed", e);
+      }
+    });
+    menu.appendChild(dashItem);
+  }
+
   // "Open in VS Code"
   const codeItem = document.createElement("button");
   codeItem.className = "session-ctx-item";

@@ -10,6 +10,20 @@ pub fn open_dashboard(app: AppHandle) {
     }
 }
 
+/// Surfaces the main dashboard window and tells it to navigate to a specific
+/// project's detail page. Called from the chats window's per-chat menu so the
+/// user can jump to a project's dashboard view without leaving the chat
+/// window's process (it stays open in the background).
+#[tauri::command]
+pub fn open_dashboard_project(app: AppHandle, cwd: String) {
+    use tauri::Emitter;
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        let _ = w.emit("navigate-to-project", cwd);
+    }
+}
+
 #[tauri::command]
 pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("session-chats") {

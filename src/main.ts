@@ -113,6 +113,15 @@ if (detachedSessionId) {
     void window.__TAURI__?.event?.listen("navigate-to-dashboard", () => {
       void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("dashboard");
     });
+
+    // Cross-window jump from the chats window's per-chat menu: navigate to
+    // a specific project's detail page in the main dashboard.
+    void window.__TAURI__?.event?.listen<string>("navigate-to-project", async (e) => {
+      const cwd = e.payload;
+      if (!cwd) return;
+      const { openProjectDetail } = await import("./shared/navigation");
+      openProjectDetail(cwd);
+    });
   }
 
   // Sidemenu wiring (ported from legacy dashboard.js). Burger buttons inside
