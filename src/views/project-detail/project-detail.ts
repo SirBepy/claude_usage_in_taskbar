@@ -349,9 +349,9 @@ function renderSessionsList(cwd: string, range: string): void {
   );
   const top = sorted.slice(0, 5);
   const rowsHTML = top.map((r, i) => {
-    const rec = r as TokenRecord & { sessionId?: string; lastActiveAt?: string; recordedAt?: string };
+    const rec = r as TokenRecord & { sessionId?: string; startedAt?: string; lastActiveAt?: string; recordedAt?: string };
     const when = timeAgo(rec.lastActiveAt || rec.recordedAt || rec.date);
-    const name = (rec.sessionId || "").slice(0, 8) || "—";
+    const name = rec.startedAt ? new Date(rec.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
     const tok = formatTokens(totalTok(r));
     return `<tr class="session-row" data-session-idx="${i}" style="cursor:pointer">
       <td class="col-when">${when}</td>
