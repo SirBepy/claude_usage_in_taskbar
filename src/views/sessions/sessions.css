@@ -15,13 +15,6 @@
   background: var(--surface-alt);
 }
 
-.sessions-controls {
-  display: flex;
-  gap: 6px;
-  padding: 8px 8px 0;
-  align-items: center;
-}
-
 .sessions-sort {
   flex-shrink: 0;
   padding: 6px 8px;
@@ -32,6 +25,34 @@
   font-size: 0.8rem;
   font-family: inherit;
   cursor: pointer;
+}
+
+/* Header-inline variant: sits next to the "Chats" title, centered as a
+   group so it reads as part of the title rather than a separate control. */
+.view-sessions .view-header .sessions-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: center;
+}
+
+.view-sessions .view-header .sessions-title-group h2 {
+  flex: 0 0 auto;
+  text-align: left;
+}
+
+.sessions-sort-inline {
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+
+.sessions-sort-inline:hover {
+  color: var(--text);
+  background: var(--surface-alt);
 }
 
 .sessions-list {

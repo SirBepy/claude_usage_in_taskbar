@@ -14,7 +14,14 @@ export function template() {
         >
           <i class="ph ph-list"></i>
         </button>
-        <h2>Chats</h2>
+        <div class="sessions-title-group">
+          <h2>Chats</h2>
+          <select id="sessions-sort" class="sessions-sort sessions-sort-inline">
+            <option value="status">Status</option>
+            <option value="recent">Recent</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
         <button
           class="icon-btn"
           id="historyBtn"
@@ -34,13 +41,6 @@ export function template() {
       </div>
       <div class="view-body sessions-layout">
         <aside class="sessions-sidebar">
-          <div class="sessions-controls">
-            <select id="sessions-sort" class="sessions-sort">
-              <option value="status">Status</option>
-              <option value="recent">Recent</option>
-              <option value="name">Name</option>
-            </select>
-          </div>
           <ul id="sessions-list" class="sessions-list"></ul>
         </aside>
         <main class="session-pane" id="session-pane">
