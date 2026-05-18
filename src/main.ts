@@ -92,6 +92,10 @@ installExternalLinkInterceptor();
 
 if (new URLSearchParams(window.location.search).get("chatswindow") === "1") {
   document.body.classList.add("chats-window-mode");
+  // The sidemenu has no purpose in the chats window. Drop the DOM entirely
+  // so the initial CSS transition can't briefly animate it in during paint.
+  document.getElementById("sidemenu")?.remove();
+  document.getElementById("sidemenuBackdrop")?.remove();
 }
 
 const detachedSessionId = detachedSessionFromHash();

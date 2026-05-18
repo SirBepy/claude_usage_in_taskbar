@@ -76,14 +76,6 @@ body.chats-window-mode .icon-btn.burger {
   display: none;
 }
 
-/* The sidemenu has no purpose in the chats window (no nav targets the user
-   should reach from here). Hide it entirely so the CSS transition can't
-   briefly animate it in during initial paint before the transform applies. */
-body.chats-window-mode .sidemenu,
-body.chats-window-mode .sidemenu-backdrop {
-  display: none !important;
-}
-
 @keyframes icon-btn-spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
