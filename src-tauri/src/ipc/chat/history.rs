@@ -90,7 +90,7 @@ pub async fn list_history(
             if p.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                 continue;
             }
-            let title = p
+            let session_id = p
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
@@ -106,8 +106,10 @@ pub async fn list_history(
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64);
+            let title = crate::tokens::first_user_prompt(&p, 60)
+                .unwrap_or_else(|| session_id.clone());
             entries.push(crate::types::chat::HistoryEntry {
-                session_id: title.clone(),
+                session_id: session_id.clone(),
                 project_id: proj_slug.clone(),
                 cwd: crate::tokens::decode_cwd(&proj_slug),
                 title,
