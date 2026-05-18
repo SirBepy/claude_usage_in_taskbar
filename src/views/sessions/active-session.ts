@@ -21,6 +21,8 @@ import {
   setAutoAccept,
 } from "./permission-modal";
 import { closeChat } from "./close-chat";
+import { ChangesPanel } from "./changes-panel";
+import { setThinkingActivity } from "./sessions";
 
 function isCloseCommand(blocks: ContentBlock[]): boolean {
   if (blocks.length !== 1) return false;
@@ -46,6 +48,9 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
   state.renderer = null;
   state.composer?.destroy();
   state.composer = null;
+  state.changesPanel?.unmount();
+  state.changesPanel = null;
+  setThinkingActivity(null);
   setActiveSession(null);
   const pane = document.querySelector<HTMLElement>(".session-pane #session-pane")
     ?? document.querySelector<HTMLElement>("#session-pane");
@@ -107,6 +112,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}</span>
       ${readOnly ? "" : `<button class="icon-btn auto-accept-btn${isAutoAccept(sess.session_id) ? " is-on" : ""}" title="${isAutoAccept(sess.session_id) ? "Auto-accepting tool permissions. Click to disable." : "Auto-accept tool permissions for this session"}" aria-pressed="${isAutoAccept(sess.session_id) ? "true" : "false"}"><i class="ph ph-shield-check"></i></button>`}
+      <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i></button>
       <button class="icon-btn open-terminal-btn" title="Open this chat in an external terminal (survives app restart)"><i class="ph ph-terminal-window"></i></button>
       <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
       ${readOnly ? "" : '<button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>'}
@@ -150,6 +156,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
 
   // Attach renderer
   if (state.renderer) state.renderer.detach();
+  state.changesPanel?.unmount();
+  state.changesPanel = null;
   const messagesEl = pane.querySelector<HTMLElement>(".session-messages");
   if (messagesEl) {
     const renderer = new ChatRenderer(messagesEl);
@@ -161,6 +169,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         if (state.statusbar === sbForRenderer) sbForRenderer.updateMeta(meta);
       };
     }
+    // Mount the all-changes panel + wire renderer callbacks. Panel listens
+    // for file mutations; activity feed routes to the thinking bar.
+    const panel = new ChangesPanel();
+    panel.mount(pane, messagesEl);
+    state.changesPanel = panel;
+    renderer.onFileEditsChanged = (edits) => panel.onUpdate(edits);
+    renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
+    pane.querySelector(".changes-btn")?.addEventListener("click", () => panel.toggle());
     await renderer.attach(sessionId);
     // Bail if a newer mount or selectSession superseded us during await.
     if (state.mountId !== myMount || state.selectedId !== sessionId) {

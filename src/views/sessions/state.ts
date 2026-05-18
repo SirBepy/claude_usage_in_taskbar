@@ -4,6 +4,7 @@ import type { Composer } from "../../shared/chat/composer";
 import { setSelectedSessionId } from "./permission-modal";
 import type { SessionStatusbar } from "./session-statusbar";
 import type { SessionConfig } from "./model-effort-modal";
+import type { ChangesPanel } from "./changes-panel";
 
 export interface ParkedDraft {
   placeholderId: string;
@@ -52,6 +53,7 @@ export interface SessionsState {
   pendingNewSession: PendingNewSession | null;
   parkedDrafts: ParkedDraft[];
   statusbar: SessionStatusbar | null;
+  changesPanel: ChangesPanel | null;
   prevBusyMap: Map<string, boolean>;
   sortedSessionIds: string[];
 }
@@ -68,6 +70,7 @@ export function createInitialState(mountId: number): SessionsState {
     pendingNewSession: null,
     parkedDrafts: [],
     statusbar: null,
+    changesPanel: null,
     prevBusyMap: new Map(),
     sortedSessionIds: [],
   };
