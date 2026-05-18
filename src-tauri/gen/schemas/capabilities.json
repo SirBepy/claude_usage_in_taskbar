@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Capability for the main dashboard window","local":true,"windows":["main","session-*"],"permissions":["core:default","core:event:default","core:window:default","core:webview:default","core:app:default","core:app:allow-version","core:app:allow-name","core:tray:default","autostart:default","dialog:allow-open","updater:default"]}}
