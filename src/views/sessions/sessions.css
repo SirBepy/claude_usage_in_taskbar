@@ -575,3 +575,147 @@
   background: rgba(255, 255, 255, 0.25);
   color: var(--bg);
 }
+
+/* ── Edit window (inline tool-call preview) ──────────────────────────── */
+.edit-window {
+  margin: 6px 0;
+  background: var(--bg-elev-1, #1c1c1c);
+  border: 1px solid var(--border-1, #2a2a2a);
+  border-radius: 6px;
+  font-size: 12px;
+  overflow: hidden;
+}
+.edit-window-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.edit-window-summary::-webkit-details-marker { display: none; }
+.edit-window-summary::before {
+  content: "▸";
+  color: var(--text-3, #666);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.edit-window[open] > .edit-window-summary::before { transform: rotate(90deg); }
+.edit-window-path {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--text-2, #ccc);
+}
+.edit-window-diff { margin-left: auto; font-family: ui-monospace, monospace; }
+.edit-window-diff .diff-add { color: #8aff8a; }
+.edit-window-diff .diff-del { color: #ff8a8a; }
+.edit-window-diff .diff-zero { color: var(--text-3, #888); }
+.edit-window-body { border-top: 1px solid var(--border-1, #2a2a2a); }
+.edit-window-hunk-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3, #888);
+  padding: 4px 10px;
+  background: var(--bg-elev-0, #141414);
+}
+.edit-window-hunk {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border-1, #2a2a2a);
+}
+.edit-window-side {
+  background: var(--bg-elev-1, #1c1c1c);
+  padding: 6px 10px;
+  overflow-x: auto;
+}
+.edit-window-side[data-side="before"] pre { color: #ff8a8a; }
+.edit-window-side[data-side="after"] pre { color: #8aff8a; }
+.edit-window-side pre { margin: 0; font-family: ui-monospace, monospace; font-size: 11px; }
+.edit-window-empty { color: var(--text-3, #888); font-style: italic; font-size: 11px; }
+
+/* ── Changes rail + sheet ────────────────────────────────────────────── */
+.chat--dimmed { opacity: 0.55; pointer-events: none; transition: opacity 0.15s; }
+
+.changes-rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 220px;
+  background: var(--bg-elev-1, #1a1a1a);
+  border-left: 1px solid var(--border-1, #2a2a2a);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  font-size: 12px;
+}
+.changes-rail-hdr {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-1, #2a2a2a);
+}
+.changes-rail-title { font-weight: 600; }
+.changes-rail-chip { margin-left: auto; font-size: 11px; color: var(--text-3, #888); }
+.changes-rail-close {
+  background: none;
+  border: none;
+  color: var(--text-3, #888);
+  cursor: pointer;
+  padding: 2px;
+}
+.changes-rail-list { overflow-y: auto; flex: 1; }
+.changes-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.changes-row:hover { background: var(--bg-elev-2, #222); }
+.changes-row-name { font-family: ui-monospace, monospace; color: var(--text-2, #ccc); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes-row-meta { font-family: ui-monospace, monospace; font-size: 11px; }
+.changes-row-meta .diff-add { color: #8aff8a; }
+.changes-row-meta .diff-del { color: #ff8a8a; }
+
+.changes-sheet {
+  position: absolute;
+  top: 0;
+  right: 220px;
+  bottom: 0;
+  width: calc(100% - 220px - 60px);
+  background: var(--bg-elev-1, #1a1a1a);
+  border-left: 1px solid var(--border-1, #2a2a2a);
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+  box-shadow: -8px 0 16px rgba(0,0,0,0.4);
+}
+.changes-sheet-hdr {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-1, #2a2a2a);
+  font-family: ui-monospace, monospace;
+}
+.changes-sheet-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-3, #888);
+  cursor: pointer;
+}
+.changes-sheet-body { overflow-y: auto; padding: 12px; flex: 1; }
+.stacked-diff-file { margin-bottom: 16px; }
+.stacked-diff-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--bg-elev-0, #141414);
+  border-radius: 4px 4px 0 0;
+  font-size: 12px;
+}
