@@ -37,6 +37,12 @@ const THINKING_VERBS = [
 ];
 let _verbIdx = 0;
 let _verbTimer: number | null = null;
+let _activeActivity: string | null = null;
+
+export function setThinkingActivity(s: string | null): void {
+  _activeActivity = s;
+  updateThinkingBar();
+}
 
 function isCurrentSessionBusy(): boolean {
   const pending = state.pendingNewSession;
@@ -64,20 +70,26 @@ export function updateThinkingBar(): void {
   const bar = pane.querySelector<HTMLElement>(".session-thinking");
   if (!bar) return;
   const busy = isCurrentSessionBusy();
-  if (busy) {
-    if (bar.hasAttribute("hidden")) {
-      bar.removeAttribute("hidden");
-      _verbIdx = Math.floor(Math.random() * THINKING_VERBS.length);
-      const tick = (): void => {
-        bar.textContent = THINKING_VERBS[_verbIdx % THINKING_VERBS.length] + "…";
-        _verbIdx++;
-      };
-      tick();
-      _verbTimer = window.setInterval(tick, 3500);
-    }
-  } else {
+  if (!busy) {
     bar.setAttribute("hidden", "");
     if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
+    _activeActivity = null;
+    return;
+  }
+  bar.removeAttribute("hidden");
+  if (_activeActivity) {
+    if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
+    bar.textContent = _activeActivity;
+    return;
+  }
+  if (_verbTimer === null) {
+    _verbIdx = Math.floor(Math.random() * THINKING_VERBS.length);
+    const tick = (): void => {
+      bar.textContent = THINKING_VERBS[_verbIdx % THINKING_VERBS.length] + "…";
+      _verbIdx++;
+    };
+    tick();
+    _verbTimer = window.setInterval(tick, 3500);
   }
 }
 
