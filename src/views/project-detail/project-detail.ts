@@ -2,6 +2,8 @@ import { html, render } from "lit-html";
 import "./project-detail.css";
 import { formatTokens, totalTok } from "../../shared/tokens";
 import type { TokenRecord } from "../../shared/tokens";
+import { invoke } from "../../shared/ipc";
+import type { HistoryEntry } from "../../types/ipc.generated";
 import { projectLabel, renderAvatar, hydrateCharacterAvatars } from "../../shared/projects";
 import { resolveMergeChain, doMerge } from "../../shared/merges";
 import { timeAgo } from "../../shared/time";
@@ -273,7 +275,7 @@ export function renderProjectDetailContent(): void {
     chartContainer.innerHTML = `<div class="no-data">No activity in this period</div>`;
     if (prevBtn) prevBtn.disabled = true;
     if (nextBtn) nextBtn.disabled = true;
-    renderSessionsList(cwd, range);
+    void renderSessionsList(cwd, range);
     return;
   }
 
@@ -324,7 +326,7 @@ export function buildBarChartSVG(days: Array<{ date: string; tokens: number }>):
   </svg></div>`;
 }
 
-function renderSessionsList(cwd: string, range: string): void {
+async function renderSessionsList(cwd: string, range: string): Promise<void> {
   const list = document.getElementById("project-sessions-list");
   const history = getTokenHistory();
   if (!list || !history) return;
@@ -348,14 +350,23 @@ function renderSessionsList(cwd: string, range: string): void {
     (((a as { date?: string }).date ?? "") < ((b as { date?: string }).date ?? "") ? 1 : -1),
   );
   const top = sorted.slice(0, 5);
+
+  let titleMap = new Map<string, string>();
+  try {
+    const entries = await invoke<HistoryEntry[]>("list_history", { projectId: null, search: null, limit: 500, offset: 0 });
+    for (const e of entries || []) {
+      if (e.title) titleMap.set(e.session_id, e.title);
+    }
+  } catch { /* titles are best-effort */ }
+
   const rowsHTML = top.map((r, i) => {
-    const rec = r as TokenRecord & { sessionId?: string; startedAt?: string; lastActiveAt?: string; recordedAt?: string };
+    const rec = r as TokenRecord & { sessionId?: string; lastActiveAt?: string; recordedAt?: string };
     const when = timeAgo(rec.lastActiveAt || rec.recordedAt || rec.date);
-    const name = rec.startedAt ? new Date(rec.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+    const title = (rec.sessionId && titleMap.get(rec.sessionId)) || "—";
     const tok = formatTokens(totalTok(r));
     return `<tr class="session-row" data-session-idx="${i}" style="cursor:pointer">
       <td class="col-when">${when}</td>
-      <td class="col-name">${name}</td>
+      <td class="col-name" title="${title}">${title}</td>
       <td class="col-tokens">${tok}</td>
     </tr>`;
   }).join("");
