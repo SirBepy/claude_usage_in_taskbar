@@ -27,21 +27,8 @@
   cursor: pointer;
 }
 
-/* Header-inline variant: sits next to the "Chats" title, centered as a
-   group so it reads as part of the title rather than a separate control. */
-.view-sessions .view-header .sessions-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  justify-content: center;
-}
-
-.view-sessions .view-header .sessions-title-group h2 {
-  flex: 0 0 auto;
-  text-align: left;
-}
-
+/* Header-inline variant: tucked into the left corner of the header next
+   to the burger so the sidebar is filter-free. */
 .sessions-sort-inline {
   padding: 4px 6px;
   font-size: 0.78rem;

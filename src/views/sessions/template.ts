@@ -14,14 +14,12 @@ export function template() {
         >
           <i class="ph ph-list"></i>
         </button>
-        <div class="sessions-title-group">
-          <h2>Chats</h2>
-          <select id="sessions-sort" class="sessions-sort sessions-sort-inline">
-            <option value="status">Status</option>
-            <option value="recent">Recent</option>
-            <option value="name">Name</option>
-          </select>
-        </div>
+        <select id="sessions-sort" class="sessions-sort sessions-sort-inline">
+          <option value="status">Status</option>
+          <option value="recent">Recent</option>
+          <option value="name">Name</option>
+        </select>
+        <h2>Chats</h2>
         <button
           class="icon-btn"
           id="historyBtn"
