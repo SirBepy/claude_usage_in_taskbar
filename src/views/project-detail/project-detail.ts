@@ -32,13 +32,11 @@ function setHeader(cwd: string): void {
   };
   const aliases = settings.projectAliases || {};
   const avatarEl = document.getElementById("projectDetailAvatar");
-  const pathEl = document.getElementById("projectDetailHeaderPath");
   const titleEl = document.getElementById("projectDetailTitle");
   if (avatarEl) {
     avatarEl.innerHTML = renderAvatar(avatar);
     void hydrateCharacterAvatars(avatarEl);
   }
-  if (pathEl) pathEl.textContent = cwd || "";
   if (titleEl) titleEl.textContent = projectLabel(cwd, aliases);
 }
 
@@ -232,8 +230,7 @@ export function renderProjectDetailContent(): void {
   const aliases = settings.projectAliases || {};
 
   const avatarEl = document.getElementById("projectDetailAvatar");
-  const pathEl = document.getElementById("projectDetailHeaderPath");
-  if (avatarEl && pathEl) {
+  if (avatarEl) {
     const configured = (settings.projects || []).find((p) => p.path === cwd);
     avatarEl.innerHTML = renderAvatar(
       configured?.avatar || {
@@ -242,7 +239,6 @@ export function renderProjectDetailContent(): void {
       },
     );
     void hydrateCharacterAvatars(avatarEl);
-    pathEl.textContent = cwd;
   }
 
   document.querySelectorAll<HTMLButtonElement>(".range-btn").forEach((btn) => {
@@ -403,7 +399,6 @@ function template() {
           <div class="project-detail-titles">
             <h2 id="projectDetailTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" title="Click to rename">Project</h2>
             <input id="projectDetailTitleInput" type="text" style="display:none;flex:1;font-weight:600;font-size:0.88rem">
-            <div class="project-detail-path" id="projectDetailHeaderPath"></div>
           </div>
         </div>
         <div class="menu-anchor">
