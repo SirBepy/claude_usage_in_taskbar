@@ -177,7 +177,8 @@
       "Skill(close)",
       "PowerShell(git *)",
       "Skill(rate-it)",
-      "Skill(superpowers:executing-plans)"
+      "Skill(superpowers:executing-plans)",
+      "Bash(claude *)"
     ]
   }
 }
