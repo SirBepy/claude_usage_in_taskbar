@@ -139,6 +139,8 @@ pub async fn spawn_session(
         let _ = child.wait().await;
     });
 
+    crate::daemon::jsonl_tail::spawn(Arc::clone(&session));
+
     Ok(session)
 }
 

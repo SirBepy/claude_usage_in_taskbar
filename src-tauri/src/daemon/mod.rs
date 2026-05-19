@@ -5,6 +5,7 @@ pub mod broadcast;
 pub mod frame;
 pub mod handshake;
 pub mod health;
+pub mod jsonl_tail;
 pub mod lifecycle;
 pub mod lockfile;
 pub mod methods;
