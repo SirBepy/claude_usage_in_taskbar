@@ -2,5 +2,6 @@
 //! consumes these via the `claude_usage_tauri_lib` library crate.
 
 pub mod frame;
+pub mod health;
 pub mod lockfile;
 pub mod rpc;
