@@ -5,7 +5,7 @@
 
 use crate::daemon::frame::{read_frame, write_frame, FrameError};
 use crate::daemon::handshake::{verify_handshake, HandshakeError};
-use crate::daemon::rpc::{Message, Router};
+use crate::daemon::rpc::{ConnectionContext, Message, Router};
 use serde_json::{json, Value};
 use std::io;
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
@@ -81,27 +81,26 @@ async fn serve_connection(
     });
     write_frame(&mut pipe, &hs_ok).await?;
 
-    // Per-connection outbound queue. Task 8 (attach_session) will populate
-    // it; Task 7 just sets up the plumbing.
+    // Per-connection outbound queue + context for attach_session subscriptions.
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Value>(256);
-    // tx will be used by Task 8 via the ConnectionContext; silence the
-    // unused warning until then.
-    let _outbound_tx_used_in_task_8 = tx;
+    let ctx = ConnectionContext::new(tx);
 
     // 2. Request + notification loop. `biased` drains outbound first so
     // notification latency stays low even under inbound load.
-    loop {
+    let exit_result: Result<(), FrameError> = loop {
         tokio::select! {
             biased;
             Some(notif) = rx.recv() => {
-                write_frame(&mut pipe, &notif).await?;
+                if let Err(e) = write_frame(&mut pipe, &notif).await {
+                    break Err(e);
+                }
             }
             frame_result = read_frame(&mut pipe) => {
                 let frame = match frame_result {
                     Ok(f) => f,
                     Err(FrameError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof
-                        || e.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
-                    Err(e) => return Err(e),
+                        || e.kind() == io::ErrorKind::BrokenPipe => break Ok(()),
+                    Err(e) => break Err(e),
                 };
                 let msg: Message = match serde_json::from_value(frame) {
                     Ok(m) => m,
@@ -110,23 +109,34 @@ async fn serve_connection(
                             "jsonrpc": "2.0", "id": null,
                             "error": {"code": -32700, "message": format!("parse error: {e}")}
                         });
-                        write_frame(&mut pipe, &err).await?;
+                        if let Err(e) = write_frame(&mut pipe, &err).await {
+                            break Err(e);
+                        }
                         continue;
                     }
                 };
                 match msg {
                     Message::Request(req) => {
-                        let resp = router.dispatch(req).await;
-                        let v: Value = serde_json::to_value(resp)?;
-                        write_frame(&mut pipe, &v).await?;
+                        let resp = router.dispatch(req, ctx.clone()).await;
+                        let v: Value = serde_json::to_value(resp).map_err(FrameError::from)?;
+                        if let Err(e) = write_frame(&mut pipe, &v).await {
+                            break Err(e);
+                        }
                     }
                     Message::Notification(_) | Message::Response(_) => {
-                        // Phase 2 still ignores inbound notifications + stray
-                        // responses. attach_session is a normal Request, not
-                        // a Notification.
+                        // Phase 2: still ignore inbound notifications + stray responses.
                     }
                 }
             }
         }
+    };
+
+    // Cleanup: abort all per-session subscription tasks on disconnect.
+    let mut subs = ctx.subscriptions.lock().await;
+    for (_, handle) in subs.drain() {
+        handle.abort();
     }
+    drop(subs);
+
+    exit_result
 }

@@ -138,8 +138,27 @@ mod tests {
     }
 }
 
+/// Per-connection state threaded through every handler invocation.
+#[derive(Clone)]
+pub struct ConnectionContext {
+    pub outbound: tokio::sync::mpsc::Sender<Value>,
+    /// Session IDs this connection has attached to. Per-session subscription
+    /// tasks are spawned by attach_session and aborted on detach_session OR
+    /// on connection close.
+    pub subscriptions: std::sync::Arc<tokio::sync::Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+}
+
+impl ConnectionContext {
+    pub fn new(outbound: tokio::sync::mpsc::Sender<Value>) -> Self {
+        Self {
+            outbound,
+            subscriptions: std::sync::Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        }
+    }
+}
+
 pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<Value, RpcError>> + Send>>;
-pub type Handler = Arc<dyn Fn(Option<Value>) -> HandlerFuture + Send + Sync>;
+pub type Handler = Arc<dyn Fn(Option<Value>, ConnectionContext) -> HandlerFuture + Send + Sync>;
 
 #[derive(Default, Clone)]
 pub struct Router {
@@ -153,14 +172,14 @@ impl Router {
 
     pub fn register<F, Fut>(&mut self, method: &str, f: F)
     where
-        F: Fn(Option<Value>) -> Fut + Send + Sync + 'static,
+        F: Fn(Option<Value>, ConnectionContext) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Value, RpcError>> + Send + 'static,
     {
-        let arc: Handler = Arc::new(move |p| Box::pin(f(p)));
+        let arc: Handler = Arc::new(move |p, ctx| Box::pin(f(p, ctx)));
         self.handlers.insert(method.to_string(), arc);
     }
 
-    pub async fn dispatch(&self, req: Request) -> Response {
+    pub async fn dispatch(&self, req: Request, ctx: ConnectionContext) -> Response {
         match self.handlers.get(&req.method) {
             None => Response {
                 jsonrpc: "2.0".into(),
@@ -169,7 +188,7 @@ impl Router {
                 error: Some(RpcError::method_not_found(&req.method)),
             },
             Some(h) => {
-                let r = h(req.params).await;
+                let r = h(req.params, ctx).await;
                 match r {
                     Ok(v) => Response {
                         jsonrpc: "2.0".into(),
@@ -194,9 +213,14 @@ mod router_tests {
     use super::*;
     use serde_json::json;
 
+    fn dummy_ctx() -> ConnectionContext {
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        ConnectionContext::new(tx)
+    }
+
     fn echo_router() -> Router {
         let mut r = Router::new();
-        r.register("echo", |params| async move { Ok(params.unwrap_or(Value::Null)) });
+        r.register("echo", |params, _ctx| async move { Ok(params.unwrap_or(Value::Null)) });
         r
     }
 
@@ -209,7 +233,7 @@ mod router_tests {
             method: "echo".into(),
             params: Some(json!("hi")),
         };
-        let resp = r.dispatch(req).await;
+        let resp = r.dispatch(req, dummy_ctx()).await;
         assert_eq!(resp.result, Some(json!("hi")));
         assert!(resp.error.is_none());
     }
@@ -223,7 +247,7 @@ mod router_tests {
             method: "nope".into(),
             params: None,
         };
-        let resp = r.dispatch(req).await;
+        let resp = r.dispatch(req, dummy_ctx()).await;
         assert!(resp.result.is_none());
         let err = resp.error.expect("error");
         assert_eq!(err.code, -32601);

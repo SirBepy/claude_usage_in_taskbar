@@ -39,7 +39,7 @@ fn err_to_rpc(e: LifecycleError) -> RpcError {
 pub fn register(router: &mut Router, map: SessionMap) {
     {
         let map = map.clone();
-        router.register("start_session", move |params| {
+        router.register("start_session", move |params, _ctx| {
             let map = map.clone();
             async move {
                 let p: StartSessionParams = serde_json::from_value(params.unwrap_or(Value::Null))
@@ -51,7 +51,7 @@ pub fn register(router: &mut Router, map: SessionMap) {
     }
     {
         let map = map.clone();
-        router.register("send_message", move |params| {
+        router.register("send_message", move |params, _ctx| {
             let map = map.clone();
             async move {
                 let p: SendMessageParams = serde_json::from_value(params.unwrap_or(Value::Null))
@@ -66,7 +66,7 @@ pub fn register(router: &mut Router, map: SessionMap) {
     }
     {
         let map = map.clone();
-        router.register("cancel_turn", move |params| {
+        router.register("cancel_turn", move |params, _ctx| {
             let map = map.clone();
             async move {
                 let p: SessionIdOnly = serde_json::from_value(params.unwrap_or(Value::Null))
@@ -78,7 +78,7 @@ pub fn register(router: &mut Router, map: SessionMap) {
     }
     {
         let map = map.clone();
-        router.register("end_session", move |params| {
+        router.register("end_session", move |params, _ctx| {
             let map = map.clone();
             async move {
                 let p: SessionIdOnly = serde_json::from_value(params.unwrap_or(Value::Null))
@@ -88,13 +88,71 @@ pub fn register(router: &mut Router, map: SessionMap) {
             }
         });
     }
+    {
+        let map = map.clone();
+        router.register("attach_session", move |params, ctx| {
+            let map = map.clone();
+            async move {
+                let p: SessionIdOnly = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let session = map.get(&p.session_id)
+                    .ok_or_else(|| err_to_rpc(LifecycleError::NotFound(p.session_id.clone())))?
+                    .clone();
+                let mut rx = crate::daemon::broadcast::subscribe(&session);
+                let outbound = ctx.outbound.clone();
+                let session_id_for_task = p.session_id.clone();
+                let handle = tokio::spawn(async move {
+                    loop {
+                        match rx.recv().await {
+                            Ok(ev) => {
+                                let notif = json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "chat_event",
+                                    "params": {
+                                        "session_id": session_id_for_task,
+                                        "event": ev,
+                                    }
+                                });
+                                if outbound.send(notif).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        }
+                    }
+                });
+                let mut subs = ctx.subscriptions.lock().await;
+                if let Some(old) = subs.insert(p.session_id.clone(), handle.abort_handle()) {
+                    old.abort();
+                }
+                Ok(json!({"ok": true}))
+            }
+        });
+    }
+    router.register("detach_session", move |params, ctx| {
+        async move {
+            let p: SessionIdOnly = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let mut subs = ctx.subscriptions.lock().await;
+            if let Some(handle) = subs.remove(&p.session_id) {
+                handle.abort();
+            }
+            Ok(json!({"ok": true}))
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::daemon::rpc::Request;
+    use crate::daemon::rpc::{ConnectionContext, Request};
     use crate::daemon::session::new_session_map;
+
+    fn dummy_ctx() -> ConnectionContext {
+        let (tx, _rx) = tokio::sync::mpsc::channel(16);
+        ConnectionContext::new(tx)
+    }
 
     #[tokio::test]
     async fn unknown_session_returns_not_found_rpc_error() {
@@ -106,7 +164,7 @@ mod tests {
             id: json!(1),
             method: "send_message".into(),
             params: Some(json!({"session_id": "nope", "text": "hi"})),
-        }).await;
+        }, dummy_ctx()).await;
         let err = resp.error.expect("error");
         assert_eq!(err.code, -32004);
     }
@@ -121,8 +179,39 @@ mod tests {
             id: json!(1),
             method: "send_message".into(),
             params: Some(json!({})),
-        }).await;
+        }, dummy_ctx()).await;
         let err = resp.error.expect("error");
         assert_eq!(err.code, -32602);
+    }
+
+    #[tokio::test]
+    async fn attach_session_unknown_returns_not_found() {
+        let mut r = Router::new();
+        let map = new_session_map();
+        register(&mut r, map);
+        let resp = r.dispatch(Request {
+            jsonrpc: "2.0".into(),
+            id: json!(1),
+            method: "attach_session".into(),
+            params: Some(json!({"session_id": "ghost"})),
+        }, dummy_ctx()).await;
+        let err = resp.error.expect("error");
+        assert_eq!(err.code, -32004);
+    }
+
+    #[tokio::test]
+    async fn detach_session_unknown_is_ok() {
+        let mut r = Router::new();
+        let map = new_session_map();
+        register(&mut r, map);
+        let resp = r.dispatch(Request {
+            jsonrpc: "2.0".into(),
+            id: json!(1),
+            method: "detach_session".into(),
+            params: Some(json!({"session_id": "ghost"})),
+        }, dummy_ctx()).await;
+        // detach on unknown session is a no-op, not an error
+        assert!(resp.error.is_none());
+        assert_eq!(resp.result, Some(json!({"ok": true})));
     }
 }
