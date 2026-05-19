@@ -48,6 +48,7 @@ which = "7"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
+dashmap = "6"
 sysinfo = "0.31"
 once_cell = "1"
 ts-rs = "10"
