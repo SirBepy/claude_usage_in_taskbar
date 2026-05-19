@@ -158,6 +158,39 @@ pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), Life
     Ok(())
 }
 
+pub async fn cancel_turn(map: &SessionMap, session_id: &str) -> Result<(), LifecycleError> {
+    let session = map.get(session_id)
+        .ok_or_else(|| LifecycleError::NotFound(session_id.to_string()))?
+        .clone();
+    crate::channels::kill::kill_tree(session.pid);
+    // Pump task observes stdout EOF and removes from map. No further
+    // bookkeeping needed here; client must call start_session to respawn.
+    Ok(())
+}
+
+pub async fn end_session(map: &SessionMap, session_id: &str) -> Result<(), LifecycleError> {
+    use tokio::io::AsyncWriteExt;
+    let session = map.get(session_id)
+        .ok_or_else(|| LifecycleError::NotFound(session_id.to_string()))?
+        .clone();
+    // Close stdin to signal EOF for clean shutdown.
+    {
+        let mut stdin = session.stdin.lock().await;
+        let _ = stdin.shutdown().await;
+    }
+    // Wait up to 3s for claude to exit on its own (pump removes from map on EOF).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while std::time::Instant::now() < deadline {
+        if !map.contains_key(session_id) {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    // Force-kill if still present.
+    crate::channels::kill::kill_tree(session.pid);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,5 +263,19 @@ mod tests {
         assert_eq!(v["type"], "user");
         assert_eq!(v["message"]["role"], "user");
         assert_eq!(v["message"]["content"], "hi");
+    }
+
+    #[tokio::test]
+    async fn cancel_turn_unknown_session_errors() {
+        let map = new_session_map();
+        let r = cancel_turn(&map, "nope").await;
+        assert!(matches!(r, Err(LifecycleError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn end_session_unknown_session_errors() {
+        let map = new_session_map();
+        let r = end_session(&map, "nope").await;
+        assert!(matches!(r, Err(LifecycleError::NotFound(_))));
     }
 }
