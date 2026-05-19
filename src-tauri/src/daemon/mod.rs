@@ -13,6 +13,7 @@ pub mod notifier;
 pub mod rpc;
 pub mod session;
 pub mod settings_cache;
+pub mod state;
 
 #[cfg(windows)]
 pub mod transport_windows;
