@@ -25,7 +25,14 @@ pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {
         .create(pipe_name)?;
 
     loop {
-        server.connect().await?;
+        // Transient connect errors (e.g. ERROR_NO_DATA on close-race) should
+        // log and continue, not kill the daemon. We only abort on errors
+        // creating the NEXT server, which would mean the pipe is unusable.
+        if let Err(e) = server.connect().await {
+            log::warn!("daemon: pipe connect failed, retrying: {e}");
+            server = ServerOptions::new().create(pipe_name)?;
+            continue;
+        }
         let connected = server;
         // Pre-create the next server BEFORE handling the current client so the
         // pipe stays open for the next connection (standard tokio pattern).
