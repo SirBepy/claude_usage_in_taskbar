@@ -146,6 +146,10 @@ pub struct ConnectionContext {
     /// tasks are spawned by attach_session and aborted on detach_session OR
     /// on connection close.
     pub subscriptions: std::sync::Arc<tokio::sync::Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    /// Daemon-wide notification subscription slot. Populated by
+    /// `subscribe_global`; the previous handle (if any) is aborted when a
+    /// fresh subscribe is issued.
+    pub global_sub: std::sync::Arc<tokio::sync::Mutex<Option<tokio::task::AbortHandle>>>,
 }
 
 impl ConnectionContext {
@@ -153,6 +157,7 @@ impl ConnectionContext {
         Self {
             outbound,
             subscriptions: std::sync::Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            global_sub: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }

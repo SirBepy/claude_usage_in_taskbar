@@ -9,6 +9,7 @@ pub mod jsonl_tail;
 pub mod lifecycle;
 pub mod lockfile;
 pub mod methods;
+pub mod notifier;
 pub mod rpc;
 pub mod session;
 
