@@ -1,5 +1,6 @@
 pub mod channels;
 pub mod characters;
+pub mod daemon;
 pub mod files;
 pub mod chat;
 pub mod auth;
