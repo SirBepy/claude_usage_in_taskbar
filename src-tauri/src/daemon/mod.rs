@@ -6,3 +6,6 @@ pub mod handshake;
 pub mod health;
 pub mod lockfile;
 pub mod rpc;
+
+#[cfg(windows)]
+pub mod transport_windows;
