@@ -5,6 +5,7 @@ use crate::daemon::lifecycle::{self, LifecycleError, StartSessionParams};
 use crate::daemon::notifier::Notifier;
 use crate::daemon::rpc::{Router, RpcError};
 use crate::daemon::session::SessionMap;
+use crate::daemon::settings_cache::SettingsCache;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -167,6 +168,19 @@ pub fn register_notifier(router: &mut Router, notifier: Notifier) {
             if let Some(old) = slot.replace(handle.abort_handle()) {
                 old.abort();
             }
+            Ok(serde_json::json!({"ok": true}))
+        }
+    });
+}
+
+pub fn register_settings(router: &mut Router, cache: SettingsCache) {
+    router.register("set_settings", move |params, _ctx| {
+        let cache = cache.clone();
+        async move {
+            let v = params.unwrap_or(serde_json::Value::Null);
+            let s: crate::types::Settings = serde_json::from_value(v)
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            cache.replace(s);
             Ok(serde_json::json!({"ok": true}))
         }
     });

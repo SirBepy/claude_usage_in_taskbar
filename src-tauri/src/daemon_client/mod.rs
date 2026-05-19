@@ -133,6 +133,13 @@ impl PersistentClient {
     pub async fn health(&self) -> Result<Value, ClientError> {
         self.call("health", Value::Null).await
     }
+
+    pub async fn push_settings(&self, settings: &crate::types::Settings) -> Result<(), ClientError> {
+        let v = serde_json::to_value(settings)
+            .map_err(|e| ClientError::Rpc { code: -32000, message: format!("serialize settings: {e}") })?;
+        self.call("set_settings", v).await?;
+        Ok(())
+    }
 }
 
 pub fn pipe_name_for_current_user() -> String {
