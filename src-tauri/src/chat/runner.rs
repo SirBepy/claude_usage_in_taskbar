@@ -255,7 +255,7 @@ mod tests {
         let cwd = std::env::temp_dir();
         let mut got_session_started = false;
         let mut got_session_id = None;
-        run_turn(&cwd, None, "reply with the literal word OK", "opus", "high", None, |ev| match ev {
+        run_turn(&cwd, None, "first-turn-emits-session-started", "reply with the literal word OK", "opus", "high", None, |ev| match ev {
             ChatEvent::SessionStarted { session_id, .. } => {
                 got_session_started = true;
                 got_session_id = Some(session_id);
