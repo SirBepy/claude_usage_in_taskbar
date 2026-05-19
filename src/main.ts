@@ -27,6 +27,7 @@ import { renderNotificationsView } from "./views/settings/subviews/notifications
 import { renderPresetsView } from "./views/settings/subviews/presets/presets";
 import { renderShortcutsView } from "./views/settings/subviews/shortcuts/shortcuts";
 import { renderPermissionsView } from "./views/settings/subviews/permissions/permissions";
+import { renderStatuslineView } from "./views/settings/subviews/statusline/statusline";
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
@@ -58,6 +59,7 @@ registerView("settings-notifications", renderNotificationsView);
 registerView("settings-presets", renderPresetsView);
 registerView("settings-shortcuts", renderShortcutsView);
 registerView("settings-permissions", renderPermissionsView);
+registerView("settings-statusline", renderStatuslineView);
 
 const app = document.getElementById("app");
 if (!app) {

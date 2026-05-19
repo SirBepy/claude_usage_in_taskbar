@@ -1,0 +1,87 @@
+.view-settings-statusline .sl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.view-settings-statusline .sl-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.view-settings-statusline .sl-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+  transition: background 0.12s;
+}
+
+.view-settings-statusline .sl-field-row:hover {
+  background: var(--surface-alt);
+}
+
+.view-settings-statusline .sl-field-row input[type=checkbox] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* Preview area */
+.view-settings-statusline .sl-preview-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
+.view-settings-statusline .sl-preview-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.view-settings-statusline .sl-preview-chrome {
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.view-settings-statusline .sl-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  height: 32px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.view-settings-statusline .sl-preview-body {
+  height: 80px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.view-settings-statusline .sl-preview-body-hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  opacity: 0.4;
+  font-style: italic;
+}

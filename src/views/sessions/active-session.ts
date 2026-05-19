@@ -24,6 +24,85 @@ import { closeChat } from "./close-chat";
 import { ChangesPanel } from "./changes-panel";
 import { setThinkingActivity } from "./sessions";
 
+// ── More-options dropdown ────────────────────────────────────────────────────
+
+let _moreMenu: HTMLElement | null = null;
+let _moreMenuCleanup: (() => void) | null = null;
+
+function closeMoreMenu(): void {
+  _moreMenu?.remove();
+  _moreMenu = null;
+  if (_moreMenuCleanup) { _moreMenuCleanup(); _moreMenuCleanup = null; }
+}
+
+function openMoreMenu(btn: HTMLButtonElement, sessionId: string, readOnly: boolean): void {
+  closeMoreMenu();
+  const autoOn = isAutoAccept(sessionId);
+
+  const menu = document.createElement("div");
+  menu.className = "session-more-menu";
+
+  const items: string[] = [];
+  if (!readOnly) {
+    items.push(`<button class="smore-item smore-auto-accept${autoOn ? " is-on" : ""}" data-action="auto-accept"><i class="ph ph-shield-check"></i>Auto-accept${autoOn ? '<span class="smore-check-dot"></span>' : ""}</button>`);
+  }
+  items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Open in Terminal</button>`);
+  items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
+  if (!readOnly) {
+    items.push(`<div class="smore-sep"></div>`);
+    items.push(`<button class="smore-item" data-action="stop"><i class="ph ph-x"></i>Stop turn</button>`);
+    items.push(`<button class="smore-item smore-danger" data-action="close"><i class="ph ph-x-circle"></i>Close session</button>`);
+  }
+  menu.innerHTML = items.join("");
+  document.body.appendChild(menu);
+  _moreMenu = menu;
+
+  const rect = btn.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.right = `${window.innerWidth - rect.right}px`;
+
+  menu.addEventListener("click", (e) => {
+    const item = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-action]");
+    if (!item) return;
+    const action = item.dataset.action;
+    closeMoreMenu();
+    void (async () => {
+      switch (action) {
+        case "auto-accept": {
+          const next = !isAutoAccept(sessionId);
+          setAutoAccept(sessionId, next);
+          const moreBtnEl = document.querySelector<HTMLButtonElement>(".session-header .more-btn");
+          if (moreBtnEl) moreBtnEl.classList.toggle("has-indicator", next);
+          break;
+        }
+        case "terminal":
+          try { await invoke<void>("open_session_in_terminal", { sessionId }); }
+          catch (err) { alert(`Failed to open terminal: ${err}`); }
+          break;
+        case "detach":
+          try { await invoke<void>("detach_window", { sessionId }); }
+          catch (err) { console.warn("[sessions] detach_window unavailable", err); }
+          break;
+        case "stop":
+          try { await invoke<void>("cancel_turn", { sessionId }); }
+          catch (err) { console.error("[sessions] cancel_turn failed", err); }
+          break;
+        case "close":
+          void closeChat(sessionId);
+          break;
+      }
+    })();
+  });
+
+  const onOutside = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node) && e.target !== btn) {
+      closeMoreMenu();
+    }
+  };
+  setTimeout(() => document.addEventListener("click", onOutside), 0);
+  _moreMenuCleanup = () => document.removeEventListener("click", onOutside);
+}
+
 function isCloseCommand(blocks: ContentBlock[]): boolean {
   if (blocks.length !== 1) return false;
   const b = blocks[0];
@@ -111,12 +190,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <header class="session-header">
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}</span>
-      ${readOnly ? "" : `<button class="icon-btn auto-accept-btn${isAutoAccept(sess.session_id) ? " is-on" : ""}" title="${isAutoAccept(sess.session_id) ? "Auto-accepting tool permissions. Click to disable." : "Auto-accept tool permissions for this session"}" aria-pressed="${isAutoAccept(sess.session_id) ? "true" : "false"}"><i class="ph ph-shield-check"></i></button>`}
       <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i></button>
-      <button class="icon-btn open-terminal-btn" title="Open this chat in an external terminal (survives app restart)"><i class="ph ph-terminal-window"></i></button>
-      <button class="icon-btn detach-btn" title="Detach"><i class="ph ph-arrow-square-out"></i></button>
-      ${readOnly ? "" : '<button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>'}
-      ${readOnly ? "" : '<button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>'}
+      <button class="icon-btn more-btn${!readOnly && isAutoAccept(sess.session_id) ? " has-indicator" : ""}" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
     </header>
     <div class="session-statusbar-host"></div>
     ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
@@ -249,45 +324,11 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   }
 
   // Wire header buttons
-  const autoBtn = pane.querySelector<HTMLButtonElement>(".auto-accept-btn");
-  if (autoBtn) {
-    autoBtn.addEventListener("click", () => {
-      const next = !isAutoAccept(sessionId);
-      setAutoAccept(sessionId, next);
-      autoBtn.classList.toggle("is-on", next);
-      autoBtn.setAttribute("aria-pressed", next ? "true" : "false");
-      autoBtn.title = next
-        ? "Auto-accepting tool permissions. Click to disable."
-        : "Auto-accept tool permissions for this session";
-    });
-  }
-  pane.querySelector<HTMLButtonElement>(".open-terminal-btn")?.addEventListener("click", async () => {
-    try {
-      await invoke<void>("open_session_in_terminal", { sessionId });
-    } catch (err) {
-      console.error("[sessions] open_session_in_terminal failed", err);
-      alert(`Failed to open terminal: ${err}`);
-    }
+  pane.querySelector<HTMLButtonElement>(".more-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget as HTMLButtonElement;
+    openMoreMenu(btn, sessionId, readOnly);
   });
-  pane.querySelector<HTMLButtonElement>(".detach-btn")?.addEventListener("click", async () => {
-    try {
-      await invoke<void>("detach_window", { sessionId });
-    } catch (err) {
-      console.warn("[sessions] detach_window unavailable", err);
-    }
-  });
-  pane.querySelector<HTMLButtonElement>(".cancel-btn")?.addEventListener("click", async () => {
-    try {
-      await invoke<void>("cancel_turn", { sessionId });
-    } catch (err) {
-      console.error("[sessions] cancel_turn failed", err);
-    }
-  });
-  if (!readOnly) {
-    pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", () => {
-      void closeChat(sessionId);
-    });
-  }
   // Start real-time file watcher for all sessions. External sessions get new
   // messages this way; Interactive sessions also need it so that turns
   // continued in a terminal appear in the UI. Watcher emits chat-watch:<id>

@@ -119,50 +119,6 @@
   font-style: italic;
 }
 
-.sb-gear {
-  flex-shrink: 0;
-  opacity: 0.4;
-  transition: opacity 0.15s;
-  padding: 2px 4px;
-  font-size: 0.85rem;
-}
-
-.sb-gear:hover { opacity: 1; }
-
-.sb-popover {
-  position: absolute;
-  top: 100%;
-  right: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  min-width: 140px;
-}
-
-.sb-popover-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.82rem;
-  color: var(--text);
-  cursor: pointer;
-  user-select: none;
-}
-
-.sb-popover-row:hover { background: var(--surface-alt); }
-
-.sb-popover-row input[type=checkbox] {
-  accent-color: var(--primary);
-  cursor: pointer;
-}
 
 .sb-chip.sb-effort-btn,
 .sb-chip.sb-model-btn {

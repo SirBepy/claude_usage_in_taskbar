@@ -171,12 +171,14 @@ export async function renderSettingsView(
   const navPresets = root.querySelector<HTMLElement>("#nav-presets");
   const navPermissions = root.querySelector<HTMLElement>("#nav-permissions");
   const navShortcuts = root.querySelector<HTMLElement>("#nav-shortcuts");
+  const navStatusline = root.querySelector<HTMLElement>("#nav-statusline");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
   if (navThemes) navThemes.onclick = () => g().navigateTo("settings-themes");
   if (navNotifs) navNotifs.onclick = () => g().navigateTo("settings-notifications");
   if (navPresets) navPresets.onclick = () => g().navigateTo("settings-presets");
   if (navPermissions) navPermissions.onclick = () => g().navigateTo("settings-permissions");
   if (navShortcuts) navShortcuts.onclick = () => g().navigateTo("settings-shortcuts");
+  if (navStatusline) navStatusline.onclick = () => g().navigateTo("settings-statusline");
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
   if (logoutBtn) logoutBtn.onclick = () => { void api.logout(); };
@@ -219,6 +221,10 @@ function template() {
           </div>
           <div class="nav-row" id="nav-permissions">
             <span class="nav-row-label">Permissions</span>
+            <span class="nav-row-arrow">›</span>
+          </div>
+          <div class="nav-row" id="nav-statusline">
+            <span class="nav-row-label">Statusline</span>
             <span class="nav-row-arrow">›</span>
           </div>
         </div>

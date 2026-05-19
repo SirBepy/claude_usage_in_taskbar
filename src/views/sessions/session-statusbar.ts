@@ -116,7 +116,6 @@ export class SessionStatusbar {
   private sessionId: string | null;
   private readOnlyEffort: boolean;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
-  private popoverOpen = false;
   private effortPopoverOpen = false;
   private modelPopoverOpen = false;
   // Tracks which chip keys have already been rendered with real data, so the
@@ -264,17 +263,6 @@ export class SessionStatusbar {
       : "";
     const allChips = [...gitChips, ...(sep ? [sep] : []), ...claudeChips];
 
-    const popoverHtml = this.popoverOpen ? `
-      <div class="sb-popover">
-        ${ALL_STATUSLINE_FIELDS.map(({ key, label }) => `
-          <label class="sb-popover-row">
-            <input type="checkbox" data-key="${key}"${f.includes(key) ? " checked" : ""}>
-            ${escapeHtml(label)}
-          </label>
-        `).join("")}
-      </div>
-    ` : "";
-
     const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
     const effortPopoverHtml = this.effortPopoverOpen ? `
       <div class="sb-effort-popover">
@@ -295,17 +283,9 @@ export class SessionStatusbar {
 
     this.container.innerHTML = `
       <div class="sb-chips">${allChips.length > 0 ? allChips.join("") : '<span class="sb-empty">No fields</span>'}</div>
-      <button class="sb-gear icon-btn" title="Configure statusline"><i class="ph ph-sliders-horizontal"></i></button>
-      ${popoverHtml}
       ${effortPopoverHtml}
       ${modelPopoverHtml}
     `;
-
-    this.container.querySelector(".sb-gear")?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.popoverOpen = !this.popoverOpen;
-      this.render();
-    });
 
     this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
       if (this.cwd) {
@@ -367,36 +347,5 @@ export class SessionStatusbar {
       setTimeout(() => document.addEventListener("click", closeOnOutsideModel), 0);
     }
 
-    if (this.popoverOpen) {
-      this.container.querySelectorAll<HTMLInputElement>(".sb-popover input").forEach((cb) => {
-        cb.addEventListener("change", () => {
-          const key = cb.dataset.key!;
-          if (cb.checked) {
-            if (!this.fields.includes(key)) this.fields = [...this.fields, key];
-          } else {
-            this.fields = this.fields.filter((k) => k !== key);
-          }
-          void saveStatuslineFields(this.fields);
-          if (key === "duration") {
-            if (this.fields.includes("duration") && !this.durationTimer) {
-              this.startDurationTimer();
-            } else if (!this.fields.includes("duration") && this.durationTimer) {
-              clearInterval(this.durationTimer);
-              this.durationTimer = null;
-            }
-          }
-          this.render();
-        });
-      });
-
-      const closeOnOutside = (e: MouseEvent) => {
-        if (!this.container.contains(e.target as Node)) {
-          this.popoverOpen = false;
-          this.render();
-          document.removeEventListener("click", closeOnOutside);
-        }
-      };
-      setTimeout(() => document.addEventListener("click", closeOnOutside), 0);
-    }
   }
 }
