@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Request {
@@ -131,5 +135,97 @@ mod tests {
             Message::Notification(_) => {}
             other => panic!("expected Notification, got {other:?}"),
         }
+    }
+}
+
+pub type HandlerFuture = Pin<Box<dyn Future<Output = Result<Value, RpcError>> + Send>>;
+pub type Handler = Arc<dyn Fn(Option<Value>) -> HandlerFuture + Send + Sync>;
+
+#[derive(Default, Clone)]
+pub struct Router {
+    handlers: HashMap<String, Handler>,
+}
+
+impl Router {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register<F, Fut>(&mut self, method: &str, f: F)
+    where
+        F: Fn(Option<Value>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Value, RpcError>> + Send + 'static,
+    {
+        let arc: Handler = Arc::new(move |p| Box::pin(f(p)));
+        self.handlers.insert(method.to_string(), arc);
+    }
+
+    pub async fn dispatch(&self, req: Request) -> Response {
+        match self.handlers.get(&req.method) {
+            None => Response {
+                jsonrpc: "2.0".into(),
+                id: req.id,
+                result: None,
+                error: Some(RpcError::method_not_found(&req.method)),
+            },
+            Some(h) => {
+                let r = h(req.params).await;
+                match r {
+                    Ok(v) => Response {
+                        jsonrpc: "2.0".into(),
+                        id: req.id,
+                        result: Some(v),
+                        error: None,
+                    },
+                    Err(e) => Response {
+                        jsonrpc: "2.0".into(),
+                        id: req.id,
+                        result: None,
+                        error: Some(e),
+                    },
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod router_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn echo_router() -> Router {
+        let mut r = Router::new();
+        r.register("echo", |params| async move { Ok(params.unwrap_or(Value::Null)) });
+        r
+    }
+
+    #[tokio::test]
+    async fn dispatch_calls_registered_handler() {
+        let r = echo_router();
+        let req = Request {
+            jsonrpc: "2.0".into(),
+            id: json!(1),
+            method: "echo".into(),
+            params: Some(json!("hi")),
+        };
+        let resp = r.dispatch(req).await;
+        assert_eq!(resp.result, Some(json!("hi")));
+        assert!(resp.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn dispatch_unknown_method_returns_method_not_found() {
+        let r = echo_router();
+        let req = Request {
+            jsonrpc: "2.0".into(),
+            id: json!(2),
+            method: "nope".into(),
+            params: None,
+        };
+        let resp = r.dispatch(req).await;
+        assert!(resp.result.is_none());
+        let err = resp.error.expect("error");
+        assert_eq!(err.code, -32601);
     }
 }
