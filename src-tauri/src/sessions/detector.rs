@@ -7,6 +7,7 @@ use crate::sessions::kinds::InstanceKind;
 use crate::sessions::registry::Registry;
 use crate::types::EndReason;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 use sysinfo::System;
 use tauri::{AppHandle, Emitter, Manager};
@@ -54,27 +55,42 @@ pub fn reconcile(registry: &Registry, input: ReconcileInput) -> Vec<String> {
     ended_now
 }
 
+/// One reconciliation tick: refreshes the live process list and applies the
+/// 2-strikes-and-you're-out rule against the registry. Strike state persists
+/// across calls via an internal `Mutex<HashMap>` so callers can invoke this
+/// from a simple loop without threading state through.
+///
+/// Returns `true` if any instance was newly marked ended this tick.
+pub fn reconcile_once(registry: &Registry) -> bool {
+    static STRIKES: std::sync::OnceLock<Mutex<HashMap<String, u8>>> = std::sync::OnceLock::new();
+    let strikes_mu = STRIKES.get_or_init(|| Mutex::new(HashMap::new()));
+
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
+    let live_pids: Vec<u32> = sys.processes().keys().map(|p| p.as_u32()).collect();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+    let mut strikes = strikes_mu.lock().expect("strikes mutex poisoned");
+    let ended_now = reconcile(registry, ReconcileInput {
+        live_pids,
+        now: &now,
+        absent_strikes: &mut *strikes,
+        grace_period_secs: 30,
+    });
+    !ended_now.is_empty()
+}
+
 /// Background task that runs the reconciliation every 5s and prunes
 /// long-ended instances every 60s.
 pub async fn run(app: AppHandle) {
-    let mut strikes: HashMap<String, u8> = HashMap::new();
     let mut last_prune = tokio::time::Instant::now();
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let mut sys = System::new();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-        let live_pids: Vec<u32> = sys.processes().keys().map(|p| p.as_u32()).collect();
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
         let state = app.state::<crate::state::AppState>();
         let registry = state.instances.clone();
-        let ended_now = reconcile(&registry, ReconcileInput {
-            live_pids,
-            now: &now,
-            absent_strikes: &mut strikes,
-            grace_period_secs: 30,
-        });
-        if !ended_now.is_empty() {
+        let changed = reconcile_once(&registry);
+        if changed {
             let _ = app.emit("instances-changed", registry.list());
         }
 
