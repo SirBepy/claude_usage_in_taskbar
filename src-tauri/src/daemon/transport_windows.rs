@@ -5,7 +5,6 @@
 
 use crate::daemon::frame::{read_frame, write_frame, FrameError};
 use crate::daemon::handshake::{verify_handshake, HandshakeError};
-use crate::daemon::health::{DAEMON_VERSION, PROTOCOL_VERSION};
 use crate::daemon::rpc::{Message, Router};
 use serde_json::{json, Value};
 use std::io;
@@ -51,13 +50,12 @@ async fn serve_connection(
     mut pipe: NamedPipeServer,
     router: Router,
 ) -> Result<(), FrameError> {
-    // 1. Handshake.
+    // 1. Handshake (unchanged from Phase 1).
     let first = read_frame(&mut pipe).await?;
     match verify_handshake(&first) {
         Err(HandshakeError::MissingField) => {
             let err = json!({
-                "jsonrpc": "2.0",
-                "id": null,
+                "jsonrpc": "2.0", "id": null,
                 "error": {"code": -32600, "message": "handshake missing protocol_version"}
             });
             write_frame(&mut pipe, &err).await?;
@@ -65,8 +63,7 @@ async fn serve_connection(
         }
         Err(HandshakeError::VersionMismatch { client, daemon }) => {
             let err = json!({
-                "jsonrpc": "2.0",
-                "id": null,
+                "jsonrpc": "2.0", "id": null,
                 "error": {
                     "code": -32600,
                     "message": format!("protocol version mismatch: client {client}, daemon {daemon}")
@@ -79,40 +76,56 @@ async fn serve_connection(
     }
     let hs_ok = json!({
         "handshake": "ok",
-        "daemon_version": DAEMON_VERSION,
-        "protocol_version": PROTOCOL_VERSION,
+        "daemon_version": crate::daemon::health::DAEMON_VERSION,
+        "protocol_version": crate::daemon::health::PROTOCOL_VERSION,
     });
     write_frame(&mut pipe, &hs_ok).await?;
 
-    // 2. Request loop.
+    // Per-connection outbound queue. Task 8 (attach_session) will populate
+    // it; Task 7 just sets up the plumbing.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Value>(256);
+    // tx will be used by Task 8 via the ConnectionContext; silence the
+    // unused warning until then.
+    let _outbound_tx_used_in_task_8 = tx;
+
+    // 2. Request + notification loop. `biased` drains outbound first so
+    // notification latency stays low even under inbound load.
     loop {
-        let frame = match read_frame(&mut pipe).await {
-            Ok(f) => f,
-            Err(FrameError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof
-                || e.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
-            Err(e) => return Err(e),
-        };
-        let msg: Message = match serde_json::from_value(frame) {
-            Ok(m) => m,
-            Err(e) => {
-                let err = json!({
-                    "jsonrpc": "2.0",
-                    "id": null,
-                    "error": {"code": -32700, "message": format!("parse error: {e}")}
-                });
-                write_frame(&mut pipe, &err).await?;
-                continue;
+        tokio::select! {
+            biased;
+            Some(notif) = rx.recv() => {
+                write_frame(&mut pipe, &notif).await?;
             }
-        };
-        match msg {
-            Message::Request(req) => {
-                let resp = router.dispatch(req).await;
-                let v: Value = serde_json::to_value(resp)?;
-                write_frame(&mut pipe, &v).await?;
-            }
-            Message::Notification(_) | Message::Response(_) => {
-                // Phase 1: silently ignore. Notifications from client and stray
-                // Response shapes are not part of the v1 protocol.
+            frame_result = read_frame(&mut pipe) => {
+                let frame = match frame_result {
+                    Ok(f) => f,
+                    Err(FrameError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof
+                        || e.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
+                    Err(e) => return Err(e),
+                };
+                let msg: Message = match serde_json::from_value(frame) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        let err = json!({
+                            "jsonrpc": "2.0", "id": null,
+                            "error": {"code": -32700, "message": format!("parse error: {e}")}
+                        });
+                        write_frame(&mut pipe, &err).await?;
+                        continue;
+                    }
+                };
+                match msg {
+                    Message::Request(req) => {
+                        let resp = router.dispatch(req).await;
+                        let v: Value = serde_json::to_value(resp)?;
+                        write_frame(&mut pipe, &v).await?;
+                    }
+                    Message::Notification(_) | Message::Response(_) => {
+                        // Phase 2 still ignores inbound notifications + stray
+                        // responses. attach_session is a normal Request, not
+                        // a Notification.
+                    }
+                }
             }
         }
     }
