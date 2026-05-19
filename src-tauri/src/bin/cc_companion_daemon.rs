@@ -1,15 +1,32 @@
 //! cc-companion-daemon: long-running helper process that owns chat-hub
-//! claude subprocesses. Phase 1 ships scaffolding + handshake only.
+//! claude subprocesses. Phase 3 added daemon-side hook server + sessions
+//! registry + pending request map; the daemon now owns hook ingress at
+//! port 27182 and the Phase 1 socket transport at the named pipe.
 
 use claude_usage_tauri_lib::daemon::lockfile::LockGuard;
 use claude_usage_tauri_lib::daemon::rpc::Router;
-use claude_usage_tauri_lib::daemon::{health, methods, session, transport_windows};
+use claude_usage_tauri_lib::daemon::session::new_session_map;
+use claude_usage_tauri_lib::daemon::settings_cache::SettingsCache;
+use claude_usage_tauri_lib::daemon::state::DaemonState;
+use claude_usage_tauri_lib::daemon::{detector_task, health, hooks_server, methods, transport_windows};
+use claude_usage_tauri_lib::settings;
+use claude_usage_tauri_lib::types::Settings;
 use std::path::PathBuf;
 
 fn app_data_dir() -> PathBuf {
     let mut p = dirs::data_dir().expect("data_dir");
     p.push("claude-usage-tauri");
     p
+}
+
+fn load_initial_settings() -> Settings {
+    // Best-effort load. If settings.json is missing / unparseable, the daemon
+    // starts with Settings::default(); the app will push its authoritative
+    // copy on connect via `set_settings`. Hook traffic that arrives in the
+    // gap creates project_id entries that the app reconciles when it pushes
+    // its snapshot back.
+    let Ok(path) = settings::paths::settings_file() else { return Settings::default() };
+    settings::load(&path)
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -22,10 +39,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let lock_path = app_data.join("daemon.lock");
     let _lock = LockGuard::acquire(lock_path)?;
 
+    let initial_settings = load_initial_settings();
+    let settings_cache = SettingsCache::new(initial_settings);
+    let sessions = new_session_map();
+    let state = DaemonState::new(sessions.clone(), settings_cache.clone());
+
     let mut router = Router::new();
     health::register(&mut router);
-    let session_map = session::new_session_map();
-    methods::register(&mut router, session_map);
+    methods::register(&mut router, sessions);
+    methods::register_notifier(&mut router, state.notifier.clone());
+    methods::register_settings(&mut router, settings_cache);
+    methods::register_responders(&mut router, state.clone());
+
+    // Bind hook server BEFORE the RPC accept loop so in-flight claude
+    // processes can re-discover the port the moment we're up.
+    let _hook_port = hooks_server::spawn(state.clone()).await?;
+    detector_task::spawn(state.clone());
 
     #[cfg(windows)]
     {
@@ -47,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     #[cfg(not(windows))]
     {
-        log::warn!("daemon: non-Windows transport not implemented in Phase 1");
+        log::warn!("daemon: non-Windows transport not implemented");
         tokio::signal::ctrl_c().await?;
     }
     Ok(())
