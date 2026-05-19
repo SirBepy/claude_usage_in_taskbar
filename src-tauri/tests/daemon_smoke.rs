@@ -35,6 +35,13 @@ async fn handshake_and_health() {
     let exe = daemon_exe();
     assert!(exe.exists(), "daemon exe missing: {}", exe.display());
 
+    // Clear any stale lockfile from a previous failed run; a zombie PID in
+    // the lockfile would block the new daemon from acquiring the lock.
+    if let Some(app_data) = dirs::data_dir() {
+        let lock = app_data.join("claude-usage-tauri").join("daemon.lock");
+        let _ = std::fs::remove_file(&lock);
+    }
+
     // Spawn daemon. stdio piped so we can kill cleanly.
     let mut child = Command::new(&exe)
         .stdout(Stdio::piped())
