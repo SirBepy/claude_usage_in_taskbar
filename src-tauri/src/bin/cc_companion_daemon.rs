@@ -3,7 +3,7 @@
 
 use claude_usage_tauri_lib::daemon::lockfile::LockGuard;
 use claude_usage_tauri_lib::daemon::rpc::Router;
-use claude_usage_tauri_lib::daemon::{health, transport_windows};
+use claude_usage_tauri_lib::daemon::{health, methods, session, transport_windows};
 use std::path::PathBuf;
 
 fn app_data_dir() -> PathBuf {
@@ -24,6 +24,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut router = Router::new();
     health::register(&mut router);
+    let session_map = session::new_session_map();
+    methods::register(&mut router, session_map);
 
     #[cfg(windows)]
     {

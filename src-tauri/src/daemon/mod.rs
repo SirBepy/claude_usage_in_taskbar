@@ -7,6 +7,7 @@ pub mod handshake;
 pub mod health;
 pub mod lifecycle;
 pub mod lockfile;
+pub mod methods;
 pub mod rpc;
 pub mod session;
 
