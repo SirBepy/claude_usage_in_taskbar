@@ -190,7 +190,7 @@ where
 /// Write a temporary .mcp.json file for the current turn and return its path.
 /// Returns None if the app-data dir is unavailable (non-fatal; permission
 /// relay simply won't be wired up for this turn).
-fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
+pub fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
     let mcp_dir = crate::settings::paths::mcp_temp_dir().ok()?;
     let exe = std::env::current_exe().ok()?;
     let config = serde_json::json!({

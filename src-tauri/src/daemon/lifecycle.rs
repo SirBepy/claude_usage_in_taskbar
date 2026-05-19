@@ -66,6 +66,8 @@ pub async fn spawn_session(
         return Err(LifecycleError::AlreadyExists(session_id));
     }
 
+    let mcp_config_path = crate::chat::runner::write_mcp_config(&session_id, &session_id);
+
     let mut cmd = Command::new("claude");
     cmd.arg("-p")
         .arg("--input-format=stream-json")
@@ -77,8 +79,14 @@ pub async fn spawn_session(
         .arg("--model")
         .arg(&params.model)
         .arg("--effort")
-        .arg(&params.effort)
-        .current_dir(&params.cwd)
+        .arg(&params.effort);
+    if let Some(ref mcp_path) = mcp_config_path {
+        cmd.arg("--permission-prompt-tool")
+           .arg("mcp__cc_companion__approval_prompt")
+           .arg("--mcp-config")
+           .arg(mcp_path);
+    }
+    cmd.current_dir(&params.cwd)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -103,6 +111,7 @@ pub async fn spawn_session(
         params.effort.clone(),
         pid,
         stdin,
+        mcp_config_path,
     );
     map.insert(session_id.clone(), Arc::clone(&session));
 
@@ -136,6 +145,9 @@ pub async fn spawn_session(
             "daemon: session {} pump task exited",
             pump_session.session_id
         );
+        if let Some(ref p) = pump_session.mcp_config_path {
+            let _ = std::fs::remove_file(p);
+        }
         let _ = child.wait().await;
     });
 
@@ -190,6 +202,9 @@ pub async fn end_session(map: &SessionMap, session_id: &str) -> Result<(), Lifec
     }
     // Force-kill if still present.
     crate::channels::kill::kill_tree(session.pid);
+    if let Some(ref p) = session.mcp_config_path {
+        let _ = std::fs::remove_file(p);
+    }
     Ok(())
 }
 

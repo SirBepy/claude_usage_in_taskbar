@@ -18,6 +18,10 @@ pub struct Session {
     pub pid: u32,
     pub stdin: Mutex<ChildStdin>,
     pub events: broadcast::Sender<ChatEvent>,
+    /// Path to the per-session .mcp.json file. Removed on session end /
+    /// pump exit. None if write_mcp_config failed (degrades to no
+    /// permission-prompt tool, which is OK for v1).
+    pub mcp_config_path: Option<PathBuf>,
 }
 
 impl Session {
@@ -28,6 +32,7 @@ impl Session {
         effort: String,
         pid: u32,
         stdin: ChildStdin,
+        mcp_config_path: Option<PathBuf>,
     ) -> Arc<Self> {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
         Arc::new(Self {
@@ -38,6 +43,7 @@ impl Session {
             pid,
             stdin: Mutex::new(stdin),
             events: tx,
+            mcp_config_path,
         })
     }
 }
