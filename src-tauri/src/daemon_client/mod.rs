@@ -140,6 +140,36 @@ impl PersistentClient {
         self.call("set_settings", v).await?;
         Ok(())
     }
+
+    pub async fn respond_permission(
+        &self,
+        request_id: &str,
+        allow: bool,
+        updated_input: Option<serde_json::Value>,
+        message: Option<String>,
+    ) -> Result<(), ClientError> {
+        let params = serde_json::json!({
+            "request_id": request_id,
+            "allow": allow,
+            "updated_input": updated_input,
+            "message": message,
+        });
+        self.call("respond_permission", params).await?;
+        Ok(())
+    }
+
+    pub async fn respond_question(
+        &self,
+        request_id: &str,
+        answers: serde_json::Value,
+    ) -> Result<(), ClientError> {
+        let params = serde_json::json!({
+            "request_id": request_id,
+            "answers": answers,
+        });
+        self.call("respond_question", params).await?;
+        Ok(())
+    }
 }
 
 pub fn pipe_name_for_current_user() -> String {

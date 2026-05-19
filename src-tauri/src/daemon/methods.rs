@@ -6,8 +6,10 @@ use crate::daemon::notifier::Notifier;
 use crate::daemon::rpc::{Router, RpcError};
 use crate::daemon::session::SessionMap;
 use crate::daemon::settings_cache::SettingsCache;
+use crate::daemon::state::DaemonState;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 struct SendMessageParams {
@@ -186,6 +188,66 @@ pub fn register_settings(router: &mut Router, cache: SettingsCache) {
     });
 }
 
+pub fn register_responders(router: &mut Router, state: Arc<DaemonState>) {
+    {
+        let state = state.clone();
+        router.register("respond_permission", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct Body {
+                    request_id: String,
+                    allow: bool,
+                    #[serde(default)] updated_input: Option<serde_json::Value>,
+                    #[serde(default)] message: Option<String>,
+                }
+                let b: Body = serde_json::from_value(params.unwrap_or(serde_json::Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let tx = state.pending.lock().await.remove(&b.request_id);
+                let Some(tx) = tx else {
+                    return Err(RpcError {
+                        code: -32004,
+                        message: format!("unknown request_id {}", b.request_id),
+                        data: None,
+                    });
+                };
+                let payload = if b.allow {
+                    serde_json::json!({
+                        "behavior": "allow",
+                        "updatedInput": b.updated_input.unwrap_or(serde_json::Value::Object(Default::default())),
+                    })
+                } else {
+                    serde_json::json!({
+                        "behavior": "deny",
+                        "message": b.message.unwrap_or_default(),
+                    })
+                };
+                let _ = tx.send(payload);
+                Ok(serde_json::json!({"ok": true}))
+            }
+        });
+    }
+    router.register("respond_question", move |params, _ctx| {
+        let state = state.clone();
+        async move {
+            #[derive(serde::Deserialize)]
+            struct Body { request_id: String, answers: serde_json::Value }
+            let b: Body = serde_json::from_value(params.unwrap_or(serde_json::Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let tx = state.pending.lock().await.remove(&b.request_id);
+            let Some(tx) = tx else {
+                return Err(RpcError {
+                    code: -32004,
+                    message: format!("unknown request_id {}", b.request_id),
+                    data: None,
+                });
+            };
+            let _ = tx.send(serde_json::json!({"answers": b.answers}));
+            Ok(serde_json::json!({"ok": true}))
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +318,46 @@ mod tests {
         // detach on unknown session is a no-op, not an error
         assert!(resp.error.is_none());
         assert_eq!(resp.result, Some(json!({"ok": true})));
+    }
+
+    #[tokio::test]
+    async fn respond_permission_resolves_pending_oneshot() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        st.pending.lock().await.insert("req-1".to_string(), tx);
+
+        let mut r = Router::new();
+        register_responders(&mut r, st.clone());
+        let resp = r.dispatch(Request {
+            jsonrpc: "2.0".into(),
+            id: json!(1),
+            method: "respond_permission".into(),
+            params: Some(json!({"request_id": "req-1", "allow": true, "updated_input": {"k": 1}})),
+        }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "expected no error, got {:?}", resp.error);
+
+        let payload = rx.await.expect("oneshot resolved");
+        assert_eq!(payload["behavior"], json!("allow"));
+        assert_eq!(payload["updatedInput"]["k"], json!(1));
+    }
+
+    #[tokio::test]
+    async fn respond_permission_unknown_request_id_errors() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let mut r = Router::new();
+        register_responders(&mut r, st);
+        let resp = r.dispatch(Request {
+            jsonrpc: "2.0".into(),
+            id: json!(1),
+            method: "respond_permission".into(),
+            params: Some(json!({"request_id": "ghost", "allow": true})),
+        }, dummy_ctx()).await;
+        assert_eq!(resp.error.as_ref().map(|e| e.code), Some(-32004));
     }
 }
