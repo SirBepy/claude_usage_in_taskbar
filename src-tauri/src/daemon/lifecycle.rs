@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 const VALID_MODELS: &[&str] = &["haiku", "sonnet", "opus"];
@@ -142,6 +142,22 @@ pub async fn spawn_session(
     Ok(session)
 }
 
+pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), LifecycleError> {
+    let msg = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": text
+        }
+    });
+    let mut line = serde_json::to_vec(&msg).expect("serialize");
+    line.push(b'\n');
+    let mut stdin = session.stdin.lock().await;
+    stdin.write_all(&line).await?;
+    stdin.flush().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +212,23 @@ mod tests {
         .await;
         assert!(matches!(r, Err(LifecycleError::CwdMissing(_))));
         assert_eq!(map.len(), 0);
+    }
+
+    // Real send_message requires a live ChildStdin. The behavior is covered
+    // end-to-end in the Phase 2 integration test (#[ignore]'d). Here we
+    // sanity-check the JSON shape we emit.
+    #[test]
+    fn user_message_json_shape_matches_stream_json_format() {
+        let msg = serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": "hi"
+            }
+        });
+        let v: serde_json::Value = serde_json::from_value(msg).unwrap();
+        assert_eq!(v["type"], "user");
+        assert_eq!(v["message"]["role"], "user");
+        assert_eq!(v["message"]["content"], "hi");
     }
 }
