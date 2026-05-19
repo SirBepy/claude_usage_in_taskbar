@@ -3,3 +3,4 @@
 
 pub mod frame;
 pub mod lockfile;
+pub mod rpc;
