@@ -89,6 +89,12 @@ pub struct Settings {
     pub legacy_obsidian_import_handled: bool,
     #[serde(rename = "audioOutputDevice", default)]
     pub audio_output_device: Option<String>,
+    /// Experimental: route chat-hub turns through the daemon (persistent
+    /// claude per session, survives app close) instead of app-side Path C.
+    /// Default off; flips to default-on a release after the daemon cutover
+    /// proves out (see spec 2026-05-19-detached-daemon-design.md, rollout row).
+    #[serde(rename = "useDaemon", default)]
+    pub use_daemon: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -114,6 +120,7 @@ impl Default for Settings {
             hook_install_version: 0,
             legacy_obsidian_import_handled: false,
             audio_output_device: None,
+            use_daemon: false,
             extra: serde_json::Map::new(),
         }
     }
@@ -263,5 +270,26 @@ mod tests {
         assert_eq!(s.audio_output_device, None);
         let parsed: Settings = serde_json::from_str(r#"{}"#).unwrap();
         assert_eq!(parsed.audio_output_device, None);
+    }
+
+    #[test]
+    fn use_daemon_defaults_off() {
+        let s = Settings::default();
+        assert_eq!(s.use_daemon, false);
+    }
+
+    #[test]
+    fn use_daemon_serializes_as_camel_case() {
+        let mut s = Settings::default();
+        s.use_daemon = true;
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["useDaemon"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn use_daemon_absent_in_json_defaults_off() {
+        let v = serde_json::json!({});
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(s.use_daemon, false);
     }
 }
