@@ -465,6 +465,15 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
                 let _ = app.emit("instances-changed", instances);
             }
         }
+        "channels_changed" => {
+            let state = app.state::<crate::state::AppState>();
+            // params is the channel-snapshot JSON array (see daemon::channels::emit_changed).
+            if let Some(arr) = params.as_array() {
+                let mut cache = state.cached_channels.lock().unwrap();
+                *cache = arr.clone();
+            }
+            let _ = app.emit("channels-changed", params);
+        }
         "permission_request" => { let _ = app.emit("permission-requested", params); }
         "question_request" => { let _ = app.emit("question-requested", params); }
         "token_history_updated" => {
