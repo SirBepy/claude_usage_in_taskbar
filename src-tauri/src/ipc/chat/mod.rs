@@ -17,6 +17,7 @@
 
 pub mod attachments;
 pub mod builtins;
+pub mod daemon_bridge;
 pub mod history;
 pub mod lifecycle;
 pub mod run;
