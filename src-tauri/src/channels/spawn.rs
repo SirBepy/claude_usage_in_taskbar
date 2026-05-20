@@ -169,7 +169,7 @@ pub async fn spawn(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
 /// Block until the child exits. On Windows, waits on the HANDLE and closes
 /// it. On macOS, reaps via waitpid. Returns instantly on other unix.
 #[cfg(windows)]
-pub(super) async fn wait_for_child_exit(process_handle: isize, _pid: u32) {
+pub(crate) async fn wait_for_child_exit(process_handle: isize, _pid: u32) {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
     let _ = tokio::task::spawn_blocking(move || unsafe {
@@ -181,7 +181,7 @@ pub(super) async fn wait_for_child_exit(process_handle: isize, _pid: u32) {
 }
 
 #[cfg(target_os = "macos")]
-pub(super) async fn wait_for_child_exit(_process_handle: isize, pid: u32) {
+pub(crate) async fn wait_for_child_exit(_process_handle: isize, pid: u32) {
     let _ = tokio::task::spawn_blocking(move || unsafe {
         let mut status: libc::c_int = 0;
         libc::waitpid(pid as libc::pid_t, &mut status, 0);
@@ -190,4 +190,4 @@ pub(super) async fn wait_for_child_exit(_process_handle: isize, pid: u32) {
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-pub(super) async fn wait_for_child_exit(_process_handle: isize, _pid: u32) {}
+pub(crate) async fn wait_for_child_exit(_process_handle: isize, _pid: u32) {}
