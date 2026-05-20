@@ -1,40 +1,42 @@
 use crate::state::AppState;
-use tauri::{AppHandle, State};
+use tauri::State;
 
 #[tauri::command]
-pub async fn spawn_channel(project_id: String, app: AppHandle) -> Result<(), String> {
-    crate::channels::start_channel(app, project_id).await
+pub async fn spawn_channel(project_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or("daemon client not connected")?;
+    client.start_channel(&project_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn stop_channel(project_id: String, app: AppHandle) -> Result<(), String> {
-    crate::channels::stop_channel(&app, &project_id)
+pub async fn stop_channel(project_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or("daemon client not connected")?;
+    client.stop_channel(&project_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn restart_channel(project_id: String, app: AppHandle) -> Result<(), String> {
-    crate::channels::restart_channel(app, project_id).await
+pub async fn restart_channel(project_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or("daemon client not connected")?;
+    client.restart_channel(&project_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn show_terminal(project_id: String, state: State<AppState>) -> Result<(), String> {
-    let snap = state.channels.snapshot(&project_id)
-        .ok_or("no channel for that project")?;
-    let hwnd = snap.hwnd.ok_or("console not resolved yet")?;
-    crate::channels::show_hwnd(hwnd);
-    Ok(())
+pub async fn show_terminal(project_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or("daemon client not connected")?;
+    client.show_channel(&project_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn hide_terminal(project_id: String, state: State<AppState>) -> Result<(), String> {
-    let snap = state.channels.snapshot(&project_id)
-        .ok_or("no channel for that project")?;
-    let hwnd = snap.hwnd.ok_or("console not resolved yet")?;
-    crate::channels::hide_hwnd(hwnd);
-    Ok(())
+pub async fn hide_terminal(project_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or("daemon client not connected")?;
+    client.hide_channel(&project_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn list_channels(state: State<AppState>) -> Vec<serde_json::Value> {
-    state.channels.list().iter().map(crate::channels::channel_snapshot_to_json).collect()
+    state.cached_channels.lock().unwrap().clone()
 }
