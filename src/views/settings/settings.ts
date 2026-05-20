@@ -96,6 +96,7 @@ function renderUpdateState(updateState: UpdateState): void {
 async function hydrateSettingsRoot(): Promise<void> {
   const s = getSettings();
   const launchAtLogin = $("launchAtLogin") as HTMLInputElement | null;
+  const useDaemon = $("useDaemon") as HTMLInputElement | null;
   const autoUpdate = $("autoUpdate") as HTMLSelectElement | null;
   const refreshUpdateBtn = $("refreshUpdateBtn") as HTMLButtonElement | null;
   const copyLogsBtn = $("copyLogsBtn") as HTMLButtonElement | null;
@@ -111,6 +112,10 @@ async function hydrateSettingsRoot(): Promise<void> {
   if (isMac && autoUpdateRow) autoUpdateRow.style.display = "none";
 
   launchAtLogin.checked = !!s.launchAtLogin;
+  if (useDaemon) {
+    useDaemon.checked = !!s.useDaemon;
+    useDaemon.addEventListener("change", saveSettings);
+  }
   // Migrate legacy bool values silently: true → immediate, false → never.
   const raw = s.autoUpdate;
   const initialMode =
@@ -245,6 +250,22 @@ function template() {
               <input type="checkbox" id="launchAtLogin">
               <span class="slider"></span>
             </label>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Experimental</div>
+          <div class="option" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+              <span class="option-label">Use background daemon for chat</span>
+              <label class="switch">
+                <input type="checkbox" id="useDaemon">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <span style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.4;">
+              Chat sessions keep running when the app is closed. Restart chat sessions after toggling.
+            </span>
           </div>
         </div>
 
