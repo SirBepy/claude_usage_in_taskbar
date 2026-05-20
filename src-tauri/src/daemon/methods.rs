@@ -359,6 +359,77 @@ pub fn register_channels(router: &mut Router, state: Arc<DaemonState>) {
     });
 }
 
+pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
+    #[derive(serde::Deserialize)]
+    struct SessionId { session_id: String }
+    #[derive(serde::Deserialize)]
+    struct EffortParams { session_id: String, effort: String }
+    #[derive(serde::Deserialize)]
+    struct HistoricalParams { session_id: String, cwd: String }
+
+    {
+        let state = state.clone();
+        router.register("mark_session_ended", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let p: SessionId = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let now = chrono::Utc::now().to_rfc3339();
+                state.registry.mark_ended(&p.session_id, EndReason::Manual, &now);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                Ok(json!({"ok": true}))
+            }
+        });
+    }
+    {
+        let state = state.clone();
+        router.register("externalize_session", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let p: SessionId = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                state.registry.externalize_session(&p.session_id);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                Ok(json!({"ok": true}))
+            }
+        });
+    }
+    {
+        let state = state.clone();
+        router.register("set_session_effort", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let p: EffortParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                state.registry.set_effort(&p.session_id, &p.effort);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                Ok(json!({"ok": true}))
+            }
+        });
+    }
+    router.register("register_historical", move |params, _ctx| {
+        let state = state.clone();
+        async move {
+            let p: HistoricalParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let cwd = std::path::PathBuf::from(&p.cwd);
+            let now = chrono::Utc::now().to_rfc3339();
+            let (project_id, created_new) = {
+                let mut snap = state.settings.snapshot();
+                crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
+            };
+            if created_new {
+                state.notifier.publish("project_created", json!({
+                    "project_id": project_id, "cwd": p.cwd, "now": now,
+                }));
+            }
+            state.registry.upsert_interactive(&p.session_id, &cwd, &project_id, &now);
+            state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+            Ok(json!({"ok": true}))
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -500,6 +571,19 @@ mod tests {
         }, dummy_ctx()).await;
         assert!(resp.error.is_none(), "expected no error, got {:?}", resp.error);
         assert_eq!(resp.result, Some(json!([])));
+    }
+
+    #[tokio::test]
+    async fn mark_session_ended_unknown_is_ok() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let mut r = Router::new();
+        register_chat_registry(&mut r, st);
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "mark_session_ended".into(), params: Some(json!({"session_id":"ghost"})) }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "got {:?}", resp.error);
     }
 
     #[tokio::test]

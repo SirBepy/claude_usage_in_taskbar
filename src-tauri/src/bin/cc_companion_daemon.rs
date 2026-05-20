@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     methods::register_settings(&mut router, settings_cache);
     methods::register_responders(&mut router, state.clone());
     methods::register_channels(&mut router, state.clone());
+    methods::register_chat_registry(&mut router, state.clone());
 
     // Bind hook server BEFORE the RPC accept loop so in-flight claude
     // processes can re-discover the port the moment we're up.
