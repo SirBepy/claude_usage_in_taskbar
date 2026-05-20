@@ -1,0 +1,85 @@
+//! End-to-end: a SessionStart hook for a pid that matches NO daemon channel
+//! stays `External` (the safe default). The Automated true-positive requires a
+//! live `claude --remote-control` process and is covered by the manual smoke
+//! checklist, not here.
+//!
+//! `#[ignore]`'d (binds port 27182). Run manually:
+//!   cargo test --manifest-path src-tauri/Cargo.toml --test daemon_channels_e2e -- --ignored --nocapture
+
+#![cfg(windows)]
+
+use claude_usage_tauri_lib::daemon_client::PersistentClient;
+use claude_usage_tauri_lib::types::Settings;
+use serde_json::{json, Value};
+use std::process::{Command, Stdio};
+use std::time::Duration;
+use tokio::sync::mpsc::Receiver;
+
+async fn wait_for_method(rx: &mut Receiver<Value>, method: &str, budget: Duration) -> Value {
+    let deadline = tokio::time::Instant::now() + budget;
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(notif)) => {
+                if notif["method"] == json!(method) {
+                    return notif;
+                }
+            }
+            Ok(None) => panic!("channel closed waiting for `{method}`"),
+            Err(_) => panic!("no `{method}` within {budget:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn external_session_without_matching_channel_stays_external() {
+    let build = Command::new("cargo")
+        .args(["build", "--bin", "cc-companion-daemon"])
+        .current_dir(std::env::current_dir().unwrap())
+        .status()
+        .expect("cargo build");
+    assert!(build.success());
+    let mut exe = std::env::current_dir().unwrap();
+    exe.push("target");
+    exe.push("debug");
+    exe.push("cc-companion-daemon.exe");
+    let mut child = Command::new(&exe)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon");
+
+    tokio::time::sleep(Duration::from_millis(700)).await;
+
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}");
+    let client = PersistentClient::connect(&pipe_name).await.expect("connect");
+    client.push_settings(&Settings::default()).await.expect("push_settings");
+    let mut rx = client.subscribe_global().await.expect("subscribe");
+
+    let http = reqwest::Client::new();
+    let resp = http.post("http://127.0.0.1:27182/hooks/session-start")
+        .json(&json!({
+            "session_id": "ext-no-channel",
+            "cwd": "C:\\tmp\\daemon-ch-e2e",
+            "pid": 88888,
+            "transcript_path": null,
+            "source": "startup"
+        }))
+        .send().await.expect("POST");
+    assert!(resp.status().is_success());
+
+    let notif = wait_for_method(&mut rx, "instances_changed", Duration::from_secs(2)).await;
+    let instances = notif["params"]["instances"].as_array().expect("instances");
+    let inst = instances.iter().find(|i| i["session_id"] == json!("ext-no-channel")).expect("registered");
+    // No channel has pid 88888, so kind must be External, is_remote false.
+    // InstanceKind::External serializes as "external" (serde rename_all = "lowercase").
+    // Instance.is_remote serializes as "is_remote" (no rename on the struct).
+    assert_eq!(inst["kind"], json!("external"), "got: {inst}");
+    assert_eq!(inst["is_remote"], json!(false), "got: {inst}");
+
+    drop(client);
+    let _ = child.kill();
+    let _ = child.wait();
+}
