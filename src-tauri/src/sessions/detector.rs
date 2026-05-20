@@ -8,9 +8,7 @@ use crate::sessions::registry::Registry;
 use crate::types::EndReason;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
 use sysinfo::System;
-use tauri::{AppHandle, Emitter, Manager};
 
 /// Pure reconciliation step for testability.
 pub struct ReconcileInput<'a> {
@@ -80,13 +78,3 @@ pub fn reconcile_once(registry: &Registry) -> bool {
     !ended_now.is_empty()
 }
 
-/// Background task that runs the reconciliation every 5s and prunes
-/// long-ended instances every 60s.
-///
-/// Daemon-pivot Phase 3: the daemon now owns the registry and runs its own
-/// reconcile loop (`daemon::detector`). This app-side stub is kept so the
-/// existing `spawn(detector::run(h))` call site stays valid; it never wakes.
-pub async fn run(_app: AppHandle) {
-    // No-op. See module doc.
-    std::future::pending::<()>().await;
-}
