@@ -232,6 +232,18 @@ impl Registry {
         true
     }
 
+    /// Upgrade a session's kind. Only flips `External` -> the given kind so we
+    /// never clobber an `Interactive`/`Automated` entry. Returns true if changed.
+    pub fn set_kind(&self, session_id: &str, kind: InstanceKind, is_remote: bool) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(i) = guard.get_mut(session_id) else { return false };
+        if i.kind != InstanceKind::External { return false; }
+        if i.kind == kind && i.is_remote == is_remote { return false; }
+        i.kind = kind;
+        i.is_remote = is_remote;
+        true
+    }
+
     /// Late-binding name update. Resolved from the transcript's first
     /// user prompt. Returns true if the name actually changed.
     pub fn set_name(&self, session_id: &str, name: String) -> bool {
@@ -401,5 +413,37 @@ mod tests {
         assert_eq!(entry.kind, InstanceKind::Interactive);
         assert!(entry.ended_at.is_none());
         assert!(entry.end_reason.is_none());
+    }
+
+    #[test]
+    fn set_kind_upgrades_external_only() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        // Register as External.
+        registry.register(
+            RegisterInput {
+                session_id: "ext-1".into(),
+                cwd: PathBuf::from("/tmp/ext"),
+                pid: 42,
+                kind: InstanceKind::External,
+                is_remote: false,
+                transcript_path: None,
+                started_at: "2026-05-20T10:00:00Z".into(),
+            },
+            &settings,
+            "2026-05-20T10:00:00Z",
+        );
+        assert_eq!(registry.get("ext-1").unwrap().kind, InstanceKind::External);
+
+        // First call: External -> Automated, returns true.
+        assert!(registry.set_kind("ext-1", InstanceKind::Automated, true));
+        let entry = registry.get("ext-1").unwrap();
+        assert_eq!(entry.kind, InstanceKind::Automated);
+        assert_eq!(entry.is_remote, true);
+
+        // Second call: already Automated (not External), returns false.
+        assert!(!registry.set_kind("ext-1", InstanceKind::Automated, true));
+        // Kind must not have been downgraded.
+        assert_eq!(registry.get("ext-1").unwrap().kind, InstanceKind::Automated);
     }
 }

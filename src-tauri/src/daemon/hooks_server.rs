@@ -208,8 +208,11 @@ async fn on_session_start(
     let transcript_path_opt = transcript_path_buf;
     tokio::spawn(async move {
         let mut changed = false;
+        // Track the resolved real pid so we can re-run the channel match below.
+        let mut resolved_pid: Option<u32> = None;
         if payload_pid.is_none() || payload_pid == Some(0) {
             if let Some(meta) = crate::hooks::session_files::resolve_session_meta(&sid).await {
+                resolved_pid = Some(meta.pid);
                 if state.registry.set_pid(&sid, meta.pid) { changed = true; }
                 if let Some(bridge) = meta.bridge_session_id {
                     state.registry.set_bridge_session_id(&sid, bridge);
@@ -217,9 +220,20 @@ async fn on_session_start(
                 }
             }
         } else if let Some(pid) = payload_pid {
+            resolved_pid = Some(pid);
             if let Some(bridge) = crate::hooks::session_files::resolve_bridge_session_id(pid).await {
                 state.registry.set_bridge_session_id(&sid, bridge);
                 changed = true;
+            }
+        }
+        // Phase 4 follow-up (ai_todo 60): once the real pid is known, re-run the
+        // channel match. v2.x SessionStart often omits pid, so the immediate match
+        // in the synchronous path above misses; this upgrades External -> Automated.
+        if let Some(rpid) = resolved_pid {
+            if state.channels.list().iter().any(|c| c.pid == Some(rpid)) {
+                if state.registry.set_kind(&sid, crate::sessions::kinds::InstanceKind::Automated, true) {
+                    changed = true;
+                }
             }
         }
         if let Some(path) = transcript_path_opt {
