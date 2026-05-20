@@ -41,12 +41,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let initial_settings = load_initial_settings();
     let settings_cache = SettingsCache::new(initial_settings);
-    let sessions = new_session_map();
-    let state = DaemonState::new(sessions.clone(), settings_cache.clone());
+    let state = DaemonState::new(new_session_map(), settings_cache.clone());
 
     let mut router = Router::new();
     health::register(&mut router);
-    methods::register(&mut router, sessions);
+    methods::register(&mut router, state.clone());
     methods::register_notifier(&mut router, state.notifier.clone());
     methods::register_settings(&mut router, settings_cache);
     methods::register_responders(&mut router, state.clone());

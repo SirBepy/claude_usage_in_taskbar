@@ -4,9 +4,9 @@
 use crate::daemon::lifecycle::{self, LifecycleError, StartSessionParams};
 use crate::daemon::notifier::Notifier;
 use crate::daemon::rpc::{Router, RpcError};
-use crate::daemon::session::SessionMap;
 use crate::daemon::settings_cache::SettingsCache;
 use crate::daemon::state::DaemonState;
+use crate::types::EndReason;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -40,23 +40,48 @@ fn err_to_rpc(e: LifecycleError) -> RpcError {
     }
 }
 
-pub fn register(router: &mut Router, map: SessionMap) {
+pub fn register(router: &mut Router, state: Arc<DaemonState>) {
+    let map = state.sessions.clone();
     {
         let map = map.clone();
+        let state = state.clone();
         router.register("start_session", move |params, _ctx| {
             let map = map.clone();
+            let state = state.clone();
             async move {
                 let p: StartSessionParams = serde_json::from_value(params.unwrap_or(Value::Null))
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let cwd = p.cwd.clone();
+                let model = p.model.clone();
+                let effort = p.effort.clone();
                 let session = lifecycle::spawn_session(&map, p).await.map_err(err_to_rpc)?;
-                Ok(json!({"session_id": session.session_id}))
+                let sid = session.session_id.clone();
+                let now = chrono::Utc::now().to_rfc3339();
+                let (project_id, created_new) = {
+                    let mut snap = state.settings.snapshot();
+                    crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
+                };
+                if created_new {
+                    state.notifier.publish("project_created", json!({
+                        "project_id": project_id,
+                        "cwd": cwd.to_string_lossy(),
+                        "now": now,
+                    }));
+                }
+                state.registry.upsert_interactive(&sid, &cwd, &project_id, &now);
+                state.registry.set_model_effort(&sid, &model, &effort);
+                state.registry.set_busy(&sid, true);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                Ok(json!({"session_id": sid}))
             }
         });
     }
     {
         let map = map.clone();
+        let state = state.clone();
         router.register("send_message", move |params, _ctx| {
             let map = map.clone();
+            let state = state.clone();
             async move {
                 let p: SendMessageParams = serde_json::from_value(params.unwrap_or(Value::Null))
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
@@ -64,30 +89,41 @@ pub fn register(router: &mut Router, map: SessionMap) {
                     .ok_or_else(|| err_to_rpc(LifecycleError::NotFound(p.session_id.clone())))?
                     .clone();
                 lifecycle::send_message(&session, &p.text).await.map_err(err_to_rpc)?;
+                state.registry.set_busy(&p.session_id, true);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 Ok(json!({"ok": true}))
             }
         });
     }
     {
         let map = map.clone();
+        let state = state.clone();
         router.register("cancel_turn", move |params, _ctx| {
             let map = map.clone();
+            let state = state.clone();
             async move {
                 let p: SessionIdOnly = serde_json::from_value(params.unwrap_or(Value::Null))
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 lifecycle::cancel_turn(&map, &p.session_id).await.map_err(err_to_rpc)?;
+                state.registry.set_busy(&p.session_id, false);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 Ok(json!({"ok": true}))
             }
         });
     }
     {
         let map = map.clone();
+        let state = state.clone();
         router.register("end_session", move |params, _ctx| {
             let map = map.clone();
+            let state = state.clone();
             async move {
                 let p: SessionIdOnly = serde_json::from_value(params.unwrap_or(Value::Null))
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 lifecycle::end_session(&map, &p.session_id).await.map_err(err_to_rpc)?;
+                let now = chrono::Utc::now().to_rfc3339();
+                state.registry.mark_ended(&p.session_id, EndReason::Manual, &now);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 Ok(json!({"ok": true}))
             }
         });
@@ -338,9 +374,12 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_session_returns_not_found_rpc_error() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
         let mut r = Router::new();
-        let map = new_session_map();
-        register(&mut r, map);
+        register(&mut r, st);
         let resp = r.dispatch(Request {
             jsonrpc: "2.0".into(),
             id: json!(1),
@@ -353,9 +392,12 @@ mod tests {
 
     #[tokio::test]
     async fn missing_params_returns_invalid_params() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
         let mut r = Router::new();
-        let map = new_session_map();
-        register(&mut r, map);
+        register(&mut r, st);
         let resp = r.dispatch(Request {
             jsonrpc: "2.0".into(),
             id: json!(1),
@@ -368,9 +410,12 @@ mod tests {
 
     #[tokio::test]
     async fn attach_session_unknown_returns_not_found() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
         let mut r = Router::new();
-        let map = new_session_map();
-        register(&mut r, map);
+        register(&mut r, st);
         let resp = r.dispatch(Request {
             jsonrpc: "2.0".into(),
             id: json!(1),
@@ -383,9 +428,12 @@ mod tests {
 
     #[tokio::test]
     async fn detach_session_unknown_is_ok() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
         let mut r = Router::new();
-        let map = new_session_map();
-        register(&mut r, map);
+        register(&mut r, st);
         let resp = r.dispatch(Request {
             jsonrpc: "2.0".into(),
             id: json!(1),
@@ -454,5 +502,24 @@ mod tests {
         }, dummy_ctx()).await;
         assert!(resp.error.is_none(), "expected no error, got {:?}", resp.error);
         assert_eq!(resp.result, Some(json!([])));
+    }
+
+    #[tokio::test]
+    async fn start_session_invalid_cwd_does_not_register() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let reg = st.registry.clone();
+        let mut r = Router::new();
+        register(&mut r, st);
+        let resp = r.dispatch(Request {
+            jsonrpc: "2.0".into(),
+            id: json!(1),
+            method: "start_session".into(),
+            params: Some(json!({"cwd": "Z:\\does\\not\\exist", "model": "opus", "effort": "high", "resume_id": null})),
+        }, dummy_ctx()).await;
+        assert!(resp.error.is_some(), "invalid cwd must error");
+        assert_eq!(reg.list().len(), 0, "no registry entry on failed spawn");
     }
 }
