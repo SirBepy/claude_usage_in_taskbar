@@ -9,9 +9,30 @@
 
 use claude_usage_tauri_lib::daemon_client::PersistentClient;
 use claude_usage_tauri_lib::types::Settings;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use tokio::sync::mpsc::Receiver;
+
+/// Drains notifications off the global subscription until one with the given
+/// `method` arrives, panicking if the budget elapses first. A brand-new cwd
+/// emits a leading `project_created` notification before `instances_changed`,
+/// so the assertion can't just read the first frame.
+async fn wait_for_method(rx: &mut Receiver<Value>, method: &str, budget: Duration) -> Value {
+    let deadline = tokio::time::Instant::now() + budget;
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(notif)) => {
+                if notif["method"] == json!(method) {
+                    return notif;
+                }
+            }
+            Ok(None) => panic!("notification channel closed while waiting for `{method}`"),
+            Err(_) => panic!("no `{method}` notification arrived within {budget:?}"),
+        }
+    }
+}
 
 #[tokio::test(flavor = "current_thread")]
 #[ignore]
@@ -56,12 +77,9 @@ async fn session_start_hook_round_trips_to_client_notification() {
         .send().await.expect("POST");
     assert!(resp.status().is_success());
 
-    // Wait for the notification on the subscription.
-    let notif = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-        .await
-        .expect("notification arrived in time")
-        .expect("channel open");
-    assert_eq!(notif["method"], json!("instances_changed"));
+    // A brand-new cwd emits `project_created` first; skip past it to the
+    // `instances_changed` we care about.
+    let notif = wait_for_method(&mut rx, "instances_changed", Duration::from_secs(2)).await;
     let instances = notif["params"]["instances"].as_array().expect("instances array");
     assert!(instances.iter().any(|i| i["session_id"] == json!("test-sess-abc")));
 
@@ -71,10 +89,7 @@ async fn session_start_hook_round_trips_to_client_notification() {
         .send().await.expect("POST end");
     assert!(resp.status().is_success());
 
-    let notif = tokio::time::timeout(Duration::from_secs(2), rx.recv())
-        .await
-        .expect("end notification")
-        .expect("channel open");
+    let notif = wait_for_method(&mut rx, "instances_changed", Duration::from_secs(2)).await;
     assert_eq!(notif["method"], json!("instances_changed"));
 
     // Cleanup.
