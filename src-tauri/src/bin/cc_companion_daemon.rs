@@ -57,8 +57,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _hook_port = hooks_server::spawn(state.clone()).await?;
     detector_task::spawn(state.clone());
 
+    // Adopt bridges that survived a previous daemon shutdown before spawning
+    // new ones. This prevents duplicate bridge trees on daemon restart when
+    // a channel is still running from the previous daemon lifetime.
+    channels::adopt_running_channels(state.clone());
+
     // Autostart automated channels the daemon owns. Channels survive app
-    // close; no auto-restart on exit (see daemon::channels).
+    // close; no auto-restart on exit (see daemon::channels). The in-session
+    // dedup guard in start_channel will skip any project already adopted above.
     channels::autostart_all(state.clone());
 
     #[cfg(windows)]
