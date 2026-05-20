@@ -211,7 +211,55 @@ pub async fn start_session(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
+    let use_daemon = { state.settings.lock().unwrap().use_daemon };
+    if use_daemon {
+        return start_session_daemon(cwd, prompt, model, effort, placeholder_id, &state, &app).await;
+    }
     run_session_turn(None, cwd, prompt, model, effort, placeholder_id, state, app).await
+}
+
+/// Daemon-backed new session: spawn via RPC, bridge events, hand the real id
+/// to the frontend via a synthetic SessionStarted on the placeholder channel.
+async fn start_session_daemon(
+    cwd: String,
+    prompt: String,
+    model: String,
+    effort: String,
+    placeholder_id: Option<String>,
+    state: &State<'_, AppState>,
+    app: &AppHandle,
+) -> Result<String, String> {
+    let real_id = {
+        let guard = state.daemon_client.lock().await;
+        let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+        client.start_session(&cwd, &model, &effort, None).await.map_err(|e| e.to_string())?
+    };
+
+    // Bridge daemon chat_event -> chat:<real_id> BEFORE sending the prompt so
+    // no turn events are missed.
+    super::daemon_bridge::ensure_attached(app, &real_id).await?;
+
+    // Hand the real id to the frontend: emit a synthetic SessionStarted on the
+    // placeholder channel the frontend is listening on. The frontend swaps its
+    // renderer subscription to chat:<real_id>, matching Path C.
+    if let Some(ph) = placeholder_id.as_deref() {
+        let synthetic = ChatEvent::SessionStarted {
+            session_id: real_id.clone(),
+            model: model.clone(),
+            cwd: cwd.clone(),
+            timestamp: Utc::now().timestamp_millis(),
+        };
+        let _ = app.emit(&format!("chat:{}", ph), &synthetic);
+    }
+
+    // Send the first turn's prompt. Events flow over the attached bridge.
+    {
+        let guard = state.daemon_client.lock().await;
+        let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+        client.send_message(&real_id, &prompt).await.map_err(|e| e.to_string())?;
+    }
+
+    Ok(real_id)
 }
 
 #[tauri::command]
