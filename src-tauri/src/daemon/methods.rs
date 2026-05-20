@@ -407,27 +407,47 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             }
         });
     }
-    router.register("register_historical", move |params, _ctx| {
+    {
         let state = state.clone();
-        async move {
-            let p: HistoricalParams = serde_json::from_value(params.unwrap_or(Value::Null))
-                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
-            let cwd = std::path::PathBuf::from(&p.cwd);
-            let now = chrono::Utc::now().to_rfc3339();
-            let (project_id, created_new) = {
-                let mut snap = state.settings.snapshot();
-                crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
-            };
-            if created_new {
-                state.notifier.publish("project_created", json!({
-                    "project_id": project_id, "cwd": p.cwd, "now": now,
-                }));
+        router.register("register_historical", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let p: HistoricalParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let cwd = std::path::PathBuf::from(&p.cwd);
+                let now = chrono::Utc::now().to_rfc3339();
+                let (project_id, created_new) = {
+                    let mut snap = state.settings.snapshot();
+                    crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
+                };
+                if created_new {
+                    state.notifier.publish("project_created", json!({
+                        "project_id": project_id, "cwd": p.cwd, "now": now,
+                    }));
+                }
+                state.registry.upsert_interactive(&p.session_id, &cwd, &project_id, &now);
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                Ok(json!({"ok": true}))
             }
-            state.registry.upsert_interactive(&p.session_id, &cwd, &project_id, &now);
-            state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
-            Ok(json!({"ok": true}))
-        }
-    });
+        });
+    }
+    {
+        let state = state.clone();
+        router.register("takeover_manual", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct TakeoverParams { manual_pid: u32, model: String, effort: String }
+                let p: TakeoverParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let shim = std::sync::Mutex::new(state.settings.snapshot());
+                let sid = crate::chat::takeover::takeover(p.manual_pid, &p.model, &p.effort, &state.registry, &shim)
+                    .map_err(|e| RpcError::internal(e.to_string()))?;
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                Ok(json!({"session_id": sid}))
+            }
+        });
+    }
 }
 
 #[cfg(test)]
