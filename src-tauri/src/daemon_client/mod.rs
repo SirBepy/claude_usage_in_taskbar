@@ -211,6 +211,43 @@ impl PersistentClient {
     pub async fn list_channels(&self) -> Result<serde_json::Value, ClientError> {
         self.call("list_channels", json!({})).await
     }
+
+    /// Start (or resume) a daemon-owned session. Returns the real session_id.
+    pub async fn start_session(
+        &self,
+        cwd: &str,
+        model: &str,
+        effort: &str,
+        resume_id: Option<&str>,
+    ) -> Result<String, ClientError> {
+        let res = self
+            .call("start_session", json!({
+                "cwd": cwd,
+                "model": model,
+                "effort": effort,
+                "resume_id": resume_id,
+            }))
+            .await?;
+        res.get("session_id")
+            .and_then(Value::as_str)
+            .map(|s| s.to_string())
+            .ok_or_else(|| ClientError::Rpc { code: -32000, message: "start_session: no session_id in result".into() })
+    }
+
+    pub async fn send_message(&self, session_id: &str, text: &str) -> Result<(), ClientError> {
+        self.call("send_message", json!({"session_id": session_id, "text": text})).await?;
+        Ok(())
+    }
+
+    pub async fn cancel_turn(&self, session_id: &str) -> Result<(), ClientError> {
+        self.call("cancel_turn", json!({"session_id": session_id})).await?;
+        Ok(())
+    }
+
+    pub async fn end_session(&self, session_id: &str) -> Result<(), ClientError> {
+        self.call("end_session", json!({"session_id": session_id})).await?;
+        Ok(())
+    }
 }
 
 pub fn pipe_name_for_current_user() -> String {
