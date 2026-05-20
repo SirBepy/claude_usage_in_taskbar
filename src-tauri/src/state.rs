@@ -18,6 +18,10 @@ pub struct AppState {
     /// `instances_changed` notifications. App-side reads consult this cache;
     /// writes go through `daemon_client` (Phase 5 wires the writers).
     pub cached_instances: Arc<Mutex<Vec<crate::types::Instance>>>,
+    /// Daemon-owned channel list, mirrored locally. Refreshed from
+    /// `channels_changed` notifications. Replaces the app-owned `channels`
+    /// Manager for read paths now that the daemon owns channel processes.
+    pub cached_channels: Arc<Mutex<Vec<serde_json::Value>>>,
     /// Connected persistent client to the daemon. `None` until startup wiring
     /// in `lib.rs` connects and subscribes.
     pub daemon_client: Arc<tokio::sync::Mutex<Option<crate::daemon_client::PersistentClient>>>,
@@ -48,6 +52,7 @@ impl AppState {
             audio,
             preview,
             cached_instances: Arc::new(Mutex::new(Vec::new())),
+            cached_channels: Arc::new(Mutex::new(Vec::new())),
             daemon_client: Arc::new(tokio::sync::Mutex::new(None)),
             channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),

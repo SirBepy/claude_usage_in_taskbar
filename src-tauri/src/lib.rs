@@ -307,10 +307,6 @@ pub fn run() {
                     crate::sessions::detector::run(h).await
                 });
             }
-            {
-                let h = app.handle().clone();
-                tauri::async_runtime::spawn(async move { crate::channels::autostart_all(h).await });
-            }
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
                 window.on_window_event(move |event| {
