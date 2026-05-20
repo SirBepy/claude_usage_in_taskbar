@@ -3,6 +3,9 @@ name = "claude-usage-tauri"
 version = "0.1.37"
 edition = "2021"
 rust-version = "1.80"
+# Two bins live here (the app + cc-companion-daemon). `cargo tauri dev`/`cargo
+# run` need this to know which one is the app.
+default-run = "claude-usage-tauri"
 
 [lib]
 name = "claude_usage_tauri_lib"
