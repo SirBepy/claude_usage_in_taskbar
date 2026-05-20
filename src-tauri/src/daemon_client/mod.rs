@@ -248,6 +248,34 @@ impl PersistentClient {
         self.call("end_session", json!({"session_id": session_id})).await?;
         Ok(())
     }
+
+    pub async fn mark_session_ended(&self, session_id: &str) -> Result<(), ClientError> {
+        self.call("mark_session_ended", json!({"session_id": session_id})).await?;
+        Ok(())
+    }
+
+    pub async fn externalize_session(&self, session_id: &str) -> Result<(), ClientError> {
+        self.call("externalize_session", json!({"session_id": session_id})).await?;
+        Ok(())
+    }
+
+    pub async fn set_session_effort(&self, session_id: &str, effort: &str) -> Result<(), ClientError> {
+        self.call("set_session_effort", json!({"session_id": session_id, "effort": effort})).await?;
+        Ok(())
+    }
+
+    pub async fn register_historical(&self, session_id: &str, cwd: &str) -> Result<(), ClientError> {
+        self.call("register_historical", json!({"session_id": session_id, "cwd": cwd})).await?;
+        Ok(())
+    }
+
+    pub async fn takeover_manual(&self, manual_pid: u32, model: &str, effort: &str) -> Result<String, ClientError> {
+        let res = self.call("takeover_manual", json!({"manual_pid": manual_pid, "model": model, "effort": effort})).await?;
+        res.get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .map(|s| s.to_string())
+            .ok_or_else(|| ClientError::Rpc { code: -32000, message: "takeover_manual: no session_id".into() })
+    }
 }
 
 pub fn pipe_name_for_current_user() -> String {
