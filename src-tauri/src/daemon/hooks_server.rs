@@ -155,9 +155,21 @@ async fn on_session_start(
 
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-    // Decision 10: kind = External until Phase 4 moves channels into daemon.
-    let kind = InstanceKind::External;
-    let is_remote = false;
+    // Phase 4: if the hook's pid belongs to a channel we spawned, tag it
+    // Automated + remote (restores the pre-Phase-3 correlation that lived in
+    // the old app-side hook server). Match parity caveat: in v2.x SessionStart
+    // payloads often omit pid (resolved later in the background enrichment
+    // block below); when pid is absent at register time the match misses and
+    // the session stays External. Acceptable - matches the historical
+    // behaviour. A pid-resolved re-tag is a possible future improvement.
+    let hook_pid = payload.pid.unwrap_or(0);
+    let (kind, is_remote) = if hook_pid != 0
+        && ctx.state.channels.list().iter().any(|c| c.pid == Some(hook_pid))
+    {
+        (InstanceKind::Automated, true)
+    } else {
+        (InstanceKind::External, false)
+    };
 
     let transcript_path_buf = payload.transcript_path.clone().map(std::path::PathBuf::from);
 
