@@ -7,12 +7,45 @@ use crate::chat::parser::ParserContext;
 use crate::chat::runner::check_metered_billing;
 use crate::daemon::broadcast;
 use crate::daemon::session::{Session, SessionMap};
+use crate::types::chat::ChatEvent;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+
+/// How long to wait for a brand-new session's `claude` to emit its `system`
+/// init line (which carries the session_id we key everything on). Generous:
+/// SessionStart hooks run before the init line and can take a couple seconds.
+const INIT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Build the base `claude` argument list (everything except the MCP flags).
+///
+/// **Critical:** `--resume` is passed ONLY when resuming an existing session.
+/// A brand-new session must NOT pass `--resume <fresh-uuid>` - `claude` rejects
+/// an unknown id ("No conversation found with session ID") and exits. For a new
+/// session we omit `--resume` entirely and let `claude` generate its own id,
+/// which we capture from the init line on stdout.
+fn base_claude_args(resume_id: Option<&str>, model: &str, effort: &str) -> Vec<String> {
+    let mut args = vec![
+        "-p".to_string(),
+        "--input-format=stream-json".to_string(),
+        "--output-format=stream-json".to_string(),
+        "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
+    ];
+    if let Some(rid) = resume_id {
+        args.push("--resume".to_string());
+        args.push(rid.to_string());
+    }
+    args.push("--model".to_string());
+    args.push(model.to_string());
+    args.push("--effort".to_string());
+    args.push(effort.to_string());
+    args
+}
 
 const VALID_MODELS: &[&str] = &["haiku", "sonnet", "opus"];
 const VALID_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
@@ -58,28 +91,25 @@ pub async fn spawn_session(
         return Err(LifecycleError::MeteredBilling(e.to_string()));
     }
 
-    let session_id = params
-        .resume_id
-        .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    if map.contains_key(&session_id) {
-        return Err(LifecycleError::AlreadyExists(session_id));
+    // Resume: id is known up front; reject if already running. New session:
+    // id is unknown until claude emits its init line (captured below).
+    if let Some(ref rid) = params.resume_id {
+        if map.contains_key(rid) {
+            return Err(LifecycleError::AlreadyExists(rid.clone()));
+        }
     }
 
-    let mcp_config_path = crate::chat::runner::write_mcp_config(&session_id, &session_id);
+    // The MCP config filename is keyed on a spawn-unique token, NOT the session
+    // id (which a new session doesn't have yet). It only needs to be unique.
+    let spawn_token = uuid::Uuid::new_v4().to_string();
+    let mcp_config_path = crate::chat::runner::write_mcp_config(&spawn_token, &spawn_token);
 
     let mut cmd = Command::new("claude");
-    cmd.arg("-p")
-        .arg("--input-format=stream-json")
-        .arg("--output-format=stream-json")
-        .arg("--verbose")
-        .arg("--include-partial-messages")
-        .arg("--resume")
-        .arg(&session_id)
-        .arg("--model")
-        .arg(&params.model)
-        .arg("--effort")
-        .arg(&params.effort);
+    cmd.args(base_claude_args(
+        params.resume_id.as_deref(),
+        &params.model,
+        &params.effort,
+    ));
     if let Some(ref mcp_path) = mcp_config_path {
         cmd.arg("--permission-prompt-tool")
            .arg("mcp__cc_companion__approval_prompt")
@@ -104,6 +134,65 @@ pub async fn spawn_session(
     let stdout = child.stdout.take().expect("piped stdout");
     let _stderr = child.stderr.take().expect("piped stderr");
 
+    // Reader state is created here so we can consume the init line up front for
+    // a new session, then hand the SAME reader (with its buffered tail) to the
+    // pump task. ParserContext likewise carries forward.
+    let mut ctx = ParserContext::new();
+    let mut buf_reader = BufReader::new(stdout);
+    // Events parsed during init capture (the SessionStarted) are replayed to the
+    // broadcast after the session is registered.
+    let mut pre_events: Vec<ChatEvent> = Vec::new();
+
+    let session_id = match params.resume_id.clone() {
+        Some(rid) => rid,
+        None => {
+            // New session: read stdout until the parser yields SessionStarted
+            // (from the `system`/init line), which carries claude's own id.
+            let captured = tokio::time::timeout(INIT_CAPTURE_TIMEOUT, async {
+                let mut line_buf = Vec::new();
+                loop {
+                    line_buf.clear();
+                    match buf_reader.read_until(b'\n', &mut line_buf).await {
+                        Ok(0) => return None, // EOF before init = claude failed to start
+                        Ok(_) => {
+                            for ev in ctx.feed(&line_buf) {
+                                if let ChatEvent::SessionStarted { session_id, .. } = &ev {
+                                    let sid = session_id.clone();
+                                    pre_events.push(ev);
+                                    return Some(sid);
+                                }
+                                pre_events.push(ev);
+                            }
+                        }
+                        Err(_) => return None,
+                    }
+                }
+            })
+            .await;
+            match captured {
+                Ok(Some(sid)) if !sid.is_empty() => sid,
+                _ => {
+                    crate::channels::kill::kill_tree(pid);
+                    if let Some(ref p) = mcp_config_path {
+                        let _ = std::fs::remove_file(p);
+                    }
+                    return Err(LifecycleError::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "claude did not emit a session init line",
+                    )));
+                }
+            }
+        }
+    };
+
+    if map.contains_key(&session_id) {
+        crate::channels::kill::kill_tree(pid);
+        if let Some(ref p) = mcp_config_path {
+            let _ = std::fs::remove_file(p);
+        }
+        return Err(LifecycleError::AlreadyExists(session_id));
+    }
+
     let session = Session::new(
         session_id.clone(),
         params.cwd.clone(),
@@ -115,11 +204,15 @@ pub async fn spawn_session(
     );
     map.insert(session_id.clone(), Arc::clone(&session));
 
+    // Replay the events parsed during init capture (no-op if no subscribers yet,
+    // which is the normal case: the app attaches after start_session returns).
+    for ev in pre_events {
+        broadcast::publish(&session, ev);
+    }
+
     let pump_session = Arc::clone(&session);
     let map_for_pump = Arc::clone(map);
     tokio::spawn(async move {
-        let mut ctx = ParserContext::new();
-        let mut buf_reader = BufReader::new(stdout);
         let mut line_buf = Vec::new();
         loop {
             line_buf.clear();
@@ -212,6 +305,37 @@ pub async fn end_session(map: &SessionMap, session_id: &str) -> Result<(), Lifec
 mod tests {
     use super::*;
     use crate::daemon::session::new_session_map;
+
+    #[test]
+    fn new_session_omits_resume_flag() {
+        // Root-cause guard: a brand-new session must NOT pass `--resume`.
+        // Passing `--resume <fresh-uuid>` makes claude error with
+        // "No conversation found with session ID" and exit immediately.
+        let args = base_claude_args(None, "opus", "high");
+        assert!(
+            !args.iter().any(|a| a == "--resume"),
+            "new session must not pass --resume: {args:?}"
+        );
+    }
+
+    #[test]
+    fn resume_session_includes_resume_id() {
+        let args = base_claude_args(Some("abc-123"), "opus", "high");
+        let pos = args
+            .iter()
+            .position(|a| a == "--resume")
+            .expect("--resume must be present when resuming");
+        assert_eq!(args.get(pos + 1).map(String::as_str), Some("abc-123"));
+    }
+
+    #[test]
+    fn base_args_always_carry_model_and_effort() {
+        let args = base_claude_args(None, "sonnet", "medium");
+        let m = args.iter().position(|a| a == "--model").expect("--model");
+        assert_eq!(args.get(m + 1).map(String::as_str), Some("sonnet"));
+        let e = args.iter().position(|a| a == "--effort").expect("--effort");
+        assert_eq!(args.get(e + 1).map(String::as_str), Some("medium"));
+    }
 
     #[tokio::test]
     async fn invalid_model_rejected() {
