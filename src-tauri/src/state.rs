@@ -2,12 +2,9 @@
 
 use crate::channels::Manager as ChannelsManager;
 use crate::tray::TrayDisplayState;
-use crate::sessions::registry::Registry;
 use crate::types::{AuthState, Settings, UsageSnapshot};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
-use tokio::sync::oneshot;
 
 pub struct AppState {
     pub current_usage: Mutex<Option<UsageSnapshot>>,
@@ -17,7 +14,13 @@ pub struct AppState {
     pub audio_stream: crate::notifications::audio::AudioStreamCtrl,
     pub audio: crate::notifications::audio::AudioCtx,
     pub preview: crate::notifications::audio::PreviewCtx,
-    pub instances: Arc<Registry>,
+    /// Daemon-owned instance list, mirrored locally. Refreshed from
+    /// `instances_changed` notifications. App-side reads consult this cache;
+    /// writes go through `daemon_client` (Phase 5 wires the writers).
+    pub cached_instances: Arc<Mutex<Vec<crate::types::Instance>>>,
+    /// Connected persistent client to the daemon. `None` until startup wiring
+    /// in `lib.rs` connects and subscribes.
+    pub daemon_client: Arc<tokio::sync::Mutex<Option<crate::daemon_client::PersistentClient>>>,
     pub channels: Arc<ChannelsManager>,
     pub hook_registration_pending: Mutex<bool>,
     pub update_state: Mutex<serde_json::Value>,
@@ -27,10 +30,6 @@ pub struct AppState {
     /// (covers WebView2 showing a "can't reach this page" error when the
     /// dev/prod start URL fails at boot, e.g. autostart racing with the network).
     pub frontend_alive: Arc<AtomicBool>,
-    /// Pending permission / question requests from the MCP server subprocess.
-    /// Key = UUID generated per request; value = oneshot sender that resolves
-    /// the blocked HTTP handler when the user responds via IPC.
-    pub pending: Arc<tokio::sync::Mutex<HashMap<String, oneshot::Sender<serde_json::Value>>>>,
 }
 
 impl AppState {
@@ -48,13 +47,13 @@ impl AppState {
             audio_stream,
             audio,
             preview,
-            instances: Arc::new(Registry::new()),
+            cached_instances: Arc::new(Mutex::new(Vec::new())),
+            daemon_client: Arc::new(tokio::sync::Mutex::new(None)),
             channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
             should_quit: Arc::new(AtomicBool::new(false)),
             frontend_alive: Arc::new(AtomicBool::new(false)),
-            pending: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 }

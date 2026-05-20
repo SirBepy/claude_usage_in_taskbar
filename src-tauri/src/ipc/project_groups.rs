@@ -120,7 +120,7 @@ pub mod groups_test_helpers {
 #[tauri::command]
 pub async fn list_project_groups(state: State<'_, AppState>) -> Result<Vec<crate::types::ProjectGroup>, ()> {
     let projects = state.settings.lock().unwrap().projects.clone();
-    let instances = state.instances.list();
+    let instances = state.cached_instances.lock().unwrap().clone();
     let now_ms = chrono::Utc::now().timestamp_millis();
     let groups = tauri::async_runtime::spawn_blocking(move || {
         let token_history = match paths::token_history_file() {

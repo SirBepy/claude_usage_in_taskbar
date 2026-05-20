@@ -28,19 +28,26 @@ pub async fn clear_session(
     // claude process tree by its registered pid so closing the chat row
     // actually terminates the underlying CLI. Interactive sessions are
     // handled by the per-turn kill above; only external needs this step.
-    if let Some(inst) = state.instances.get(&session_id) {
+    let cached = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.session_id == session_id)
+        .cloned();
+    if let Some(inst) = cached {
         if inst.kind == crate::sessions::kinds::InstanceKind::External && inst.pid != 0 {
             let _ = crate::channels::kill::kill_tree(inst.pid);
         }
     }
 
-    // Mark the session ended in the registry so it disappears from the active list.
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    state.instances.mark_ended(&session_id, EndReason::Manual, &now);
-    // Drop the ended session from the on-disk snapshot too, so it doesn't
-    // reappear in the sidebar after the next app restart.
-    crate::sessions::persistence::save_snapshot_default(&state.instances);
-
-    let _ = app.emit("instances-changed", state.instances.list());
+    // TODO(Phase 5): forward mark_ended + snapshot save to daemon via RPC.
+    // For now we emit the event so the UI removes the row optimistically;
+    // the next instances_changed from the daemon will reconcile.
+    let _ = EndReason::Manual;
+    let _ = app.emit(
+        "instances-changed",
+        state.cached_instances.lock().unwrap().clone(),
+    );
     Ok(())
 }

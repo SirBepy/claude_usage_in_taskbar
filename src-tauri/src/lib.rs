@@ -253,19 +253,57 @@ pub fn run() {
                     }
                 });
             }
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::hooks::spawn(handle.clone()).await {
-                    log::error!("hook server spawn failed: {e}");
-                    return;
-                }
-                migrate_hook_install_if_needed(&handle);
-            });
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    migrate_hook_install_if_needed(&handle);
+                });
+            }
+            // Daemon notification subscription. Replaces the old app-side
+            // hook server: the daemon now binds port 27182 and owns the
+            // registry; the app subscribes for `instances_changed`,
+            // permission/question relays, token-history updates, etc.
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app_handle.state::<crate::state::AppState>();
+                    #[cfg(windows)]
+                    {
+                        let pipe_name = crate::daemon_client::pipe_name_for_current_user();
+                        let client = match crate::daemon_client::PersistentClient::connect(&pipe_name).await {
+                            Ok(c) => c,
+                            Err(e) => { log::error!("daemon connect failed: {e}"); return; }
+                        };
+                        // Push initial settings BEFORE subscribing so the daemon's cache is
+                        // populated before any incoming hook traffic.
+                        let settings_snapshot = state.settings.lock().unwrap().clone();
+                        if let Err(e) = client.push_settings(&settings_snapshot).await {
+                            log::error!("push_settings failed: {e}");
+                        }
+                        let mut rx = match client.subscribe_global().await {
+                            Ok(rx) => rx,
+                            Err(e) => { log::error!("subscribe_global failed: {e}"); return; }
+                        };
+                        {
+                            let mut slot = state.daemon_client.lock().await;
+                            *slot = Some(client);
+                        }
+                        while let Some(frame) = rx.recv().await {
+                            let method = frame.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let params = frame.get("params").cloned().unwrap_or(serde_json::Value::Null);
+                            handle_daemon_notification(&app_handle, &method, params).await;
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        let _ = state;
+                        log::debug!("daemon client wiring only enabled on Windows in Phase 3");
+                    }
+                });
+            }
             {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    rehydrate_instances_from_session_files(&h);
-                    rehydrate_persisted_interactive_sessions(&h);
                     crate::sessions::detector::run(h).await
                 });
             }
@@ -417,102 +455,80 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
     );
 }
 
-/// Re-registers every live Claude Code session from `~/.claude/sessions/*.json`.
-/// The instance registry is in-memory only; without this, restarting the
-/// taskbar app (or starting it after Claude was already running) left the
-/// UI blank until each session happened to fire another SessionStart hook,
-/// which Claude only does on session creation.
-///
-/// Dead session files are filtered by checking live pids via sysinfo.
-/// `Registry::register` dedupes by session_id so overlap with a
-/// concurrent SessionStart hook is safe.
-fn rehydrate_instances_from_session_files(app: &tauri::AppHandle) {
+/// Routes daemon-side notifications into app-side Tauri events + cache updates.
+async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params: serde_json::Value) {
     use tauri::{Emitter, Manager};
-    let state = app.state::<crate::state::AppState>();
-    let mut sys = sysinfo::System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-    let live_processes: std::collections::HashMap<u32, u64> = sys
-        .processes()
-        .iter()
-        .map(|(p, proc)| (p.as_u32(), proc.start_time()))
-        .collect();
-
-    let scanned = crate::hooks::scan_live_sessions(&live_processes);
-    if scanned.is_empty() { return; }
-
-    let mut added = 0usize;
-    for s in scanned {
-        let started_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(s.started_at_ms)
-            .unwrap_or_else(chrono::Utc::now)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        let is_ours = state.channels.list().iter().any(|c| c.pid == Some(s.pid));
-        let (kind, is_remote) = if is_ours {
-            (crate::sessions::kinds::InstanceKind::Automated, true)
-        } else {
-            (crate::sessions::kinds::InstanceKind::External, false)
-        };
-        // Per-session jsonl first; the cwd-wide "latest" file would
-        // be identical for every concurrent session in the project.
-        let transcript_path = crate::tokens::transcript_for_session(&s.cwd, &s.session_id)
-            .or_else(|| crate::tokens::latest_transcript_for_cwd(&s.cwd));
-        let name = transcript_path
-            .as_deref()
-            .and_then(|p| crate::tokens::first_user_prompt(p, 60));
-        let input = crate::sessions::registry::RegisterInput {
-            session_id: s.session_id.clone(),
-            cwd: s.cwd,
-            pid: s.pid,
-            kind,
-            is_remote,
-            transcript_path,
-            started_at,
-        };
-        let (_pid_proj, created) = state.instances.register(input, &state.settings, &now);
-        if created { added += 1; }
-        if let Some(bridge) = s.bridge_session_id {
-            state.instances.set_bridge_session_id(&s.session_id, bridge);
+    match method {
+        "instances_changed" => {
+            let state = app.state::<crate::state::AppState>();
+            if let Some(instances) = params.get("instances").cloned() {
+                if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances.clone()) {
+                    let mut cache = state.cached_instances.lock().unwrap();
+                    *cache = parsed;
+                }
+                let _ = app.emit("instances-changed", instances);
+            }
         }
-        if let Some(n) = name {
-            state.instances.set_name(&s.session_id, n);
+        "permission_request" => { let _ = app.emit("permission-requested", params); }
+        "question_request" => { let _ = app.emit("question-requested", params); }
+        "token_history_updated" => {
+            if let Some(h) = params.get("history") {
+                let _ = app.emit("token-history-updated", h);
+            }
         }
-    }
-
-    if added > 0 {
-        // Persist any projects that got auto-created by the registrations.
-        let snapshot = state.settings.lock().unwrap().clone();
-        if let Ok(path) = paths::settings_file() {
-            let _ = crate::settings::save(&path, &snapshot);
+        "skill_usage_changed" => { let _ = app.emit("skill-usage-changed", serde_json::json!({})); }
+        "refresh_requested" => {
+            let app2 = app.clone();
+            let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            tokio::spawn(async move {
+                let _ = crate::scheduler::poll_once(&app2, crate::scheduler::PollTrigger::Hook).await;
+                let name = cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
+                crate::notifications::fire(
+                    &app2,
+                    crate::notifications::NotifKind::WorkFinished,
+                    crate::notifications::NotifContext { name, percent: None },
+                    cwd.as_deref(),
+                );
+            });
         }
-        let _ = app.emit("settings-changed", snapshot);
-    }
-
-    let _ = app.emit("instances-changed", state.instances.list());
-    log::info!("rehydrated {added} instance(s) from ~/.claude/sessions");
-}
-
-/// Restore previously persisted Interactive (Path C) sessions into the
-/// registry. Their claude processes don't run between turns, so the live-pid
-/// scan above misses them - they only live in our own snapshot file.
-fn rehydrate_persisted_interactive_sessions(app: &tauri::AppHandle) {
-    use tauri::{Emitter, Manager};
-    let state = app.state::<crate::state::AppState>();
-    let path = match paths::interactive_sessions_file() {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("interactive_sessions_file path: {e}");
-            return;
+        "notify_requested" => {
+            let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let name = cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
+            crate::notifications::fire(
+                app,
+                crate::notifications::NotifKind::QuestionAsked,
+                crate::notifications::NotifContext { name, percent: None },
+                cwd.as_deref(),
+            );
         }
-    };
-    let sessions = crate::sessions::persistence::load_snapshot(&path);
-    if sessions.is_empty() {
-        return;
-    }
-    let added = crate::sessions::persistence::populate_registry(&state.instances, sessions);
-    if added > 0 {
-        crate::sessions::persistence::save_snapshot_default(&state.instances);
-        let _ = app.emit("instances-changed", state.instances.list());
-        log::info!("rehydrated {added} Interactive session(s) from snapshot");
+        "quit_requested" => {
+            app.exit(0);
+        }
+        "project_created" => {
+            if let (Some(project_id), Some(cwd), Some(now)) = (
+                params.get("project_id").and_then(|v| v.as_str()),
+                params.get("cwd").and_then(|v| v.as_str()),
+                params.get("now").and_then(|v| v.as_str()),
+            ) {
+                let state = app.state::<crate::state::AppState>();
+                let mut settings_guard = state.settings.lock().unwrap();
+                crate::settings::upsert_project_with_id_for_cwd(
+                    &mut settings_guard,
+                    project_id,
+                    &std::path::PathBuf::from(cwd),
+                    now,
+                );
+                let snapshot = settings_guard.clone();
+                drop(settings_guard);
+                if let Ok(path) = crate::settings::paths::settings_file() {
+                    let _ = crate::settings::save(&path, &snapshot);
+                }
+                let _ = app.emit("settings-changed", &snapshot);
+            }
+        }
+        other => {
+            log::debug!("daemon notif ignored: {other}");
+        }
     }
 }
 

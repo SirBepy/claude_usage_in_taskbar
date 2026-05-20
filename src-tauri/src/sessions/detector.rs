@@ -82,24 +82,11 @@ pub fn reconcile_once(registry: &Registry) -> bool {
 
 /// Background task that runs the reconciliation every 5s and prunes
 /// long-ended instances every 60s.
-pub async fn run(app: AppHandle) {
-    let mut last_prune = tokio::time::Instant::now();
-    loop {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-
-        let state = app.state::<crate::state::AppState>();
-        let registry = state.instances.clone();
-        let changed = reconcile_once(&registry);
-        if changed {
-            let _ = app.emit("instances-changed", registry.list());
-        }
-
-        if last_prune.elapsed().as_secs() >= 60 {
-            let cutoff = (chrono::Utc::now() - chrono::Duration::seconds(60))
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-            registry.prune_ended_before(&cutoff);
-            last_prune = tokio::time::Instant::now();
-            let _ = app.emit("instances-changed", registry.list());
-        }
-    }
+///
+/// Daemon-pivot Phase 3: the daemon now owns the registry and runs its own
+/// reconcile loop (`daemon::detector`). This app-side stub is kept so the
+/// existing `spawn(detector::run(h))` call site stays valid; it never wakes.
+pub async fn run(_app: AppHandle) {
+    // No-op. See module doc.
+    std::future::pending::<()>().await;
 }

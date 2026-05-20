@@ -65,6 +65,7 @@ impl PersistentClient {
                 };
                 if frame.get("method").is_some() {
                     // Server-to-client notification.
+                    // Empty string is the global slot for daemon-wide notifications.
                     let session_id = frame.pointer("/params/session_id")
                         .and_then(Value::as_str)
                         .unwrap_or("")
@@ -118,6 +119,17 @@ impl PersistentClient {
             return Err(ClientError::Rpc { code, message });
         }
         Ok(resp.get("result").cloned().unwrap_or(Value::Null))
+    }
+
+    pub async fn subscribe_global(&self) -> Result<mpsc::Receiver<Value>, ClientError> {
+        let (tx, rx) = mpsc::channel(256);
+        {
+            let mut subs = self.subs.lock().await;
+            // Empty-string key is the "no session_id" / global slot.
+            subs.insert(String::new(), tx);
+        }
+        self.call("subscribe_global", json!({})).await?;
+        Ok(rx)
     }
 
     pub async fn attach_session(&self, session_id: &str) -> Result<mpsc::Receiver<Value>, ClientError> {

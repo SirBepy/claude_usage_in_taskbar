@@ -108,6 +108,40 @@ pub fn upsert_project_for_cwd(
     (id, true)
 }
 
+/// Companion to `upsert_project_for_cwd` for cases where the project_id was
+/// already generated elsewhere (e.g. daemon-side registry). Idempotent: if a
+/// project for `cwd` already exists with any id, this is a no-op.
+pub fn upsert_project_with_id_for_cwd(
+    settings: &mut crate::types::Settings,
+    project_id: &str,
+    cwd: &std::path::Path,
+    now: &str,
+) {
+    let key = project_key(cwd);
+    if settings
+        .projects
+        .iter()
+        .any(|p| project_key(&p.path) == key)
+    {
+        return;
+    }
+    let root = find_repo_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let name = root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("(unknown)")
+        .to_string();
+    settings.projects.push(crate::types::ProjectConfig {
+        id: project_id.to_string(),
+        path: root,
+        name,
+        avatar: crate::types::Avatar::None,
+        automation: None,
+        created_at: now.to_string(),
+        last_active_at: Some(now.to_string()),
+    });
+}
+
 /// Saves settings to disk, creating parent dirs if needed.
 pub fn save(path: &Path, settings: &Settings) -> Result<()> {
     if let Some(parent) = path.parent() {

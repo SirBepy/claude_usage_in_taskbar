@@ -113,20 +113,25 @@ pub async fn open_session_in_terminal(
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
     let entry = state
-        .instances
-        .get(&session_id)
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.session_id == session_id)
+        .cloned()
         .ok_or_else(|| format!("session {session_id} not found in registry"))?;
     let cwd = entry.cwd.clone();
     if !cwd.exists() {
         return Err(format!("cwd does not exist: {}", cwd.display()));
     }
     spawn_terminal_for_session(&session_id, &cwd).map_err(|e| e.to_string())?;
-    // Hand the session over to the terminal: convert it to External so the app
-    // shows a read-only view with a Take Over button instead of an active
-    // composer, and so the terminal's SessionEnd no longer kills our entry.
-    if state.instances.externalize_session(&session_id) {
-        let _ = app.emit("instances-changed", state.instances.list());
-    }
+    // TODO(Phase 5): forward externalize_session to daemon via RPC.
+    // Optimistic emit so the UI refreshes; the next instances_changed
+    // from the daemon will reconcile.
+    let _ = app.emit(
+        "instances-changed",
+        state.cached_instances.lock().unwrap().clone(),
+    );
     Ok(())
 }
 
@@ -248,18 +253,13 @@ pub async fn takeover_manual(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<String, String> {
-    let (model, effort) = resolve_takeover_model_effort(manual_pid, &state);
-    let session_id = crate::chat::takeover::takeover(
-        manual_pid,
-        &model,
-        &effort,
-        &state.instances,
-        &state.settings,
-    )
-    .map_err(|e| e.to_string())?;
-    // Surface the registry change so the sidebar refreshes.
-    let _ = app.emit("instances-changed", ());
-    Ok(session_id)
+    let (_model, _effort) = resolve_takeover_model_effort(manual_pid, &state);
+    // TODO(Phase 5): forward takeover to daemon via RPC. The daemon owns the
+    // registry and must perform the External -> Interactive promotion +
+    // session-file resolution. Returning an error keeps the UI honest until
+    // the RPC plumbing lands.
+    let _ = (app, manual_pid);
+    Err("takeover not yet wired to daemon (Phase 5 TODO)".to_string())
 }
 
 /// Resolve model+effort for takeover from settings.extra:
@@ -267,7 +267,13 @@ pub async fn takeover_manual(
 /// 2. effortPresets[].name == "Normal" -> {model, effort}
 /// 3. fall back to ("opus", "high")
 fn resolve_takeover_model_effort(manual_pid: u32, state: &AppState) -> (String, String) {
-    let entry = state.instances.list().into_iter().find(|i| i.pid == manual_pid);
+    let entry = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.pid == manual_pid)
+        .cloned();
     let cwd_key = entry
         .map(|e| e.cwd.to_string_lossy().to_string())
         .unwrap_or_default();
@@ -328,25 +334,24 @@ pub async fn respond_permission(
     message: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let val = match behavior.as_str() {
-        "allow" => serde_json::json!({
-            "behavior": "allow",
-            "updatedInput": updated_input.unwrap_or_else(|| serde_json::json!({})),
-        }),
-        "deny" => serde_json::json!({
-            "behavior": "deny",
-            "message": message.unwrap_or_else(|| "Denied by user.".to_string()),
-        }),
+    let allow = match behavior.as_str() {
+        "allow" => true,
+        "deny" => false,
         _ => return Err(format!("invalid behavior: {behavior:?} (must be 'allow' or 'deny')")),
     };
-    let tx = state.pending.lock().await.remove(&id);
-    match tx {
-        Some(tx) => {
-            let _ = tx.send(val);
-            Ok(())
-        }
-        None => Err(format!("no pending request with id {id}")),
-    }
+    let client_guard = state.daemon_client.lock().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "daemon client not connected".to_string())?;
+    client
+        .respond_permission(
+            &id,
+            allow,
+            if allow { Some(updated_input.unwrap_or_else(|| serde_json::json!({}))) } else { None },
+            if allow { None } else { Some(message.unwrap_or_else(|| "Denied by user.".to_string())) },
+        )
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Respond to a pending question request from the MCP server.
@@ -356,13 +361,12 @@ pub async fn respond_question(
     answers: Value,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let val = serde_json::json!({"answers": answers});
-    let tx = state.pending.lock().await.remove(&id);
-    match tx {
-        Some(tx) => {
-            let _ = tx.send(val);
-            Ok(())
-        }
-        None => Err(format!("no pending question with id {id}")),
-    }
+    let client_guard = state.daemon_client.lock().await;
+    let client = client_guard
+        .as_ref()
+        .ok_or_else(|| "daemon client not connected".to_string())?;
+    client
+        .respond_question(&id, answers)
+        .await
+        .map_err(|e| e.to_string())
 }

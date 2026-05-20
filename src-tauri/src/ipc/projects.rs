@@ -334,7 +334,7 @@ pub async fn detect_obsidian_vaults() -> Vec<std::path::PathBuf> {
 
 #[tauri::command]
 pub fn list_instances(state: State<AppState>) -> Vec<crate::types::Instance> {
-    state.instances.list()
+    state.cached_instances.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -342,12 +342,25 @@ pub fn list_instances_for_project(
     project_id: String,
     state: State<AppState>,
 ) -> Vec<crate::types::Instance> {
-    state.instances.by_project(&project_id)
+    state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|i| i.project_id == project_id)
+        .cloned()
+        .collect()
 }
 
 #[tauri::command]
 pub fn phone_link(session_id: String, state: State<AppState>) -> Option<String> {
-    let inst = state.instances.get(&session_id)?;
+    let inst = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.session_id == session_id)
+        .cloned()?;
     let bridge = inst.bridge_session_id?;
     Some(format!("https://claude.ai/code/{bridge}"))
 }
@@ -355,7 +368,14 @@ pub fn phone_link(session_id: String, state: State<AppState>) -> Option<String> 
 #[tauri::command]
 pub fn instance_token_stats(session_id: String, state: State<AppState>) -> serde_json::Value {
     let empty = serde_json::json!({ "tokens": 0, "turns": 0, "prompts": 0 });
-    let Some(inst) = state.instances.get(&session_id) else { return empty };
+    let Some(inst) = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.session_id == session_id)
+        .cloned()
+    else { return empty };
     let path = match inst.transcript_path.as_ref() {
         Some(p) if p.exists() => p.clone(),
         _ => match crate::tokens::transcript_for_session(&inst.cwd, &inst.session_id)

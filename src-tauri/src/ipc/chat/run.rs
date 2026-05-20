@@ -61,12 +61,11 @@ async fn run_session_turn(
     let cwd_path = PathBuf::from(&cwd);
     let captured: Arc<StdMutex<Option<String>>> = Arc::new(StdMutex::new(session_id_in.clone()));
     let captured_for_closure = Arc::clone(&captured);
-    let registry_for_closure = Arc::clone(&state.instances);
     let app_for_closure = app.clone();
     let initial_id = session_id_in.clone();
 
-    if let Some(ref id) = session_id_in {
-        state.instances.set_busy(id, true);
+    // TODO(Phase 5): forward set_busy(true) to daemon via RPC.
+    if session_id_in.is_some() {
         let _ = app.emit("instances-changed", ());
     }
 
@@ -122,15 +121,14 @@ async fn run_session_turn(
     // the only one that matters for the user.
     // If this is an existing session, ensure the registry knows the model+effort
     // (handles takeover paths where set_model_effort wasn't called before).
-    if let Some(ref id) = session_id_in {
-        state.instances.set_model_effort(id, &model, &effort);
-    }
+    // TODO(Phase 5): forward set_model_effort to daemon via RPC.
+    let _ = (session_id_in.as_ref(), &model, &effort);
 
     let is_resume_turn = initial_id.is_some();
     let model_for_closure = model.clone();
     let effort_for_closure = effort.clone();
-    let model_for_registry = model.clone();
-    let effort_for_registry = effort.clone();
+    let _model_for_registry = model.clone();
+    let _effort_for_registry = effort.clone();
     let tracking_id_for_closure = placeholder_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         run_turn(
@@ -148,26 +146,9 @@ async fn run_session_turn(
                     if g.is_none() {
                         *g = Some(session_id.clone());
                         just_captured = Some(session_id.clone());
-                        // Insert directly without re-resolving project_id.
-                        registry_for_closure.upsert_interactive(
-                            session_id,
-                            std::path::Path::new(&cwd_for_closure),
-                            &project_id_for_closure,
-                            &now_str_for_closure,
-                        );
-                        registry_for_closure.set_model_effort(
-                            session_id,
-                            &model_for_registry,
-                            &effort_for_registry,
-                        );
-                        registry_for_closure.set_busy(session_id, true);
-                        // Snapshot to disk so this session re-appears in the
-                        // sidebar after an app restart (Path C has no live
-                        // process between turns, so the live-pid rehydrate
-                        // would otherwise miss it).
-                        crate::sessions::persistence::save_snapshot_default(
-                            &registry_for_closure,
-                        );
+                        // TODO(Phase 5): forward upsert_interactive + set_model_effort
+                        // + set_busy(true) + snapshot save to daemon via RPC.
+                        let _ = (&cwd_for_closure, &project_id_for_closure, &now_str_for_closure);
                     }
                 }
                 // CRITICAL ordering for the new-session sidebar bug fix:
@@ -208,9 +189,8 @@ async fn run_session_turn(
     .map_err(|e| format!("join: {}", e))?;
 
     let final_id = captured.lock().unwrap().clone().unwrap_or_default();
-    if !final_id.is_empty() {
-        state.instances.set_busy(&final_id, false);
-    }
+    // TODO(Phase 5): forward set_busy(false) to daemon via RPC.
+    let _ = &final_id;
     if !final_id.is_empty() && final_id != placeholder_id {
         chat_state.remove(&final_id);
     }
@@ -244,7 +224,13 @@ pub async fn send_message(
 ) -> Result<String, String> {
     let prompt = blocks_to_prompt_text(&blocks);
     let (model, effort) = {
-        let inst = state.instances.get(&session_id);
+        let inst = state
+            .cached_instances
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|i| i.session_id == session_id)
+            .cloned();
         match inst {
             Some(i) if !i.model.is_empty() && !i.effort.is_empty() => (i.model.clone(), i.effort.clone()),
             _ => ("opus".to_string(), "high".to_string()),
@@ -264,8 +250,8 @@ pub async fn set_session_effort(
     if !valid.contains(&effort.as_str()) {
         return Err(format!("invalid effort: {effort}"));
     }
-    state.instances.set_effort(&session_id, &effort);
-    crate::sessions::persistence::save_snapshot_default(&state.instances);
+    // TODO(Phase 5): forward set_effort + snapshot save to daemon via RPC.
+    let _ = (&session_id, &effort, &state);
     let _ = app.emit("instances-changed", ());
     Ok(())
 }
@@ -323,7 +309,8 @@ pub async fn register_historical_session(
         let (pid, _) = crate::settings::upsert_project_for_cwd(&mut s, &cwd_path, &now_str);
         pid
     };
-    state.instances.upsert_interactive(&session_id, &cwd_path, &project_id, &now_str);
+    // TODO(Phase 5): forward upsert_interactive to daemon via RPC.
+    let _ = (&session_id, &cwd_path, &project_id, &now_str, &state);
     let _ = app.emit("instances-changed", ());
     Ok(())
 }
