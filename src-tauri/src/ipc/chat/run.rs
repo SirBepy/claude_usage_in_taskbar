@@ -324,7 +324,10 @@ async fn send_message_daemon(
                     .await
                     .map_err(|e| e.to_string())?;
             }
-            super::daemon_bridge::ensure_attached(app, session_id).await?;
+            // Force re-attach: the respawned session has a NEW daemon broadcast
+            // channel, so the prior subscription is dead. ensure_attached alone
+            // would no-op (id still in attached_sessions).
+            super::daemon_bridge::reattach(app, session_id).await?;
             let guard = state.daemon_client.lock().await;
             let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
             client.send_message(session_id, prompt).await.map_err(|e| e.to_string())?;

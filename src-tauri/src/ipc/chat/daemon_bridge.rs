@@ -7,6 +7,22 @@ use crate::state::AppState;
 use crate::types::chat::ChatEvent;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// Force a fresh daemon attach for `session_id`, even if we believe we are
+/// already attached. Used after a respawn (cancel-then-continue): the daemon
+/// session was recreated with a NEW broadcast channel, so the prior
+/// subscription is dead and the old pump task is blocked on a receiver that
+/// never closes. Dropping the stale `attached_sessions` entry lets
+/// `ensure_attached` issue a new `attach_session` RPC; the daemon replaces its
+/// relay handle and the client replaces the per-session sender (dropping the
+/// stale receiver, which unblocks and ends the orphaned pump task).
+pub async fn reattach(app: &AppHandle, session_id: &str) -> Result<(), String> {
+    {
+        let state = app.state::<AppState>();
+        state.attached_sessions.lock().unwrap().remove(session_id);
+    }
+    ensure_attached(app, session_id).await
+}
+
 /// Ensure a pump task is running for `session_id`: attaches to the daemon's
 /// per-session stream and re-emits each `chat_event`'s inner ChatEvent onto
 /// `chat:<session_id>`. Idempotent - a second call for the same id is a no-op.
