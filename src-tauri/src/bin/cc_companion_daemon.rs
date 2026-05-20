@@ -8,7 +8,7 @@ use claude_usage_tauri_lib::daemon::rpc::Router;
 use claude_usage_tauri_lib::daemon::session::new_session_map;
 use claude_usage_tauri_lib::daemon::settings_cache::SettingsCache;
 use claude_usage_tauri_lib::daemon::state::DaemonState;
-use claude_usage_tauri_lib::daemon::{detector_task, health, hooks_server, methods, transport_windows};
+use claude_usage_tauri_lib::daemon::{channels, detector_task, health, hooks_server, methods, transport_windows};
 use claude_usage_tauri_lib::settings;
 use claude_usage_tauri_lib::types::Settings;
 use std::path::PathBuf;
@@ -50,11 +50,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     methods::register_notifier(&mut router, state.notifier.clone());
     methods::register_settings(&mut router, settings_cache);
     methods::register_responders(&mut router, state.clone());
+    methods::register_channels(&mut router, state.clone());
 
     // Bind hook server BEFORE the RPC accept loop so in-flight claude
     // processes can re-discover the port the moment we're up.
     let _hook_port = hooks_server::spawn(state.clone()).await?;
     detector_task::spawn(state.clone());
+
+    // Autostart automated channels the daemon owns. Channels survive app
+    // close; no auto-restart on exit (see daemon::channels).
+    channels::autostart_all(state.clone());
 
     #[cfg(windows)]
     {
