@@ -355,7 +355,15 @@ pub async fn set_session_effort(
 pub async fn cancel_turn(
     session_id: String,
     chat_state: State<'_, Arc<ChatState>>,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let use_daemon = { state.settings.lock().unwrap().use_daemon };
+    if use_daemon {
+        let guard = state.daemon_client.lock().await;
+        let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+        return client.cancel_turn(&session_id).await.map_err(|e| e.to_string());
+    }
+    // Path C: OS-kill the in-flight runner child.
     let slot = chat_state.slot(&session_id);
     if let Some(slot) = slot {
         let pid = slot.lock().unwrap().take();
