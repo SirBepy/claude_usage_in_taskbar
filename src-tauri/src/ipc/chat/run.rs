@@ -284,7 +284,54 @@ pub async fn send_message(
             _ => ("opus".to_string(), "high".to_string()),
         }
     };
+
+    let use_daemon = { state.settings.lock().unwrap().use_daemon };
+    if use_daemon {
+        return send_message_daemon(&session_id, &cwd, &prompt, &model, &effort, &state, &app).await;
+    }
     run_session_turn(Some(session_id), cwd, prompt, model, effort, None, state, app).await
+}
+
+/// Daemon-backed turn on an existing session. If the daemon no longer holds the
+/// session, respawn with resume_id and retry once.
+async fn send_message_daemon(
+    session_id: &str,
+    cwd: &str,
+    prompt: &str,
+    model: &str,
+    effort: &str,
+    state: &State<'_, AppState>,
+    app: &AppHandle,
+) -> Result<String, String> {
+    super::daemon_bridge::ensure_attached(app, session_id).await.ok();
+
+    // First attempt.
+    let first = {
+        let guard = state.daemon_client.lock().await;
+        let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+        client.send_message(session_id, prompt).await
+    };
+
+    match first {
+        Ok(()) => Ok(session_id.to_string()),
+        Err(crate::daemon_client::ClientError::Rpc { code: -32004, .. }) => {
+            // Session not live in the daemon: respawn with resume_id, re-attach, retry.
+            {
+                let guard = state.daemon_client.lock().await;
+                let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+                client
+                    .start_session(cwd, model, effort, Some(session_id))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            super::daemon_bridge::ensure_attached(app, session_id).await?;
+            let guard = state.daemon_client.lock().await;
+            let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+            client.send_message(session_id, prompt).await.map_err(|e| e.to_string())?;
+            Ok(session_id.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
