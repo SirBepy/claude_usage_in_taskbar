@@ -34,6 +34,7 @@ pub fn start_channel(
         state.channels.put(ChannelSnapshot {
             project_id: project_id.clone(),
             pid: None,
+            claude_pid: None,
             status: ChannelStatus::Starting,
             hwnd: None,
         });

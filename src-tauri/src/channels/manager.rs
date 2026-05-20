@@ -6,7 +6,15 @@ use crate::types::ChannelStatus;
 
 pub struct ChannelSnapshot {
     pub project_id: String,
+    /// The pid of the spawned launcher. On Windows this is the `cmd.exe /C
+    /// claude ...` wrapper; on macOS it is `claude` directly. Used for
+    /// lifecycle (kill_tree) + hwnd resolution.
     pub pid: Option<u32>,
+    /// The actual `claude` pid. On Windows this is the child of the cmd.exe
+    /// wrapper, resolved after spawn; on macOS it equals `pid`. The hook path
+    /// matches against this to tag channel-spawned sessions Automated (the
+    /// SessionStart hook reports claude's pid, not the wrapper's).
+    pub claude_pid: Option<u32>,
     pub status: ChannelStatus,
     pub hwnd: Option<isize>,
 }
@@ -44,6 +52,7 @@ impl Manager {
         self.channels.lock().unwrap().get(project_id).map(|s| ChannelSnapshot {
             project_id: s.project_id.clone(),
             pid: s.pid,
+            claude_pid: s.claude_pid,
             status: s.status,
             hwnd: s.hwnd,
         })
@@ -57,6 +66,7 @@ impl Manager {
             .map(|s| ChannelSnapshot {
                 project_id: s.project_id.clone(),
                 pid: s.pid,
+                claude_pid: s.claude_pid,
                 status: s.status,
                 hwnd: s.hwnd,
             })

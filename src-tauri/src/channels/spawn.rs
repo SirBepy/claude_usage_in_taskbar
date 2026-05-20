@@ -191,3 +191,36 @@ pub(crate) async fn wait_for_child_exit(_process_handle: isize, pid: u32) {
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub(crate) async fn wait_for_child_exit(_process_handle: isize, _pid: u32) {}
+
+/// Resolve the actual `claude` pid for a spawned channel.
+///
+/// On Windows the channel is launched as `cmd.exe /C claude ...`, so the
+/// spawned pid is the `cmd.exe` wrapper and the real `claude` runs as its
+/// child. The SessionStart hook reports claude's pid, so the daemon must
+/// resolve the child to correlate the channel (else it stays tagged External).
+/// On macOS the channel is `claude` directly, so the spawned pid IS claude's.
+#[cfg(windows)]
+pub fn resolve_claude_pid(spawned_pid: u32) -> Option<u32> {
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All);
+    sys.processes().iter().find_map(|(pid, proc_)| {
+        let is_child = proc_.parent() == Some(Pid::from_u32(spawned_pid));
+        let is_claude = proc_
+            .name()
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains("claude");
+        (is_child && is_claude).then_some(pid.as_u32())
+    })
+}
+
+#[cfg(target_os = "macos")]
+pub fn resolve_claude_pid(spawned_pid: u32) -> Option<u32> {
+    Some(spawned_pid)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn resolve_claude_pid(_spawned_pid: u32) -> Option<u32> {
+    None
+}

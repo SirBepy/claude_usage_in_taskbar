@@ -244,6 +244,25 @@ impl Registry {
         true
     }
 
+    /// Upgrade every `External` instance whose pid matches `pid` to
+    /// `Automated` + remote. Used by the channel lifecycle: once the daemon
+    /// resolves a channel's real `claude` pid, it re-tags any session the hook
+    /// already registered as External (closing the spawn-vs-hook race where the
+    /// SessionStart arrives before the channel's pid is known). Returns true if
+    /// any instance changed.
+    pub fn retag_pid_as_automated(&self, pid: u32) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let mut changed = false;
+        for i in guard.values_mut() {
+            if i.pid == pid && i.kind == InstanceKind::External {
+                i.kind = InstanceKind::Automated;
+                i.is_remote = true;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Late-binding name update. Resolved from the transcript's first
     /// user prompt. Returns true if the name actually changed.
     pub fn set_name(&self, session_id: &str, name: String) -> bool {
@@ -346,6 +365,34 @@ mod tests {
         let registry = Registry::new();
         registry.set_busy("missing", true);
         assert!(registry.get("missing").is_none());
+    }
+
+    #[test]
+    fn retag_pid_as_automated_upgrades_only_external() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.register(
+            RegisterInput {
+                session_id: "chan-1".into(),
+                cwd: PathBuf::from("/tmp/z"),
+                pid: 4242,
+                kind: InstanceKind::External,
+                is_remote: false,
+                transcript_path: None,
+                started_at: "2026-05-20T00:00:00Z".into(),
+            },
+            &settings,
+            "2026-05-20T00:00:00Z",
+        );
+        // Matching pid upgrades External -> Automated + remote.
+        assert!(registry.retag_pid_as_automated(4242));
+        let e = registry.get("chan-1").unwrap();
+        assert_eq!(e.kind, InstanceKind::Automated);
+        assert!(e.is_remote);
+        // Idempotent: already Automated, not re-upgraded.
+        assert!(!registry.retag_pid_as_automated(4242));
+        // Non-matching pid: no change.
+        assert!(!registry.retag_pid_as_automated(9999));
     }
 
     #[test]

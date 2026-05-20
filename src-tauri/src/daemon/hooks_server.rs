@@ -157,14 +157,17 @@ async fn on_session_start(
 
     // Phase 4: if the hook's pid belongs to a channel we spawned, tag it
     // Automated + remote (restores the pre-Phase-3 correlation that lived in
-    // the old app-side hook server). Match parity caveat: in v2.x SessionStart
-    // payloads often omit pid (resolved later in the background enrichment
-    // block below); when pid is absent at register time the match misses and
-    // the session stays External. Acceptable - matches the historical
-    // behaviour. A pid-resolved re-tag is a possible future improvement.
+    // the old app-side hook server). We match against BOTH the channel's
+    // launcher pid and its resolved `claude` pid: on Windows the launcher is a
+    // `cmd.exe` wrapper and the hook reports claude's (child) pid. When the
+    // payload omits pid (common in v2.x) or the claude pid isn't resolved yet,
+    // this misses here; the background enrichment block below re-runs the match
+    // once the real pid is known, and the channel lifecycle also re-tags from
+    // its side when it resolves the claude pid.
     let hook_pid = payload.pid.unwrap_or(0);
     let (kind, is_remote) = if hook_pid != 0
-        && ctx.state.channels.list().iter().any(|c| c.pid == Some(hook_pid))
+        && ctx.state.channels.list().iter()
+            .any(|c| c.pid == Some(hook_pid) || c.claude_pid == Some(hook_pid))
     {
         (InstanceKind::Automated, true)
     } else {
@@ -230,10 +233,13 @@ async fn on_session_start(
         // channel match. v2.x SessionStart often omits pid, so the immediate match
         // in the synchronous path above misses; this upgrades External -> Automated.
         if let Some(rpid) = resolved_pid {
-            if state.channels.list().iter().any(|c| c.pid == Some(rpid)) {
-                if state.registry.set_kind(&sid, crate::sessions::kinds::InstanceKind::Automated, true) {
-                    changed = true;
-                }
+            let is_channel = state.channels.list().iter()
+                .any(|c| c.pid == Some(rpid) || c.claude_pid == Some(rpid));
+            if is_channel
+                && state.registry.set_kind(&sid, crate::sessions::kinds::InstanceKind::Automated, true)
+            {
+                changed = true;
+                log::info!("session {sid} re-tagged Automated (channel claude pid {rpid})");
             }
         }
         if let Some(path) = transcript_path_opt {

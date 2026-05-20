@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::channels::kill::kill_tree;
 use crate::channels::manager::{channel_snapshot_to_json, ChannelSnapshot};
-use crate::channels::spawn::{spawn_child, wait_for_child_exit, SpawnInput};
+use crate::channels::spawn::{resolve_claude_pid, spawn_child, wait_for_child_exit, SpawnInput};
 use crate::channels::window_chrome::{hide_hwnd, resolve_console_hwnd, strip_console_chrome};
 use crate::daemon::state::DaemonState;
 use crate::types::ChannelStatus;
@@ -42,6 +42,7 @@ pub fn start_channel(state: Arc<DaemonState>, project_id: String) -> Result<(), 
     state.channels.put(ChannelSnapshot {
         project_id: project_id.clone(),
         pid: None,
+        claude_pid: None,
         status: ChannelStatus::Starting,
         hwnd: None,
     });
@@ -76,6 +77,41 @@ pub fn start_channel(state: Arc<DaemonState>, project_id: String) -> Result<(), 
         });
     }
 
+    // Resolve the inner `claude` pid so the hook path can correlate this
+    // channel as Automated. On Windows the spawned pid is the `cmd.exe`
+    // wrapper; the SessionStart hook reports claude's (child) pid. Poll for the
+    // child, then re-tag any session the hook already registered as External
+    // (closes the spawn-vs-hook race: SessionStart often arrives first).
+    {
+        let state_c = state.clone();
+        let proj_c = project_id.clone();
+        tokio::spawn(async move {
+            let mut claude_pid = None;
+            for _ in 0..20 {
+                if let Some(cp) = resolve_claude_pid(pid) {
+                    claude_pid = Some(cp);
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            if let Some(cp) = claude_pid {
+                log::info!("channel {proj_c}: resolved claude_pid={cp} (launcher pid={pid})");
+                state_c.channels.patch(&proj_c, |s| s.claude_pid = Some(cp));
+                let retagged = state_c.registry.retag_pid_as_automated(cp);
+                log::info!("channel {proj_c}: retag_pid_as_automated({cp}) -> {retagged}");
+                if retagged {
+                    state_c.notifier.publish(
+                        "instances_changed",
+                        serde_json::json!({"instances": state_c.registry.list()}),
+                    );
+                }
+                emit_changed(&state_c);
+            } else {
+                log::warn!("channel {proj_c}: failed to resolve claude_pid for launcher pid={pid}");
+            }
+        });
+    }
+
     // Watch for exit; mark stopped. NO auto-restart.
     {
         let state_w = state.clone();
@@ -87,6 +123,7 @@ pub fn start_channel(state: Arc<DaemonState>, project_id: String) -> Result<(), 
             state_w.channels.patch(&proj_w, |s| {
                 s.status = ChannelStatus::Stopped;
                 s.pid = None;
+                s.claude_pid = None;
                 s.hwnd = None;
             });
             emit_changed(&state_w);
@@ -110,6 +147,7 @@ pub fn stop_channel(state: &Arc<DaemonState>, project_id: &str) -> Result<(), St
     state.channels.patch(project_id, |s| {
         s.status = ChannelStatus::Stopped;
         s.pid = None;
+        s.claude_pid = None;
         s.hwnd = None;
     });
     emit_changed(state);
@@ -188,6 +226,7 @@ mod tests {
         st.channels.put(ChannelSnapshot {
             project_id: "p1".into(),
             pid: Some(123),
+            claude_pid: None,
             status: ChannelStatus::Running,
             hwnd: None,
         });
