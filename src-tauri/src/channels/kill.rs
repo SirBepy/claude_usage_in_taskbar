@@ -1,5 +1,3 @@
-use tauri::{AppHandle, Manager};
-
 #[cfg(windows)]
 pub fn kill_tree(pid: u32) {
     use windows::Win32::Foundation::CloseHandle;
@@ -75,12 +73,3 @@ pub fn kill_tree(pid: u32) {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn kill_tree(_pid: u32) {}
 
-/// Called on app shutdown. Fire-and-forget tree kills for every channel.
-pub fn kill_all(app: &AppHandle) {
-    let state = app.state::<crate::state::AppState>();
-    for snap in state.channels.list() {
-        if let Some(pid) = snap.pid {
-            kill_tree(pid);
-        }
-    }
-}

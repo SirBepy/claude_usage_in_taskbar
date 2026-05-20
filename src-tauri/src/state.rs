@@ -1,6 +1,5 @@
 //! Runtime app state shared across Tauri commands and background tasks.
 
-use crate::channels::Manager as ChannelsManager;
 use crate::tray::TrayDisplayState;
 use crate::types::{AuthState, Settings, UsageSnapshot};
 use std::sync::{Arc, Mutex};
@@ -25,7 +24,6 @@ pub struct AppState {
     /// Connected persistent client to the daemon. `None` until startup wiring
     /// in `lib.rs` connects and subscribes.
     pub daemon_client: Arc<tokio::sync::Mutex<Option<crate::daemon_client::PersistentClient>>>,
-    pub channels: Arc<ChannelsManager>,
     pub hook_registration_pending: Mutex<bool>,
     pub update_state: Mutex<serde_json::Value>,
     pub should_quit: Arc<AtomicBool>,
@@ -54,7 +52,6 @@ impl AppState {
             cached_instances: Arc::new(Mutex::new(Vec::new())),
             cached_channels: Arc::new(Mutex::new(Vec::new())),
             daemon_client: Arc::new(tokio::sync::Mutex::new(None)),
-            channels: Arc::new(ChannelsManager::new()),
             hook_registration_pending: Mutex::new(false),
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
             should_quit: Arc::new(AtomicBool::new(false)),

@@ -390,11 +390,7 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app_handle, event| {
-            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
-                crate::channels::kill_all(app_handle);
-            }
-        });
+        .run(|_app_handle, _event| {});
 }
 
 /// URL the main webview was originally loaded from. Mirrors what Tauri's

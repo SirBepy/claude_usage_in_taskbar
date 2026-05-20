@@ -10,10 +10,8 @@ pub mod window_chrome;
 pub mod kill;
 pub mod vault_detector;
 pub mod manager;
-pub mod lifecycle;
 
 pub use spawn::*;
 pub use window_chrome::*;
 pub use kill::*;
 pub use manager::*;
-pub use lifecycle::*;
