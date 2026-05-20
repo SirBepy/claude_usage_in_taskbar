@@ -7,28 +7,27 @@ use crate::chat::parser::ParserContext;
 use crate::chat::runner::check_metered_billing;
 use crate::daemon::broadcast;
 use crate::daemon::session::{Session, SessionMap};
+use crate::daemon::state::DaemonState;
 use crate::types::chat::ChatEvent;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-/// How long to wait for a brand-new session's `claude` to emit its `system`
-/// init line (which carries the session_id we key everything on). Generous:
-/// SessionStart hooks run before the init line and can take a couple seconds.
-const INIT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// Build the base `claude` argument list (everything except the MCP flags).
 ///
-/// **Critical:** `--resume` is passed ONLY when resuming an existing session.
-/// A brand-new session must NOT pass `--resume <fresh-uuid>` - `claude` rejects
-/// an unknown id ("No conversation found with session ID") and exits. For a new
-/// session we omit `--resume` entirely and let `claude` generate its own id,
-/// which we capture from the init line on stdout.
-fn base_claude_args(resume_id: Option<&str>, model: &str, effort: &str) -> Vec<String> {
+/// **Critical session-id handling:** `claude` rejects `--resume <id>` for an id
+/// that has no existing conversation ("No conversation found with session ID")
+/// and exits. So we must NOT `--resume` a freshly generated id. Instead:
+/// - new session  -> `--session-id <our-uuid>` (claude creates a new
+///   conversation using exactly that id; verified the id round-trips).
+/// - resume        -> `--resume <existing-id>`.
+/// Either way `session_id` is known up front, so the daemon never has to block
+/// reading stdout to discover it (claude does not emit its `system`/init line
+/// until it receives the first user message, which would otherwise deadlock).
+fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str) -> Vec<String> {
     let mut args = vec![
         "-p".to_string(),
         "--input-format=stream-json".to_string(),
@@ -36,10 +35,12 @@ fn base_claude_args(resume_id: Option<&str>, model: &str, effort: &str) -> Vec<S
         "--verbose".to_string(),
         "--include-partial-messages".to_string(),
     ];
-    if let Some(rid) = resume_id {
+    if resume_id.is_some() {
         args.push("--resume".to_string());
-        args.push(rid.to_string());
+    } else {
+        args.push("--session-id".to_string());
     }
+    args.push(session_id.to_string());
     args.push("--model".to_string());
     args.push(model.to_string());
     args.push("--effort".to_string());
@@ -76,9 +77,10 @@ pub enum LifecycleError {
 }
 
 pub async fn spawn_session(
-    map: &SessionMap,
+    state: &Arc<DaemonState>,
     params: StartSessionParams,
 ) -> Result<Arc<Session>, LifecycleError> {
+    let map = &state.sessions;
     if !VALID_MODELS.contains(&params.model.as_str())
         || !VALID_EFFORTS.contains(&params.effort.as_str())
     {
@@ -91,22 +93,25 @@ pub async fn spawn_session(
         return Err(LifecycleError::MeteredBilling(e.to_string()));
     }
 
-    // Resume: id is known up front; reject if already running. New session:
-    // id is unknown until claude emits its init line (captured below).
-    if let Some(ref rid) = params.resume_id {
-        if map.contains_key(rid) {
-            return Err(LifecycleError::AlreadyExists(rid.clone()));
-        }
+    // The session id is known up front for BOTH paths: a new session gets a
+    // freshly generated UUID that we hand to claude via `--session-id`, and a
+    // resume reuses the existing id via `--resume`. No stdout capture needed,
+    // so spawn_session never blocks (claude withholds its init line until the
+    // first user message arrives, which the app sends only AFTER this returns).
+    let session_id = params
+        .resume_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if map.contains_key(&session_id) {
+        return Err(LifecycleError::AlreadyExists(session_id));
     }
 
-    // The MCP config filename is keyed on a spawn-unique token, NOT the session
-    // id (which a new session doesn't have yet). It only needs to be unique.
-    let spawn_token = uuid::Uuid::new_v4().to_string();
-    let mcp_config_path = crate::chat::runner::write_mcp_config(&spawn_token, &spawn_token);
+    let mcp_config_path = crate::chat::runner::write_mcp_config(&session_id, &session_id);
 
     let mut cmd = Command::new("claude");
     cmd.args(base_claude_args(
         params.resume_id.as_deref(),
+        &session_id,
         &params.model,
         &params.effort,
     ));
@@ -134,65 +139,6 @@ pub async fn spawn_session(
     let stdout = child.stdout.take().expect("piped stdout");
     let _stderr = child.stderr.take().expect("piped stderr");
 
-    // Reader state is created here so we can consume the init line up front for
-    // a new session, then hand the SAME reader (with its buffered tail) to the
-    // pump task. ParserContext likewise carries forward.
-    let mut ctx = ParserContext::new();
-    let mut buf_reader = BufReader::new(stdout);
-    // Events parsed during init capture (the SessionStarted) are replayed to the
-    // broadcast after the session is registered.
-    let mut pre_events: Vec<ChatEvent> = Vec::new();
-
-    let session_id = match params.resume_id.clone() {
-        Some(rid) => rid,
-        None => {
-            // New session: read stdout until the parser yields SessionStarted
-            // (from the `system`/init line), which carries claude's own id.
-            let captured = tokio::time::timeout(INIT_CAPTURE_TIMEOUT, async {
-                let mut line_buf = Vec::new();
-                loop {
-                    line_buf.clear();
-                    match buf_reader.read_until(b'\n', &mut line_buf).await {
-                        Ok(0) => return None, // EOF before init = claude failed to start
-                        Ok(_) => {
-                            for ev in ctx.feed(&line_buf) {
-                                if let ChatEvent::SessionStarted { session_id, .. } = &ev {
-                                    let sid = session_id.clone();
-                                    pre_events.push(ev);
-                                    return Some(sid);
-                                }
-                                pre_events.push(ev);
-                            }
-                        }
-                        Err(_) => return None,
-                    }
-                }
-            })
-            .await;
-            match captured {
-                Ok(Some(sid)) if !sid.is_empty() => sid,
-                _ => {
-                    crate::channels::kill::kill_tree(pid);
-                    if let Some(ref p) = mcp_config_path {
-                        let _ = std::fs::remove_file(p);
-                    }
-                    return Err(LifecycleError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "claude did not emit a session init line",
-                    )));
-                }
-            }
-        }
-    };
-
-    if map.contains_key(&session_id) {
-        crate::channels::kill::kill_tree(pid);
-        if let Some(ref p) = mcp_config_path {
-            let _ = std::fs::remove_file(p);
-        }
-        return Err(LifecycleError::AlreadyExists(session_id));
-    }
-
     let session = Session::new(
         session_id.clone(),
         params.cwd.clone(),
@@ -203,16 +149,17 @@ pub async fn spawn_session(
         mcp_config_path,
     );
     map.insert(session_id.clone(), Arc::clone(&session));
-
-    // Replay the events parsed during init capture (no-op if no subscribers yet,
-    // which is the normal case: the app attaches after start_session returns).
-    for ev in pre_events {
-        broadcast::publish(&session, ev);
-    }
+    log::info!(
+        "daemon: session {} live (pid={}, resume={})",
+        session_id, pid, params.resume_id.is_some()
+    );
 
     let pump_session = Arc::clone(&session);
     let map_for_pump = Arc::clone(map);
+    let state_for_pump = Arc::clone(state);
     tokio::spawn(async move {
+        let mut ctx = ParserContext::new();
+        let mut buf_reader = BufReader::new(stdout);
         let mut line_buf = Vec::new();
         loop {
             line_buf.clear();
@@ -220,7 +167,25 @@ pub async fn spawn_session(
                 Ok(0) => break,
                 Ok(_) => {
                     for ev in ctx.feed(&line_buf) {
+                        // Suppress SessionStarted: claude re-emits a system/init
+                        // line at the start of EVERY turn. The app shows the
+                        // session via its own synthetic SessionStarted handoff,
+                        // so forwarding these spams "Session started" each turn.
+                        if matches!(ev, ChatEvent::SessionStarted { .. }) {
+                            continue;
+                        }
+                        // A `result` line parses to TurnUsage and marks the turn
+                        // complete: clear the busy flag so the UI thinking bar
+                        // stops, and broadcast the registry change.
+                        let turn_done = matches!(ev, ChatEvent::TurnUsage { .. });
                         broadcast::publish(&pump_session, ev);
+                        if turn_done {
+                            state_for_pump.registry.set_busy(&pump_session.session_id, false);
+                            state_for_pump.notifier.publish(
+                                "instances_changed",
+                                serde_json::json!({"instances": state_for_pump.registry.list()}),
+                            );
+                        }
                     }
                 }
                 Err(e) => {
@@ -234,6 +199,13 @@ pub async fn spawn_session(
             }
         }
         map_for_pump.remove(&pump_session.session_id);
+        // Process exited: mark the session ended so the UI reflects it.
+        let now = chrono::Utc::now().to_rfc3339();
+        state_for_pump.registry.mark_ended(&pump_session.session_id, crate::types::EndReason::ProcessGone, &now);
+        state_for_pump.notifier.publish(
+            "instances_changed",
+            serde_json::json!({"instances": state_for_pump.registry.list()}),
+        );
         log::info!(
             "daemon: session {} pump task exited",
             pump_session.session_id
@@ -244,7 +216,11 @@ pub async fn spawn_session(
         let _ = child.wait().await;
     });
 
-    crate::daemon::jsonl_tail::spawn(Arc::clone(&session));
+    // NOTE: jsonl_tail is intentionally NOT spawned in Phase 5a. It republishes
+    // every transcript line to the same broadcast the stdout pump already feeds,
+    // with no dedup, so it double-renders every app-driven turn. Its only purpose
+    // is catching turns that bypass our stdout (phone via remote-control bridge);
+    // that is Phase 5b/phone-convergence work and must add uuid-based dedup first.
 
     Ok(session)
 }
@@ -305,22 +281,37 @@ pub async fn end_session(map: &SessionMap, session_id: &str) -> Result<(), Lifec
 mod tests {
     use super::*;
     use crate::daemon::session::new_session_map;
+    use crate::daemon::settings_cache::SettingsCache;
+    use crate::types::Settings;
+
+    fn test_state() -> Arc<DaemonState> {
+        DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()))
+    }
 
     #[test]
-    fn new_session_omits_resume_flag() {
-        // Root-cause guard: a brand-new session must NOT pass `--resume`.
-        // Passing `--resume <fresh-uuid>` makes claude error with
-        // "No conversation found with session ID" and exit immediately.
-        let args = base_claude_args(None, "opus", "high");
+    fn new_session_uses_session_id_not_resume() {
+        // Root-cause guard: a brand-new session must use `--session-id <uuid>`,
+        // NOT `--resume <uuid>`. claude rejects `--resume` of an unknown id
+        // ("No conversation found with session ID") and exits.
+        let args = base_claude_args(None, "new-uuid", "opus", "high");
         assert!(
             !args.iter().any(|a| a == "--resume"),
             "new session must not pass --resume: {args:?}"
         );
+        let pos = args
+            .iter()
+            .position(|a| a == "--session-id")
+            .expect("--session-id must be present for a new session");
+        assert_eq!(args.get(pos + 1).map(String::as_str), Some("new-uuid"));
     }
 
     #[test]
-    fn resume_session_includes_resume_id() {
-        let args = base_claude_args(Some("abc-123"), "opus", "high");
+    fn resume_session_uses_resume_not_session_id() {
+        let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high");
+        assert!(
+            !args.iter().any(|a| a == "--session-id"),
+            "resume must not pass --session-id: {args:?}"
+        );
         let pos = args
             .iter()
             .position(|a| a == "--resume")
@@ -330,7 +321,7 @@ mod tests {
 
     #[test]
     fn base_args_always_carry_model_and_effort() {
-        let args = base_claude_args(None, "sonnet", "medium");
+        let args = base_claude_args(None, "new-uuid", "sonnet", "medium");
         let m = args.iter().position(|a| a == "--model").expect("--model");
         assert_eq!(args.get(m + 1).map(String::as_str), Some("sonnet"));
         let e = args.iter().position(|a| a == "--effort").expect("--effort");
@@ -339,9 +330,9 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_model_rejected() {
-        let map = new_session_map();
+        let state = test_state();
         let r = spawn_session(
-            &map,
+            &state,
             StartSessionParams {
                 cwd: std::env::temp_dir(),
                 model: "bogus".into(),
@@ -351,14 +342,14 @@ mod tests {
         )
         .await;
         assert!(matches!(r, Err(LifecycleError::InvalidConfig(_, _))));
-        assert_eq!(map.len(), 0);
+        assert_eq!(state.sessions.len(), 0);
     }
 
     #[tokio::test]
     async fn invalid_effort_rejected() {
-        let map = new_session_map();
+        let state = test_state();
         let r = spawn_session(
-            &map,
+            &state,
             StartSessionParams {
                 cwd: std::env::temp_dir(),
                 model: "opus".into(),
@@ -368,14 +359,14 @@ mod tests {
         )
         .await;
         assert!(matches!(r, Err(LifecycleError::InvalidConfig(_, _))));
-        assert_eq!(map.len(), 0);
+        assert_eq!(state.sessions.len(), 0);
     }
 
     #[tokio::test]
     async fn missing_cwd_rejected() {
-        let map = new_session_map();
+        let state = test_state();
         let r = spawn_session(
-            &map,
+            &state,
             StartSessionParams {
                 cwd: std::path::PathBuf::from("Z:\\does\\not\\exist"),
                 model: "opus".into(),
@@ -385,7 +376,7 @@ mod tests {
         )
         .await;
         assert!(matches!(r, Err(LifecycleError::CwdMissing(_))));
-        assert_eq!(map.len(), 0);
+        assert_eq!(state.sessions.len(), 0);
     }
 
     // Real send_message requires a live ChildStdin. The behavior is covered

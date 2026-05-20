@@ -43,10 +43,8 @@ fn err_to_rpc(e: LifecycleError) -> RpcError {
 pub fn register(router: &mut Router, state: Arc<DaemonState>) {
     let map = state.sessions.clone();
     {
-        let map = map.clone();
         let state = state.clone();
         router.register("start_session", move |params, _ctx| {
-            let map = map.clone();
             let state = state.clone();
             async move {
                 let p: StartSessionParams = serde_json::from_value(params.unwrap_or(Value::Null))
@@ -54,7 +52,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let cwd = p.cwd.clone();
                 let model = p.model.clone();
                 let effort = p.effort.clone();
-                let session = lifecycle::spawn_session(&map, p).await.map_err(err_to_rpc)?;
+                let session = lifecycle::spawn_session(&state, p).await.map_err(err_to_rpc)?;
                 let sid = session.session_id.clone();
                 let now = chrono::Utc::now().to_rfc3339();
                 let (project_id, created_new) = {
