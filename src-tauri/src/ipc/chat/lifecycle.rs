@@ -6,7 +6,7 @@ use super::ChatState;
 use crate::state::AppState;
 use serde_json::Value;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 /// Drain ChatState.running and kill each in-flight runner child. Called
 /// from the tray Quit handler so the app doesn't leak claude.exe orphans
@@ -108,7 +108,6 @@ pub async fn reattach_window(session_id: String, app: AppHandle) -> Result<(), S
 #[tauri::command]
 pub async fn open_session_in_terminal(
     session_id: String,
-    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
@@ -125,13 +124,10 @@ pub async fn open_session_in_terminal(
         return Err(format!("cwd does not exist: {}", cwd.display()));
     }
     spawn_terminal_for_session(&session_id, &cwd).map_err(|e| e.to_string())?;
-    // TODO(Phase 5): forward externalize_session to daemon via RPC.
-    // Optimistic emit so the UI refreshes; the next instances_changed
-    // from the daemon will reconcile.
-    let _ = app.emit(
-        "instances-changed",
-        state.cached_instances.lock().unwrap().clone(),
-    );
+    let guard = state.daemon_client.lock().await;
+    if let Some(client) = guard.as_ref() {
+        let _ = client.externalize_session(&session_id).await;
+    }
     Ok(())
 }
 
@@ -251,15 +247,11 @@ fn spawn_terminal_for_session(
 pub async fn takeover_manual(
     manual_pid: u32,
     state: State<'_, AppState>,
-    app: AppHandle,
 ) -> Result<String, String> {
-    let (_model, _effort) = resolve_takeover_model_effort(manual_pid, &state);
-    // TODO(Phase 5): forward takeover to daemon via RPC. The daemon owns the
-    // registry and must perform the External -> Interactive promotion +
-    // session-file resolution. Returning an error keeps the UI honest until
-    // the RPC plumbing lands.
-    let _ = (app, manual_pid);
-    Err("takeover not yet wired to daemon (Phase 5 TODO)".to_string())
+    let (model, effort) = resolve_takeover_model_effort(manual_pid, &state);
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+    client.takeover_manual(manual_pid, &model, &effort).await.map_err(|e| e.to_string())
 }
 
 /// Resolve model+effort for takeover from settings.extra:

@@ -3,15 +3,13 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::State;
 
 use crate::ipc::chat::ChatState;
 use crate::state::AppState;
-use crate::types::EndReason;
 
 #[tauri::command]
 pub async fn clear_session(
-    app: AppHandle,
     session_id: String,
     state: State<'_, AppState>,
     chat_state: State<'_, Arc<ChatState>>,
@@ -41,13 +39,9 @@ pub async fn clear_session(
         }
     }
 
-    // TODO(Phase 5): forward mark_ended + snapshot save to daemon via RPC.
-    // For now we emit the event so the UI removes the row optimistically;
-    // the next instances_changed from the daemon will reconcile.
-    let _ = EndReason::Manual;
-    let _ = app.emit(
-        "instances-changed",
-        state.cached_instances.lock().unwrap().clone(),
-    );
+    let guard = state.daemon_client.lock().await;
+    if let Some(client) = guard.as_ref() {
+        let _ = client.mark_session_ended(&session_id).await;
+    }
     Ok(())
 }

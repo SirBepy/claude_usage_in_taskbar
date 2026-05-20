@@ -339,15 +339,14 @@ pub async fn set_session_effort(
     session_id: String,
     effort: String,
     state: State<'_, AppState>,
-    app: AppHandle,
 ) -> Result<(), String> {
     let valid = ["low", "medium", "high", "xhigh", "max"];
     if !valid.contains(&effort.as_str()) {
         return Err(format!("invalid effort: {effort}"));
     }
-    // TODO(Phase 5): forward set_effort + snapshot save to daemon via RPC.
-    let _ = (&session_id, &effort, &state);
-    let _ = app.emit("instances-changed", ());
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+    client.set_session_effort(&session_id, &effort).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -402,19 +401,11 @@ pub async fn register_historical_session(
     session_id: String,
     cwd: String,
     state: State<'_, AppState>,
-    app: AppHandle,
 ) -> Result<(), String> {
     super::attachments::validate_session_id(&session_id)?;
-    let cwd_path = PathBuf::from(&cwd);
-    let now_str = Utc::now().to_rfc3339();
-    let project_id = {
-        let mut s = state.settings.lock().unwrap();
-        let (pid, _) = crate::settings::upsert_project_for_cwd(&mut s, &cwd_path, &now_str);
-        pid
-    };
-    // TODO(Phase 5): forward upsert_interactive to daemon via RPC.
-    let _ = (&session_id, &cwd_path, &project_id, &now_str, &state);
-    let _ = app.emit("instances-changed", ());
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+    client.register_historical(&session_id, &cwd).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
