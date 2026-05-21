@@ -73,10 +73,6 @@ const gitInfoCache = new Map<string, GitInfo>();
 const gitInflight = new Map<string, Promise<GitInfo>>();
 const metaCache = new Map<string, SessionMeta>();
 
-export function getCachedGitInfo(cwd: string): GitInfo | undefined {
-  return gitInfoCache.get(cwd);
-}
-
 export function fetchGitInfo(cwd: string): Promise<GitInfo> {
   let p = gitInflight.get(cwd);
   if (!p) {
@@ -86,10 +82,6 @@ export function fetchGitInfo(cwd: string): Promise<GitInfo> {
     gitInflight.set(cwd, p);
   }
   return p;
-}
-
-export function getCachedMeta(sessionId: string): SessionMeta | undefined {
-  return metaCache.get(sessionId);
 }
 
 // ── SessionStatusbar ─────────────────────────────────────────────────────────
