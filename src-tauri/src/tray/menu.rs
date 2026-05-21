@@ -52,6 +52,21 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                         let _ = crate::scheduler::poll_once(&h, crate::scheduler::PollTrigger::Manual).await;
                     });
                 }
+                "stop-daemon" => {
+                    // Explicit daemon stop. Window-close + Quit leave it running;
+                    // this is the only tray control that takes it (and its
+                    // sessions) down. No-op if no daemon is connected.
+                    let h = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let client_slot = h.state::<AppState>().daemon_client.clone();
+                        let guard = client_slot.lock().await;
+                        if let Some(client) = guard.as_ref() {
+                            if let Err(e) = client.shutdown_daemon().await {
+                                log::warn!("stop-daemon failed: {e}");
+                            }
+                        }
+                    });
+                }
                 "quit" => {
                     // Kill any in-flight runner children so we don't leak
                     // claude.exe orphans. Drains ChatState.running before exit.
@@ -265,6 +280,7 @@ fn build_menu(app: &AppHandle, mute_all: bool, update: &serde_json::Value) -> Re
 
     let menu = builder
         .separator()
+        .item(&MenuItemBuilder::with_id("stop-daemon", "Stop background daemon").build(app)?)
         .item(&MenuItemBuilder::with_id("quit", "Quit").build(app)?)
         .build()?;
     Ok(menu)
