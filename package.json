@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "wdio run e2e/wdio.conf.js"
+    "test:e2e": "wdio run e2e/wdio.conf.js",
+    "test:e2e:chat": "wdio run e2e/wdio.conf.js --spec e2e/specs/reload-dup.e2e.js"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",

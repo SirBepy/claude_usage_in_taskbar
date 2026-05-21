@@ -53,7 +53,10 @@ export const config = {
   runner: "local",
   host: "127.0.0.1",
   port: 4444,
-  specs: [path.join(__dirname, "specs", "**", "*.e2e.js")],
+  // Free smoke by default. The billed chat test (reload-dup) is opt-in via
+  // `npm run test:e2e:chat` (passes --spec), so the default run spawns no
+  // `claude` turn.
+  specs: [path.join(__dirname, "specs", "smoke.e2e.js")],
   maxInstances: 1,
   capabilities: [{ "tauri:options": { application } }],
   reporters: ["spec"],
