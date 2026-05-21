@@ -491,6 +491,26 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
     );
 }
 
+/// Given the set of currently-attached session ids and the latest instance
+/// snapshot, return the attached ids that should be detached: those that have
+/// ended (`ended_at` set) or have vanished from the snapshot entirely. Used to
+/// stop the per-session bridge pump when a session ends (ai_todo 66 #2).
+fn stale_attached_sessions(
+    attached: &std::collections::HashSet<String>,
+    instances: &[crate::types::Instance],
+) -> Vec<String> {
+    let live: std::collections::HashSet<&str> = instances
+        .iter()
+        .filter(|i| i.ended_at.is_none())
+        .map(|i| i.session_id.as_str())
+        .collect();
+    attached
+        .iter()
+        .filter(|id| !live.contains(id.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// Routes daemon-side notifications into app-side Tauri events + cache updates.
 async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params: serde_json::Value) {
     use tauri::{Emitter, Manager};
@@ -499,8 +519,22 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
             let state = app.state::<crate::state::AppState>();
             if let Some(instances) = params.get("instances").cloned() {
                 if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances.clone()) {
-                    let mut cache = state.cached_instances.lock().unwrap();
-                    *cache = parsed;
+                    // Detach any attached session that just ended/vanished so its
+                    // bridge pump task exits instead of leaking (ai_todo 66 #2).
+                    // Collect under the sync lock, then release it BEFORE awaiting.
+                    let stale = {
+                        let attached = state.attached_sessions.lock().unwrap();
+                        stale_attached_sessions(&attached, &parsed)
+                    };
+                    if !stale.is_empty() {
+                        let guard = state.daemon_client.lock().await;
+                        if let Some(client) = guard.as_ref() {
+                            for id in &stale {
+                                let _ = client.detach_session(id).await;
+                            }
+                        }
+                    }
+                    *state.cached_instances.lock().unwrap() = parsed;
                 }
                 let _ = app.emit("instances-changed", instances);
             }
@@ -609,4 +643,62 @@ async fn auto_update_loop(app: tauri::AppHandle) {
 #[cfg(dev)]
 async fn auto_update_loop(_app: tauri::AppHandle) {
     // Updater is disabled in dev builds; loop body is a no-op.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stale_attached_sessions;
+    use crate::sessions::kinds::InstanceKind;
+    use crate::types::Instance;
+    use std::collections::HashSet;
+
+    fn instance(session_id: &str, ended: bool) -> Instance {
+        Instance {
+            session_id: session_id.to_string(),
+            pid: 0,
+            cwd: std::path::PathBuf::from("C:/x"),
+            project_id: "proj".into(),
+            kind: InstanceKind::Interactive,
+            is_remote: false,
+            started_at: "2026-05-22T00:00:00Z".into(),
+            transcript_path: None,
+            bridge_session_id: None,
+            name: None,
+            ended_at: if ended { Some("2026-05-22T00:00:01Z".to_string()) } else { None },
+            end_reason: None,
+            busy: false,
+            model: String::new(),
+            effort: String::new(),
+        }
+    }
+
+    fn attached(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn live_attached_session_is_not_stale() {
+        let stale = stale_attached_sessions(&attached(&["a"]), &[instance("a", false)]);
+        assert!(stale.is_empty());
+    }
+
+    #[test]
+    fn ended_attached_session_is_stale() {
+        let stale = stale_attached_sessions(&attached(&["a"]), &[instance("a", true)]);
+        assert_eq!(stale, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn vanished_attached_session_is_stale() {
+        // Attached id no longer present in the snapshot at all.
+        let stale = stale_attached_sessions(&attached(&["a"]), &[instance("b", false)]);
+        assert_eq!(stale, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn unattached_ended_session_is_ignored() {
+        // We only detach sessions we are actually attached to.
+        let stale = stale_attached_sessions(&attached(&[]), &[instance("a", true)]);
+        assert!(stale.is_empty());
+    }
 }

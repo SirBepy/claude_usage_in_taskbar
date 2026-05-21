@@ -142,6 +142,19 @@ impl PersistentClient {
         Ok(rx)
     }
 
+    /// Stop receiving a session's events. Drops the local per-session sender so
+    /// the app-side bridge pump's receiver closes and its task exits (instead of
+    /// blocking forever on a receiver that never closes - ai_todo 66 #2), then
+    /// tells the daemon to abort its relay task for this session. Idempotent.
+    pub async fn detach_session(&self, session_id: &str) -> Result<(), ClientError> {
+        {
+            let mut subs = self.subs.lock().await;
+            subs.remove(session_id);
+        }
+        self.call("detach_session", json!({"session_id": session_id})).await?;
+        Ok(())
+    }
+
     pub async fn health(&self) -> Result<Value, ClientError> {
         self.call("health", Value::Null).await
     }
