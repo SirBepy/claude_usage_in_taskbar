@@ -43,12 +43,7 @@ impl Drop for LockGuard {
     }
 }
 
-fn pid_is_live(pid: u32) -> bool {
-    use sysinfo::{Pid, System, ProcessesToUpdate};
-    let mut s = System::new();
-    s.refresh_processes(ProcessesToUpdate::All);
-    s.process(Pid::from_u32(pid)).is_some()
-}
+use crate::util::process::pid_is_live;
 
 #[cfg(test)]
 mod tests {

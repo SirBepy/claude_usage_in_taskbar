@@ -8,7 +8,6 @@ use crate::sessions::registry::Registry;
 use crate::types::EndReason;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use sysinfo::System;
 
 /// Pure reconciliation step for testability.
 pub struct ReconcileInput<'a> {
@@ -63,9 +62,7 @@ pub fn reconcile_once(registry: &Registry) -> bool {
     static STRIKES: std::sync::OnceLock<Mutex<HashMap<String, u8>>> = std::sync::OnceLock::new();
     let strikes_mu = STRIKES.get_or_init(|| Mutex::new(HashMap::new()));
 
-    let mut sys = System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-    let live_pids: Vec<u32> = sys.processes().keys().map(|p| p.as_u32()).collect();
+    let live_pids = crate::util::process::live_pids();
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let mut strikes = strikes_mu.lock().expect("strikes mutex poisoned");
