@@ -32,6 +32,20 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Daemon mode: when launched as `<exe> --daemon`, run the daemon and exit
+    // before constructing the Tauri app (no window, no single-instance plugin).
+    if std::env::args().any(|a| a == "--daemon") {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .expect("daemon tokio runtime");
+        if let Err(e) = rt.block_on(crate::daemon::run_daemon_main()) {
+            eprintln!("daemon exited with error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let _ = paths::ensure_data_dir();
     match crate::characters::bundled::ensure_bundled() {
         Ok(n) if n > 0 => log::info!("characters: copied {n} bundled character(s) into app-data"),
