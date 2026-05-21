@@ -1,6 +1,7 @@
 import { invoke } from "../ipc";
 import { escapeHtml } from "../escape-html";
 import { openLightbox, type LightboxContent } from "./lightbox";
+import { basename } from "../path-utils";
 
 const chipData = new WeakMap<HTMLElement, { mime: string; base64: string }>();
 
@@ -16,7 +17,7 @@ export async function hydrateAttachments(el: HTMLElement): Promise<void> {
     if (!document.contains(chip)) continue;
     const path = chip.dataset.attachmentPath;
     if (!path) continue;
-    const name = chip.dataset.filename ?? path.split(/[\\/]/).pop() ?? "file";
+    const name = chip.dataset.filename ?? basename(path) ?? "file";
     try {
       const data = await invoke<{ mime: string; base64: string }>("read_attachment", { path });
       if (!document.contains(chip)) continue;

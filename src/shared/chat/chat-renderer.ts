@@ -18,6 +18,7 @@ import { highlightCodeBlocks } from "./code-highlighter";
 import { openLightbox } from "./lightbox";
 import { hydrateAttachments, chipToLightboxContent } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
+import { basename } from "../path-utils";
 
 export interface SessionMeta {
   model: string | null;
@@ -360,19 +361,19 @@ export class ChatRenderer {
       : typeof obj.notebook_path === "string"
         ? obj.notebook_path
         : "";
-    const basename = fp ? fp.split(/[\\/]/).pop() ?? fp : "";
+    const bname = fp ? basename(fp) : "";
     let s: string;
     switch (toolName) {
       case "Edit":
       case "MultiEdit":
       case "NotebookEdit":
-        s = `Editing ${basename}`;
+        s = `Editing ${bname}`;
         break;
       case "Write":
-        s = `Writing ${basename}`;
+        s = `Writing ${bname}`;
         break;
       case "Read":
-        s = `Reading ${basename}`;
+        s = `Reading ${bname}`;
         break;
       case "Bash": {
         const cmd = typeof obj.command === "string" ? obj.command : "";

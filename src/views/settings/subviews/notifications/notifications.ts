@@ -1,4 +1,5 @@
 import { html, render } from "lit-html";
+import { basename } from "../../../../shared/path-utils";
 import {
   saveSettings,
   notifCards,
@@ -138,7 +139,7 @@ function wireNotifCard(type: string): void {
   c.voicePreview.onclick = () => {
     const voicePreviewProject = $("voicePreviewProject") as HTMLSelectElement | null;
     const cwd = voicePreviewProject?.value || "";
-    const rawName = cwd ? (cwd.split(/[\\/]/).pop() || "Project") : "Project";
+    const rawName = cwd ? (basename(cwd) || "Project") : "Project";
     const name = rawName.replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim();
     const text = (c.template.value || def.defaultTemplate)
       .replace(/\{name\}/g, name)
@@ -239,7 +240,7 @@ async function populateVoicePreview(): Promise<void> {
     projects.push(cwd);
   }
   voicePreviewProject.innerHTML = projects.length
-    ? projects.map((p) => `<option value="${p}">${p.split(/[\\/]/).pop()}</option>`).join("")
+    ? projects.map((p) => `<option value="${p}">${basename(p)}</option>`).join("")
     : `<option value="">No projects yet</option>`;
 }
 

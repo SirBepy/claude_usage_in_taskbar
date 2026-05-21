@@ -4,6 +4,7 @@ import { escapeHtml } from "../escape-html";
 import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry";
 import { parseFileEdit } from "./file-edits";
 import { renderEditWindow } from "./edit-window";
+import { basename } from "../path-utils";
 
 const md = new MarkdownIt({
   html: false,
@@ -31,7 +32,7 @@ function renderTextBlock(text: string): string {
       if (seg) parts.push(`<div class="block text">${renderMarkdown(seg)}</div>`);
     }
     const path = match[1] ?? "";
-    const name = match[2] ?? path.split(/[\\/]/).pop() ?? path;
+    const name = match[2] ?? basename(path);
     parts.push(attachmentChipHtml(path, name));
     last = match.index + match[0].length;
   }

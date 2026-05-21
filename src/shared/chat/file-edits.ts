@@ -3,6 +3,8 @@
 // and changes-panel.ts (right-rail aggregator). Returns null for any other
 // tool, so the caller can fall back to the generic <pre>{json}</pre>.
 
+import { basename } from "../path-utils";
+
 export type FileEditKind = "edit" | "write" | "multi" | "notebook";
 
 export interface FileEditHunk {
@@ -19,11 +21,6 @@ export interface FileEditView {
   hunks: FileEditHunk[];
   addedLines: number;
   removedLines: number;
-}
-
-function basenameOf(p: string): string {
-  const parts = p.split(/[\\/]/);
-  return parts[parts.length - 1] ?? p;
 }
 
 function countLines(s: string): number {
@@ -64,7 +61,7 @@ export function parseFileEdit(tool: string, input: unknown): FileEditView | null
         oldText: asString(obj.old_string),
         newText: asString(obj.new_string),
       }];
-      return { path, basename: basenameOf(path), kind: "edit", hunks, ...aggregate(hunks) };
+      return { path, basename: basename(path), kind: "edit", hunks, ...aggregate(hunks) };
     }
     case "Write": {
       const path = asString(obj.file_path);
@@ -73,7 +70,7 @@ export function parseFileEdit(tool: string, input: unknown): FileEditView | null
         oldText: "",
         newText: asString(obj.content),
       }];
-      return { path, basename: basenameOf(path), kind: "write", hunks, ...aggregate(hunks) };
+      return { path, basename: basename(path), kind: "write", hunks, ...aggregate(hunks) };
     }
     case "MultiEdit": {
       const path = asString(obj.file_path);
@@ -87,7 +84,7 @@ export function parseFileEdit(tool: string, input: unknown): FileEditView | null
           label: `edit ${i + 1} of ${editsRaw.length}`,
         };
       });
-      return { path, basename: basenameOf(path), kind: "multi", hunks, ...aggregate(hunks) };
+      return { path, basename: basename(path), kind: "multi", hunks, ...aggregate(hunks) };
     }
     case "NotebookEdit": {
       const path = asString(obj.notebook_path) || asString(obj.file_path);
@@ -98,7 +95,7 @@ export function parseFileEdit(tool: string, input: unknown): FileEditView | null
         newText: asString(obj.new_source),
         label: cellId ? `cell ${cellId}` : "cell",
       }];
-      return { path, basename: basenameOf(path), kind: "notebook", hunks, ...aggregate(hunks) };
+      return { path, basename: basename(path), kind: "notebook", hunks, ...aggregate(hunks) };
     }
     default:
       return null;
