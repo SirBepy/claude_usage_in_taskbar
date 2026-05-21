@@ -37,6 +37,17 @@ async fn wait_for_method(rx: &mut Receiver<Value>, method: &str, budget: Duratio
 #[tokio::test(flavor = "current_thread")]
 #[ignore]
 async fn session_start_hook_round_trips_to_client_notification() {
+    // Isolated test instance: distinct pipe/lockfile + ephemeral hook port so
+    // this never fights a real daemon for 27182 (ai_todo 71). The daemon writes
+    // its actual hook port to a suffixed file we read below.
+    const INSTANCE: &str = "test-hooks";
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+    let app_data = dirs::data_dir().unwrap().join("claude-usage-tauri");
+    let _ = std::fs::remove_file(app_data.join(format!("daemon-{INSTANCE}.lock")));
+    let port_file = app_data.join(format!("hooks_port-{INSTANCE}.txt"));
+    let _ = std::fs::remove_file(&port_file);
+
     // Build + spawn daemon.
     let build = Command::new("cargo")
         .args(["build", "--bin", "cc-companion-daemon"])
@@ -49,6 +60,8 @@ async fn session_start_hook_round_trips_to_client_notification() {
     exe.push("debug");
     exe.push("cc-companion-daemon.exe");
     let mut child = Command::new(&exe)
+        .env("CC_DAEMON_INSTANCE", INSTANCE)
+        .env("CC_DAEMON_NO_AUTOSTART", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -57,8 +70,16 @@ async fn session_start_hook_round_trips_to_client_notification() {
     // Give the daemon time to bind both the pipe AND the hook port.
     tokio::time::sleep(Duration::from_millis(700)).await;
 
-    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}");
+    // Discover the ephemeral hook port the daemon wrote.
+    let mut hook_port = String::new();
+    for _ in 0..30 {
+        if let Ok(p) = std::fs::read_to_string(&port_file) {
+            if !p.trim().is_empty() { hook_port = p.trim().to_string(); break; }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!hook_port.is_empty(), "daemon did not write its hook port file");
+
     let client = PersistentClient::connect(&pipe_name).await.expect("client connect");
     client.push_settings(&Settings::default()).await.expect("push_settings");
     let mut rx = client.subscribe_global().await.expect("subscribe_global");
@@ -72,7 +93,7 @@ async fn session_start_hook_round_trips_to_client_notification() {
         "source": "startup"
     });
     let http = reqwest::Client::new();
-    let resp = http.post("http://127.0.0.1:27182/hooks/session-start")
+    let resp = http.post(format!("http://127.0.0.1:{hook_port}/hooks/session-start"))
         .json(&body)
         .send().await.expect("POST");
     assert!(resp.status().is_success());
@@ -84,7 +105,7 @@ async fn session_start_hook_round_trips_to_client_notification() {
     assert!(instances.iter().any(|i| i["session_id"] == json!("test-sess-abc")));
 
     // Mark ended.
-    let resp = http.post("http://127.0.0.1:27182/hooks/session-end")
+    let resp = http.post(format!("http://127.0.0.1:{hook_port}/hooks/session-end"))
         .json(&json!({"session_id": "test-sess-abc", "reason": "test-cleanup"}))
         .send().await.expect("POST end");
     assert!(resp.status().is_success());

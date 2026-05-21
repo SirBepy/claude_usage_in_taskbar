@@ -13,12 +13,10 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon_client::{pipe_name_for_current_user, PersistentClient};
+use claude_usage_tauri_lib::daemon_client::PersistentClient;
 use serde_json::{json, Value};
 use std::process::{Command, Stdio};
 use std::time::Duration;
-
-const HOOK_PORT: u16 = 27182;
 
 fn daemon_exe() -> std::path::PathBuf {
     let mut p = std::env::current_dir().unwrap();
@@ -30,18 +28,17 @@ fn daemon_exe() -> std::path::PathBuf {
 
 /// Kill any prior daemon and clear the lockfile, then build + spawn a fresh one
 /// and connect a client. Returns the child handle and the connected client.
-async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient) {
-    let _ = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Get-Process cc-companion-daemon -ErrorAction SilentlyContinue | Stop-Process -Force",
-        ])
-        .status();
-    if let Some(app_data) = dirs::data_dir() {
-        let lock = app_data.join("claude-usage-tauri").join("daemon.lock");
-        let _ = std::fs::remove_file(&lock);
-    }
+async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient, String) {
+    // Isolated test instance (ai_todo 71): distinct pipe/lock + ephemeral hook
+    // port (discovered from the suffixed port file). NO `Stop-Process
+    // cc-companion-daemon` - that used to kill the user's real daemon.
+    const INSTANCE: &str = "test-chat";
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+    let app_data = dirs::data_dir().unwrap().join("claude-usage-tauri");
+    let _ = std::fs::remove_file(app_data.join(format!("daemon-{INSTANCE}.lock")));
+    let port_file = app_data.join(format!("hooks_port-{INSTANCE}.txt"));
+    let _ = std::fs::remove_file(&port_file);
 
     let build = Command::new("cargo")
         .args(["build", "--bin", "cc-companion-daemon"])
@@ -50,6 +47,7 @@ async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient) {
     assert!(build.success());
 
     let child = Command::new(daemon_exe())
+        .env("CC_DAEMON_INSTANCE", INSTANCE)
         // Surface the daemon's debug log (publishes + lag drops) on the test's
         // own stderr so `--nocapture` runs show exactly what was published vs
         // delivered.
@@ -64,10 +62,19 @@ async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient) {
 
     tokio::time::sleep(Duration::from_millis(800)).await;
 
-    let client = PersistentClient::connect(&pipe_name_for_current_user())
+    let mut hook_port = String::new();
+    for _ in 0..30 {
+        if let Ok(p) = std::fs::read_to_string(&port_file) {
+            if !p.trim().is_empty() { hook_port = p.trim().to_string(); break; }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!hook_port.is_empty(), "daemon did not write its hook port file");
+
+    let client = PersistentClient::connect(&pipe_name)
         .await
         .expect("connect");
-    (child, client)
+    (child, client, hook_port)
 }
 
 fn find_instance<'a>(instances: &'a Value, session_id: &str) -> Option<&'a Value> {
@@ -86,7 +93,7 @@ fn find_instance<'a>(instances: &'a Value, session_id: &str) -> Option<&'a Value
 #[tokio::test(flavor = "current_thread")]
 #[ignore]
 async fn interactive_survives_session_end_hook() {
-    let (mut child, client) = spawn_daemon_and_connect().await;
+    let (mut child, client, hook_port) = spawn_daemon_and_connect().await;
 
     let session_id = format!("test-autoclose-{}", std::process::id());
     let cwd = std::env::temp_dir().to_string_lossy().to_string();
@@ -109,7 +116,7 @@ async fn interactive_survives_session_end_hook() {
     // Fire the per-turn SessionEnd hook the way a completing `claude -p` would.
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("http://127.0.0.1:{HOOK_PORT}/hooks/session-end"))
+        .post(format!("http://127.0.0.1:{hook_port}/hooks/session-end"))
         .json(&json!({ "session_id": session_id, "reason": "other" }))
         .send()
         .await
@@ -146,7 +153,7 @@ async fn interactive_survives_session_end_hook() {
 #[tokio::test(flavor = "current_thread")]
 #[ignore]
 async fn takeover_manual_promotes_external_to_interactive() {
-    let (mut child, client) = spawn_daemon_and_connect().await;
+    let (mut child, client, hook_port) = spawn_daemon_and_connect().await;
 
     let session_id = format!("test-takeover-{}", std::process::id());
     let cwd = std::env::temp_dir().to_string_lossy().to_string();
@@ -155,7 +162,7 @@ async fn takeover_manual_promotes_external_to_interactive() {
     // Register as External via the session-start hook (non-channel pid).
     let http = reqwest::Client::new();
     let resp = http
-        .post(format!("http://127.0.0.1:{HOOK_PORT}/hooks/session-start"))
+        .post(format!("http://127.0.0.1:{hook_port}/hooks/session-start"))
         .json(&json!({ "session_id": session_id, "cwd": cwd, "pid": fake_pid }))
         .send()
         .await
@@ -197,7 +204,7 @@ async fn takeover_manual_promotes_external_to_interactive() {
 #[tokio::test(flavor = "current_thread")]
 #[ignore]
 async fn end_to_end_no_duplicate_events() {
-    let (mut child, client) = spawn_daemon_and_connect().await;
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
 
     let cwd = std::env::temp_dir().to_string_lossy().to_string();
     let start = client

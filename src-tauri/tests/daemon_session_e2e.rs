@@ -8,7 +8,7 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon_client::{pipe_name_for_current_user, PersistentClient};
+use claude_usage_tauri_lib::daemon_client::PersistentClient;
 use serde_json::json;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -24,13 +24,14 @@ fn daemon_exe() -> std::path::PathBuf {
 #[tokio::test(flavor = "current_thread")]
 #[ignore]
 async fn end_to_end_one_turn() {
-    // Pre-clean lockfile and any prior daemon.
-    let _ = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command",
-            "Get-Process cc-companion-daemon -ErrorAction SilentlyContinue | Stop-Process -Force"])
-        .status();
+    // Isolated test instance: distinct pipe/lockfile/hook-port so this never
+    // touches a real daemon (ai_todo 71). No `Stop-Process cc-companion-daemon`
+    // on purpose - that used to kill the user's real daemon.
+    const INSTANCE: &str = "test-session";
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
     if let Some(app_data) = dirs::data_dir() {
-        let lock = app_data.join("claude-usage-tauri").join("daemon.lock");
+        let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
         let _ = std::fs::remove_file(&lock);
     }
 
@@ -42,6 +43,8 @@ async fn end_to_end_one_turn() {
 
     let exe = daemon_exe();
     let mut child = Command::new(&exe)
+        .env("CC_DAEMON_INSTANCE", INSTANCE)
+        .env("CC_DAEMON_NO_AUTOSTART", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -49,7 +52,7 @@ async fn end_to_end_one_turn() {
 
     tokio::time::sleep(Duration::from_millis(800)).await;
 
-    let client = PersistentClient::connect(&pipe_name_for_current_user())
+    let client = PersistentClient::connect(&pipe_name)
         .await.expect("connect");
 
     // Start session in a temp cwd that definitely exists.
