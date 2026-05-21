@@ -448,6 +448,12 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             }
         });
     }
+    // Snapshot fetch so a freshly-connected app can seed its instance cache
+    // without waiting for the next instances_changed notification (ai_todo 63).
+    router.register("list_instances", move |_params, _ctx| {
+        let state = state.clone();
+        async move { Ok(json!(state.registry.list())) }
+    });
 }
 
 #[cfg(test)]
@@ -604,6 +610,20 @@ mod tests {
         let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
             method: "mark_session_ended".into(), params: Some(json!({"session_id":"ghost"})) }, dummy_ctx()).await;
         assert!(resp.error.is_none(), "got {:?}", resp.error);
+    }
+
+    #[tokio::test]
+    async fn list_instances_empty_returns_array() {
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+        let st = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let mut r = Router::new();
+        register_chat_registry(&mut r, st);
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "list_instances".into(), params: None }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "got {:?}", resp.error);
+        assert_eq!(resp.result, Some(json!([])));
     }
 
     #[tokio::test]

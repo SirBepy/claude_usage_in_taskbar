@@ -212,6 +212,12 @@ impl PersistentClient {
         self.call("list_channels", json!({})).await
     }
 
+    /// Snapshot of the daemon's instance registry (array of Instance JSON).
+    /// Seeded into the app cache on connect so live sessions render immediately.
+    pub async fn list_instances(&self) -> Result<serde_json::Value, ClientError> {
+        self.call("list_instances", json!({})).await
+    }
+
     /// Start (or resume) a daemon-owned session. Returns the real session_id.
     pub async fn start_session(
         &self,

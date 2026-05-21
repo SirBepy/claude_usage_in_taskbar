@@ -284,6 +284,26 @@ pub fn run() {
                             Ok(rx) => rx,
                             Err(e) => { log::error!("subscribe_global failed: {e}"); return; }
                         };
+                        // Seed the caches from the daemon's current snapshot so
+                        // already-running sessions/channels render immediately on
+                        // connect, instead of waiting for the next change event
+                        // (ai_todo 63). The frontend's `instances-changed` /
+                        // `channels-changed` listeners re-read the caches.
+                        {
+                            use tauri::Emitter;
+                            if let Ok(instances) = client.list_instances().await {
+                                if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances.clone()) {
+                                    *state.cached_instances.lock().unwrap() = parsed;
+                                    let _ = app_handle.emit("instances-changed", instances);
+                                }
+                            }
+                            if let Ok(channels) = client.list_channels().await {
+                                if let Some(arr) = channels.as_array() {
+                                    *state.cached_channels.lock().unwrap() = arr.clone();
+                                    let _ = app_handle.emit("channels-changed", channels);
+                                }
+                            }
+                        }
                         {
                             let mut slot = state.daemon_client.lock().await;
                             *slot = Some(client);
