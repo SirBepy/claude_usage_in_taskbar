@@ -2,6 +2,7 @@
 //! consumes these via the `claude_usage_tauri_lib` library crate.
 
 pub mod broadcast;
+pub mod channel_adopt;
 pub mod channels;
 pub mod detector_task;
 pub mod frame;

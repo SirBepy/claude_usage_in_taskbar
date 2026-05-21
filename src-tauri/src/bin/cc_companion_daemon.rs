@@ -8,7 +8,7 @@ use claude_usage_tauri_lib::daemon::rpc::Router;
 use claude_usage_tauri_lib::daemon::session::new_session_map;
 use claude_usage_tauri_lib::daemon::settings_cache::SettingsCache;
 use claude_usage_tauri_lib::daemon::state::DaemonState;
-use claude_usage_tauri_lib::daemon::{channels, detector_task, health, hooks_server, methods, transport_windows};
+use claude_usage_tauri_lib::daemon::{channel_adopt, channels, detector_task, health, hooks_server, methods, transport_windows};
 use claude_usage_tauri_lib::settings;
 use claude_usage_tauri_lib::types::Settings;
 use std::path::PathBuf;
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Adopt bridges that survived a previous daemon shutdown before spawning
     // new ones. This prevents duplicate bridge trees on daemon restart when
     // a channel is still running from the previous daemon lifetime.
-    channels::adopt_running_channels(state.clone());
+    channel_adopt::adopt_running_channels(state.clone());
 
     // Autostart automated channels the daemon owns. Channels survive app
     // close; no auto-restart on exit (see daemon::channels). The in-session
