@@ -185,6 +185,7 @@ impl Router {
     }
 
     pub async fn dispatch(&self, req: Request, ctx: ConnectionContext) -> Response {
+        log::debug!("rpc dispatch: {}", req.method);
         match self.handlers.get(&req.method) {
             None => Response {
                 jsonrpc: "2.0".into(),

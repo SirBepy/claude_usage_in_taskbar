@@ -256,6 +256,20 @@ async fn on_session_start(
     (StatusCode::NO_CONTENT, Json(json!({})))
 }
 
+/// Whether a `/hooks/session-end` should actually end the registry entry.
+///
+/// Interactive (Path C) sessions are daemon-owned: each user turn spawns a
+/// short-lived `claude -p` process that fires SessionEnd when the turn
+/// completes, so a hook SessionEnd is NOT a signal that the chat is over.
+/// Their lifecycle is the chat IPC layer's (close-chat / app-quit), exactly
+/// as the detector exempts Interactive from pid-based ending
+/// (`sessions/detector.rs`). All other kinds (External / Automated) close on
+/// SessionEnd as usual. Unknown sessions (`None`) fall through to a harmless
+/// no-op `mark_ended`.
+fn hook_session_end_should_close(kind: Option<InstanceKind>) -> bool {
+    kind != Some(InstanceKind::Interactive)
+}
+
 async fn on_session_end(
     AxState(ctx): AxState<Arc<HookCtx>>,
     Json(payload): Json<SessionEndPayload>,
@@ -267,11 +281,12 @@ async fn on_session_end(
     );
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
-    let inst = ctx.state.registry.get(&payload.session_id);
-    let is_interactive = inst.as_ref().map(|i| i.kind) == Some(InstanceKind::Interactive);
-    let is_busy = inst.map(|i| i.busy).unwrap_or(false);
-    if is_interactive && is_busy {
-        log::debug!("ignoring SessionEnd for busy Interactive session {}", payload.session_id);
+    let kind = ctx.state.registry.get(&payload.session_id).map(|i| i.kind);
+    if !hook_session_end_should_close(kind) {
+        log::debug!(
+            "ignoring SessionEnd for daemon-owned Interactive session {}",
+            payload.session_id
+        );
         return StatusCode::NO_CONTENT;
     }
     if ctx.state.registry.mark_ended(&payload.session_id, crate::types::EndReason::HookSessionEnd, &now) {
@@ -444,4 +459,24 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
     });
 
     Ok(port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_end_hook_never_closes_interactive() {
+        // Regression: per-turn `claude -p` fires SessionEnd on turn completion;
+        // it must not close the daemon-owned Interactive session.
+        assert!(!hook_session_end_should_close(Some(InstanceKind::Interactive)));
+    }
+
+    #[test]
+    fn session_end_hook_closes_other_kinds() {
+        assert!(hook_session_end_should_close(Some(InstanceKind::External)));
+        assert!(hook_session_end_should_close(Some(InstanceKind::Automated)));
+        // Unknown session: harmless no-op mark_ended downstream.
+        assert!(hook_session_end_should_close(None));
+    }
 }
