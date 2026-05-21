@@ -14,10 +14,3 @@ pub fn instance_suffix() -> String {
         _ => String::new(),
     }
 }
-
-/// Whether a non-default (test) instance is active. When true, the hook server
-/// binds an ephemeral port instead of the fixed `HOOK_PORT` so it never fights
-/// the production daemon for 27182.
-pub fn is_test_instance() -> bool {
-    !instance_suffix().is_empty()
-}
