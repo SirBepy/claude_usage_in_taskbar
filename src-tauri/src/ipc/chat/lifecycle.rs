@@ -11,6 +11,12 @@ use tauri::{AppHandle, Manager, State};
 /// Drain ChatState.running and kill each in-flight runner child. Called
 /// from the tray Quit handler so the app doesn't leak claude.exe orphans
 /// on exit. No-op if no turns are running.
+///
+/// Daemon-safe by construction: `ChatState.running` only tracks APP-SIDE
+/// Path C runner children. In daemon mode (`useDaemon` on, default since
+/// Phase 6) turns run inside the daemon process and are never inserted here,
+/// so quitting the app leaves daemon-owned sessions untouched (they survive
+/// app close, as designed). Do NOT make this reach into the daemon.
 pub fn cancel_all_inflight_turns(app: &AppHandle) {
     let chat_state: tauri::State<'_, Arc<ChatState>> = app.state();
     let pids: Vec<u32> = {
