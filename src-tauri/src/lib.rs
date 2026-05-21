@@ -283,48 +283,66 @@ pub fn run() {
                     let state = app_handle.state::<crate::state::AppState>();
                     #[cfg(windows)]
                     {
-                        let client = match crate::daemon_client::ensure_daemon().await {
-                            Ok(c) => c,
-                            Err(e) => { log::error!("daemon connect failed: {e}"); return; }
-                        };
-                        // Push initial settings BEFORE subscribing so the daemon's cache is
-                        // populated before any incoming hook traffic.
-                        let settings_snapshot = state.settings.lock().unwrap().clone();
-                        if let Err(e) = client.push_settings(&settings_snapshot).await {
-                            log::error!("push_settings failed: {e}");
-                        }
-                        let mut rx = match client.subscribe_global().await {
-                            Ok(rx) => rx,
-                            Err(e) => { log::error!("subscribe_global failed: {e}"); return; }
-                        };
-                        // Seed the caches from the daemon's current snapshot so
-                        // already-running sessions/channels render immediately on
-                        // connect, instead of waiting for the next change event
-                        // (ai_todo 63). The frontend's `instances-changed` /
-                        // `channels-changed` listeners re-read the caches.
-                        {
-                            use tauri::Emitter;
-                            if let Ok(instances) = client.list_instances().await {
-                                if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances.clone()) {
-                                    *state.cached_instances.lock().unwrap() = parsed;
-                                    let _ = app_handle.emit("instances-changed", instances);
+                        // Reconnect loop: on connection loss, respawn the daemon
+                        // (via ensure_daemon) + reconnect with capped backoff, then
+                        // re-subscribe + re-seed caches.
+                        let mut backoff_ms: u64 = 500;
+                        loop {
+                            let client = match crate::daemon_client::ensure_daemon().await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("daemon connect failed: {e}; retrying in {backoff_ms}ms");
+                                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                                    backoff_ms = (backoff_ms * 2).min(8000);
+                                    continue;
+                                }
+                            };
+                            backoff_ms = 500;
+                            // Push initial settings BEFORE subscribing so the daemon's cache is
+                            // populated before any incoming hook traffic.
+                            let settings_snapshot = state.settings.lock().unwrap().clone();
+                            if let Err(e) = client.push_settings(&settings_snapshot).await {
+                                log::error!("push_settings failed: {e}");
+                            }
+                            let mut rx = match client.subscribe_global().await {
+                                Ok(rx) => rx,
+                                Err(e) => {
+                                    log::error!("subscribe_global failed: {e}; reconnecting");
+                                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                                    continue;
+                                }
+                            };
+                            // Seed the caches from the daemon's current snapshot so
+                            // already-running sessions/channels render immediately on
+                            // connect, instead of waiting for the next change event
+                            // (ai_todo 63). The frontend's `instances-changed` /
+                            // `channels-changed` listeners re-read the caches.
+                            {
+                                use tauri::Emitter;
+                                if let Ok(instances) = client.list_instances().await {
+                                    if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances.clone()) {
+                                        *state.cached_instances.lock().unwrap() = parsed;
+                                        let _ = app_handle.emit("instances-changed", instances);
+                                    }
+                                }
+                                if let Ok(channels) = client.list_channels().await {
+                                    if let Some(arr) = channels.as_array() {
+                                        *state.cached_channels.lock().unwrap() = arr.clone();
+                                        let _ = app_handle.emit("channels-changed", channels);
+                                    }
                                 }
                             }
-                            if let Ok(channels) = client.list_channels().await {
-                                if let Some(arr) = channels.as_array() {
-                                    *state.cached_channels.lock().unwrap() = arr.clone();
-                                    let _ = app_handle.emit("channels-changed", channels);
-                                }
+                            {
+                                let mut slot = state.daemon_client.lock().await;
+                                *slot = Some(client);
                             }
-                        }
-                        {
-                            let mut slot = state.daemon_client.lock().await;
-                            *slot = Some(client);
-                        }
-                        while let Some(frame) = rx.recv().await {
-                            let method = frame.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let params = frame.get("params").cloned().unwrap_or(serde_json::Value::Null);
-                            handle_daemon_notification(&app_handle, &method, params).await;
+                            while let Some(frame) = rx.recv().await {
+                                let method = frame.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let params = frame.get("params").cloned().unwrap_or(serde_json::Value::Null);
+                                handle_daemon_notification(&app_handle, &method, params).await;
+                            }
+                            log::warn!("daemon connection lost; respawning + reconnecting");
+                            { *state.daemon_client.lock().await = None; }
                         }
                     }
                     #[cfg(not(windows))]
