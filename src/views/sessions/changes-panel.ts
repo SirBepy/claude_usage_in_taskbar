@@ -13,17 +13,15 @@ export interface DedupedRow {
   kind: FileEditView["kind"];
   addedLines: number;
   removedLines: number;
-  editIndexes: number[];
 }
 
 export function dedupeByPath(edits: FileEditView[]): DedupedRow[] {
   const byPath = new Map<string, DedupedRow>();
-  edits.forEach((e, i) => {
+  edits.forEach((e) => {
     const existing = byPath.get(e.path);
     if (existing) {
       existing.addedLines += e.addedLines;
       existing.removedLines += e.removedLines;
-      existing.editIndexes.push(i);
     } else {
       byPath.set(e.path, {
         path: e.path,
@@ -31,7 +29,6 @@ export function dedupeByPath(edits: FileEditView[]): DedupedRow[] {
         kind: e.kind,
         addedLines: e.addedLines,
         removedLines: e.removedLines,
-        editIndexes: [i],
       });
     }
   });

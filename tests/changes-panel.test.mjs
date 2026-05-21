@@ -16,7 +16,6 @@ describe("dedupeByPath", () => {
     expect(out[0].path).toBe("/a.ts");
     expect(out[0].addedLines).toBe(3);
     expect(out[0].removedLines).toBe(1);
-    expect(out[0].editIndexes).toEqual([0]);
   });
 
   it("aggregates two edits to the same path into one row", () => {
@@ -29,7 +28,6 @@ describe("dedupeByPath", () => {
     const a = out.find((r) => r.path === "/a.ts");
     expect(a.addedLines).toBe(5);
     expect(a.removedLines).toBe(5);
-    expect(a.editIndexes).toEqual([0, 2]);
   });
 
   it("preserves first-seen order across paths", () => {
