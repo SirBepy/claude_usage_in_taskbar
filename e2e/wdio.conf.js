@@ -56,7 +56,10 @@ export const config = {
   // Free smoke by default. The billed chat test (reload-dup) is opt-in via
   // `npm run test:e2e:chat` (passes --spec), so the default run spawns no
   // `claude` turn.
-  specs: [path.join(__dirname, "specs", "smoke.e2e.js")],
+  specs: [
+    path.join(__dirname, "specs", "smoke.e2e.js"),
+    path.join(__dirname, "specs", "daemon-lifecycle.e2e.js"),
+  ],
   maxInstances: 1,
   capabilities: [{ "tauri:options": { application } }],
   reporters: ["spec"],
