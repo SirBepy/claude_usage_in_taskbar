@@ -11,4 +11,6 @@
 - OR on reload, drop synthetic `user_message`s from the live cache that the history page already covers (match by content/order rather than ts).
 - OR bust the synthetic user messages from the cache when history loads.
 
+**Update 2026-05-21 (Joe live-tested daemon mode):** confirmed still happening, and BROADER than just user messages — on switch-away-and-back the duplication includes the assistant replies too, with *random* ordering across chats (saw `mine/his/mine/his`, `mine/mine/his`, and `mine/his/mine`). This points at the timestamp=0 root cause scrambling the merge for ALL event kinds (assistant events parsed from JSONL also get ts 0, so the live-cache assistant messages re-append/reorder too), not only the synthetic user pushes. The per-turn daemon dedup (ai_todo 47, fixed in 19fcdb7/parser live mode) does NOT touch this — this is the frontend reload/merge path. When picking up: build the regression in the WebdriverIO UI harness (`e2e/`) — send a turn, assert one user + one assistant row, switch chats, switch back, re-assert no new/reordered rows.
+
 **Out of scope for the daemon phases** — it's a frontend event-store/parser timestamp bug. Pick up after the daemon pivot lands, or whenever Joe wants the reload glitch gone.
