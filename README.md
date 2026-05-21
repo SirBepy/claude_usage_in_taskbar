@@ -3,7 +3,7 @@
 Tauri 2.x companion app for Claude Code. Combines:
 
 - **Usage monitoring** (5h session + 7d weekly windows) scraped from `claude.ai/settings/usage` via a hidden Chrome tab.
-- **Sessions** - a chat hub for live Claude Code sessions across all your projects. Each user turn spawns a fresh `claude -p --resume <id>` process; the app renders the streamed JSON output as a proper chat with markdown, syntax-highlighted code blocks, and clipboard image paste. Pop any session into its own window.
+- **Sessions** - a chat hub for live Claude Code sessions across all your projects. A background daemon runs a persistent `claude` process per session (sessions keep running when the app is closed); the app renders the streamed JSON output as a proper chat with markdown, syntax-highlighted code blocks, and clipboard image paste. Pop any session into its own window.
 - **History** - read-only browser of past Claude sessions from `~/.claude/sessions/`.
 - **Channel management** for headless Claude Code automation (`--remote-control`).
 - **Manual session takeover** - reach into a Claude process running in your terminal and resume it inside this app.
