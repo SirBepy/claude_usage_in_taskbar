@@ -68,9 +68,9 @@ pub fn setup(app: &AppHandle) -> Result<()> {
                     });
                 }
                 "quit" => {
-                    // Kill any in-flight runner children so we don't leak
-                    // claude.exe orphans. Drains ChatState.running before exit.
-                    crate::ipc::chat::cancel_all_inflight_turns(app);
+                    // Chat turns run inside the detached daemon, which
+                    // intentionally survives app close; nothing app-side to
+                    // drain here.
                     app.exit(0);
                 }
                 "mute-all" => {

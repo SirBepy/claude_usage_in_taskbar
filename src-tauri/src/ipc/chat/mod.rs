@@ -1,15 +1,16 @@
-//! Chat IPC commands (Path C).
+//! Chat IPC commands (daemon-backed).
 //!
 //! Split into focused submodules:
 //! - `run`        — per-turn execution: `start_session`, `send_message`,
-//!                  `cancel_turn`, `run_session_turn`, `blocks_to_prompt_text`.
+//!                  `cancel_turn`, `blocks_to_prompt_text`. All turns run in
+//!                  the detached daemon via RPC.
 //! - `attachments`— image attachments: `paste_image`, `read_attachment`,
 //!                  shared `validate_session_id` + `write_attachment` helpers.
 //! - `history`    — read-only transcript replays: `load_history`,
 //!                  `load_history_page`, `list_history`.
-//! - `lifecycle`  — AppHandle / process-tree side: `cancel_all_inflight_turns`,
-//!                  `gc_attachments`, `takeover_manual`, `detach_window`,
-//!                  `reattach_window`, `respond_permission`, `respond_question`.
+//! - `lifecycle`  — AppHandle / process-tree side: `gc_attachments`,
+//!                  `takeover_manual`, `detach_window`, `reattach_window`,
+//!                  `respond_permission`, `respond_question`.
 //!
 //! All `#[tauri::command]` items are re-exported here so the parent
 //! `ipc.rs` `pub use chat::*;` keeps surfacing the existing
@@ -33,41 +34,3 @@ pub use history::*;
 pub use lifecycle::*;
 pub use run::*;
 pub use watcher::*;
-
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex};
-
-/// Per-app shared state owned by Tauri. Tracks which sessions have a turn
-/// currently running so we can cancel them. Map value is a Mutex carrying
-/// the runner's child pid; runner publishes on spawn, clears on exit.
-///
-/// Defined here (rather than in `run.rs`) because `lifecycle::cancel_all_inflight_turns`
-/// also drains it on app quit.
-#[derive(Default)]
-pub struct ChatState {
-    pub running: StdMutex<HashMap<String, Arc<StdMutex<Option<u32>>>>>,
-}
-
-impl ChatState {
-    pub fn new() -> Self {
-        Self {
-            running: StdMutex::new(HashMap::new()),
-        }
-    }
-
-    pub(crate) fn allocate(&self, key: &str) -> Arc<StdMutex<Option<u32>>> {
-        let mut g = self.running.lock().unwrap();
-        let slot = Arc::new(StdMutex::new(None));
-        g.insert(key.to_string(), Arc::clone(&slot));
-        slot
-    }
-
-    pub(crate) fn remove(&self, key: &str) {
-        let mut g = self.running.lock().unwrap();
-        g.remove(key);
-    }
-
-    pub(crate) fn slot(&self, key: &str) -> Option<Arc<StdMutex<Option<u32>>>> {
-        self.running.lock().unwrap().get(key).cloned()
-    }
-}

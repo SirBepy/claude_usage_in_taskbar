@@ -98,7 +98,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(state)
-        .manage(std::sync::Arc::new(crate::ipc::chat::ChatState::new()))
         .invoke_handler(tauri::generate_handler![
             ipc::get_current_usage,
             ipc::get_history,

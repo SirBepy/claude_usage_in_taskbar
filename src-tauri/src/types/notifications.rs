@@ -89,14 +89,6 @@ pub struct Settings {
     pub legacy_obsidian_import_handled: bool,
     #[serde(rename = "audioOutputDevice", default)]
     pub audio_output_device: Option<String>,
-    /// Route chat-hub turns through the daemon (persistent claude per session,
-    /// survives app close) instead of app-side Path C. Default ON as of Phase 6
-    /// (daemon auto-launch). Kept as a temporary opt-out; Path C + this flag are
-    /// removed in Phase 7. NOTE: no field-level `default` here on purpose, so a
-    /// settings.json missing the key inherits the struct-level default (true)
-    /// rather than `bool::default()` (false).
-    #[serde(rename = "useDaemon")]
-    pub use_daemon: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -122,7 +114,6 @@ impl Default for Settings {
             hook_install_version: 0,
             legacy_obsidian_import_handled: false,
             audio_output_device: None,
-            use_daemon: true,
             extra: serde_json::Map::new(),
         }
     }
@@ -275,52 +266,16 @@ mod tests {
     }
 
     #[test]
-    fn use_daemon_defaults_on() {
-        let s = Settings::default();
-        assert_eq!(s.use_daemon, true);
-    }
-
-    #[test]
-    fn use_daemon_serializes_as_camel_case() {
-        let mut s = Settings::default();
-        s.use_daemon = true;
-        let v = serde_json::to_value(&s).unwrap();
-        assert_eq!(v["useDaemon"], serde_json::json!(true));
-    }
-
-    #[test]
-    fn use_daemon_absent_in_json_defaults_on() {
-        // A settings.json missing the key inherits the struct-level default (on),
-        // so existing configs pick up the Phase 6 default without a rewrite.
-        let v = serde_json::json!({});
-        let s: Settings = serde_json::from_value(v).unwrap();
-        assert_eq!(s.use_daemon, true);
-    }
-
-    #[test]
-    fn use_daemon_deserializes_from_realistic_save_payload() {
-        // Mirrors the JS save payload: useDaemon set true alongside many
-        // extra (flattened) keys the dashboard persists. Regression for the
-        // toggle-does-not-persist bug (ai_todo 66 #1).
+    fn legacy_use_daemon_key_lands_in_extra_and_does_not_break_deserialize() {
+        // Phase 7 removed the `useDaemon` typed field. Existing settings.json
+        // files still carry the key; it must fall through to `extra` (the
+        // flattened passthrough) and not break deserialization.
         let v = serde_json::json!({
             "useDaemon": true,
             "autostart": true,
-            "theme": "void",
-            "colorThresholds": [{"min": 0, "color": "#fff"}],
             "muteAll": false,
-            "notifications": {},
         });
-        let s: Settings = serde_json::from_value(v).unwrap();
-        assert_eq!(s.use_daemon, true, "useDaemon must survive deserialize alongside extra keys");
-    }
-
-    #[test]
-    fn use_daemon_full_round_trip_through_json() {
-        // save() serializes to a string then load() deserializes it back.
-        let mut s = Settings::default();
-        s.use_daemon = true;
-        let json = serde_json::to_string(&s).unwrap();
-        let back: Settings = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.use_daemon, true, "use_daemon must survive a full string round-trip");
+        let s: Settings = serde_json::from_value(v).expect("must deserialize with legacy useDaemon key");
+        assert_eq!(s.extra.get("useDaemon"), Some(&serde_json::json!(true)));
     }
 }

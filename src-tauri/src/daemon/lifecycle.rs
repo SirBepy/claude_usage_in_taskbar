@@ -16,6 +16,26 @@ use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
+/// Write a temporary .mcp.json file for the current turn and return its path.
+/// Returns None if the app-data dir is unavailable (non-fatal; permission
+/// relay simply won't be wired up for this turn).
+fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
+    let mcp_dir = crate::settings::paths::mcp_temp_dir().ok()?;
+    let exe = std::env::current_exe().ok()?;
+    let config = serde_json::json!({
+        "mcpServers": {
+            "cc_companion": {
+                "command": exe.to_string_lossy(),
+                "args": ["--mcp-permission"],
+                "env": {"CC_SESSION_ID": tracking_id}
+            }
+        }
+    });
+    let path = mcp_dir.join(format!("{turn_id}.json"));
+    std::fs::write(&path, serde_json::to_string(&config).ok()?).ok()?;
+    Some(path)
+}
+
 /// Build the base `claude` argument list (everything except the MCP flags).
 ///
 /// **Critical session-id handling:** `claude` rejects `--resume <id>` for an id
@@ -106,7 +126,7 @@ pub async fn spawn_session(
         return Err(LifecycleError::AlreadyExists(session_id));
     }
 
-    let mcp_config_path = crate::chat::runner::write_mcp_config(&session_id, &session_id);
+    let mcp_config_path = write_mcp_config(&session_id, &session_id);
 
     let mut cmd = Command::new("claude");
     cmd.args(base_claude_args(

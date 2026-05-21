@@ -2,35 +2,9 @@
 //! `run.rs` (which owns the per-turn IO loop).
 
 use super::attachments::validate_session_id;
-use super::ChatState;
 use crate::state::AppState;
 use serde_json::Value;
-use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
-
-/// Drain ChatState.running and kill each in-flight runner child. Called
-/// from the tray Quit handler so the app doesn't leak claude.exe orphans
-/// on exit. No-op if no turns are running.
-///
-/// Daemon-safe by construction: `ChatState.running` only tracks APP-SIDE
-/// Path C runner children. In daemon mode (`useDaemon` on, default since
-/// Phase 6) turns run inside the daemon process and are never inserted here,
-/// so quitting the app leaves daemon-owned sessions untouched (they survive
-/// app close, as designed). Do NOT make this reach into the daemon.
-pub fn cancel_all_inflight_turns(app: &AppHandle) {
-    let chat_state: tauri::State<'_, Arc<ChatState>> = app.state();
-    let pids: Vec<u32> = {
-        let mut g = chat_state.running.lock().unwrap();
-        let snapshot: Vec<_> = g.drain().collect();
-        snapshot
-            .into_iter()
-            .filter_map(|(_id, slot)| slot.lock().unwrap().take())
-            .collect()
-    };
-    for pid in pids {
-        let _ = crate::channels::kill::kill_tree(pid);
-    }
-}
 
 /// Background GC for chat-attachments older than 30 days. Scheduled once
 /// on app startup; re-runs every 24h.

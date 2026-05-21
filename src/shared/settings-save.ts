@@ -90,7 +90,6 @@ export function saveSettings(): void {
     tooltipLayout: valOr("tooltipLayout", (prev.tooltipLayout as string) || "rows"),
     tooltipShowSafePace: chkOr("tooltipShowSafePace", prev.tooltipShowSafePace !== false),
     launchAtLogin: chkOr("launchAtLogin", !!prev.launchAtLogin),
-    useDaemon: chkOr("useDaemon", !!prev.useDaemon),
     autoUpdate: (() => {
       const el = byId<HTMLSelectElement>("autoUpdate");
       if (el && (el.value === "never" || el.value === "onStartup" || el.value === "immediate")) return el.value;
