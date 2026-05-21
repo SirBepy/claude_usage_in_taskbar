@@ -54,6 +54,9 @@ async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient) {
         // own stderr so `--nocapture` runs show exactly what was published vs
         // delivered.
         .env("RUST_LOG", "info,claude_usage_tauri_lib=debug")
+        // Don't let the test daemon launch real automation channels (each spawn
+        // registers a fresh Claude desktop bridge - they pile up across runs).
+        .env("CC_DAEMON_NO_AUTOSTART", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .spawn()

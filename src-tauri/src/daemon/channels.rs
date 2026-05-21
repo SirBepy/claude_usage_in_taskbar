@@ -222,12 +222,31 @@ pub fn list_channels(state: &Arc<DaemonState>) -> Vec<serde_json::Value> {
 /// (`auto.session_name_prefix` or the project name as fallback), the same
 /// logic as `resolve_project`.
 pub fn adopt_running_channels(state: Arc<DaemonState>) {
-    use sysinfo::{Pid, ProcessesToUpdate, System};
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
     let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All);
+    // The plain `refresh_processes(All)` does NOT populate each process's argv
+    // (`cmd()`), so the `--remote-control` scan below saw nothing and adopted
+    // nothing - every daemon boot then spawned a fresh duplicate bridge (the
+    // pile-up Joe hit). Explicitly request `cmd` so discovery actually works.
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        ProcessRefreshKind::new().with_cmd(UpdateKind::Always),
+    );
 
     let settings = state.settings.snapshot();
+
+    // Projects whose bridge we've already adopted in this scan. A second
+    // *distinct* bridge for the same project is a leftover duplicate (e.g. from
+    // a prior daemon that exited without killing its channel) and gets killed,
+    // so exactly one survives per project.
+    let mut adopted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Bridge claude-pids already handled this scan. A live bridge is a launcher
+    // (cmd.exe) PLUS its claude child, and BOTH carry `--remote-control` in
+    // argv, so both match the scan. Keying on the resolved claude pid makes the
+    // pair count as one bridge instead of two (which would wrongly kill a live
+    // bridge's child).
+    let mut seen_bridges: std::collections::HashSet<u32> = std::collections::HashSet::new();
 
     for proc_ in sys.processes().values() {
         let args: Vec<String> = proc_.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect();
@@ -261,20 +280,6 @@ pub fn adopt_running_channels(state: Arc<DaemonState>) {
             continue;
         };
 
-        // Skip projects that already have a live channel in the manager
-        // (handles the case where adopt is called twice or after a start).
-        if let Some(existing) = state.channels.snapshot(&project.id) {
-            if matches!(existing.status, ChannelStatus::Starting | ChannelStatus::Running)
-                && existing.pid.is_some()
-            {
-                log::debug!(
-                    "adopt_running_channels: project {} already has an active channel, skipping",
-                    project.id
-                );
-                continue;
-            }
-        }
-
         let proc_pid = proc_.pid().as_u32();
         let proc_name = proc_.name().to_string_lossy().to_ascii_lowercase();
 
@@ -294,6 +299,41 @@ pub fn adopt_running_channels(state: Arc<DaemonState>) {
             let claude_child = resolve_claude_pid(proc_pid);
             (proc_pid, claude_child)
         };
+
+        // Collapse the launcher + its claude child into one bridge: both match
+        // the scan but resolve to the same claude pid.
+        let bridge_key = resolved_claude_pid.unwrap_or(proc_pid);
+        if !seen_bridges.insert(bridge_key) {
+            continue; // already handled this bridge's other half
+        }
+
+        // One-of-each: keep the first bridge per project; kill any further
+        // distinct bridge (a leftover from a prior daemon that didn't clean up).
+        if !adopted.insert(project.id.clone()) {
+            log::info!(
+                "adopt_running_channels: killing duplicate bridge (launcher {} claude {:?}) for project {} (keeping one)",
+                launcher_pid, resolved_claude_pid, project.id
+            );
+            crate::channels::kill::kill_tree(launcher_pid);
+            if let Some(cp) = resolved_claude_pid {
+                crate::channels::kill::kill_tree(cp);
+            }
+            continue;
+        }
+
+        // Skip projects that already have a live channel in the manager
+        // (handles the case where adopt is called twice or after a start).
+        if let Some(existing) = state.channels.snapshot(&project.id) {
+            if matches!(existing.status, ChannelStatus::Starting | ChannelStatus::Running)
+                && existing.pid.is_some()
+            {
+                log::debug!(
+                    "adopt_running_channels: project {} already has an active channel, skipping",
+                    project.id
+                );
+                continue;
+            }
+        }
 
         log::info!(
             "adopt_running_channels: adopting project {} (prefix {:?}) launcher_pid={} claude_pid={:?}",
@@ -405,6 +445,41 @@ mod tests {
     use crate::daemon::session::new_session_map;
     use crate::daemon::settings_cache::SettingsCache;
     use crate::types::Settings;
+
+    // Proves the adoption discovery fix: `refresh_processes(All)` does NOT load
+    // argv (`cmd()`), which is why adoption silently found no `--remote-control`
+    // bridges and duplicates piled up. Requesting `cmd` populates argv.
+    #[cfg(windows)]
+    #[test]
+    fn refresh_with_cmd_populates_argv() {
+        use std::process::{Command, Stdio};
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+        // A child that lives a few seconds with a recognizable argv token.
+        let mut child = Command::new("cmd")
+            .args(["/C", "ping", "-n", "5", "127.0.0.1"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn child");
+        let pid = child.id();
+
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            ProcessRefreshKind::new().with_cmd(UpdateKind::Always),
+        );
+        let proc_ = sys.process(Pid::from_u32(pid)).expect("child visible to sysinfo");
+        let argv: Vec<String> = proc_.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(
+            !argv.is_empty(),
+            "with_cmd must populate argv (the adoption bug was an empty argv); got {argv:?}"
+        );
+    }
 
     #[tokio::test]
     async fn stop_unknown_channel_is_ok() {

@@ -319,6 +319,8 @@ mod tests {
         exe.push("debug");
         exe.push("cc-companion-daemon.exe");
         let mut child = Command::new(&exe)
+            // Don't launch real automation channels from a test daemon.
+            .env("CC_DAEMON_NO_AUTOSTART", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
