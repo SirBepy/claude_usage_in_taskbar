@@ -283,8 +283,7 @@ pub fn run() {
                     let state = app_handle.state::<crate::state::AppState>();
                     #[cfg(windows)]
                     {
-                        let pipe_name = crate::daemon_client::pipe_name_for_current_user();
-                        let client = match crate::daemon_client::PersistentClient::connect(&pipe_name).await {
+                        let client = match crate::daemon_client::ensure_daemon().await {
                             Ok(c) => c,
                             Err(e) => { log::error!("daemon connect failed: {e}"); return; }
                         };

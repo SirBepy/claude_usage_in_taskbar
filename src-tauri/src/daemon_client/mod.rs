@@ -289,6 +289,31 @@ pub fn pipe_name_for_current_user() -> String {
     format!(r"\\.\pipe\cc-companion-daemon-{user}")
 }
 
+/// Try to connect to the daemon; if none is listening, spawn one detached
+/// (`<exe> --daemon`) and poll the pipe until it binds (~6s budget), then
+/// connect. The daemon's lockfile prevents a duplicate if two apps race here.
+pub async fn ensure_daemon() -> Result<PersistentClient, ClientError> {
+    let pipe = pipe_name_for_current_user();
+    if let Ok(c) = PersistentClient::connect(&pipe).await {
+        return Ok(c);
+    }
+    #[cfg(windows)]
+    {
+        match crate::daemon::spawn_self::spawn_detached_daemon() {
+            Ok(pid) => log::info!("spawned daemon (pid {pid})"),
+            Err(e) => log::error!("failed to spawn daemon: {e}"),
+        }
+    }
+    // Poll for the daemon to bind its pipe (bind + hook server). ~6s budget.
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        if let Ok(c) = PersistentClient::connect(&pipe).await {
+            return Ok(c);
+        }
+    }
+    PersistentClient::connect(&pipe).await
+}
+
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
