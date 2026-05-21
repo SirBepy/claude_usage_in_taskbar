@@ -292,4 +292,31 @@ mod tests {
         let s: Settings = serde_json::from_value(v).unwrap();
         assert_eq!(s.use_daemon, false);
     }
+
+    #[test]
+    fn use_daemon_deserializes_from_realistic_save_payload() {
+        // Mirrors the JS save payload: useDaemon set true alongside many
+        // extra (flattened) keys the dashboard persists. Regression for the
+        // toggle-does-not-persist bug (ai_todo 66 #1).
+        let v = serde_json::json!({
+            "useDaemon": true,
+            "autostart": true,
+            "theme": "void",
+            "colorThresholds": [{"min": 0, "color": "#fff"}],
+            "muteAll": false,
+            "notifications": {},
+        });
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(s.use_daemon, true, "useDaemon must survive deserialize alongside extra keys");
+    }
+
+    #[test]
+    fn use_daemon_full_round_trip_through_json() {
+        // save() serializes to a string then load() deserializes it back.
+        let mut s = Settings::default();
+        s.use_daemon = true;
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.use_daemon, true, "use_daemon must survive a full string round-trip");
+    }
 }
