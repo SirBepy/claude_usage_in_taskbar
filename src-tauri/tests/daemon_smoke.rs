@@ -39,22 +39,29 @@ async fn handshake_health_and_graceful_shutdown() {
     let exe = daemon_exe();
     assert!(exe.exists(), "daemon exe missing: {}", exe.display());
 
+    // Isolated test instance: distinct pipe/lockfile/hook-port so this never
+    // touches a real daemon the user has running (ai_todo 71). Unique per test
+    // bin since cargo runs test binaries in parallel.
+    const INSTANCE: &str = "test-smoke";
+
     // Clear any stale lockfile from a previous failed run; a zombie PID in
     // the lockfile would block the new daemon from acquiring the lock.
     if let Some(app_data) = dirs::data_dir() {
-        let lock = app_data.join("claude-usage-tauri").join("daemon.lock");
+        let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
         let _ = std::fs::remove_file(&lock);
     }
 
     // Spawn daemon. stdio piped so we can kill cleanly on failure.
     let mut child = Command::new(&exe)
+        .env("CC_DAEMON_INSTANCE", INSTANCE)
+        .env("CC_DAEMON_NO_AUTOSTART", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn daemon");
 
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}");
+    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
 
     // Retry-connect with a short backoff until the daemon has bound the pipe.
     let mut pipe = None;

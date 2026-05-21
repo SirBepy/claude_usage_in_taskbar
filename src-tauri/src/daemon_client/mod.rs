@@ -291,7 +291,8 @@ impl PersistentClient {
 
 pub fn pipe_name_for_current_user() -> String {
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    format!(r"\\.\pipe\cc-companion-daemon-{user}")
+    let inst = crate::daemon::instance::instance_suffix();
+    format!(r"\\.\pipe\cc-companion-daemon-{user}{inst}")
 }
 
 /// Try to connect to the daemon; if none is listening, spawn one detached
@@ -327,13 +328,17 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn persistent_client_health_against_real_daemon() {
-        // Clear any stale state from prior runs.
-        let _ = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command",
-                "Get-Process cc-companion-daemon -ErrorAction SilentlyContinue | Stop-Process -Force"])
-            .status();
+        // Isolated test instance: distinct pipe/lockfile/hook-port so this never
+        // touches a real daemon the user has running (ai_todo 71). NOTE: no
+        // `Stop-Process cc-companion-daemon` here on purpose - that used to kill
+        // the user's real daemon.
+        const INSTANCE: &str = "test-pclient";
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+        let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+
+        // Clear only THIS instance's stale lockfile.
         if let Some(app_data) = dirs::data_dir() {
-            let lock = app_data.join("claude-usage-tauri").join("daemon.lock");
+            let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
             let _ = std::fs::remove_file(&lock);
         }
 
@@ -349,6 +354,7 @@ mod tests {
         exe.push("debug");
         exe.push("cc-companion-daemon.exe");
         let mut child = Command::new(&exe)
+            .env("CC_DAEMON_INSTANCE", INSTANCE)
             // Don't launch real automation channels from a test daemon.
             .env("CC_DAEMON_NO_AUTOSTART", "1")
             .stdout(Stdio::piped())
@@ -359,7 +365,7 @@ mod tests {
         // Wait for the pipe to bind.
         tokio::time::sleep(Duration::from_millis(800)).await;
 
-        let client = PersistentClient::connect(&pipe_name_for_current_user())
+        let client = PersistentClient::connect(&pipe_name)
             .await.expect("connect");
         let result = client.health().await.expect("health call");
         assert!(result["daemon_version"].is_string());

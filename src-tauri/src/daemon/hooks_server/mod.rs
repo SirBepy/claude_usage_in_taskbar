@@ -43,12 +43,20 @@ async fn health_endpoint(AxState(_ctx): AxState<Arc<HookCtx>>) -> impl IntoRespo
 pub const HOOK_PORT: u16 = 27182;
 
 pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
-    let listener = TcpListener::bind(("127.0.0.1", HOOK_PORT)).await?;
+    // A test instance (CC_DAEMON_INSTANCE set) binds an ephemeral port instead
+    // of the fixed HOOK_PORT, and does NOT write the shared hooks_port.txt, so
+    // it never fights the production daemon for 27182 or clobbers its port file
+    // (ai_todo 71).
+    let test_instance = crate::daemon::instance::is_test_instance();
+    let bind_port = if test_instance { 0 } else { HOOK_PORT };
+    let listener = TcpListener::bind(("127.0.0.1", bind_port)).await?;
     let port = listener.local_addr()?.port();
     log::info!("daemon hook server listening on 127.0.0.1:{port}");
 
-    if let Ok(port_file) = paths::hooks_port_file() {
-        let _ = std::fs::write(&port_file, port.to_string());
+    if !test_instance {
+        if let Ok(port_file) = paths::hooks_port_file() {
+            let _ = std::fs::write(&port_file, port.to_string());
+        }
     }
 
     let ctx = Arc::new(HookCtx { state });

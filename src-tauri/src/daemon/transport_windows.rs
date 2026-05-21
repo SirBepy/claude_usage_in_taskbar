@@ -12,9 +12,11 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 
 pub fn pipe_name_for_user() -> String {
     // SID-based naming is added in a later phase. For Phase 1, a per-user
-    // suffix via USERNAME is sufficient on a single dev machine.
+    // suffix via USERNAME is sufficient on a single dev machine. The instance
+    // suffix (empty in production) isolates test daemons (ai_todo 71).
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    format!(r"\\.\pipe\cc-companion-daemon-{user}")
+    let inst = crate::daemon::instance::instance_suffix();
+    format!(r"\\.\pipe\cc-companion-daemon-{user}{inst}")
 }
 
 pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {

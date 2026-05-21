@@ -9,6 +9,7 @@ pub mod frame;
 pub mod handshake;
 pub mod health;
 pub mod hooks_server;
+pub mod instance;
 pub mod jsonl_tail;
 pub mod lifecycle;
 pub mod lockfile;
@@ -51,7 +52,9 @@ fn load_initial_settings() -> Settings {
 pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_data = app_data_dir();
     std::fs::create_dir_all(&app_data)?;
-    let lock_path = app_data.join("daemon.lock");
+    // Instance-suffixed lockfile so a test daemon (CC_DAEMON_INSTANCE set)
+    // never reclaims the production daemon's lock (ai_todo 71).
+    let lock_path = app_data.join(format!("daemon{}.lock", instance::instance_suffix()));
     let _lock = LockGuard::acquire(lock_path)?;
 
     let initial_settings = load_initial_settings();
