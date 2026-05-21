@@ -17,6 +17,7 @@ pub mod notifier;
 pub mod rpc;
 pub mod session;
 pub mod settings_cache;
+pub mod spawn_self;
 pub mod state;
 
 #[cfg(windows)]
