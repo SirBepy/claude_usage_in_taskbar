@@ -4,7 +4,7 @@
 //! session's broadcast channel.
 
 use crate::chat::parser::ParserContext;
-use crate::chat::runner::check_metered_billing;
+use crate::chat::billing::check_metered_billing;
 use crate::daemon::broadcast;
 use crate::daemon::session::{Session, SessionMap};
 use crate::daemon::state::DaemonState;
