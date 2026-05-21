@@ -141,7 +141,7 @@ where
         buf
     });
 
-    let mut ctx = ParserContext::new();
+    let mut ctx = ParserContext::new_live();
     let mut buf = [0u8; 4096];
     let mut read_failed = false;
     loop {

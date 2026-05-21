@@ -158,7 +158,7 @@ pub async fn spawn_session(
     let map_for_pump = Arc::clone(map);
     let state_for_pump = Arc::clone(state);
     tokio::spawn(async move {
-        let mut ctx = ParserContext::new();
+        let mut ctx = ParserContext::new_live();
         let mut buf_reader = BufReader::new(stdout);
         let mut line_buf = Vec::new();
         loop {
@@ -178,6 +178,13 @@ pub async fn spawn_session(
                         // complete: clear the busy flag so the UI thinking bar
                         // stops, and broadcast the registry change.
                         let turn_done = matches!(ev, ChatEvent::TurnUsage { .. });
+                        if log::log_enabled!(log::Level::Debug) {
+                            let variant = serde_json::to_value(&ev)
+                                .ok()
+                                .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_string))
+                                .unwrap_or_else(|| "?".into());
+                            log::debug!("daemon publish: {variant} for {}", pump_session.session_id);
+                        }
                         broadcast::publish(&pump_session, ev);
                         if turn_done {
                             state_for_pump.registry.set_busy(&pump_session.session_id, false);

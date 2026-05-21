@@ -50,8 +50,12 @@ async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient) {
     assert!(build.success());
 
     let child = Command::new(daemon_exe())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // Surface the daemon's debug log (publishes + lag drops) on the test's
+        // own stderr so `--nocapture` runs show exactly what was published vs
+        // delivered.
+        .env("RUST_LOG", "info,claude_usage_tauri_lib=debug")
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("spawn daemon");
 
@@ -156,9 +160,15 @@ async fn end_to_end_no_duplicate_events() {
         .await
         .expect("send_message");
 
+    // Collect the FULL event stream for the turn. Do not break on the first
+    // turn_usage - keep draining a short tail so we can see every delivered
+    // variant (and catch duplicates / missing assistant text).
     let mut assistant_msgs = 0;
+    let mut finalized_assistant = 0;
     let mut turn_usages = 0;
+    let mut delivered: Vec<String> = Vec::new();
     let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let mut saw_turn_usage = false;
     while std::time::Instant::now() < deadline {
         match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
             Ok(Some(notif)) => {
@@ -168,25 +178,39 @@ async fn end_to_end_no_duplicate_events() {
                     .and_then(|o| o.get("type"))
                     .and_then(Value::as_str)
                     .map(str::to_string);
-                eprintln!("notif: {variant:?}");
+                eprintln!("delivered chat_event: {variant:?}");
+                if let Some(v) = variant.clone() {
+                    delivered.push(v);
+                }
                 match variant.as_deref() {
-                    Some("assistant_message") => assistant_msgs += 1,
+                    Some("assistant_message") => {
+                        assistant_msgs += 1;
+                        let streaming = notif
+                            .pointer("/params/event/streaming")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
+                        if !streaming {
+                            finalized_assistant += 1;
+                        }
+                    }
                     Some("turn_usage") => {
                         turn_usages += 1;
-                        break; // turn complete
+                        saw_turn_usage = true;
                     }
-                    Some("session_ended") => break,
                     _ => {}
                 }
             }
             Ok(None) => break,
+            // After the turn completed, give a brief grace window for any
+            // trailing events, then stop.
             Err(_) => {
-                if assistant_msgs > 0 {
+                if saw_turn_usage {
                     break;
                 }
             }
         }
     }
+    eprintln!("delivered variants in order: {delivered:?}");
 
     let _ = client.call("end_session", json!({ "session_id": session_id })).await;
     drop(client);
@@ -194,10 +218,16 @@ async fn end_to_end_no_duplicate_events() {
     let _ = child.kill();
     let _ = child.wait();
 
-    eprintln!("assistant_msgs={assistant_msgs} turn_usages={turn_usages}");
+    eprintln!(
+        "assistant_msgs={assistant_msgs} finalized_assistant={finalized_assistant} turn_usages={turn_usages}"
+    );
     assert_eq!(
         turn_usages, 1,
         "exactly one turn_usage expected per turn (got {turn_usages})"
+    );
+    assert_eq!(
+        finalized_assistant, 1,
+        "exactly one finalized (non-streaming) assistant_message expected per turn (got {finalized_assistant})"
     );
     assert!(
         assistant_msgs >= 1,

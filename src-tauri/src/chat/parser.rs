@@ -18,6 +18,14 @@ pub struct ParserContext {
     /// stream. Stays true for the session lifetime so the statusbar keeps
     /// the indicator after the first thinking turn.
     has_thinking: bool,
+    /// Live-stream mode. When true, the full `assistant` message line is
+    /// suppressed: its visible text is already streamed via `stream_event`
+    /// deltas and finalized by the trailing `result` line, and its usage is
+    /// authoritative only on `result`. Forwarding it duplicates both the
+    /// message and the TurnUsage, tripling every live turn (ai_todo 47).
+    /// History replay (bare `parse_line`, no `result` line) is unaffected and
+    /// keeps per-assistant-line usage. Defaults to false for back-compat.
+    live: bool,
 }
 
 impl ParserContext {
@@ -26,7 +34,14 @@ impl ParserContext {
             buf: Vec::with_capacity(4096),
             current_text: String::new(),
             has_thinking: false,
+            live: false,
         }
+    }
+
+    /// Parser for a live `claude` stdout stream (daemon pump / runner). See the
+    /// `live` field for why the full `assistant` line is suppressed.
+    pub fn new_live() -> Self {
+        Self { live: true, ..Self::new() }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<ChatEvent> {
@@ -49,6 +64,13 @@ impl ParserContext {
                 events.extend(stream_events);
             } else if let Some(result_events) = self.parse_result_line(&line_str) {
                 events.extend(result_events);
+            } else if self.live && is_full_assistant_line(&line_str) {
+                // Redundant in a live stream: deltas already showed the text and
+                // the `result` line finalizes it + carries authoritative usage.
+                // Suppress to avoid duplicate messages / TurnUsage (ai_todo 47).
+                // Tool calls are unaffected: tool_use blocks are not renderable
+                // ContentBlocks, so an assistant line never carried them here.
+                continue;
             } else {
                 events.extend(parse_line(&line_str));
             }
@@ -146,6 +168,18 @@ impl ParserContext {
 
         Some(events)
     }
+}
+
+/// True if `line` is a full `assistant` message line (`"type":"assistant"`),
+/// as opposed to a `stream_event` delta or a `result` line. Used by live-mode
+/// `feed()` to suppress these redundant lines (see `ParserContext::live`).
+fn is_full_assistant_line(line: &str) -> bool {
+    serde_json::from_str::<Value>(line)
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("type"))
+        .and_then(Value::as_str)
+        == Some("assistant")
 }
 
 /// Parse one JSONL line and return 0-2 `ChatEvent`s. Most lines produce one
@@ -321,6 +355,64 @@ mod tests {
             }
             _ => panic!("expected SessionStarted"),
         }
+    }
+
+    // Realistic single-turn live stream: a streamed text delta, then the full
+    // `assistant` line (finalized text + model/usage), then the `result` line.
+    fn live_turn_lines() -> String {
+        [
+            r#"{"type":"stream_event","timestamp":1,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"OK"}}}"#,
+            r#"{"type":"assistant","timestamp":2,"message":{"role":"assistant","model":"claude-haiku-4-5","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":2},"content":[{"type":"text","text":"OK"}]}}"#,
+            r#"{"type":"result","subtype":"success","timestamp":3,"result":"OK","total_cost_usd":0.01,"duration_ms":100,"usage":{"input_tokens":10,"output_tokens":2}}"#,
+        ]
+        .join("\n")
+            + "\n"
+    }
+
+    #[test]
+    fn live_mode_dedups_turn_to_single_usage_and_final_message() {
+        // Regression for ai_todo 47: in a live stream the full `assistant` line
+        // duplicated the streamed text + TurnUsage, tripling each turn.
+        let mut ctx = ParserContext::new_live();
+        let events = ctx.feed(live_turn_lines().as_bytes());
+
+        let turn_usages = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::TurnUsage { .. }))
+            .count();
+        assert_eq!(turn_usages, 1, "exactly one TurnUsage per live turn (from result)");
+
+        let finalized = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::AssistantMessage { streaming: false, .. }))
+            .count();
+        assert_eq!(finalized, 1, "exactly one finalized AssistantMessage (from result)");
+
+        // The streaming delta still flows so the UI shows live typing.
+        let streaming = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::AssistantMessage { streaming: true, .. }))
+            .count();
+        assert!(streaming >= 1, "streaming deltas still forwarded in live mode");
+    }
+
+    #[test]
+    fn history_mode_keeps_per_assistant_line_usage() {
+        // History replay (non-live feed + bare parse_line) must still emit a
+        // TurnUsage per assistant line - JSONL files have no `result` line, so
+        // that is the only source of per-message model/cost.
+        let mut ctx = ParserContext::new();
+        let events = ctx.feed(live_turn_lines().as_bytes());
+        let turn_usages = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::TurnUsage { .. }))
+            .count();
+        assert_eq!(turn_usages, 2, "non-live: assistant line + result line both emit usage");
+
+        // Bare parse_line on an assistant line is unchanged.
+        let line = r#"{"type":"assistant","timestamp":2,"message":{"role":"assistant","model":"m","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"hi"}]}}"#;
+        let evs = parse_line(line);
+        assert!(evs.iter().any(|e| matches!(e, ChatEvent::TurnUsage { .. })));
     }
 
     #[test]

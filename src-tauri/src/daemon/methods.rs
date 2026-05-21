@@ -156,7 +156,12 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                                 }
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                log::warn!(
+                                    "attach forwarding lagged for {session_id_for_task}: dropped {n} chat events"
+                                );
+                                continue;
+                            }
                         }
                     }
                 });
