@@ -134,6 +134,61 @@ async fn interactive_survives_session_end_hook() {
     );
 }
 
+/// Phase 5b flow 5 (takeover) over the daemon RPC path. Free + deterministic:
+/// register an External session via the session-start hook with a safe fake pid
+/// (999999, so the real kill_tree is a no-op and no live process is touched),
+/// then drive `takeover_manual` and assert the entry promotes to Interactive.
+/// The takeover *logic* is unit-tested in chat/takeover.rs; this covers the
+/// daemon RPC wiring (hook -> registry -> takeover_manual -> notification).
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn takeover_manual_promotes_external_to_interactive() {
+    let (mut child, client) = spawn_daemon_and_connect().await;
+
+    let session_id = format!("test-takeover-{}", std::process::id());
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+    let fake_pid = 999_999u32; // not a live process -> kill_tree is a safe no-op
+
+    // Register as External via the session-start hook (non-channel pid).
+    let http = reqwest::Client::new();
+    let resp = http
+        .post(format!("http://127.0.0.1:{HOOK_PORT}/hooks/session-start"))
+        .json(&json!({ "session_id": session_id, "cwd": cwd, "pid": fake_pid }))
+        .send()
+        .await
+        .expect("POST /hooks/session-start");
+    assert!(resp.status().is_success());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let before = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&before, &session_id).expect("external session registered");
+    assert_eq!(inst.get("kind").and_then(Value::as_str), Some("external"));
+
+    // Takeover over RPC.
+    client
+        .call(
+            "takeover_manual",
+            json!({ "manual_pid": fake_pid, "model": "haiku", "effort": "low" }),
+        )
+        .await
+        .expect("takeover_manual");
+
+    let after = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&after, &session_id).cloned();
+
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let inst = inst.expect("session still present after takeover");
+    assert_eq!(
+        inst.get("kind").and_then(Value::as_str),
+        Some("interactive"),
+        "takeover_manual must promote the External session to Interactive"
+    );
+}
+
 /// Duplication guard (ai_todo 67): a single turn must produce no duplicate
 /// stream events. Spawns a real `claude` turn (subscription-billed, tiny).
 #[tokio::test(flavor = "current_thread")]
