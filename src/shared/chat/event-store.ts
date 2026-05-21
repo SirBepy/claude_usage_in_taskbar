@@ -72,18 +72,21 @@ class SessionEventStore {
         messageLimit: INITIAL_PAGE_SIZE,
       };
       if (cwd) args.cwd = cwd;
+      // Snapshot the live events that exist BEFORE fetching the authoritative
+      // JSONL page. Everything already buffered is either covered by the page
+      // (claude has written it to the transcript) or a synthetic echo we added
+      // optimistically (pushSynthetic) - the page is the source of truth for
+      // all of it. Keep only events that streamed in DURING/AFTER the fetch,
+      // identified by object identity rather than timestamp.
+      //
+      // Why not timestamp: the live `-p` stream carries no timestamp and JSONL
+      // timestamps are ISO strings the parser leaves as 0, so the old
+      // timestamp filter compared garbage - the synthetic user message (real
+      // Date.now() ms) always passed and got re-appended on top of its JSONL
+      // copy, duplicating + reordering messages on chat reload (ai_todo 65).
+      const liveBefore = new Set(entry.events);
       const page = await invoke<HistoryPage>("load_history_page", args);
-      // Filter live events (accumulated before + during the fetch) to only
-      // those strictly newer than the page's newest event by timestamp. This
-      // eliminates duplicates: events that arrived via the Tauri stream AND
-      // were already written to JSONL appear in both page.events and the live
-      // buffer; keeping only the strictly-newer tail avoids double-rendering.
-      const pageNewestTs = page.events.length > 0
-        ? Number((page.events[page.events.length - 1] as { timestamp?: number }).timestamp ?? 0)
-        : 0;
-      const liveAfterPage = entry.events.filter(
-        (ev) => Number((ev as { timestamp?: number }).timestamp ?? Infinity) > pageNewestTs
-      );
+      const liveAfterPage = entry.events.filter((ev) => !liveBefore.has(ev));
       entry.events = [...page.events, ...liveAfterPage];
       entry.oldestSeq = Number(page.oldest_seq);
       entry.hasMore = page.has_more;
