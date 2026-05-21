@@ -11,7 +11,7 @@ use crate::sessions::registry::Registry;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, Notify};
 
 pub type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>;
 
@@ -22,6 +22,9 @@ pub struct DaemonState {
     pub notifier: Notifier,
     pub pending: PendingMap,
     pub channels: Arc<ChannelsManager>,
+    /// Signalled by the `shutdown_daemon` RPC so the main loop exits the
+    /// process. `run_daemon_main` selects on `shutdown.notified()`.
+    pub shutdown: Arc<Notify>,
 }
 
 impl DaemonState {
@@ -36,6 +39,7 @@ impl DaemonState {
             notifier: Notifier::new(),
             pending: Arc::new(Mutex::new(HashMap::new())),
             channels: Arc::new(ChannelsManager::new()),
+            shutdown: Arc::new(Notify::new()),
         })
     }
 }

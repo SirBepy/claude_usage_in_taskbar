@@ -146,6 +146,11 @@ impl PersistentClient {
         self.call("health", Value::Null).await
     }
 
+    /// Tell the daemon to stop (kill channels + exit the process).
+    pub async fn shutdown_daemon(&self) -> Result<(), ClientError> {
+        self.call("shutdown_daemon", Value::Null).await.map(|_| ())
+    }
+
     pub async fn push_settings(&self, settings: &crate::types::Settings) -> Result<(), ClientError> {
         let v = serde_json::to_value(settings)
             .map_err(|e| ClientError::Rpc { code: -32000, message: format!("serialize settings: {e}") })?;

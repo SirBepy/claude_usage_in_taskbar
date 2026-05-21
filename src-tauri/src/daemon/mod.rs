@@ -84,12 +84,16 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     {
         let pipe_name = transport_windows::pipe_name_for_user();
         log::info!("daemon listening on {pipe_name}");
+        let shutdown = state.shutdown.clone();
         let accept = tokio::spawn(async move {
             transport_windows::accept_loop(&pipe_name, router).await
         });
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 log::info!("daemon: ctrl-c received, shutting down");
+            }
+            _ = shutdown.notified() => {
+                log::info!("daemon: shutdown_daemon RPC received, exiting");
             }
             r = accept => {
                 if let Ok(Err(e)) = r {

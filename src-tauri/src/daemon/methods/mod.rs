@@ -156,6 +156,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shutdown_daemon_returns_ok() {
+        let mut r = Router::new();
+        register(&mut r, dummy_state());
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "shutdown_daemon".into(), params: None }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "got {:?}", resp.error);
+        assert_eq!(resp.result, Some(json!({"ok": true})));
+    }
+
+    #[tokio::test]
     async fn start_session_invalid_cwd_does_not_register() {
         let st = dummy_state();
         let reg = st.registry.clone();

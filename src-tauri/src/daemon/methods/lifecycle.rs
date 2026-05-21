@@ -185,6 +185,21 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
             Ok(json!({"ok": true}))
         }
     });
+    {
+        // Explicit daemon stop: kill channels, then signal the main loop to exit
+        // the process. Sessions are NOT spared - this is the deliberate full stop.
+        let state = state.clone();
+        router.register("shutdown_daemon", move |_params, _ctx| {
+            let state = state.clone();
+            async move {
+                for c in state.channels.list() {
+                    let _ = crate::daemon::channels::stop_channel(&state, &c.project_id);
+                }
+                state.shutdown.notify_one();
+                Ok(json!({"ok": true}))
+            }
+        });
+    }
 }
 
 pub fn register_notifier(router: &mut Router, notifier: Notifier) {
