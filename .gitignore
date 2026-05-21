@@ -18,3 +18,5 @@ Thumbs.db
 docs/superpowers/
 src/types/ipc.generated.ts
 /*.png
+# Version-specific WebDriver binary for the UI e2e layer (download per Edge version)
+e2e/drivers/

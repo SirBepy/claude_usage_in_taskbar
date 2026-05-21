@@ -372,6 +372,14 @@ pub fn adopt_running_channels(state: Arc<DaemonState>) {
 /// Spawn every project whose automation is enabled + autostart_on_boot.
 /// Called once at daemon startup.
 pub fn autostart_all(state: Arc<DaemonState>) {
+    // Test/e2e escape hatch: a daemon spawned by the WebDriver harness must not
+    // launch real automation channels (each spawn registers a fresh Claude
+    // desktop bridge, piling up duplicate sidebar entries - see
+    // `project_remote_control_bridge_id`). The UI smoke harness sets this.
+    if std::env::var_os("CC_DAEMON_NO_AUTOSTART").is_some() {
+        log::info!("CC_DAEMON_NO_AUTOSTART set: skipping channel autostart");
+        return;
+    }
     let settings = state.settings.snapshot();
     let ids: Vec<String> = settings
         .projects
