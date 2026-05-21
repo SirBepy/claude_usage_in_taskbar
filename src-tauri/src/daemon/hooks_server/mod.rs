@@ -44,19 +44,23 @@ pub const HOOK_PORT: u16 = 27182;
 
 pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
     // A test instance (CC_DAEMON_INSTANCE set) binds an ephemeral port instead
-    // of the fixed HOOK_PORT, and does NOT write the shared hooks_port.txt, so
-    // it never fights the production daemon for 27182 or clobbers its port file
-    // (ai_todo 71).
-    let test_instance = crate::daemon::instance::is_test_instance();
-    let bind_port = if test_instance { 0 } else { HOOK_PORT };
+    // of the fixed HOOK_PORT so it never fights the production daemon for 27182,
+    // and writes its port to a SUFFIXED file (e.g. hooks_port-test-hooks.txt) so
+    // it doesn't clobber the production hooks_port.txt and tests can still
+    // discover the port (ai_todo 71).
+    let suffix = crate::daemon::instance::instance_suffix();
+    let bind_port = if suffix.is_empty() { HOOK_PORT } else { 0 };
     let listener = TcpListener::bind(("127.0.0.1", bind_port)).await?;
     let port = listener.local_addr()?.port();
     log::info!("daemon hook server listening on 127.0.0.1:{port}");
 
-    if !test_instance {
-        if let Ok(port_file) = paths::hooks_port_file() {
-            let _ = std::fs::write(&port_file, port.to_string());
-        }
+    if let Ok(port_file) = paths::hooks_port_file() {
+        let port_file = if suffix.is_empty() {
+            port_file
+        } else {
+            port_file.with_file_name(format!("hooks_port{suffix}.txt"))
+        };
+        let _ = std::fs::write(&port_file, port.to_string());
     }
 
     let ctx = Arc::new(HookCtx { state });
