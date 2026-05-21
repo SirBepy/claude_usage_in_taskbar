@@ -1,7 +1,7 @@
 //! Bridges daemon per-session `chat_event` notifications onto the app's
 //! `chat:<id>` Tauri events (which the frontend renderer already consumes).
-//! Daemon chat mode only (Phase 5a). When `experimental.useDaemon` is off,
-//! Path C in `run.rs` emits `chat:<id>` directly and this is never used.
+//! Every chat turn runs in the daemon (Path C was removed in Phase 7), so
+//! this bridge is the only source of `chat:<id>` events.
 
 use crate::state::AppState;
 use crate::types::chat::ChatEvent;
