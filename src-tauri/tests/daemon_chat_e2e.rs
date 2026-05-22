@@ -199,6 +199,128 @@ async fn takeover_manual_promotes_external_to_interactive() {
     );
 }
 
+/// Phase 5b flow 1 (clear_session -> mark_session_ended) over the daemon RPC
+/// path. Free + deterministic: register an Interactive session, mark it ended,
+/// assert `ended_at` is populated in the snapshot. Closing a chat in the app
+/// forwards to this RPC.
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn mark_session_ended_sets_ended_at() {
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+
+    let session_id = format!("test-markended-{}", std::process::id());
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+
+    client
+        .call("register_historical", json!({ "session_id": session_id, "cwd": cwd }))
+        .await
+        .expect("register_historical");
+
+    let before = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&before, &session_id).expect("session registered");
+    assert!(inst.get("ended_at").map(Value::is_null).unwrap_or(true), "should start alive");
+
+    client
+        .call("mark_session_ended", json!({ "session_id": session_id }))
+        .await
+        .expect("mark_session_ended");
+
+    let after = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&after, &session_id).cloned();
+
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let inst = inst.expect("session still present after mark_ended");
+    let ended_at = inst.get("ended_at").cloned().unwrap_or(Value::Null);
+    assert!(
+        ended_at.is_string(),
+        "mark_session_ended must populate ended_at (got {ended_at})"
+    );
+}
+
+/// Phase 5b flow 2 (open_session_in_terminal -> externalize_session) over the
+/// daemon RPC path. Free + deterministic: register an Interactive session,
+/// externalize it, assert the kind flips to External (read-only). The app's
+/// "Open in Terminal" action forwards to this RPC (the real terminal spawn is
+/// a separate concern not exercised here).
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn externalize_session_flips_interactive_to_external() {
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+
+    let session_id = format!("test-externalize-{}", std::process::id());
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+
+    client
+        .call("register_historical", json!({ "session_id": session_id, "cwd": cwd }))
+        .await
+        .expect("register_historical");
+
+    let before = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&before, &session_id).expect("session registered");
+    assert_eq!(inst.get("kind").and_then(Value::as_str), Some("interactive"));
+
+    client
+        .call("externalize_session", json!({ "session_id": session_id }))
+        .await
+        .expect("externalize_session");
+
+    let after = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&after, &session_id).cloned();
+
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let inst = inst.expect("session still present after externalize");
+    assert_eq!(
+        inst.get("kind").and_then(Value::as_str),
+        Some("external"),
+        "externalize_session must flip the Interactive session to External"
+    );
+}
+
+/// Phase 5b flow 3 (set_session_effort) over the daemon RPC path. Free +
+/// deterministic: register a session (effort starts empty), set effort to
+/// "high", assert it persists in the snapshot.
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn set_session_effort_persists() {
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+
+    let session_id = format!("test-effort-{}", std::process::id());
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+
+    client
+        .call("register_historical", json!({ "session_id": session_id, "cwd": cwd }))
+        .await
+        .expect("register_historical");
+
+    client
+        .call("set_session_effort", json!({ "session_id": session_id, "effort": "high" }))
+        .await
+        .expect("set_session_effort");
+
+    let after = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&after, &session_id).cloned();
+
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let inst = inst.expect("session still present after set_effort");
+    assert_eq!(
+        inst.get("effort").and_then(Value::as_str),
+        Some("high"),
+        "set_session_effort must persist the new effort in the snapshot"
+    );
+}
+
 /// Duplication guard (ai_todo 67): a single turn must produce no duplicate
 /// stream events. Spawns a real `claude` turn (subscription-billed, tiny).
 #[tokio::test(flavor = "current_thread")]
