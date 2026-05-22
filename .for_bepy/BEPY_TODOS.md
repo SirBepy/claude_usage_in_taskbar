@@ -4,6 +4,7 @@
 
 ### Visual QA
 
+- Verify mac daemon client wiring (commit c6506e7): the cfg(windows) gate on `run_app_subscription` is lifted, compile + 59 daemon unit tests pass, but the live path is unproven. Run `cargo tauri dev`, start `claude` in a terminal, and confirm `/local-session-chat` / the Sessions screen now lists it (was empty on mac). Log should show `spawned daemon (pid …)` instead of the old "wiring only enabled on Windows" line.
 - Confirm duplicate-message fix (ai_todo 47): open a session that's actively streaming, or send a message in a fresh session, and confirm each Send produces exactly one assistant reply in one sidebar entry. The liveBuffer + snapshot fix landed in `c5c0cac` but needs eyeball confirmation on the live app.
 
 - Verify ai_todo 73 (daemon re-adopts external sessions on restart): start `claude` in a terminal (wait for it to show as External in Sessions), restart the daemon (kill + relaunch), confirm the external session reappears in the sidebar without needing a new hook to fire.
