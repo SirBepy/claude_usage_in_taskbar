@@ -6,6 +6,8 @@
 
 - Confirm duplicate-message fix (ai_todo 47): open a session that's actively streaming, or send a message in a fresh session, and confirm each Send produces exactly one assistant reply in one sidebar entry. The liveBuffer + snapshot fix landed in `c5c0cac` but needs eyeball confirmation on the live app.
 
+- Confirm runner/watcher dup fix (ai_todo 77, commit `f034281`): the dup you screenshotted (first assistant reply shown twice, "not all msgs") was the file-watcher winning the race against the runner stream, both keyed on ts=0. Reproduced + fixed via red->green unit test (`tests/chat-watcher-runner-dup.test.mjs`), but the actual race only happens live. Send several messages in a fresh session (especially the first turn) and confirm each reply appears exactly once. Also check the earlier symptoms: no doubled "Continue from where you left off." or `/cost` (isUsingOverage) blocks.
+
 - Verify ai_todo 73 (daemon re-adopts external sessions on restart): start `claude` in a terminal (wait for it to show as External in Sessions), restart the daemon (kill + relaunch), confirm the external session reappears in the sidebar without needing a new hook to fire.
 
 - Interactive-session persistence live check (commit 4c32a6b, daemon-restart path is e2e-tested but a real reboot isn't): make a chat and send one message, close the app, `npm run kill-orphans`, relaunch with `cargo tauri dev`, confirm the chat is back in the sidebar with its effort intact. (A chat you never sent a message in is NOT expected to survive - it never reached the daemon.)
