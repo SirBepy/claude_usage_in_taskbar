@@ -79,6 +79,11 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     // new ones (prevents duplicate bridge trees on daemon restart).
     channel_adopt::adopt_running_channels(state.clone());
 
+    // Re-track any external `claude` terminal sessions that were already
+    // running when the daemon (re)started. Must run AFTER adopt_running_channels
+    // so channel pids are already known and excluded from the external scan.
+    channel_adopt::adopt_external_sessions(state.clone());
+
     // Autostart automated channels the daemon owns. The in-session dedup guard
     // in start_channel skips any project already adopted above.
     channels::autostart_all(state.clone());

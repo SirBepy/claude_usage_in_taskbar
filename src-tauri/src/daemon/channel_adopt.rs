@@ -1,7 +1,12 @@
-//! Boot-time adoption of already-running automated channels. Split out of
-//! `daemon/channels.rs` (which now holds only channel lifecycle). Called once
-//! at daemon startup, BEFORE `autostart_all`, so a channel left running by a
-//! prior daemon is adopted (and any duplicate killed) instead of re-spawned.
+//! Boot-time adoption of already-running processes. Split out of
+//! `daemon/channels.rs` (which now holds only channel lifecycle). Two entry
+//! points:
+//!
+//! - `adopt_running_channels`: called BEFORE `autostart_all`, re-tracks
+//!   `claude --remote-control` bridges so the daemon doesn't spawn duplicates.
+//! - `adopt_external_sessions`: called AFTER channel adoption, re-tracks
+//!   already-running plain `claude` processes as External registry entries so
+//!   a daemon restart doesn't drop them from the sidebar.
 
 use std::sync::Arc;
 
@@ -221,5 +226,103 @@ pub fn adopt_running_channels(state: Arc<DaemonState>) {
                 let _ = (&state_w, &proj_w, launcher_pid);
             }
         }
+    }
+}
+
+/// Re-track already-running external `claude` sessions into the registry on
+/// daemon (re)start. Without this, a daemon restart boots with an empty
+/// registry and external terminal sessions don't reappear in the sidebar until
+/// each one fires a fresh SessionStart hook (which they never do for sessions
+/// that were already running before the daemon restarted).
+///
+/// Called AFTER `adopt_running_channels` so that `--remote-control` channel
+/// processes are already known; this function skips them.
+pub fn adopt_external_sessions(state: Arc<DaemonState>) {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        ProcessRefreshKind::new().with_cmd(UpdateKind::Always),
+    );
+
+    // Build live_processes map (pid -> process start time in unix-epoch seconds)
+    // for scan_live_sessions's pid-reuse defense.
+    let live_processes: std::collections::HashMap<u32, u64> = sys
+        .processes()
+        .values()
+        .map(|p| (p.pid().as_u32(), p.start_time()))
+        .collect();
+
+    // Pids that belong to automated channels or the daemon itself - skip them.
+    let skip_pids: std::collections::HashSet<u32> = sys
+        .processes()
+        .values()
+        .filter(|p| {
+            let args: Vec<String> =
+                p.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+            args.iter().any(|a| a == "--remote-control")
+                || args.iter().any(|a| a == "--daemon")
+        })
+        .map(|p| p.pid().as_u32())
+        .collect();
+
+    let known_ids: std::collections::HashSet<String> =
+        state.registry.known_session_ids().into_iter().collect();
+
+    let live_sessions = crate::hooks::session_files::scan_live_sessions(&live_processes);
+
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+    let mut adopted_count = 0usize;
+    for sess in live_sessions {
+        if skip_pids.contains(&sess.pid) {
+            continue;
+        }
+        if known_ids.contains(&sess.session_id) {
+            continue;
+        }
+
+        let (_, _) = state.settings.upsert_project_for_cwd(&sess.cwd, &now);
+        let snapshot = state.settings.snapshot();
+        let shim = std::sync::Mutex::new(snapshot);
+
+        let started_at = chrono::DateTime::from_timestamp_millis(sess.started_at_ms)
+            .map(|dt: chrono::DateTime<chrono::Utc>| {
+                dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            })
+            .unwrap_or_else(|| now.clone());
+
+        let input = crate::sessions::registry::RegisterInput {
+            session_id: sess.session_id.clone(),
+            cwd: sess.cwd.clone(),
+            pid: sess.pid,
+            kind: crate::sessions::kinds::InstanceKind::External,
+            is_remote: false,
+            transcript_path: None,
+            started_at,
+        };
+
+        let (_, created) = state.registry.register(input, &shim, &now);
+        if created {
+            adopted_count += 1;
+            if let Some(bridge) = &sess.bridge_session_id {
+                state.registry.set_bridge_session_id(&sess.session_id, bridge.clone());
+            }
+            log::info!(
+                "adopt_external_sessions: adopted session {} pid={} cwd={:?}",
+                sess.session_id, sess.pid, sess.cwd
+            );
+        }
+    }
+
+    if adopted_count > 0 {
+        state.notifier.publish(
+            "instances_changed",
+            serde_json::json!({"instances": state.registry.list()}),
+        );
+        log::info!("adopt_external_sessions: adopted {} session(s)", adopted_count);
+    } else {
+        log::debug!("adopt_external_sessions: no new external sessions found");
     }
 }
