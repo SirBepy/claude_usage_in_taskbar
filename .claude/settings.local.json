@@ -178,7 +178,12 @@
       "PowerShell(git *)",
       "Skill(rate-it)",
       "Skill(superpowers:executing-plans)",
-      "Bash(claude *)"
+      "Bash(claude *)",
+      "Bash(timeout 5 ./target/debug/cc-companion-daemon.exe)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(git submodule *)",
+      "Bash(git -c core.autocrlf=false diff src-tauri/Cargo.toml)",
+      "Bash(git rev-list *)"
     ]
   }
 }

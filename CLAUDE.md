@@ -15,7 +15,7 @@ Deploy: GitHub Releases (NSIS / DMG / DEB + AppImage via CI)
 
 ## Commands
 
-- Dev: `cd src-tauri && cargo tauri dev`
+- Dev: `cargo tauri dev` (runs from anywhere in the repo; the Tauri CLI auto-locates `src-tauri/tauri.conf.json`)
 - Verify: `cargo build --manifest-path src-tauri/Cargo.toml`
 
 ## Rules

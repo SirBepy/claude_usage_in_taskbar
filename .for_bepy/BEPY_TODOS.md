@@ -4,8 +4,11 @@
 
 ### Visual QA
 
+- Confirm duplicate-message fix (ai_todo 47): open a session that's actively streaming, or send a message in a fresh session, and confirm each Send produces exactly one assistant reply in one sidebar entry. The liveBuffer + snapshot fix landed in `c5c0cac` but needs eyeball confirmation on the live app.
+
 - Verify ai_todo 73 (daemon re-adopts external sessions on restart): start `claude` in a terminal (wait for it to show as External in Sessions), restart the daemon (kill + relaunch), confirm the external session reappears in the sidebar without needing a new hook to fire.
 
+- Interactive-session persistence live check (commit 4c32a6b, daemon-restart path is e2e-tested but a real reboot isn't): make a chat and send one message, close the app, `npm run kill-orphans`, relaunch with `cargo tauri dev`, confirm the chat is back in the sidebar with its effort intact. (A chat you never sent a message in is NOT expected to survive - it never reached the daemon.)
 - Sims character audio spot-check (ai_todo 49 - redistribution done, audio check pending): open Characters view, pick 3 chars, play each slot a few times - confirm no audibly cut-off clips and consecutive triggers play different lines.
 - Changes-panel VISUAL polish only (ai_todo 53 functional flows now e2e-covered by `npm run test:e2e:changes`): in a real chat, eyeball that the live activity/thinking bar shows "Editing <file>" then the verb cycle during an actual turn (gated on busy state, not automatable), and that there are no visual gaps - rail 220px, sheet ~85% overlay z-index, chevron rotation, no dim-layer leak.
 - Open-in-Terminal real spawn (ai_todo 68): the `externalize_session` RPC + sidebar flip to External are e2e-tested; just confirm the "Open in Terminal" action actually opens a real terminal window on your machine (OS spawn, not automatable here).
