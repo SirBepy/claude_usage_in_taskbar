@@ -396,6 +396,52 @@ mod tests {
         assert!(streaming >= 1, "streaming deltas still forwarded in live mode");
     }
 
+    // Simulates `claude -p --include-partial-messages` output: multiple
+    // intermediate `assistant` lines with stop_reason:null are emitted before
+    // the final `assistant` line and `result`. In live mode all intermediate
+    // `assistant` lines must be suppressed (they duplicate stream_event deltas)
+    // so exactly one finalized AssistantMessage and one TurnUsage come out.
+    #[test]
+    fn live_mode_suppresses_multiple_partial_assistant_lines() {
+        let lines = [
+            r#"{"type":"stream_event","timestamp":1,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"I "}}}"#,
+            r#"{"type":"assistant","timestamp":2,"message":{"role":"assistant","stop_reason":null,"usage":null,"content":[{"type":"text","text":"I "}]}}"#,
+            r#"{"type":"stream_event","timestamp":3,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"am done"}}}"#,
+            r#"{"type":"assistant","timestamp":4,"message":{"role":"assistant","stop_reason":null,"usage":null,"content":[{"type":"text","text":"I am done"}]}}"#,
+            r#"{"type":"assistant","timestamp":5,"message":{"role":"assistant","model":"claude-haiku-4-5","stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":3},"content":[{"type":"text","text":"I am done"}]}}"#,
+            r#"{"type":"result","subtype":"success","timestamp":6,"result":"I am done","total_cost_usd":0.001,"duration_ms":50,"usage":{"input_tokens":5,"output_tokens":3}}"#,
+        ]
+        .join("\n")
+            + "\n";
+
+        let mut ctx = ParserContext::new_live();
+        let events = ctx.feed(lines.as_bytes());
+
+        let finalized = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::AssistantMessage { streaming: false, .. }))
+            .count();
+        assert_eq!(
+            finalized, 1,
+            "--include-partial-messages: exactly one finalized AssistantMessage from result"
+        );
+
+        let turn_usages = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::TurnUsage { .. }))
+            .count();
+        assert_eq!(
+            turn_usages, 1,
+            "--include-partial-messages: exactly one TurnUsage from result"
+        );
+
+        let streaming = events
+            .iter()
+            .filter(|e| matches!(e, ChatEvent::AssistantMessage { streaming: true, .. }))
+            .count();
+        assert!(streaming >= 1, "streaming deltas still flow through live mode");
+    }
+
     #[test]
     fn history_mode_keeps_per_assistant_line_usage() {
         // History replay (non-live feed + bare parse_line) must still emit a
