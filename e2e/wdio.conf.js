@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -22,7 +22,11 @@ const application = path.join(debugDir, "claude-usage-tauri.exe");
 const daemonBin = path.join(debugDir, "cc-companion-daemon.exe");
 const tauriDriverBin = path.resolve(os.homedir(), ".cargo", "bin", "tauri-driver.exe");
 const edgeDriver = path.resolve(__dirname, "drivers", "msedgedriver.exe");
-const daemonLock = path.join(os.homedir(), "AppData", "Roaming", "claude-usage-tauri", "daemon.lock");
+// Isolated instance: distinct pipe/lockfile/hook-port so the harness daemon and
+// any app-respawned daemon never collide with a real cc-companion-daemon the
+// user has running (ai_todo 71 / ai_todo 74).
+const DAEMON_INSTANCE = "wdio";
+const daemonLock = path.join(os.homedir(), "AppData", "Roaming", "claude-usage-tauri", `daemon-${DAEMON_INSTANCE}.lock`);
 // The debug app binary loads Tauri's devUrl (http://localhost:1420), not the
 // bundled dist/. So the harness runs the vite dev server itself rather than
 // requiring a slow `cargo tauri build`. Spawn vite's JS directly to skip the
@@ -70,6 +74,12 @@ export const config = {
   // Spawn the daemon before the app launches so the Sessions view renders from
   // its snapshot. No-autostart keeps it from spawning real automation channels.
   onPrepare: async () => {
+    // Propagate the instance label into the current process env so that
+    // tauri-driver (spawned in beforeSession without an explicit env) inherits
+    // it, passes it to the app, and the app's reconnect loop + respawn both
+    // resolve to the same isolated pipe/lockfile (ai_todo 74).
+    process.env.CC_DAEMON_INSTANCE = DAEMON_INSTANCE;
+
     // 1. Vite dev server (the debug app loads it via devUrl).
     vite = spawn(process.execPath, [viteBin, "--port", "1420", "--strictPort"], {
       cwd: repoRoot,
@@ -85,7 +95,7 @@ export const config = {
     }
     daemon = spawn(daemonBin, [], {
       stdio: "ignore",
-      env: { ...process.env, CC_DAEMON_NO_AUTOSTART: "1" },
+      env: { ...process.env, CC_DAEMON_NO_AUTOSTART: "1", CC_DAEMON_INSTANCE: DAEMON_INSTANCE },
     });
     // Give the daemon a moment to bind its named pipe before the app connects.
     await sleep(1200);
@@ -93,6 +103,14 @@ export const config = {
   onComplete: () => {
     if (daemon) daemon.kill();
     if (vite) vite.kill();
+    // Clean up any claude-usage-tauri.exe --daemon orphan the app may have
+    // spawned during the kill/respawn test (ai_todo 74).
+    try {
+      execSync(
+        "powershell -Command \"Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'claude-usage-tauri.exe' -and $_.CommandLine -like '*--daemon*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"",
+        { stdio: "ignore" }
+      );
+    } catch {}
   },
 
   // tauri-driver is the WebDriver intermediary; it launches the app and proxies
