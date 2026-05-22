@@ -21,30 +21,52 @@ impl std::fmt::Display for SpawnSelfError {
 impl std::error::Error for SpawnSelfError {}
 
 /// Spawn `<current_exe> --daemon` fully detached. Returns the new pid.
+///
+/// Prefers `CREATE_BREAKAWAY_FROM_JOB` so the daemon survives the app's job
+/// object (the whole point: it must outlive the app). Some launch contexts run
+/// the app inside a job that forbids breakaway, where `CreateProcessW` fails
+/// with `ERROR_ACCESS_DENIED`; in that case we retry without breakaway so the
+/// daemon at least starts (it then shares the parent job's lifetime rather than
+/// failing to spawn at all).
 #[cfg(windows)]
 pub fn spawn_detached_daemon() -> Result<u32, SpawnSelfError> {
+    // DETACHED_PROCESS: no console. NEW_PROCESS_GROUP + BREAKAWAY_FROM_JOB:
+    // not reaped when the app (or its job object) exits.
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    // HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) as returned by the windows crate.
+    const E_ACCESSDENIED: i32 = -2147024891; // 0x80070005
+
+    let exe = std::env::current_exe().map_err(SpawnSelfError::NoExe)?;
+    let cmdline = format!("\"{}\" --daemon", exe.to_string_lossy());
+    let base = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+
+    match create_process(&cmdline, base | CREATE_BREAKAWAY_FROM_JOB) {
+        Ok(pid) => Ok(pid),
+        Err(e) if e.raw_os_error() == Some(E_ACCESSDENIED) => {
+            log::warn!(
+                "daemon spawn: CREATE_BREAKAWAY_FROM_JOB denied; retrying without breakaway \
+                 (daemon will share the parent job's lifetime)"
+            );
+            create_process(&cmdline, base).map_err(SpawnSelfError::Io)
+        }
+        Err(e) => Err(SpawnSelfError::Io(e)),
+    }
+}
+
+#[cfg(windows)]
+fn create_process(cmdline: &str, flags: u32) -> Result<u32, std::io::Error> {
     use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
         CreateProcessW, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW,
     };
 
-    // DETACHED_PROCESS: no console. NEW_PROCESS_GROUP + BREAKAWAY_FROM_JOB:
-    // not reaped when the app (or its job object) exits.
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-
-    let exe = std::env::current_exe().map_err(SpawnSelfError::NoExe)?;
-    let cmdline = format!("\"{}\" --daemon", exe.to_string_lossy());
     let mut cmdline_w: Vec<u16> = cmdline.encode_utf16().chain(std::iter::once(0)).collect();
-
     let mut si = STARTUPINFOW::default();
     si.cb = std::mem::size_of::<STARTUPINFOW>() as u32;
     let mut pi = PROCESS_INFORMATION::default();
-    let flags = PROCESS_CREATION_FLAGS(
-        DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
-    );
 
     let result = unsafe {
         CreateProcessW(
@@ -53,7 +75,7 @@ pub fn spawn_detached_daemon() -> Result<u32, SpawnSelfError> {
             None,
             None,
             false,
-            flags,
+            PROCESS_CREATION_FLAGS(flags),
             None,
             PCWSTR::null(),
             &si,
@@ -61,7 +83,7 @@ pub fn spawn_detached_daemon() -> Result<u32, SpawnSelfError> {
         )
     };
     if let Err(e) = result {
-        return Err(SpawnSelfError::Io(std::io::Error::from_raw_os_error(e.code().0)));
+        return Err(std::io::Error::from_raw_os_error(e.code().0));
     }
     unsafe {
         let _ = CloseHandle(pi.hThread);
