@@ -23,16 +23,29 @@ interface Scored {
   prefix: boolean;
 }
 
+function pluginQualifiedName(it: SlashEntry): string | null {
+  const src = it.source as { kind: string; plugin?: string };
+  if ((src.kind === "plugin-skill" || src.kind === "plugin-command") && src.plugin) {
+    return `${src.plugin}:${it.name}`;
+  }
+  return null;
+}
+
 export function match(items: SlashEntry[], q: string): SlashEntry[] {
   if (!q) return items.slice(0, MAX);
   const ql = q.toLowerCase();
   const scored: Scored[] = [];
   for (const it of items) {
     const nl = it.name.toLowerCase();
-    if (nl.startsWith(ql)) {
+    const qualified = pluginQualifiedName(it)?.toLowerCase() ?? null;
+    const prefixMatch = nl.startsWith(ql) || (qualified !== null && qualified.startsWith(ql));
+    if (prefixMatch) {
       scored.push({ it, score: 100_000 - it.name.length, prefix: true });
     } else {
-      const s = fuzzyScore(nl, ql);
+      const s = Math.max(
+        fuzzyScore(nl, ql),
+        qualified !== null ? fuzzyScore(qualified, ql) : 0,
+      );
       if (s > 0) scored.push({ it, score: s, prefix: false });
     }
   }

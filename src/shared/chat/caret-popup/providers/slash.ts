@@ -40,7 +40,8 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
 
     const head = document.createElement("div");
     head.className = "head";
-    head.textContent = e.args ? `/${e.name} ${e.args}` : `/${e.name}`;
+    const fullName = entryFullName(e);
+    head.textContent = e.args ? `/${fullName} ${e.args}` : `/${fullName}`;
 
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -59,7 +60,7 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
   }
 
   onPick(e: SlashEntry, ta: HTMLTextAreaElement, [start, end]: [number, number]): void {
-    const insert = `/${e.name} `;
+    const insert = `/${entryFullName(e)} `;
     ta.value = ta.value.slice(0, start) + insert + ta.value.slice(end);
     const newPos = start + insert.length;
     ta.selectionStart = ta.selectionEnd = newPos;
@@ -78,6 +79,14 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
     }
     setSlashEntries(this.cache);
   }
+}
+
+function entryFullName(e: SlashEntry): string {
+  const src = e.source as { kind: string; plugin?: string };
+  if ((src.kind === "plugin-skill" || src.kind === "plugin-command") && src.plugin) {
+    return `${src.plugin}:${e.name}`;
+  }
+  return e.name;
 }
 
 function sourceLabel(s: SlashSource): string {
