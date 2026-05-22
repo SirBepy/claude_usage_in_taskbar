@@ -3,7 +3,8 @@ import "./folder-mapping.css";
 import { getProjectDetailState, getProjectSubviewStack, getSettings, getTokenHistory } from "../../../../shared/state";
 import { projectLabel } from "../../../../shared/projects";
 import { doRepoint, doUnmerge, resolveMergeChain } from "../../../../shared/merges";
-import { populateProjectSubviewHeader } from "../sessions-list/sessions-list";
+import { projectSubviewHeaderData, subviewHeaderTemplate, hydrateSubviewHeader } from "../../subview-header";
+import type { Avatar } from "../../subview-header";
 import { renderProjectDetailContent } from "../../project-detail";
 import { showView, backFromSubview, showMergeModal, openProjectDetail } from "../../../../shared/navigation";
 import { saveSettings } from "../../../../shared/settings-save";
@@ -137,12 +138,9 @@ export function wireFolderMappingSubview(cwd: string): void {
 export async function renderFolderMappingView(
   root: HTMLElement,
 ): Promise<() => void> {
-  render(template(), root);
-
-  populateProjectSubviewHeader("folderMapping");
-
-  const backBtn = root.querySelector<HTMLButtonElement>("#folderMappingBackBtn");
-  if (backBtn) backBtn.onclick = () => backFromSubview();
+  const { avatar, title } = projectSubviewHeaderData();
+  render(template(avatar, title), root);
+  void hydrateSubviewHeader(root);
 
   const cwd = getProjectDetailState().cwd;
   if (cwd) {
@@ -156,19 +154,11 @@ export async function renderFolderMappingView(
   return () => { /* no teardown */ };
 }
 
-function template() {
+function template(avatar: Avatar, title: string) {
   return html`
     <div class="view view-project-folder-mapping">
       <div class="view-header subview-header">
-        <button class="icon-btn" id="folderMappingBackBtn" title="Back"><i class="ph ph-arrow-left"></i></button>
-        <div class="project-detail-heading">
-          <div class="avatar-mini" id="folderMappingAvatar">?</div>
-          <div class="project-detail-titles">
-            <h2 id="folderMappingTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Project</h2>
-            <div class="project-detail-path" id="folderMappingPath"></div>
-          </div>
-        </div>
-        <div style="width:32px"></div>
+        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
       </div>
       <div class="view-body">
         <div class="section" style="margin-top:12px">

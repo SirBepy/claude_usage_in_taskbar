@@ -3,27 +3,10 @@ import "./sessions-list.css";
 import { formatTokens, totalTok } from "../../../../shared/tokens";
 import { timeAgo } from "../../../../shared/time";
 import type { TokenRecord } from "../../../../shared/tokens";
-import { renderAvatar, projectLabel, hydrateCharacterAvatars } from "../../../../shared/projects";
 import { getProjectDetailState, getSettings, getTokenHistory } from "../../../../shared/state";
 import { backFromSubview, openSessionDetail } from "../../../../shared/navigation";
-
-export function populateProjectSubviewHeader(prefix: string): void {
-  const cwd = getProjectDetailState().cwd || "";
-  const settings = getSettings();
-  const configured = (settings.projects || []).find((p) => p.path === cwd);
-  const avatar = configured?.avatar || {
-    kind: "emoji" as const,
-    value: (configured?.name || cwd || "?").charAt(0),
-  };
-  const aliases = settings.projectAliases || {};
-  const avatarEl = document.getElementById(`${prefix}Avatar`);
-  const titleEl = document.getElementById(`${prefix}Title`);
-  if (avatarEl) {
-    avatarEl.innerHTML = renderAvatar(avatar);
-    void hydrateCharacterAvatars(avatarEl);
-  }
-  if (titleEl) titleEl.textContent = projectLabel(cwd, aliases);
-}
+import { projectSubviewHeaderData, subviewHeaderTemplate, hydrateSubviewHeader } from "../../subview-header";
+import type { Avatar } from "../../subview-header";
 
 export function renderAllSessionsList(cwd: string): void {
   const list = document.getElementById("all-sessions-list");
@@ -68,12 +51,9 @@ export function renderAllSessionsList(cwd: string): void {
 export async function renderSessionsListView(
   root: HTMLElement,
 ): Promise<() => void> {
-  render(template(), root);
-
-  populateProjectSubviewHeader("allSessions");
-
-  const backBtn = root.querySelector<HTMLButtonElement>("#allSessionsBackBtn");
-  if (backBtn) backBtn.onclick = () => backFromSubview();
+  const { avatar, title } = projectSubviewHeaderData();
+  render(template(avatar, title), root);
+  void hydrateSubviewHeader(root);
 
   const cwd = getProjectDetailState().cwd;
   if (cwd) {
@@ -87,18 +67,11 @@ export async function renderSessionsListView(
   return () => { /* no teardown */ };
 }
 
-function template() {
+function template(avatar: Avatar, title: string) {
   return html`
     <div class="view view-project-sessions">
       <div class="view-header subview-header">
-        <button class="icon-btn" id="allSessionsBackBtn" title="Back"><i class="ph ph-arrow-left"></i></button>
-        <div class="project-detail-heading">
-          <div class="avatar-mini" id="allSessionsAvatar">?</div>
-          <div class="project-detail-titles">
-            <h2 id="allSessionsTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Project</h2>
-          </div>
-        </div>
-        <div style="width:32px"></div>
+        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
       </div>
       <div class="view-body">
         <div class="section" style="margin-top:12px">

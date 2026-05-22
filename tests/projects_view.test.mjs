@@ -36,6 +36,10 @@ const sessionDetailTs = readFileSync(
   join(distDir, "views", "session-detail", "session-detail.ts"),
   "utf8",
 );
+const subviewHeaderTs = readFileSync(
+  join(distDir, "views", "project-detail", "subview-header.ts"),
+  "utf8",
+);
 
 describe("Projects view DOM", () => {
   it("has a projects-list container in the migrated view", () => {
@@ -71,11 +75,15 @@ describe("Projects view DOM", () => {
   });
 
   it("each project subview has a back button", () => {
+    // character-pick still owns its own back button
     expect(characterPickTs).toMatch(/id="characterPickBackBtn"/);
-    expect(automationTs).toMatch(/id="automationBackBtn"/);
-    expect(folderMappingTs).toMatch(/id="folderMappingBackBtn"/);
-    expect(sessionsListTs).toMatch(/id="allSessionsBackBtn"/);
-    expect(sessionDetailTs).toMatch(/id="sessionDetailBackBtn"/);
+    // remaining subviews delegate to the shared subview-header component
+    expect(subviewHeaderTs).toMatch(/ph-arrow-left/);
+    expect(subviewHeaderTs).toMatch(/icon-btn/);
+    expect(automationTs).toMatch(/subview-header/);
+    expect(folderMappingTs).toMatch(/subview-header/);
+    expect(sessionsListTs).toMatch(/subview-header/);
+    expect(sessionDetailTs).toMatch(/subview-header/);
   });
 
   it("automation + character-pick + path-editor DOM moved out of project-detail view", () => {

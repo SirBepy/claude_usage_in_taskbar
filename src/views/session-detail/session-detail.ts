@@ -1,10 +1,11 @@
 import { html, render } from "lit-html";
 import { showToast } from "../../shared/toast";
 import { backFromSubview } from "../../shared/navigation";
-import { getCurrentSessionRecord, getProjectDetailState, getSettings } from "../../shared/state";
-import { renderAvatar as renderAvatarHtml, hydrateCharacterAvatars } from "../../shared/projects";
+import { getCurrentSessionRecord } from "../../shared/state";
 import { formatTokens } from "../../shared/tokens";
 import { api } from "../../shared/api";
+import { projectSubviewHeaderData, subviewHeaderTemplate, hydrateSubviewHeader } from "../project-detail/subview-header";
+import type { Avatar } from "../project-detail/subview-header";
 import "./session-detail.css";
 
 
@@ -143,36 +144,17 @@ function renderChrome(r: SessionRecord): void {
 export async function renderSessionDetailView(
   root: HTMLElement,
 ): Promise<() => void> {
-  render(template(), root);
-
   const r = getCurrentSessionRecord() as SessionRecord | null;
+  const { avatar } = projectSubviewHeaderData();
+  const title = r
+    ? isLive(r)
+      ? ((r.name && r.name.trim()) || `Live session ${(r.session_id || "").slice(0, 8) || "?"}`)
+      : ((r.session_id || (r as { sessionId?: string }).sessionId || "").slice(0, 8) || r.date || "unknown")
+    : "Session";
+  render(template(avatar, title), root);
+  void hydrateSubviewHeader(root);
+
   if (!r) return () => { /* nothing */ };
-
-  const cwd = getProjectDetailState().cwd || "";
-  const settings = getSettings();
-  const configured = (settings.projects || []).find((p: { path: string }) => p.path === cwd) as { path: string; name?: string; avatar?: unknown } | undefined;
-  const avatar = (configured?.avatar as Parameters<typeof renderAvatarHtml>[0]) || {
-    kind: "emoji" as const,
-    value: (configured?.name || cwd || "?").charAt(0),
-  };
-  const avatarEl = document.getElementById("sessionDetailAvatar");
-  const titleEl = document.getElementById("sessionDetailTitle");
-  if (avatarEl) {
-    avatarEl.innerHTML = renderAvatarHtml(avatar);
-    void hydrateCharacterAvatars(avatarEl);
-  }
-  if (titleEl) {
-    if (isLive(r)) {
-      const label = (r.name && r.name.trim()) || `Live session ${(r.session_id || "").slice(0, 8) || "?"}`;
-      titleEl.textContent = label;
-    } else {
-      const sid = r.session_id || (r as { sessionId?: string }).sessionId || "";
-      titleEl.textContent = sid.slice(0, 8) || r.date || "unknown";
-    }
-  }
-
-  const backBtn = root.querySelector<HTMLButtonElement>("#sessionDetailBackBtn");
-  if (backBtn) backBtn.onclick = () => backFromSubview();
 
   renderChrome(r);
   renderBody(r);
@@ -195,18 +177,11 @@ export async function renderSessionDetailView(
   };
 }
 
-function template() {
+function template(avatar: Avatar, title: string) {
   return html`
     <div class="view view-session-detail">
       <div class="view-header subview-header">
-        <button class="icon-btn" id="sessionDetailBackBtn" title="Back"><i class="ph ph-arrow-left"></i></button>
-        <div class="project-detail-heading">
-          <div class="avatar-mini" id="sessionDetailAvatar">?</div>
-          <div class="project-detail-titles">
-            <h2 id="sessionDetailTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Session</h2>
-          </div>
-        </div>
-        <div style="width:32px"></div>
+        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
       </div>
       <div class="view-body">
         <div id="session-detail-chips" class="chip-bar" style="display:none"></div>

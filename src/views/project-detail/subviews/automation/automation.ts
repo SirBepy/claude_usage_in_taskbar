@@ -2,7 +2,8 @@ import { html, render } from "lit-html";
 import { showToast } from "../../../../shared/toast";
 import { backFromSubview } from "../../../../shared/navigation";
 import { getProjectDetailState } from "../../../../shared/state";
-import { populateProjectSubviewHeader } from "../sessions-list/sessions-list";
+import { projectSubviewHeaderData, subviewHeaderTemplate, hydrateSubviewHeader } from "../../subview-header";
+import type { Avatar } from "../../subview-header";
 import { api } from "../../../../shared/api";
 import "./automation.css";
 
@@ -48,12 +49,9 @@ async function renderAutomationForm(): Promise<void> {
 export async function renderAutomationView(
   root: HTMLElement,
 ): Promise<() => void> {
-  render(template(), root);
-
-  populateProjectSubviewHeader("automation");
-
-  const backBtn = root.querySelector<HTMLButtonElement>("#automationBackBtn");
-  if (backBtn) backBtn.onclick = () => backFromSubview();
+  const { avatar, title } = projectSubviewHeaderData();
+  render(template(avatar, title), root);
+  void hydrateSubviewHeader(root);
 
   const automate = root.querySelector<HTMLButtonElement>("#automateChannelBtn");
   if (automate) {
@@ -120,19 +118,11 @@ export async function renderAutomationView(
   return () => { /* no teardown */ };
 }
 
-function template() {
+function template(avatar: Avatar, title: string) {
   return html`
     <div class="view view-project-automation">
       <div class="view-header subview-header">
-        <button class="icon-btn" id="automationBackBtn" title="Back"><i class="ph ph-arrow-left"></i></button>
-        <div class="project-detail-heading">
-          <div class="avatar-mini" id="automationAvatar">?</div>
-          <div class="project-detail-titles">
-            <h2 id="automationTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Project</h2>
-            <div class="project-detail-path" id="automationPath"></div>
-          </div>
-        </div>
-        <div style="width:32px"></div>
+        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
       </div>
       <div class="view-body">
         <section class="automation-section" id="automationSection" style="margin-top:12px">
