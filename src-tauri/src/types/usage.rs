@@ -15,7 +15,18 @@ pub struct UsageSnapshot {
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct WindowUsage {
     pub utilization: f64,
+    // The API returns null for resets_at right after a window resets / goes
+    // idle, which used to kill polling. Treat null/missing as "".
+    #[serde(default, deserialize_with = "null_string_as_empty")]
     pub resets_at: String,
+}
+
+/// Deserialize a JSON string, mapping `null` (and absence) to an empty string.
+fn null_string_as_empty<'de, D>(de: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(de)?.unwrap_or_default())
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
@@ -52,6 +63,22 @@ mod tests {
         let parsed: UsageSnapshot = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed.five_hour.utilization, 7.0);
         assert_eq!(parsed.extra_usage.as_ref().unwrap().monthly_limit, Some(8500.0));
+    }
+
+    #[test]
+    fn window_tolerates_null_resets_at() {
+        // Real API shape right after a window resets / goes idle: the 5h
+        // window's resets_at comes back as null, which used to kill polling
+        // (serde: invalid type: null, expected a string).
+        let raw = r#"{
+            "captured_at": "2026-04-19T10:00:00Z",
+            "five_hour": { "utilization": 0.0, "resets_at": null },
+            "seven_day": { "utilization": 4.0, "resets_at": "2026-04-23T23:00:00Z" }
+        }"#;
+        let parsed: UsageSnapshot = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.five_hour.utilization, 0.0);
+        assert_eq!(parsed.five_hour.resets_at, "");
+        assert_eq!(parsed.seven_day.resets_at, "2026-04-23T23:00:00Z");
     }
 
     #[test]
