@@ -28,20 +28,28 @@ pub enum ClientError {
 
 #[cfg(windows)]
 type WriteHalf = tokio::io::WriteHalf<tokio::net::windows::named_pipe::NamedPipeClient>;
+#[cfg(unix)]
+type WriteHalf = tokio::io::WriteHalf<tokio::net::UnixStream>;
 
 pub struct PersistentClient {
-    #[cfg(windows)]
     writer: Arc<Mutex<WriteHalf>>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
     subs: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>,
     next_id: Arc<Mutex<u64>>,
 }
 
-#[cfg(windows)]
 impl PersistentClient {
-    pub async fn connect(pipe_name: &str) -> Result<Self, ClientError> {
-        use tokio::net::windows::named_pipe::ClientOptions;
-        let mut pipe = ClientOptions::new().open(pipe_name)?;
+    /// Connect to the daemon at `addr`: a named-pipe name on Windows, a
+    /// Unix-domain-socket path on mac/Linux. The handshake + reader-task plumbing
+    /// is identical across platforms; only opening the stream differs.
+    pub async fn connect(addr: &str) -> Result<Self, ClientError> {
+        #[cfg(windows)]
+        let mut pipe = {
+            use tokio::net::windows::named_pipe::ClientOptions;
+            ClientOptions::new().open(addr)?
+        };
+        #[cfg(unix)]
+        let mut pipe = tokio::net::UnixStream::connect(addr).await?;
         // Handshake first on the unsplit pipe so it's synchronous.
         write_frame(&mut pipe, &json!({"protocol_version": PROTOCOL_VERSION})).await?;
         let resp = read_frame(&mut pipe).await?;
@@ -302,35 +310,43 @@ impl PersistentClient {
     }
 }
 
-pub fn pipe_name_for_current_user() -> String {
-    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let inst = crate::daemon::instance::instance_suffix();
-    format!(r"\\.\pipe\cc-companion-daemon-{user}{inst}")
+/// Address the app uses to reach the daemon: a named-pipe name on Windows, a
+/// Unix-domain-socket path on mac/Linux. Must match the daemon's bind address.
+pub fn daemon_addr_for_current_user() -> String {
+    #[cfg(windows)]
+    {
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+        let inst = crate::daemon::instance::instance_suffix();
+        format!(r"\\.\pipe\cc-companion-daemon-{user}{inst}")
+    }
+    #[cfg(unix)]
+    {
+        crate::daemon::transport_unix::socket_path_for_user()
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 /// Try to connect to the daemon; if none is listening, spawn one detached
-/// (`<exe> --daemon`) and poll the pipe until it binds (~6s budget), then
+/// (`<exe> --daemon`) and poll the transport until it binds (~6s budget), then
 /// connect. The daemon's lockfile prevents a duplicate if two apps race here.
 pub async fn ensure_daemon() -> Result<PersistentClient, ClientError> {
-    let pipe = pipe_name_for_current_user();
-    if let Ok(c) = PersistentClient::connect(&pipe).await {
+    let addr = daemon_addr_for_current_user();
+    if let Ok(c) = PersistentClient::connect(&addr).await {
         return Ok(c);
     }
-    #[cfg(windows)]
-    {
-        match crate::daemon::spawn_self::spawn_detached_daemon() {
-            Ok(pid) => log::info!("spawned daemon (pid {pid})"),
-            Err(e) => log::error!("failed to spawn daemon: {e}"),
-        }
+    match crate::daemon::spawn_self::spawn_detached_daemon() {
+        Ok(pid) => log::info!("spawned daemon (pid {pid})"),
+        Err(e) => log::error!("failed to spawn daemon: {e}"),
     }
-    // Poll for the daemon to bind its pipe (bind + hook server). ~6s budget.
+    // Poll for the daemon to bind its transport (bind + hook server). ~6s budget.
     for _ in 0..30 {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        if let Ok(c) = PersistentClient::connect(&pipe).await {
+        if let Ok(c) = PersistentClient::connect(&addr).await {
             return Ok(c);
         }
     }
-    PersistentClient::connect(&pipe).await
+    PersistentClient::connect(&addr).await
 }
 
 #[cfg(all(test, windows))]

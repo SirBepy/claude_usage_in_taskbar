@@ -6,7 +6,6 @@
 pub enum SpawnSelfError {
     Io(std::io::Error),
     NoExe(std::io::Error),
-    NonWindows,
 }
 
 impl std::fmt::Display for SpawnSelfError {
@@ -14,7 +13,6 @@ impl std::fmt::Display for SpawnSelfError {
         match self {
             SpawnSelfError::Io(e) => write!(f, "spawn daemon: {e}"),
             SpawnSelfError::NoExe(e) => write!(f, "resolve current exe: {e}"),
-            SpawnSelfError::NonWindows => write!(f, "daemon self-spawn is Windows-only"),
         }
     }
 }
@@ -92,7 +90,31 @@ fn create_process(cmdline: &str, flags: u32) -> Result<u32, std::io::Error> {
     Ok(pi.dwProcessId)
 }
 
-#[cfg(not(windows))]
+/// Spawn `<current_exe> --daemon` detached on Unix (macOS + Linux).
+///
+/// `setsid()` in `pre_exec` puts the daemon in its own session so it outlives
+/// the app's session/controlling terminal (mirrors the macOS channel spawn).
+/// stdio is redirected to /dev/null so it holds no app file handles.
+#[cfg(unix)]
 pub fn spawn_detached_daemon() -> Result<u32, SpawnSelfError> {
-    Err(SpawnSelfError::NonWindows)
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    let exe = std::env::current_exe().map_err(SpawnSelfError::NoExe)?;
+    let mut cmd = Command::new(exe);
+    cmd.arg("--daemon")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // SAFETY: setsid is async-signal-safe and the only call in pre_exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            // New session leader; detaches from the app's session. Failure here
+            // (e.g. already a group leader) is non-fatal for our purposes.
+            let _ = libc::setsid();
+            Ok(())
+        });
+    }
+    let child = cmd.spawn().map_err(SpawnSelfError::Io)?;
+    Ok(child.id())
 }

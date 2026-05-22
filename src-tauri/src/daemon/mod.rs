@@ -20,9 +20,12 @@ pub mod session;
 pub mod settings_cache;
 pub mod spawn_self;
 pub mod state;
+pub mod transport_common;
 
 #[cfg(windows)]
 pub mod transport_windows;
+#[cfg(unix)]
+pub mod transport_unix;
 
 use crate::daemon::lockfile::LockGuard;
 use crate::daemon::rpc::Router;
@@ -131,10 +134,30 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
         }
         log::info!("daemon: main loop exiting");
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
-        log::warn!("daemon: non-Windows transport not implemented");
-        tokio::signal::ctrl_c().await?;
+        let socket_path = transport_unix::socket_path_for_user();
+        log::info!("daemon listening on {}", socket_path.display());
+        let shutdown = state.shutdown.clone();
+        let accept = tokio::spawn(async move {
+            transport_unix::accept_loop(&socket_path, router).await
+        });
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                log::info!("daemon: ctrl-c received, shutting down");
+            }
+            _ = shutdown.notified() => {
+                log::info!("daemon: shutdown_daemon RPC received, exiting");
+            }
+            r = accept => {
+                match r {
+                    Ok(Ok(())) => log::error!("daemon: accept loop exited unexpectedly (no error)"),
+                    Ok(Err(e)) => log::error!("daemon: accept loop failed: {e}"),
+                    Err(e) => log::error!("daemon: accept loop task error: {e}"),
+                }
+            }
+        }
+        log::info!("daemon: main loop exiting");
     }
     Ok(())
 }
