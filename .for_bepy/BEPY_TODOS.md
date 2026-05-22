@@ -7,7 +7,8 @@
 - Verify ai_todo 73 (daemon re-adopts external sessions on restart): start `claude` in a terminal (wait for it to show as External in Sessions), restart the daemon (kill + relaunch), confirm the external session reappears in the sidebar without needing a new hook to fire.
 
 - Sims character audio spot-check (ai_todo 49 - redistribution done, audio check pending): open Characters view, pick 3 chars, play each slot a few times - confirm no audibly cut-off clips and consecutive triggers play different lines.
-- Tool-preview / changes-panel smoke (ai_todo 53): `cargo tauri dev` and manually eyeball the 9 criteria listed in .for_bepy/ai_todos/53-*.md.
+- Changes-panel VISUAL polish only (ai_todo 53 functional flows now e2e-covered by `npm run test:e2e:changes`): in a real chat, eyeball that the live activity/thinking bar shows "Editing <file>" then the verb cycle during an actual turn (gated on busy state, not automatable), and that there are no visual gaps - rail 220px, sheet ~85% overlay z-index, chevron rotation, no dim-layer leak.
+- Open-in-Terminal real spawn (ai_todo 68): the `externalize_session` RPC + sidebar flip to External are e2e-tested; just confirm the "Open in Terminal" action actually opens a real terminal window on your machine (OS spawn, not automatable here).
 
 - Run `cargo tauri dev` from `src-tauri/` and verify the Projects view: no `tauri` orphan project, no `c:` / `C:` zng-app duplicate, parent-segment suffix shows on real basename collisions, clicking a card opens the detail view.
 - Update `~/.claude/skills/night-run/SKILL.md` so the tick-prompt template appends a new step: write/update `FOR_TOMORROWS_AI.md` at repo root (outcome, files changed, decisions, blockers). Lets you fully shut PC down overnight without losing handoff continuity. See request that triggered this in 2026-05-09 close session.
