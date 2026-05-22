@@ -93,7 +93,15 @@ pub fn load_snapshot(path: &Path) -> Vec<PersistedInteractive> {
     match serde_json::from_str::<Vec<PersistedInteractive>>(&raw) {
         Ok(v) => v,
         Err(e) => {
-            log::warn!("persist sessions: parse failed: {e}");
+            // Preserve the corrupt file for diagnosis instead of letting the next
+            // save_snapshot silently clobber it (mirrors settings::store::load).
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let backup = path.with_extension(format!("json.broken-{ts}"));
+            let _ = fs::rename(path, &backup);
+            log::warn!("persist sessions: parse failed ({e}); preserved at {} and loaded none", backup.display());
             Vec::new()
         }
     }

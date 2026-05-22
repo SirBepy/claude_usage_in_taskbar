@@ -71,6 +71,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 state.registry.set_model_effort(&sid, &model, &effort);
                 state.registry.set_busy(&sid, true);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"session_id": sid}))
             }
         });
@@ -123,6 +124,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let now = chrono::Utc::now().to_rfc3339();
                 state.registry.mark_ended(&p.session_id, EndReason::Manual, &now);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
             }
         });

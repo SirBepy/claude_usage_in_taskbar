@@ -111,7 +111,11 @@ pub fn news_file() -> Result<PathBuf> {
 }
 
 pub fn interactive_sessions_file() -> Result<PathBuf> {
-    Ok(data_dir()?.join("interactive-sessions.json"))
+    // Instance-scoped, like the daemon lockfile/pipe/hook-port: a test or wdio
+    // daemon (CC_DAEMON_INSTANCE set) must not read or clobber the production
+    // user's snapshot. Empty suffix for the default (production) instance.
+    let suffix = crate::daemon::instance::instance_suffix();
+    Ok(data_dir()?.join(format!("interactive-sessions{suffix}.json")))
 }
 
 pub fn mcp_temp_dir() -> anyhow::Result<std::path::PathBuf> {

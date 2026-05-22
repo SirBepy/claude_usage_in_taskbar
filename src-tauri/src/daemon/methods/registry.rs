@@ -25,6 +25,7 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                 let now = chrono::Utc::now().to_rfc3339();
                 state.registry.mark_ended(&p.session_id, EndReason::Manual, &now);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
             }
         });
@@ -38,6 +39,9 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 state.registry.externalize_session(&p.session_id);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                // Now External: drop it from the Interactive snapshot so a daemon
+                // restart doesn't resurrect it as a ghost Interactive entry.
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
             }
         });
@@ -51,6 +55,7 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 state.registry.set_effort(&p.session_id, &p.effort);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
             }
         });
@@ -75,6 +80,7 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                 }
                 state.registry.upsert_interactive(&p.session_id, &cwd, &project_id, &now);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
             }
         });
@@ -92,6 +98,7 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                 let sid = crate::chat::takeover::takeover(p.manual_pid, &p.model, &p.effort, &state.registry, &shim)
                     .map_err(|e| RpcError::internal(e.to_string()))?;
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"session_id": sid}))
             }
         });

@@ -421,3 +421,128 @@ async fn end_to_end_no_duplicate_events() {
         "expected at least one assistant_message (got {assistant_msgs})"
     );
 }
+
+/// The "test-chat" instance's interactive-session snapshot file. Instance-scoped
+/// (`interactive-sessions-test-chat.json`) so these tests never touch the real
+/// daemon's snapshot.
+fn interactive_snapshot_path() -> std::path::PathBuf {
+    dirs::data_dir()
+        .unwrap()
+        .join("claude-usage-tauri")
+        .join("interactive-sessions-test-chat.json")
+}
+
+/// Regression for the "new chat vanished after daemon restart" bug: an
+/// Interactive session must survive a full daemon kill+relaunch via the
+/// persisted snapshot, with its effort preserved and as a resumable (pid 0)
+/// entry. Free + deterministic (no `claude` process). Run serial
+/// (`--test-threads=1`): shares the "test-chat" daemon instance.
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn interactive_session_survives_daemon_restart() {
+    let snap = interactive_snapshot_path();
+    let _ = std::fs::remove_file(&snap); // clear any leftover from a prior run
+
+    let session_id = format!("test-persist-{}", std::process::id());
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+
+    // --- First daemon: register an interactive chat + set effort, then kill. ---
+    {
+        let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+        client
+            .call("register_historical", json!({ "session_id": session_id, "cwd": cwd }))
+            .await
+            .expect("register_historical");
+        client
+            .call("set_session_effort", json!({ "session_id": session_id, "effort": "high" }))
+            .await
+            .expect("set_session_effort");
+        let before = client.call("list_instances", json!({})).await.expect("list");
+        assert!(
+            find_instance(&before, &session_id).is_some(),
+            "session should exist before the restart"
+        );
+        drop(client);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // --- Second daemon: must restore the chat from the snapshot on boot. ---
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+    let after = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&after, &session_id).cloned();
+
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&snap);
+
+    let inst = inst.expect(
+        "interactive session must be restored from the snapshot after a daemon restart",
+    );
+    assert_eq!(
+        inst.get("kind").and_then(Value::as_str),
+        Some("interactive"),
+        "restored entry must be Interactive"
+    );
+    assert_eq!(
+        inst.get("effort").and_then(Value::as_str),
+        Some("high"),
+        "effort must persist across the restart"
+    );
+    assert_eq!(
+        inst.get("pid").and_then(Value::as_u64),
+        Some(0),
+        "restored entry is resumable (pid 0, no live process)"
+    );
+}
+
+/// A session ended (clear_session -> mark_ended) before the daemon goes down
+/// must NOT be resurrected on restart - the snapshot excludes ended entries.
+/// Free + deterministic. Run serial (`--test-threads=1`).
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn ended_session_not_restored_after_daemon_restart() {
+    let snap = interactive_snapshot_path();
+    let _ = std::fs::remove_file(&snap);
+
+    let session_id = format!("test-evict-{}", std::process::id());
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+
+    {
+        let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+        client
+            .call("register_historical", json!({ "session_id": session_id, "cwd": cwd }))
+            .await
+            .expect("register_historical");
+        client
+            .call("mark_session_ended", json!({ "session_id": session_id }))
+            .await
+            .expect("mark_session_ended");
+        drop(client);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+    let after = client.call("list_instances", json!({})).await.expect("list");
+    let inst = find_instance(&after, &session_id).cloned();
+
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_file(&snap);
+
+    assert!(
+        inst.is_none(),
+        "a session ended before shutdown must NOT be restored after a daemon restart"
+    );
+}

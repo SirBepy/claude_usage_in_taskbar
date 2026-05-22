@@ -75,6 +75,24 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     let _hook_port = hooks_server::spawn(state.clone()).await?;
     detector_task::spawn(state.clone());
 
+    // Restore Interactive (in-app) chats persisted before the last shutdown.
+    // The registry is in-memory only; without this, every daemon restart (reboot,
+    // crash, kill-orphans) drops every in-app chat from the sidebar. Must run
+    // BEFORE the adopt_* scans so restored ids are already in known_session_ids()
+    // and a live terminal session for the same id isn't clobbered Interactive
+    // -> External (or vice versa).
+    {
+        let path = crate::settings::paths::interactive_sessions_file().unwrap_or_default();
+        let restored = crate::sessions::persistence::populate_registry(
+            &state.registry,
+            crate::sessions::persistence::load_snapshot(&path),
+        );
+        if restored > 0 {
+            log::info!("restored {restored} interactive session(s) from snapshot");
+            state.notifier.publish("instances_changed", serde_json::json!({"instances": state.registry.list()}));
+        }
+    }
+
     // Adopt bridges that survived a previous daemon shutdown before spawning
     // new ones (prevents duplicate bridge trees on daemon restart).
     channel_adopt::adopt_running_channels(state.clone());
