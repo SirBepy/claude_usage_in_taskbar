@@ -1,6 +1,6 @@
 import type { SlashEntry, SlashSource } from "../../../../types/ipc.generated";
 import { invoke } from "../../../ipc";
-import { setSlashEntries } from "../../slash-registry";
+import { setSlashEntries, slashEntryQualifiedName } from "../../slash-registry";
 import { match } from "../match";
 import type { SuggestProvider } from "../types";
 
@@ -40,7 +40,7 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
 
     const head = document.createElement("div");
     head.className = "head";
-    const fullName = entryFullName(e);
+    const fullName = slashEntryQualifiedName(e) ?? e.name;
     head.textContent = e.args ? `/${fullName} ${e.args}` : `/${fullName}`;
 
     const meta = document.createElement("div");
@@ -60,7 +60,7 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
   }
 
   onPick(e: SlashEntry, ta: HTMLTextAreaElement, [start, end]: [number, number]): void {
-    const insert = `/${entryFullName(e)} `;
+    const insert = `/${slashEntryQualifiedName(e) ?? e.name} `;
     ta.value = ta.value.slice(0, start) + insert + ta.value.slice(end);
     const newPos = start + insert.length;
     ta.selectionStart = ta.selectionEnd = newPos;
@@ -79,14 +79,6 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
     }
     setSlashEntries(this.cache);
   }
-}
-
-function entryFullName(e: SlashEntry): string {
-  const src = e.source as { kind: string; plugin?: string };
-  if ((src.kind === "plugin-skill" || src.kind === "plugin-command") && src.plugin) {
-    return `${src.plugin}:${e.name}`;
-  }
-  return e.name;
 }
 
 function sourceLabel(s: SlashSource): string {

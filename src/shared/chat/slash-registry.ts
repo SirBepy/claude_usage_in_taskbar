@@ -54,3 +54,12 @@ export function slashKindClass(source: SlashSource | null): string {
   if (!source) return "unknown";
   return source.kind;
 }
+
+/** Returns `plugin:name` for plugin-skill/plugin-command entries, null otherwise. */
+export function slashEntryQualifiedName(e: SlashEntry): string | null {
+  const src = e.source as { kind: string; plugin?: string };
+  if ((src.kind === "plugin-skill" || src.kind === "plugin-command") && src.plugin) {
+    return `${src.plugin}:${e.name}`;
+  }
+  return null;
+}

@@ -1,4 +1,5 @@
 import type { SlashEntry, SlashSource } from "../../../types/ipc.generated";
+import { slashEntryQualifiedName } from "../slash-registry";
 import { fuzzyScore } from "./fuzzy-score";
 
 const MAX = 50;
@@ -23,21 +24,13 @@ interface Scored {
   prefix: boolean;
 }
 
-function pluginQualifiedName(it: SlashEntry): string | null {
-  const src = it.source as { kind: string; plugin?: string };
-  if ((src.kind === "plugin-skill" || src.kind === "plugin-command") && src.plugin) {
-    return `${src.plugin}:${it.name}`;
-  }
-  return null;
-}
-
 export function match(items: SlashEntry[], q: string): SlashEntry[] {
   if (!q) return items.slice(0, MAX);
   const ql = q.toLowerCase();
   const scored: Scored[] = [];
   for (const it of items) {
     const nl = it.name.toLowerCase();
-    const qualified = pluginQualifiedName(it)?.toLowerCase() ?? null;
+    const qualified = slashEntryQualifiedName(it)?.toLowerCase() ?? null;
     const prefixMatch = nl.startsWith(ql) || (qualified !== null && qualified.startsWith(ql));
     if (prefixMatch) {
       scored.push({ it, score: 100_000 - it.name.length, prefix: true });
