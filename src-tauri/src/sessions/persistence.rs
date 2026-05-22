@@ -41,6 +41,11 @@ pub fn save_snapshot(registry: &Registry, path: &Path) {
         .list()
         .into_iter()
         .filter(|i| matches!(i.kind, InstanceKind::Interactive) && i.ended_at.is_none())
+        // `name` here is the resolved title (curated override or first prompt);
+        // re-persisting it means disk converges to a /close rename on the next
+        // save. The jsonl override stays the source of truth — this snapshot is
+        // just a cache so a session shows its name before its transcript is
+        // re-resolved on restore.
         .map(|i| PersistedInteractive {
             session_id: i.session_id,
             cwd: i.cwd,
@@ -121,11 +126,16 @@ pub fn populate_registry(registry: &Registry, sessions: Vec<PersistedInteractive
         if !s.model.is_empty() || !s.effort.is_empty() {
             registry.set_model_effort(&s.session_id, &s.model, &s.effort);
         }
-        let resolved_name = s.name.or_else(|| {
-            crate::tokens::transcript_for_session(&s.cwd, &s.session_id)
-                .as_deref()
-                .and_then(|p| crate::tokens::first_user_prompt(p, 60))
-        });
+        // A /close rename written since the last save lives in the transcript,
+        // so a fresh override beats the persisted snapshot name; the snapshot is
+        // the next fallback; only if neither exists do we derive from the first
+        // prompt. This is what makes a rename survive an app restart.
+        let tpath = crate::tokens::transcript_for_session(&s.cwd, &s.session_id);
+        let resolved_name = tpath
+            .as_deref()
+            .and_then(|p| crate::tokens::last_override_title(p, 60))
+            .or(s.name)
+            .or_else(|| tpath.as_deref().and_then(|p| crate::tokens::first_user_prompt(p, 60)));
         if let Some(name) = resolved_name {
             registry.set_name(&s.session_id, name);
         }
