@@ -38,11 +38,30 @@ use tauri::Manager;
 /// level. Best-effort: falls back to stderr if the file can't be opened, never
 /// panics. Safe to call once at daemon startup.
 fn init_daemon_file_logger() {
-    let file = paths::data_dir().ok().and_then(|dir| {
+    let log_path = paths::data_dir().ok().map(|dir| dir.join("daemon.log"));
+
+    // Panic hook: writes directly to the log file instead of going through the
+    // logger (avoids a potential mutex deadlock if the panic happened inside the
+    // logger). This is the only reliable way to capture daemon panics given that
+    // stderr is discarded for the detached, console-less process.
+    if let Some(path) = log_path.clone() {
+        let orig = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                let ts = chrono::Utc::now().to_rfc3339();
+                let _ = writeln!(f, "[{ts} ERROR claude_usage_tauri_lib] daemon PANIC: {info}");
+                let _ = f.flush();
+            }
+            orig(info);
+        }));
+    }
+
+    let file = log_path.and_then(|path| {
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(dir.join("daemon.log"))
+            .open(path)
             .ok()
     });
     let mut builder =

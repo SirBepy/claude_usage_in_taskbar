@@ -99,11 +99,14 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
                 log::info!("daemon: shutdown_daemon RPC received, exiting");
             }
             r = accept => {
-                if let Ok(Err(e)) = r {
-                    log::error!("daemon: accept loop failed: {e}");
+                match r {
+                    Ok(Ok(())) => log::error!("daemon: accept loop exited unexpectedly (no error)"),
+                    Ok(Err(e)) => log::error!("daemon: accept loop failed: {e}"),
+                    Err(e) => log::error!("daemon: accept loop task error: {e}"),
                 }
             }
         }
+        log::info!("daemon: main loop exiting");
     }
     #[cfg(not(windows))]
     {
