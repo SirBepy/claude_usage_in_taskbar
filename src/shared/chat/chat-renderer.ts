@@ -59,6 +59,10 @@ export class ChatRenderer {
   private dirtyIndices = new Set<number>();
   private unsubscribe: (() => void) | null = null;
   private streamingIndex: number | null = null;
+  /** Non-null while bulkLoadEvents is running. Live subscription events are
+   * queued here instead of going directly to handleEvent so they don't race
+   * against partially-processed history chunks (ai_todo 47 render dupe). */
+  private liveBuffer: ChatEvent[] | null = null;
   private sessionId: string | null = null;
   private _bulkGen = 0;
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
@@ -130,8 +134,17 @@ export class ChatRenderer {
     this.activeTurnStart = null;
     this.closeTurnQueue = [];
     this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
-      this.handleEvent(ev);
+      this.handleLive(ev);
     });
+  }
+
+  /** Routes live events through the buffer while bulkLoadEvents is running. */
+  private handleLive(ev: ChatEvent): void {
+    if (this.liveBuffer !== null) {
+      this.liveBuffer.push(ev);
+    } else {
+      this.handleEvent(ev);
+    }
   }
 
   /**
@@ -146,7 +159,12 @@ export class ChatRenderer {
     if (!this.sessionId) return;
     const sid = this.sessionId;
     this.cwdHint = cwd;
-    const events = await sessionEvents.loadInitial(sid, cwd);
+    // Snapshot: loadInitial returns the live entry.events reference. If a new
+    // event arrives from the subscription during a chunk-yield inside bulkLoad,
+    // it gets pushed to that array AND fires handleEvent via the subscriber.
+    // Without the snapshot, bulkLoad would also hit it when the loop reaches
+    // the new index, processing it twice and appending a duplicate message.
+    const events = [...(await sessionEvents.loadInitial(sid, cwd))];
     if (this.sessionId !== sid) return;
     await this.bulkLoadEvents(events);
     if (this.sessionId !== sid) return;
@@ -338,7 +356,7 @@ export class ChatRenderer {
     this.sessionId = newSessionId;
     if (oldId) await sessionEvents.swap(oldId, newSessionId);
     this.unsubscribe = sessionEvents.subscribe(newSessionId, (ev) => {
-      this.handleEvent(ev);
+      this.handleLive(ev);
     });
   }
 
@@ -416,6 +434,7 @@ export class ChatRenderer {
    */
   private async bulkLoadEvents(events: ChatEvent[]): Promise<void> {
     const myGen = ++this._bulkGen;
+    this.liveBuffer = []; // mute live events during history replay
     this.messages = [];
     this.messageEls = [];
     this.dirtyIndices.clear();
@@ -427,7 +446,7 @@ export class ChatRenderer {
     this.container.innerHTML = "";
     const CHUNK = 8;
     for (let i = 0; i < events.length; i += CHUNK) {
-      if (this._bulkGen !== myGen) return;
+      if (this._bulkGen !== myGen) { this.liveBuffer = null; return; }
       for (let j = i; j < Math.min(i + CHUNK, events.length); j++) {
         this.handleEvent(events[j]!, { silent: true, skipScroll: true });
       }
@@ -436,8 +455,16 @@ export class ChatRenderer {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
-    if (this._bulkGen !== myGen) return;
+    if (this._bulkGen !== myGen) { this.liveBuffer = null; return; }
     this.scrollToBottom();
+    // Flush events that arrived while history was loading. These are applied
+    // after the full history is committed so streamingIndex is in the correct
+    // position to replace-in-place rather than append a duplicate.
+    const buffered = this.liveBuffer;
+    this.liveBuffer = null;
+    for (const ev of buffered) {
+      this.handleEvent(ev);
+    }
   }
 
   handleEvent(ev: ChatEvent, opts: HandleEventOpts = {}): void {
