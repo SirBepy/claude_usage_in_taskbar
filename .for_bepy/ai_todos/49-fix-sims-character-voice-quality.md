@@ -29,8 +29,14 @@ Sound source: `%APPDATA%\claude-usage-tauri\characters\sims\_shared\` (or per-ch
 3. Drop or swap clips that sound abrupt. Prefer clips ≤2s natural length. If a clip was trimmed to 2s in the prior pass, check original length and drop if trimming cut a word.
 4. Update `character.json` slot arrays in place (or rerun a revised distribute script).
 
+## Status
+
+Redistribution done (2026-05-22): all 6 character.json files in %APPDATA%\claude-usage-tauri\characters\sims\ updated - no filename repeats across slots. Changes are outside the git repo (app-data only).
+
+Remaining: audio quality spot-check needs Joe's ears (see Visual QA below).
+
 ## Acceptance
 
-- No filename appears in both work_finished AND question_asked/ready/select for the same character (unless pool literally has only 1 clip).
-- Spot-check 3 chars in the app's Characters view: play each slot, confirm different voice line plays on consecutive triggers.
-- No audibly cut-off clips (sentence ends naturally or at a pause).
+- [x] No filename appears in both work_finished AND question_asked/ready/select for the same character (unless pool literally has only 1 clip).
+- [ ] Spot-check 3 chars in the app's Characters view: play each slot, confirm different voice line plays on consecutive triggers.
+- [ ] No audibly cut-off clips (sentence ends naturally or at a pause).
