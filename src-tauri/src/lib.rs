@@ -31,20 +31,46 @@ use crate::auth::session;
 use tauri::Emitter;
 use tauri::Manager;
 
+/// Initialize logging for the detached daemon process. The daemon is spawned
+/// detached with no console, so without an explicit file target its log output
+/// goes nowhere - which is why an unexpected daemon exit leaves no trail. Writes
+/// to `<app-data>/daemon.log` (append). `RUST_LOG` overrides the default `info`
+/// level. Best-effort: falls back to stderr if the file can't be opened, never
+/// panics. Safe to call once at daemon startup.
+fn init_daemon_file_logger() {
+    let file = paths::data_dir().ok().and_then(|dir| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("daemon.log"))
+            .ok()
+    });
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    if let Some(file) = file {
+        builder.target(env_logger::Target::Pipe(Box::new(file)));
+    }
+    let _ = builder.try_init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Daemon mode: when launched as `<exe> --daemon`, run the daemon and exit
     // before constructing the Tauri app (no window, no single-instance plugin).
     if std::env::args().any(|a| a == "--daemon") {
+        init_daemon_file_logger();
+        log::info!("daemon process starting (--daemon mode)");
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(4)
             .enable_all()
             .build()
             .expect("daemon tokio runtime");
         if let Err(e) = rt.block_on(crate::daemon::run_daemon_main()) {
+            log::error!("daemon exited with error: {e}");
             eprintln!("daemon exited with error: {e}");
             std::process::exit(1);
         }
+        log::info!("daemon process exiting cleanly");
         return;
     }
     let _ = paths::ensure_data_dir();
