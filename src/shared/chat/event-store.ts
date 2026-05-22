@@ -24,6 +24,26 @@ type EventListener = (ev: ChatEvent) => void;
 const INITIAL_PAGE_SIZE = 10;
 const OLDER_PAGE_SIZE = 10;
 
+// Window within which two live deliveries of the same logical event are
+// treated as duplicates. The runner stream (`chat:<id>`) and the file watcher
+// (`chat-watch:<id>`) both surface the same app-driven turn, and live `-p`
+// events all carry timestamp=0, so we dedup by content within a short window
+// rather than by (timestamp,type). Distinct turns that happen to share text
+// are minutes apart and fall outside the window. See ai_todo 77.
+const DEDUP_WINDOW_MS = 10_000;
+
+interface RecentSig {
+  /** Dedup key: type + content/id. */
+  sig: string;
+  /** Concatenated text for finalized assistant messages; used to suppress a
+   * runner streaming partial whose text is a prefix of a watcher-delivered
+   * final (and vice versa). Null for non-assistant events. */
+  text: string | null;
+  /** True when this was a finalized (non-streaming) assistant message. */
+  assistantFinal: boolean;
+  ts: number;
+}
+
 interface CacheEntry {
   events: ChatEvent[];
   oldestSeq: number | null;
@@ -33,6 +53,8 @@ interface CacheEntry {
   unlisten: Unlisten | null;
   unlistenWatch: Unlisten | null;
   subscribers: Set<EventListener>;
+  /** Recently-delivered live event signatures, for cross-source dedup. */
+  recent: RecentSig[];
 }
 
 class SessionEventStore {
@@ -158,6 +180,7 @@ class SessionEventStore {
     if (existing) {
       for (const ev of fromEntry.events) existing.events.push(ev);
       for (const sub of fromEntry.subscribers) existing.subscribers.add(sub);
+      for (const r of fromEntry.recent) existing.recent.push(r);
       existing.initialLoaded = existing.initialLoaded || fromEntry.initialLoaded;
       existing.oldestSeq = existing.oldestSeq ?? fromEntry.oldestSeq;
       existing.hasMore = existing.hasMore && fromEntry.hasMore;
@@ -174,6 +197,7 @@ class SessionEventStore {
     entry.oldestSeq = null;
     entry.hasMore = false;
     entry.initialLoaded = false;
+    entry.recent = [];
   }
 
   pushSynthetic(sessionId: string, ev: ChatEvent): void {
@@ -182,9 +206,79 @@ class SessionEventStore {
       entry = this.makeEntry();
       this.cache.set(sessionId, entry);
     }
+    this.deliver(sessionId, ev);
+  }
+
+  /**
+   * Common delivery gate for all LIVE event sources (runner stream, file
+   * watcher, synthetic echoes). Drops cross-source duplicates of the same
+   * logical event, then pushes to the cache and notifies subscribers.
+   *
+   * Does NOT cover `loadInitial` / `loadOlder`: those install authoritative
+   * JSONL pages directly and reconcile against live events by object identity.
+   */
+  private deliver(sessionId: string, ev: ChatEvent): void {
+    const entry = this.cache.get(sessionId);
+    if (!entry) return;
+    if (this.isLiveDuplicate(entry, ev)) return;
+    this.recordSig(entry, ev);
     entry.events.push(ev);
     entry.subscribers.forEach((fn) => {
       try { fn(ev); } catch { /* ignore */ }
+    });
+  }
+
+  /** Concatenated text of an assistant/user message, or null for others. */
+  private contentText(ev: ChatEvent): string | null {
+    if (ev.type !== "assistant_message" && ev.type !== "user_message") return null;
+    const blocks = (ev as { content?: { type: string; text?: string }[] }).content ?? [];
+    return blocks.filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  }
+
+  /** Dedup signature, or null for events that must never be deduped (streaming
+   * partials, session lifecycle, turn usage). */
+  private sigOf(ev: ChatEvent): string | null {
+    switch (ev.type) {
+      case "assistant_message":
+        // Streaming partials mutate every chunk; dedup only the finalized form.
+        return ev.streaming ? null : `a:${this.contentText(ev)}`;
+      case "user_message":
+        return `u:${this.contentText(ev)}`;
+      case "tool_use":
+        return `tu:${ev.id}`;
+      case "tool_result":
+        return `tr:${ev.tool_use_id}`;
+      case "notification":
+        return `n:${ev.body}`;
+      default:
+        return null;
+    }
+  }
+
+  private isLiveDuplicate(entry: CacheEntry, ev: ChatEvent): boolean {
+    const now = Date.now();
+    entry.recent = entry.recent.filter((r) => now - r.ts < DEDUP_WINDOW_MS);
+    // A runner streaming partial whose text is a prefix of an already-delivered
+    // finalized assistant (e.g. from the watcher winning the race) would render
+    // a second, orphaned bubble. Suppress it so only the final survives.
+    if (ev.type === "assistant_message" && ev.streaming) {
+      const t = this.contentText(ev);
+      if (t === null) return false;
+      return entry.recent.some((r) => r.assistantFinal && r.text !== null && r.text.startsWith(t));
+    }
+    const sig = this.sigOf(ev);
+    if (sig === null) return false;
+    return entry.recent.some((r) => r.sig === sig);
+  }
+
+  private recordSig(entry: CacheEntry, ev: ChatEvent): void {
+    const sig = this.sigOf(ev);
+    if (sig === null) return;
+    entry.recent.push({
+      sig,
+      text: ev.type === "assistant_message" ? this.contentText(ev) : null,
+      assistantFinal: ev.type === "assistant_message" && !ev.streaming,
+      ts: Date.now(),
     });
   }
 
@@ -198,6 +292,7 @@ class SessionEventStore {
       unlisten: null,
       unlistenWatch: null,
       subscribers: new Set(),
+      recent: [],
     };
   }
 
@@ -214,18 +309,18 @@ class SessionEventStore {
       // pushSynthetic already added (current turn) or loadInitial loads from
       // JSONL (history). Drop all user_message events from the live stream.
       if (e.payload.type === "user_message") return;
-      cur.events.push(e.payload);
-      cur.subscribers.forEach((fn) => {
-        try { fn(e.payload); } catch { /* ignore */ }
-      });
+      this.deliver(sessionId, e.payload);
     });
   }
 
   // Subscribes to chat-watch:<id> events emitted by the JSONL file watcher.
   // Unlike the runner channel, user_messages are allowed through (they come
-  // from terminal input, not from claude -p re-emission). Events are
-  // deduplicated against the existing cache by timestamp+type to prevent
-  // doubling events the runner already pushed for app-driven turns.
+  // from terminal input, not from claude -p re-emission). Cross-source dedup
+  // (against events the runner already pushed for app-driven turns) is handled
+  // by `deliver`, keyed on content within a short window - the old
+  // timestamp+type key collided because live `-p` events all carry ts=0 and
+  // only deduped one direction, so a watcher event that won the race against
+  // the runner doubled the turn (ai_todo 77).
   async ensureWatchListener(sessionId: string): Promise<void> {
     let entry = this.cache.get(sessionId);
     if (!entry) {
@@ -236,20 +331,7 @@ class SessionEventStore {
     const ev = window.__TAURI__?.event;
     if (!ev?.listen) return;
     entry.unlistenWatch = await ev.listen<ChatEvent>(`chat-watch:${sessionId}`, (e) => {
-      const cur = this.cache.get(sessionId);
-      if (!cur) return;
-      const payload = e.payload;
-      const ts = (payload as { timestamp?: bigint }).timestamp;
-      if (ts !== undefined) {
-        const already = cur.events.some(
-          (ex) => (ex as { timestamp?: bigint }).timestamp === ts && ex.type === payload.type
-        );
-        if (already) return;
-      }
-      cur.events.push(payload);
-      cur.subscribers.forEach((fn) => {
-        try { fn(payload); } catch { /* ignore */ }
-      });
+      this.deliver(sessionId, e.payload);
     });
   }
 
