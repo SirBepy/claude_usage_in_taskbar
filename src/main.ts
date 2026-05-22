@@ -34,7 +34,33 @@ import { closeSidemenu } from "./shared/sidemenu";
 import { installPermissionModalListener } from "./views/sessions/permission-modal";
 import { installExternalLinkInterceptor } from "./shared/external-links";
 import { invoke } from "./shared/ipc";
-import type { NewsPost } from "./types/ipc.generated";
+import { sessionEvents } from "./shared/chat/event-store";
+import type { ChatEvent, NewsPost } from "./types/ipc.generated";
+
+// Test seam (ai_todo 53 e2e): in dev only, expose a helper that injects a
+// synthetic file-edit tool_use into a mounted session so the wdio harness can
+// exercise the inline edit-window + changes panel + activity bar WITHOUT a real
+// (billed) claude turn. `import.meta.env.DEV` is true under the vite dev server
+// the e2e harness loads; `vite build` strips this block from production bundles.
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>).__injectEdit = (
+    sessionId: string,
+    opts: { tool: string; file: string; oldText?: string; newText?: string; content?: string }
+  ): void => {
+    const input =
+      opts.tool === "Write"
+        ? { file_path: opts.file, content: opts.content ?? opts.newText ?? "" }
+        : { file_path: opts.file, old_string: opts.oldText ?? "", new_string: opts.newText ?? "" };
+    const ev: ChatEvent = {
+      type: "tool_use",
+      tool_name: opts.tool,
+      input,
+      id: `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      timestamp: BigInt(Date.now()),
+    };
+    sessionEvents.pushSynthetic(sessionId, ev);
+  };
+}
 
 registerView("dashboard", renderDashboard);
 registerView("sessions", renderSessionsView);
