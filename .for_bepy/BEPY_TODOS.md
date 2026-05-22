@@ -7,7 +7,6 @@
 - Verify ai_todo 73 (daemon re-adopts external sessions on restart): start `claude` in a terminal (wait for it to show as External in Sessions), restart the daemon (kill + relaunch), confirm the external session reappears in the sidebar without needing a new hook to fire.
 
 - Sims character audio spot-check (ai_todo 49 - redistribution done, audio check pending): open Characters view, pick 3 chars, play each slot a few times - confirm no audibly cut-off clips and consecutive triggers play different lines.
-- FOUC check (ai_todo 52): confirm whether the white flash exists in the installed build before any code action. If yes, ping me.
 - Tool-preview / changes-panel smoke (ai_todo 53): `cargo tauri dev` and manually eyeball the 9 criteria listed in .for_bepy/ai_todos/53-*.md.
 
 - Run `cargo tauri dev` from `src-tauri/` and verify the Projects view: no `tauri` orphan project, no `c:` / `C:` zng-app duplicate, parent-segment suffix shows on real basename collisions, clicking a card opens the detail view.
