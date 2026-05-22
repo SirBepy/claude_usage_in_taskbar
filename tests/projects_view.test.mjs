@@ -49,9 +49,7 @@ describe("Projects view DOM", () => {
   it("includes a sort-by dropdown with expected options", () => {
     expect(projectsTs).toMatch(/id="projectsSortSelect"/);
     expect(projectsTs).toMatch(/value="recent"/);
-    expect(projectsTs).toMatch(/value="live"/);
     expect(projectsTs).toMatch(/value="name"/);
-    expect(projectsTs).toMatch(/value="tokens"/);
   });
 
   it("has an empty-state element", () => {

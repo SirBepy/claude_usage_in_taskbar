@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { JSDOM } from "jsdom";
+import { userEvent, streamingEvent, finalEvent } from "./helpers/chat-events.mjs";
 
 const invokeMock = vi.fn();
 vi.mock("../src/shared/ipc.ts", () => ({ invoke: invokeMock }));
@@ -40,16 +41,6 @@ beforeEach(() => {
   globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
   globalThis.window.__TAURI__ = undefined;
 });
-
-function streamingEvent(text, ts = 0) {
-  return { type: "assistant_message", content: [{ type: "text", text }], streaming: true, timestamp: ts };
-}
-function finalEvent(text, ts = 0) {
-  return { type: "assistant_message", content: [{ type: "text", text }], streaming: false, timestamp: ts };
-}
-function userEvent(text, ts = 0) {
-  return { type: "user_message", content: [{ type: "text", text }], timestamp: ts };
-}
 
 describe("ChatRenderer — streaming dedup (ai_todo 47)", () => {
   it("streaming → final: renders exactly 1 assistant message", () => {

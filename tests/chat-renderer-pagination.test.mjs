@@ -5,6 +5,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { JSDOM } from "jsdom";
+import { userEvent, assistantEvent } from "./helpers/chat-events.mjs";
 
 // Mock the ipc module before importing anything that touches it (event-store
 // pulls it in at module-eval time).
@@ -29,19 +30,14 @@ beforeEach(() => {
   // by default; that's fine here, findScroller will simply return null.
 });
 
-const { ChatRenderer } = await import("../src/shared/chat/chat-renderer.ts");
+// sidemenu.ts assigns to window at module-eval time, before any beforeEach can
+// run. Provide a bare stub so the top-level import below doesn't throw; each
+// test then gets a real JSDOM window via beforeEach.
+if (!globalThis.window) {
+  globalThis.window = {};
+}
 
-function userEvent(text, ts = 0) {
-  return { type: "user_message", content: [{ type: "text", text }], timestamp: ts };
-}
-function assistantEvent(text, ts = 0) {
-  return {
-    type: "assistant_message",
-    content: [{ type: "text", text }],
-    streaming: false,
-    timestamp: ts,
-  };
-}
+const { ChatRenderer } = await import("../src/shared/chat/chat-renderer.ts");
 
 describe("ChatRenderer.fetchOlder prepends instead of rebuilding", () => {
   it("preserves existing nodes and grows messageEls by slice length", async () => {

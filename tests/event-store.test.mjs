@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { userEvent, assistantEvent } from "./helpers/chat-events.mjs";
 
 const invokeMock = vi.fn();
 vi.mock("../src/shared/ipc.ts", () => ({ invoke: invokeMock }));
@@ -10,13 +11,6 @@ beforeEach(() => {
 });
 
 const { sessionEvents } = await import("../src/shared/chat/event-store.ts");
-
-function userEvent(text, ts = 0) {
-  return { type: "user_message", content: [{ type: "text", text }], timestamp: ts };
-}
-function assistantEvent(text, ts = 0) {
-  return { type: "assistant_message", content: [{ type: "text", text }], streaming: false, timestamp: ts };
-}
 
 describe("SessionEventStore pagination", () => {
   it("loadInitial caches and is idempotent", async () => {
