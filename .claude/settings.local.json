@@ -183,7 +183,11 @@
       "PowerShell(Get-NetTCPConnection *)",
       "Bash(git submodule *)",
       "Bash(git -c core.autocrlf=false diff src-tauri/Cargo.toml)",
-      "Bash(git rev-list *)"
+      "Bash(git rev-list *)",
+      "WebFetch(domain:soundfxcenter.com)",
+      "WebFetch(domain:archive.org)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:www.mariowiki.com)"
     ]
   }
 }
