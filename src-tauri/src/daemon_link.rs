@@ -5,14 +5,14 @@
 
 use tauri::Manager;
 
-/// Spawned once at startup. On Windows: connect-or-spawn the daemon (via
-/// `ensure_daemon`), push settings, subscribe for notifications, seed the
-/// instance/channel caches from the daemon snapshot, then pump notifications.
-/// On connection loss it respawns + reconnects with capped backoff. On
-/// non-Windows the daemon client wiring is not yet enabled (Phase 3).
+/// Spawned once at startup. Connect-or-spawn the daemon (via `ensure_daemon`),
+/// push settings, subscribe for notifications, seed the instance/channel caches
+/// from the daemon snapshot, then pump notifications. On connection loss it
+/// respawns + reconnects with capped backoff. The transport is a named pipe on
+/// Windows and a Unix socket on macOS/Linux; channel automation stays
+/// Windows-only (see `daemon::channel_adopt`).
 pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
     let state = app_handle.state::<crate::state::AppState>();
-    #[cfg(windows)]
     {
         // Reconnect loop: on connection loss, respawn the daemon
         // (via ensure_daemon) + reconnect with capped backoff, then
@@ -75,11 +75,6 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
             log::warn!("daemon connection lost; respawning + reconnecting");
             { *state.daemon_client.lock().await = None; }
         }
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = state;
-        log::debug!("daemon client wiring only enabled on Windows in Phase 3");
     }
 }
 

@@ -309,6 +309,16 @@ pub fn adopt_external_sessions(state: Arc<DaemonState>) {
             if let Some(bridge) = &sess.bridge_session_id {
                 state.registry.set_bridge_session_id(&sess.session_id, bridge.clone());
             }
+            // Derive the sidebar title from the transcript's first user prompt,
+            // same as the restore + hook-enrichment paths. Without this an
+            // adopted session shows as "New chat" forever (it never goes through
+            // the session-start hook that would otherwise name it).
+            if let Some(name) = crate::tokens::transcript_for_session(&sess.cwd, &sess.session_id)
+                .as_deref()
+                .and_then(|p| crate::tokens::session_title(p, 60))
+            {
+                state.registry.set_name(&sess.session_id, name);
+            }
             log::info!(
                 "adopt_external_sessions: adopted session {} pid={} cwd={:?}",
                 sess.session_id, sess.pid, sess.cwd

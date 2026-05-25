@@ -4,6 +4,7 @@
 
 ### Visual QA
 
+- Verify mac daemon client wiring (commit c6506e7): the cfg(windows) gate on `run_app_subscription` is lifted, compile + 59 daemon unit tests pass, but the live path is unproven. Run `cargo tauri dev`, start `claude` in a terminal, and confirm `/local-session-chat` / the Sessions screen now lists it (was empty on mac). Log should show `spawned daemon (pid …)` instead of the old "wiring only enabled on Windows" line.
 - Confirm duplicate-message fix (ai_todo 47): open a session that's actively streaming, or send a message in a fresh session, and confirm each Send produces exactly one assistant reply in one sidebar entry. The liveBuffer + snapshot fix landed in `c5c0cac` but needs eyeball confirmation on the live app.
 
 - Confirm runner/watcher dup fix (ai_todo 77, commit `f034281`): the dup you screenshotted (first assistant reply shown twice, "not all msgs") was the file-watcher winning the race against the runner stream, both keyed on ts=0. Reproduced + fixed via red->green unit test (`tests/chat-watcher-runner-dup.test.mjs`), but the actual race only happens live. Send several messages in a fresh session (especially the first turn) and confirm each reply appears exactly once. Also check the earlier symptoms: no doubled "Continue from where you left off." or `/cost` (isUsingOverage) blocks.
