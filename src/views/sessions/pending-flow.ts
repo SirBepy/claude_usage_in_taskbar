@@ -101,6 +101,7 @@ export async function resumeDraft(pane: HTMLElement): Promise<void> {
     pending.placeholderId,
     { path: pending.projectPath, name: pending.projectName },
     pending.config,
+    discardDraft,
   );
 
   const root = document.querySelector<HTMLElement>(".view-sessions");
@@ -158,7 +159,7 @@ export async function launchNewSession(
   savePendingSession(state.pendingNewSession);
   setActiveSession(placeholderId);
 
-  await renderPendingPane(pane, placeholderId, project, config);
+  await renderPendingPane(pane, placeholderId, project, config, discardDraft);
 
   // Re-render sidebar to show the pending row.
   const root = document.querySelector<HTMLElement>(".view-sessions");

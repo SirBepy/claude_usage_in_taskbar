@@ -23,6 +23,7 @@ export async function renderPendingPane(
   placeholderId: string,
   project: { path: string; name: string },
   config: SessionConfig,
+  onDiscard?: (pane: HTMLElement) => void,
 ): Promise<void> {
   const myMount = state.mountId;
   pane.innerHTML = `
@@ -30,7 +31,7 @@ export async function renderPendingPane(
       <span class="title">New chat</span>
       <span class="meta">${escapeHtml(project.name)} - ${escapeHtml(project.path)}</span>
       <button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>
-      <button class="icon-btn cancel-btn" title="Cancel turn"><i class="ph ph-x"></i></button>
+      <button class="icon-btn cancel-btn" title="Cancel turn" hidden><i class="ph ph-x"></i></button>
     </header>
     <div class="session-statusbar-host"></div>
     <div class="session-messages">
@@ -195,6 +196,10 @@ export async function renderPendingPane(
   });
 
   pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", () => {
+    if (!state.pendingNewSession?.firstMessageSent && onDiscard) {
+      onDiscard(pane);
+      return;
+    }
     const closeTarget = state.pendingNewSession?.realId || placeholderId;
     void closeChat(closeTarget);
   });
@@ -281,6 +286,7 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   if (cancelBtn) {
     const fresh = cancelBtn.cloneNode(true) as HTMLButtonElement;
     cancelBtn.replaceWith(fresh);
+    fresh.removeAttribute("hidden");
     fresh.addEventListener("click", async () => {
       try {
         await invoke<void>("cancel_turn", { sessionId });

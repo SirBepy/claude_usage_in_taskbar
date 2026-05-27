@@ -186,6 +186,19 @@ pub async fn spawn_session(
             match buf_reader.read_until(b'\n', &mut line_buf).await {
                 Ok(0) => break,
                 Ok(_) => {
+                    // claude -p shows an interactive workspace-trust prompt when
+                    // the cwd hasn't been trusted before. With stdin piped the
+                    // process blocks indefinitely waiting for keyboard input.
+                    // Detect the prompt and auto-accept by selecting option 1.
+                    if !line_buf.starts_with(b"{") {
+                        if let Ok(s) = std::str::from_utf8(&line_buf) {
+                            if s.contains("Enter to confirm") {
+                                let mut stdin_guard = pump_session.stdin.lock().await;
+                                let _ = stdin_guard.write_all(b"1\n").await;
+                                let _ = stdin_guard.flush().await;
+                            }
+                        }
+                    }
                     for ev in ctx.feed(&line_buf) {
                         // Suppress SessionStarted: claude re-emits a system/init
                         // line at the start of EVERY turn. The app shows the
