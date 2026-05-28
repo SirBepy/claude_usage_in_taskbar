@@ -43,7 +43,33 @@ export function removeBackgroundSession(id: string): void {
 export function isForSelectedSession(eventSessionId: string | undefined): boolean {
   if (!eventSessionId) return false;
   if (_selectedSessionId === eventSessionId) return true;
-  return _backgroundSessionIds.has(eventSessionId);
+  if (_backgroundSessionIds.has(eventSessionId)) return true;
+  // During a brand-new session's first turn, selectedId is still the placeholder
+  // while the active pane already shows the real session (the renderer swapped
+  // its subscription on SessionStarted but setActiveSession lags until
+  // start_session resolves). Accept the pending realId so an early prompt isn't
+  // dropped.
+  const pending = state.pendingNewSession;
+  if (pending?.realId === eventSessionId && state.selectedId === pending.placeholderId) {
+    return true;
+  }
+  return false;
+}
+
+/** Diagnostic snapshot of the gate's current ids. Logged when a prompt is
+ *  dropped so we can see WHY a permission/question event didn't surface. */
+export function gateDiag(): {
+  selected: string | null;
+  background: string[];
+  pendingRealId: string | null;
+  pendingPlaceholder: string | null;
+} {
+  return {
+    selected: _selectedSessionId,
+    background: [..._backgroundSessionIds],
+    pendingRealId: state.pendingNewSession?.realId ?? null,
+    pendingPlaceholder: state.pendingNewSession?.placeholderId ?? null,
+  };
 }
 
 /** Resolve the cwd for a session_id from runtime state. Used to look up the

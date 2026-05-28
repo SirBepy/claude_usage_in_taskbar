@@ -236,6 +236,9 @@ export class SessionStatusbar {
       if (this.meta.inputTokens > 0) {
         const window = modelContextWindow(this.meta.model);
         const raw = (this.meta.inputTokens / window) * 100;
+        if (raw >= 100) {
+          console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, model: this.meta.model });
+        }
         const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
         const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
         claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens"><i class="ph ph-stack"></i>${pctStr}%</span>`);

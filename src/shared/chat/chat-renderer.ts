@@ -586,6 +586,7 @@ export class ChatRenderer {
         // context. Including them here matches Claude's own "X% remaining"
         // warning, which accounts for the full accumulated history.
         const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens) + Number(ev.output_tokens);
+        console.debug("[ctx] turn_usage", { model: ev.model, input: Number(ev.input_tokens), cacheCreate: Number(ev.cache_creation_input_tokens), cacheRead: Number(ev.cache_read_input_tokens), output: Number(ev.output_tokens), totalCtx });
         this.meta.inputTokens = totalCtx;
         this.meta.totalCostUsd += ev.total_cost_usd;
         this.meta.hasUsage = true;

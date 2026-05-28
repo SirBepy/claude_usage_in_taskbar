@@ -23,6 +23,7 @@ import {
   autoAllowIfRemembered,
   isAutoAccept,
   isForSelectedSession,
+  gateDiag,
 } from "./gating";
 import type { PermissionRequestedPayload, Question, QuestionRequestedPayload } from "./types";
 
@@ -70,7 +71,10 @@ export function installPermissionModalListener(): void {
 
   ev.listen<PermissionRequestedPayload>("permission-requested", (event) => {
     const payload = event.payload;
-    if (!isForSelectedSession(payload.session_id)) return;
+    if (!isForSelectedSession(payload.session_id)) {
+      console.warn("[perm-gate] DROPPED permission-requested", { eventSessionId: payload.session_id, tool: payload.tool_name, ...gateDiag() });
+      return;
+    }
 
     if (
       payload.session_id
@@ -94,7 +98,10 @@ export function installPermissionModalListener(): void {
   });
 
   ev.listen<QuestionRequestedPayload>("question-requested", (event) => {
-    if (!isForSelectedSession(event.payload.session_id)) return;
+    if (!isForSelectedSession(event.payload.session_id)) {
+      console.warn("[perm-gate] DROPPED question-requested", { eventSessionId: event.payload.session_id, ...gateDiag() });
+      return;
+    }
     showQuestionCard(event.payload);
   });
 }
