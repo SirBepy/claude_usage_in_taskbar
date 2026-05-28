@@ -484,6 +484,9 @@ export class ChatRenderer {
       case "user_message": {
         // Close any in-flight Claude turn before showing the new user message.
         this.enqueueTurnClose();
+        // New turn starts: drop the previous turn's pinned action so the gap
+        // before the first action shows a fresh "thinking" verb.
+        this.setActivity(null);
         // /compact injects the summary back as a user message — show a system
         // notice instead so the multi-KB summary doesn't appear as a chat bubble.
         if (isCompactUserMessage(ev.content)) {
@@ -507,9 +510,9 @@ export class ChatRenderer {
         break;
       }
       case "assistant_message": {
-        // Clear activity on first stream chunk OR final non-streaming chunk so the
-        // thinking bar stops showing a stale tool action while claude is talking.
-        if (!ev.streaming || this.streamingIndex === null) this.setActivity(null);
+        // Activity is NOT cleared here: the last tool action stays pinned in the
+        // thinking bar while Claude streams its reply (Joe's "keep the last msg"
+        // behavior). It resets on the next user_message / when the session goes idle.
         const msg: RenderedMessage = {
           kind: "assistant",
           content: ev.content,
@@ -595,7 +598,9 @@ export class ChatRenderer {
         this._cumulative.costUsd += Number(ev.total_cost_usd) || 0;
         this._cumulative.turns += 1;
         this.onMetaUpdate?.(this.getMeta());
-        this.setActivity(null);
+        // Don't clear activity here: it would flash a random verb between the
+        // last action and the session going idle. The bar hides on idle, and
+        // the next user_message resets the pinned action.
         // turn_usage is the definitive signal that Claude has finished a turn.
         // Enqueue collapse so the working steps fold up after the next flush.
         this.enqueueTurnClose();
@@ -706,11 +711,8 @@ export class ChatRenderer {
     details.className = "turn-steps";
     const summary = document.createElement("summary");
     summary.className = "turn-steps-summary";
-    const toolCalls = this.messages.slice(start, intermediateEnd).filter(m => m.kind === "tool_use").length;
-    const label = toolCalls > 0
-      ? `${toolCalls} tool call${toolCalls !== 1 ? "s" : ""}`
-      : `${intermediateCount} step${intermediateCount !== 1 ? "s" : ""}`;
-    summary.innerHTML = `<i class="ph ph-wrench"></i> ${label}`;
+    const label = `${intermediateCount} step${intermediateCount !== 1 ? "s" : ""}`;
+    summary.innerHTML = `<i class="ph ph-list-bullets"></i> ${label}`;
     details.appendChild(summary);
 
     firstEl.parentElement.insertBefore(details, firstEl);

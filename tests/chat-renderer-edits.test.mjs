@@ -88,14 +88,16 @@ describe("ChatRenderer — fileEdits index + callbacks", () => {
     expect(last.length).toBeLessThanOrEqual(60);
   });
 
-  it("clears activity on assistant_message non-streaming", async () => {
+  it("keeps the last tool action pinned across assistant_message (no clear)", async () => {
     const ChatRenderer = await loadRenderer();
     const r = new ChatRenderer(makeContainer());
     const cb = vi.fn();
     r.onActivityUpdate = cb;
     r.handleEvent({ type: "tool_use", tool_name: "Edit", input: { file_path: "/x.ts", old_string: "", new_string: "" }, id: "1" }, { silent: true });
     cb.mockClear();
+    // The reply streaming/finishing must NOT clear the pinned action; it stays
+    // visible until the next user_message resets the turn.
     r.handleEvent({ type: "assistant_message", content: [{ type: "text", text: "done" }], streaming: false }, { silent: true });
-    expect(cb).toHaveBeenCalledWith(null);
+    expect(cb).not.toHaveBeenCalled();
   });
 });

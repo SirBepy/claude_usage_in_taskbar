@@ -35,12 +35,15 @@ const THINKING_VERBS = [
   "Generating", "Contemplating", "Inferring", "Calculating", "Researching",
   "Strategizing", "Conceptualizing", "Working", "Iterating", "Revising",
 ];
-let _verbIdx = 0;
-let _verbTimer: number | null = null;
 let _activeActivity: string | null = null;
+// The one-shot verb for the current turn's initial gap (before the first real
+// action). Sticky until a real action arrives or the turn resets.
+let _gapVerb: string | null = null;
 
 export function setThinkingActivity(s: string | null): void {
   _activeActivity = s;
+  // Null = turn boundary: drop the gap verb so the next turn picks a fresh one.
+  if (s === null) _gapVerb = null;
   updateThinkingBar();
 }
 
@@ -72,25 +75,22 @@ export function updateThinkingBar(): void {
   const busy = isCurrentSessionBusy();
   if (!busy) {
     bar.setAttribute("hidden", "");
-    if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
     _activeActivity = null;
+    _gapVerb = null;
     return;
   }
   bar.removeAttribute("hidden");
+  // A real tool action takes priority and stays pinned until the next action
+  // (or the turn resets). Only the initial gap - before any action this turn -
+  // shows a single random verb.
   if (_activeActivity) {
-    if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
     bar.textContent = _activeActivity;
     return;
   }
-  if (_verbTimer === null) {
-    _verbIdx = Math.floor(Math.random() * THINKING_VERBS.length);
-    const tick = (): void => {
-      bar.textContent = THINKING_VERBS[_verbIdx % THINKING_VERBS.length] + "…";
-      _verbIdx++;
-    };
-    tick();
-    _verbTimer = window.setInterval(tick, 3500);
+  if (_gapVerb === null) {
+    _gapVerb = THINKING_VERBS[Math.floor(Math.random() * THINKING_VERBS.length)] + "…";
   }
+  bar.textContent = _gapVerb;
 }
 
 export function triggerNewSessionGlobal(): void {
@@ -443,7 +443,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
  * both the main view and the detached-window entry.
  */
 function teardownState(): void {
-  if (_verbTimer !== null) { clearInterval(_verbTimer); _verbTimer = null; }
+  _activeActivity = null;
+  _gapVerb = null;
   unwatchCurrentExternalSession();
   _pane = null;
   if (state.unlistenInstances) {
