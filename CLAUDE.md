@@ -1,4 +1,4 @@
-@~/.claude/snippets/auto-commit.md
+@~/.claude/snippets/full-auto.md
 
 # Claude Companion
 
