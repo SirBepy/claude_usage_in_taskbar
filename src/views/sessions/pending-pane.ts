@@ -52,6 +52,7 @@ export async function renderPendingPane(
       effort: config.effort,
       sessionId: placeholderId,
       readOnly: true,
+      sessionModel: config.model || null,
     });
     state.statusbar = sb;
     fetchGitInfo(project.path)

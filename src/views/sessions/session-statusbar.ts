@@ -39,10 +39,12 @@ export async function saveStatuslineFields(fields: string[]): Promise<void> {
 }
 
 export function modelContextWindow(model: string | null): number {
-  // Opus 4.7 has a 1M token context window; all other current models use 200K.
-  // Claude Code does not emit context_window in the stream-json init line,
-  // so we derive it from the model name.
-  if (model && model.includes("opus-4-7")) return 1_000_000;
+  // Opus (currently 4.7) has a 1M token context window; all other current
+  // models use 200K. Claude Code does not emit context_window in the
+  // stream-json init line, so we derive it from the model name. Accept both
+  // the locked session short name ("opus") and the full stream id
+  // ("claude-opus-4-7") so the denominator stays correct regardless of source.
+  if (model && model.includes("opus")) return 1_000_000;
   return 200_000;
 }
 
@@ -91,6 +93,10 @@ export interface StatusbarOptions {
   effort?: string;
   sessionId?: string | null;
   readOnly?: boolean;
+  /** Locked session model (short name e.g. "opus"). Authoritative source for
+   *  the context-window denominator - meta.model can be polluted by per-turn
+   *  sub-call models (internal Haiku calls), which would collapse the window. */
+  sessionModel?: string | null;
 }
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
@@ -106,6 +112,7 @@ export class SessionStatusbar {
   private cwd: string | null;
   private effort: string;
   private sessionId: string | null;
+  private sessionModel: string | null;
   private readOnlyEffort: boolean;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
   private effortPopoverOpen = false;
@@ -122,6 +129,7 @@ export class SessionStatusbar {
     this.cwd = opts.cwd ?? null;
     this.effort = opts.effort ?? "";
     this.sessionId = opts.sessionId ?? null;
+    this.sessionModel = opts.sessionModel ?? null;
     this.readOnlyEffort = opts.readOnly ?? false;
     this.container.className = "session-statusbar";
 
@@ -234,10 +242,14 @@ export class SessionStatusbar {
     }
     if (f.includes("context")) {
       if (this.meta.inputTokens > 0) {
-        const window = modelContextWindow(this.meta.model);
+        // Denominator uses the locked session model, NOT meta.model: the latter
+        // can be transiently overwritten by an internal sub-call's model (e.g.
+        // Haiku), which would collapse a 1M Opus window to 200K and pin ctx at
+        // 100%. Fall back to meta.model only when the session model is unknown.
+        const window = modelContextWindow(this.sessionModel || this.meta.model);
         const raw = (this.meta.inputTokens / window) * 100;
         if (raw >= 100) {
-          console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, model: this.meta.model });
+          console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, sessionModel: this.sessionModel, metaModel: this.meta.model });
         }
         const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
         const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";

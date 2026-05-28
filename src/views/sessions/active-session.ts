@@ -218,6 +218,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       effort: effortDisplay,
       sessionId: sess.session_id,
       readOnly: sess.kind === "external",
+      sessionModel: sess.model || null,
     });
     state.statusbar = sb;
     // Fetch git info async (cache-first; instantly populated by constructor
