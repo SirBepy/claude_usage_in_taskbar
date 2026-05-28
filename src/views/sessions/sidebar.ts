@@ -16,7 +16,7 @@ import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 
 export function isLive(i: Instance): boolean {
-  return !i.ended_at && (i.kind === "interactive" || i.kind === "external");
+  return !i.ended_at && (i.kind === "interactive" || i.kind === "external" || i.kind === "automated");
 }
 
 export async function refreshSessions(): Promise<void> {

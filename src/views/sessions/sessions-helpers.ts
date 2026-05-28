@@ -22,9 +22,9 @@ export function sessionSubtitle(i: Instance): string {
   return i.name || "New chat";
 }
 
-/** 0=Working, 1=Done(unread), 2=YourTurn, 3=External */
+/** 0=Working, 1=Done(unread), 2=YourTurn, 3=External/Automated */
 export function statusPriority(i: Instance, unread: Set<string>): number {
-  if (i.kind === "external") return 3;
+  if (i.kind === "external" || i.kind === "automated") return 3;
   if (i.busy) return 0;
   if (unread.has(i.session_id)) return 1;
   return 2;
@@ -32,6 +32,7 @@ export function statusPriority(i: Instance, unread: Set<string>): number {
 
 export function stateTooltip(i: Instance, unread: Set<string>): string {
   if (i.kind === "external") return "External session (read-only)";
+  if (i.kind === "automated") return "Automated session (remote-controlled)";
   if (i.busy) return "Claude is running";
   if (unread.has(i.session_id)) return "Claude responded - click to read";
   return "Waiting for your input";
@@ -98,7 +99,7 @@ export function statusIndicator(
   const tooltip = escapeHtmlFn(stateTooltip(i, unread));
   if (style === "dots") {
     let cls = "session-status-dot";
-    if (i.kind === "external") cls += " st-external";
+    if (i.kind === "external" || i.kind === "automated") cls += " st-external";
     else if (i.busy) cls += " st-working";
     else if (unread.has(i.session_id)) cls += " st-done";
     else cls += " st-your-turn";
@@ -107,6 +108,9 @@ export function statusIndicator(
   // icons mode
   if (i.kind === "external") {
     return `<i class="session-state-icon ph ph-eye s-blue" title="${tooltip}"></i>`;
+  }
+  if (i.kind === "automated") {
+    return `<i class="session-state-icon ph ph-robot s-blue" title="${tooltip}"></i>`;
   }
   if (i.busy) {
     return `<i class="session-state-icon ph ph-spinner s-green spinning" title="${tooltip}"></i>`;

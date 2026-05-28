@@ -184,7 +184,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     pane.innerHTML = `<div class="session-empty">Session ${escapeHtml(sessionId)} not found</div>`;
     return;
   }
-  const readOnly = sess.kind === "external";
+  const readOnly = sess.kind === "external" || sess.kind === "automated";
 
   pane.innerHTML = `
     <header class="session-header">
