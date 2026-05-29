@@ -31,7 +31,8 @@ import { renderStatuslineView } from "./views/settings/subviews/statusline/statu
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
-import { installPermissionModalListener } from "./views/sessions/permission-modal";
+import { installPermissionModalListener, setSidebarRerenderHook } from "./views/sessions/permission-modal";
+import { renderSidebar } from "./views/sessions/sidebar";
 import { installExternalLinkInterceptor } from "./shared/external-links";
 import { invoke } from "./shared/ipc";
 import { sessionEvents } from "./shared/chat/event-store";
@@ -116,6 +117,14 @@ function detachedSessionFromHash(): string | null {
 void invoke("frontend_ready").catch(() => {});
 
 installPermissionModalListener();
+// Let the permission relay re-render the sidebar when it parks/clears a
+// backgrounded chat's prompt (injected to avoid a static import cycle).
+setSidebarRerenderHook(() => {
+  const listEl = document
+    .querySelector<HTMLElement>(".view-sessions")
+    ?.querySelector<HTMLElement>("#sessions-list");
+  if (listEl) renderSidebar(listEl);
+});
 installExternalLinkInterceptor();
 
 if (new URLSearchParams(window.location.search).get("chatswindow") === "1") {

@@ -19,6 +19,7 @@ import {
   removeBackgroundSession,
   isAutoAccept,
   setAutoAccept,
+  replayPendingPrompt,
 } from "./permission-modal";
 import { closeChat } from "./close-chat";
 import { ChangesPanel } from "./changes-panel";
@@ -372,5 +373,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     const listEl = root.querySelector<HTMLElement>("#sessions-list");
     if (listEl) renderSidebar(listEl);
   }
+
+  // If this chat parked a permission/question prompt while it was in the
+  // background, surface it now that the pane (and composer anchor) is mounted.
+  replayPendingPrompt(sessionId);
 }
 

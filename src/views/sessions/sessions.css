@@ -164,6 +164,26 @@
 .session-status-dot.st-done      { background: #fbbf24; box-shadow: 0 0 5px rgba(251,191,36,0.5); }
 .session-status-dot.st-your-turn { background: #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.5); }
 .session-status-dot.st-external  { background: #60a5fa; box-shadow: 0 0 5px rgba(96,165,250,0.5); }
+.session-status-dot.st-attention { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.7); animation: attention-pulse 1.4s ease-in-out infinite; }
+
+/* A chat that parked a permission/question prompt while backgrounded. Pulse
+   the icon and tint the row so the user knows to click in and answer. */
+.session-state-icon.attention-pulse { color: #f59e0b; animation: attention-pulse 1.4s ease-in-out infinite; }
+
+.sessions-list li.needs-attention {
+  background: rgba(245,158,11,0.12);
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+.sessions-list li.needs-attention:hover { background: rgba(245,158,11,0.2); }
+.sessions-list li.needs-attention.active { background: var(--primary); box-shadow: none; }
+.sessions-list li.needs-attention.active .session-state-icon.attention-pulse {
+  color: var(--bg) !important;
+}
+
+@keyframes attention-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 
 /* 3-dot menu button */
 .session-row-menu-btn {

@@ -24,6 +24,8 @@ import {
   isAutoAccept,
   isForSelectedSession,
   gateDiag,
+  storePendingPrompt,
+  takePendingPrompt,
 } from "./gating";
 import type { PermissionRequestedPayload, Question, QuestionRequestedPayload } from "./types";
 
@@ -33,7 +35,26 @@ export {
   setSelectedSessionId,
   addBackgroundSession,
   removeBackgroundSession,
+  clearPendingPrompt,
+  pendingPromptSessionIds,
 } from "./gating";
+
+// Sidebar re-render is injected rather than statically imported: a direct
+// `import { renderSidebar } from "../sidebar"` would close a module cycle
+// (sidebar -> state -> permission-modal -> sidebar) and pull sidebar.ts's
+// top-level document listeners into this module's graph, breaking node-env
+// unit tests. main.ts wires the hook at startup.
+let _rerenderSidebar: (() => void) | null = null;
+
+export function setSidebarRerenderHook(fn: () => void): void {
+  _rerenderSidebar = fn;
+}
+
+/** Re-render the sessions sidebar so a newly-parked prompt's attention marker
+ *  appears (or clears) on the row. No-op until the hook is wired. */
+function rerenderSidebar(): void {
+  _rerenderSidebar?.();
+}
 
 function showQuestionCard(payload: QuestionRequestedPayload): void {
   const questions: Question[] = Array.isArray(payload.questions)
@@ -72,7 +93,15 @@ export function installPermissionModalListener(): void {
   ev.listen<PermissionRequestedPayload>("permission-requested", (event) => {
     const payload = event.payload;
     if (!isForSelectedSession(payload.session_id)) {
-      console.warn("[perm-gate] DROPPED permission-requested", { eventSessionId: payload.session_id, tool: payload.tool_name, ...gateDiag() });
+      if (payload.session_id) {
+        // Switched-away busy chat: park the prompt and mark the row so the
+        // daemon oneshot isn't left hanging. Replayed on selectSession.
+        storePendingPrompt(payload.session_id, { kind: "permission", payload });
+        rerenderSidebar();
+        console.warn("[perm-gate] PARKED permission-requested for backgrounded chat", { eventSessionId: payload.session_id, tool: payload.tool_name, ...gateDiag() });
+      } else {
+        console.warn("[perm-gate] DROPPED permission-requested (no session_id)", { tool: payload.tool_name, ...gateDiag() });
+      }
       return;
     }
 
@@ -98,10 +127,54 @@ export function installPermissionModalListener(): void {
   });
 
   ev.listen<QuestionRequestedPayload>("question-requested", (event) => {
-    if (!isForSelectedSession(event.payload.session_id)) {
-      console.warn("[perm-gate] DROPPED question-requested", { eventSessionId: event.payload.session_id, ...gateDiag() });
+    const payload = event.payload;
+    if (!isForSelectedSession(payload.session_id)) {
+      if (payload.session_id) {
+        storePendingPrompt(payload.session_id, { kind: "question", payload });
+        rerenderSidebar();
+        console.warn("[perm-gate] PARKED question-requested for backgrounded chat", { eventSessionId: payload.session_id, ...gateDiag() });
+      } else {
+        console.warn("[perm-gate] DROPPED question-requested (no session_id)", { ...gateDiag() });
+      }
       return;
     }
-    showQuestionCard(event.payload);
+    showQuestionCard(payload);
   });
+}
+
+/**
+ * Replay a parked permission/question prompt for a session the user just
+ * selected. Mirrors the arrival path (auto-accept, remembered-rule auto-allow,
+ * then the card) so a switch-back surfaces exactly what would have shown had
+ * the chat been focused when the tool fired. No-op if nothing is parked.
+ *
+ * Called from selectSession AFTER the pane is mounted so the card anchors over
+ * the right composer.
+ */
+export function replayPendingPrompt(sessionId: string): void {
+  const pending = takePendingPrompt(sessionId);
+  if (!pending) return;
+  rerenderSidebar(); // clear the attention marker now that we're surfacing it
+  if (pending.kind === "question") {
+    showQuestionCard(pending.payload);
+    return;
+  }
+  const payload = pending.payload;
+  if (
+    payload.session_id
+    && isAutoAccept(payload.session_id)
+    && extractQuestions(payload.input) === null
+  ) {
+    void invoke("respond_permission", {
+      id: payload.id,
+      behavior: "allow",
+      updatedInput: payload.input ?? {},
+      message: null,
+    }).catch((e) => console.warn("[auto-accept] replay respond_permission failed:", e));
+    return;
+  }
+  void (async () => {
+    if (await autoAllowIfRemembered(payload)) return;
+    showPermissionCard(payload);
+  })();
 }

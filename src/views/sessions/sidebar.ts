@@ -14,6 +14,7 @@ import {
 } from "./sessions-helpers";
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
+import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
 
 export function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external" || i.kind === "automated");
@@ -30,6 +31,12 @@ export async function refreshSessions(): Promise<void> {
     // GC: prune unread entries for sessions no longer alive
     for (const id of [...unread]) {
       if (!liveIds.has(id)) unread.delete(id);
+    }
+
+    // GC: drop parked permission/question prompts for dead sessions (e.g. the
+    // chat was closed before the user switched back to answer).
+    for (const id of pendingPromptSessionIds()) {
+      if (!liveIds.has(id)) clearPendingPrompt(id);
     }
 
     // Mark unread for sessions that just finished a busy turn (busy true->false)
@@ -56,6 +63,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   const filter = state.filter.toLowerCase();
   const pending = state.pendingNewSession;
   const unread = loadUnreadSet();
+  const attention = pendingPromptSessionIds();
   const style = loadStateStyle();
   const sort = loadSort();
 
@@ -79,7 +87,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     sessionSubtitle(s).toLowerCase().includes(filter)
   );
 
-  const sorted = sortSessions(filtered, sort, unread);
+  const sorted = sortSessions(filtered, sort, unread, attention);
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
   const isManualSlots = getChatSlotMode() === "manual";
@@ -93,7 +101,8 @@ export function renderSidebar(listEl: HTMLElement): void {
 
   const realRows = sorted.map((s, i) => {
     const isActive = s.session_id === state.selectedId;
-    const indicator = statusIndicator(s, unread, style, escapeHtml);
+    const needsAttention = attention.has(s.session_id);
+    const indicator = statusIndicator(s, unread, attention, style, escapeHtml);
     let kbdHint = "";
     if (isManualSlots) {
       const slot = slotBySession[s.session_id];
@@ -101,7 +110,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     } else {
       if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
     }
-    return `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""}">
+    return `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""}">
       ${indicator}
       <div class="session-row-text">
         <span class="session-row-project">${escapeHtml(projectName(s))}</span>

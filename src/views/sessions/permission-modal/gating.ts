@@ -2,7 +2,7 @@ import { invoke } from "../../../shared/ipc";
 import { state } from "../state";
 import { isDestructive, loadRulesForCwd, matchesRule } from "../permission-rules";
 import { extractQuestions } from "./question-ui";
-import type { PermissionRequestedPayload } from "./types";
+import type { PermissionRequestedPayload, QuestionRequestedPayload } from "./types";
 
 // ── Auto-accept (per-session) ──────────────────────────────────────────────
 //
@@ -54,6 +54,43 @@ export function isForSelectedSession(eventSessionId: string | undefined): boolea
     return true;
   }
   return false;
+}
+
+// ── Parked prompts for switched-away chats ──────────────────────────────────
+//
+// A permission/question raised on a chat the user has switched AWAY from must
+// NOT be dropped: the daemon parks a oneshot waiting for respond_permission /
+// respond_question, so a dropped event hangs that chat's turn forever. Instead
+// we stash the payload keyed by session_id and replay it when the user selects
+// that chat. While a prompt is parked the sidebar marks the row as needing
+// attention so the user knows to switch back. (The `/close` background path
+// still surfaces inline via `_backgroundSessionIds` and is not parked here.)
+
+export type PendingPrompt =
+  | { kind: "permission"; payload: PermissionRequestedPayload }
+  | { kind: "question"; payload: QuestionRequestedPayload };
+
+const _pendingPrompts = new Map<string, PendingPrompt>();
+
+export function storePendingPrompt(sessionId: string, prompt: PendingPrompt): void {
+  _pendingPrompts.set(sessionId, prompt);
+}
+
+/** Returns and removes the parked prompt for a session, if any. */
+export function takePendingPrompt(sessionId: string): PendingPrompt | null {
+  const p = _pendingPrompts.get(sessionId) ?? null;
+  if (p) _pendingPrompts.delete(sessionId);
+  return p;
+}
+
+export function clearPendingPrompt(sessionId: string): void {
+  _pendingPrompts.delete(sessionId);
+}
+
+/** Session ids with a parked prompt - the sidebar marks these as needing
+ *  attention. */
+export function pendingPromptSessionIds(): Set<string> {
+  return new Set(_pendingPrompts.keys());
 }
 
 /** Diagnostic snapshot of the gate's current ids. Logged when a prompt is
