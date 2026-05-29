@@ -44,6 +44,14 @@
   font-weight: 600;
   margin-bottom: 8px;
 }
+.instances-section .section-title .instances-title-text {
+  display: flex; align-items: center; gap: 8px;
+}
+.instances-section .section-title .instances-new-chat {
+  margin-left: auto;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+}
 .instances-section .no-data {
   font-size: 0.78rem;
   color: var(--text-dim, #8a8aa0);

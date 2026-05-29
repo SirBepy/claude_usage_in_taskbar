@@ -1,16 +1,26 @@
 import { html, render } from "lit-html";
+import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
+import type { TemplateResult } from "lit-html";
 import { showToast } from "../../shared/toast";
-import { backFromSubview } from "../../shared/navigation";
+import { backFromSubview, showView } from "../../shared/navigation";
 import { getCurrentSessionRecord } from "../../shared/state";
 import { formatTokens } from "../../shared/tokens";
+import { buildPieSvg } from "../../shared/pie";
+import { escapeHtml } from "../../shared/escape-html";
 import { api } from "../../shared/api";
-import { projectSubviewHeaderData, subviewHeaderTemplate, hydrateSubviewHeader } from "../project-detail/subview-header";
+import { invoke } from "../../shared/ipc";
+import type { ChatEvent, HistoryEntry } from "../../types/ipc.generated";
+import { renderAvatar } from "../../shared/projects";
+import { projectSubviewHeaderData, hydrateSubviewHeader } from "../project-detail/subview-header";
 import type { Avatar } from "../project-detail/subview-header";
+import { queueSessionSelect } from "../sessions/sessions";
+import { queueHistorySelect } from "../history/history";
 import "./session-detail.css";
 
 
 interface SessionRecord {
   session_id?: string;
+  sessionId?: string;
   kind?: string;
   pid?: number;
   project_id?: string;
@@ -18,6 +28,7 @@ interface SessionRecord {
   bridge_session_id?: string | null;
   name?: string | null;
   started_at?: string;
+  startedAt?: string;
   date?: string;
   turns?: number;
   inputTokens?: number;
@@ -32,8 +43,19 @@ interface LiveStats {
   prompts?: number;
 }
 
+const PIE = {
+  input: "#9d7dfc",
+  output: "#f2b457",
+  cacheRead: "#6ad98a",
+  cacheCreate: "#8a9eff",
+};
+
 function isLive(r: SessionRecord | null): boolean {
   return !!(r && r.session_id && r.kind);
+}
+
+function sessionIdOf(r: SessionRecord): string {
+  return r.session_id || r.sessionId || "";
 }
 
 function totalTok(r: SessionRecord): number {
@@ -56,38 +78,113 @@ function uptimeFrom(iso: string | undefined): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-function renderBody(r: SessionRecord, liveStats?: LiveStats): void {
+function dateTimeParts(r: SessionRecord, startedAtMs: number | null): { date: string; time: string } {
+  const ms = startedAtMs
+    ?? (r.startedAt ? new Date(r.startedAt).getTime() : null)
+    ?? (r.started_at ? new Date(r.started_at).getTime() : null);
+  if (ms && !Number.isNaN(ms)) {
+    const d = new Date(ms);
+    return {
+      date: d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }),
+      time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+    };
+  }
+  return { date: r.date || "-", time: "-" };
+}
+
+// ── Card rendering ──────────────────────────────────────────────────────────
+
+interface CardCtx {
+  title: string;
+  startedAtMs: number | null;
+  liveStats?: LiveStats;
+  messages: number | null; // null = still loading
+}
+
+function pieCard(r: SessionRecord): string {
+  const input = r.inputTokens || 0;
+  const output = r.outputTokens || 0;
+  const cacheRead = r.cacheReadTokens || 0;
+  const cacheCreate = r.cacheCreationTokens || 0;
+  const total = input + output + cacheRead + cacheCreate;
+  if (total <= 0) {
+    return `<div class="sd-card"><div class="sd-card-title">Token breakdown</div>
+      <div class="sd-empty">No token data</div></div>`;
+  }
+  const slices = [
+    { label: "Input", value: input, color: PIE.input },
+    { label: "Output", value: output, color: PIE.output },
+    { label: "Cache read", value: cacheRead, color: PIE.cacheRead },
+    { label: "Cache create", value: cacheCreate, color: PIE.cacheCreate },
+  ];
+  const svg = buildPieSvg(slices.map((s) => ({ value: s.value, color: s.color })), total, { r: 46, cx: 52, cy: 52, size: 104 });
+  const legend = slices.map((s) => `
+    <div class="sd-legend-item">
+      <span class="sd-swatch" style="background:${s.color}"></span>
+      <span class="sd-legend-label">${s.label}</span>
+      <span class="sd-legend-val">${formatTokens(s.value)}</span>
+    </div>`).join("");
+  return `<div class="sd-card"><div class="sd-card-title">Token breakdown</div>
+    <div class="sd-pie-wrap">${svg}<div class="sd-legend">${legend}</div></div></div>`;
+}
+
+function cacheCard(r: SessionRecord): string {
+  return `<div class="sd-card"><div class="sd-card-title">Cache</div>
+    <div class="sd-cache">
+      <div class="sd-cache-row"><span>Read</span><span>${formatTokens(r.cacheReadTokens || 0)}</span></div>
+      <div class="sd-cache-row"><span>Created</span><span>${formatTokens(r.cacheCreationTokens || 0)}</span></div>
+      <div class="sd-cache-row"><span>Efficiency</span><span>${cacheEffPct(r)}%</span></div>
+    </div></div>`;
+}
+
+function countsCard(turns: number, messages: number | null): string {
+  const msg = messages === null ? "…" : String(messages);
+  return `<div class="sd-card"><div class="sd-counts">
+    <div class="sd-count"><div class="sd-count-label">Turns</div><div class="sd-count-value">${turns}</div></div>
+    <div class="sd-count"><div class="sd-count-label">Messages</div><div class="sd-count-value">${msg}</div></div>
+  </div></div>`;
+}
+
+function renderCards(r: SessionRecord, ctx: CardCtx): void {
   const body = document.getElementById("session-detail-body");
   if (!body) return;
   const live = isLive(r);
-  let rows: [string, string][];
+  const { date, time } = dateTimeParts(r, ctx.startedAtMs);
+
+  let overview: string;
+  let counts: string;
+  let extra = "";
+
   if (live) {
-    const s = liveStats || {};
-    rows = [
-      ["Started", r.started_at || "-"],
-      ["Uptime", uptimeFrom(r.started_at)],
-      ["Prompts", String(s.prompts ?? 0)],
-      ["Turns", String(s.turns ?? 0)],
-      ["Tokens", formatTokens(s.tokens ?? 0)],
-      ["PID", (r.pid ?? 0) > 0 ? String(r.pid) : "?"],
-      ["Session id", r.session_id || "-"],
-    ];
+    const s = ctx.liveStats || {};
+    overview = `<div class="sd-card sd-overview">
+      <div class="sd-title">${escapeHtml(ctx.title)}</div>
+      <div class="sd-meta-row">
+        <span><span class="sd-meta-label">Started</span> ${date} · ${time}</span>
+        <span class="sd-meta-sep">|</span>
+        <span><span class="sd-meta-label">Up</span> ${uptimeFrom(r.started_at)}</span>
+      </div>
+      <div class="sd-total"><span class="sd-meta-label">Total tokens</span> ${formatTokens(s.tokens ?? 0)}</div>
+    </div>`;
+    counts = countsCard(s.turns ?? 0, s.prompts ?? 0);
   } else {
-    rows = [
-      ["Date", r.date || "-"],
-      ["Turns", String(r.turns ?? 0)],
-      ["Total tokens", formatTokens(totalTok(r))],
-      ["Input", formatTokens(r.inputTokens ?? 0)],
-      ["Output", formatTokens(r.outputTokens ?? 0)],
-      ["Cache read", formatTokens(r.cacheReadTokens ?? 0)],
-      ["Cache create", formatTokens(r.cacheCreationTokens ?? 0)],
-      ["Cache efficiency", `${cacheEffPct(r)}%`],
-    ];
+    overview = `<div class="sd-card sd-overview">
+      <div class="sd-title">${escapeHtml(ctx.title)}</div>
+      <div class="sd-meta-row">
+        <span><span class="sd-meta-label">Date</span> ${date}</span>
+        <span class="sd-meta-sep">|</span>
+        <span><span class="sd-meta-label">Time</span> ${time}</span>
+      </div>
+      <div class="sd-total"><span class="sd-meta-label">Total tokens</span> ${formatTokens(totalTok(r))}</div>
+    </div>`;
+    counts = countsCard(r.turns ?? 0, ctx.messages);
+    extra = pieCard(r) + cacheCard(r);
   }
-  body.innerHTML = `<div class="session-detail-list">${rows.map(([k, v]) => `
-    <div class="session-detail-row"><span class="label">${k}</span><span>${v}</span></div>
-  `).join("")}</div>`;
+
+  body.innerHTML = `<div class="sd-cards">${overview}${counts}${extra}</div>`;
 }
+
+// ── Live chips + automated actions (carried over) ────────────────────────────
 
 function renderChrome(r: SessionRecord): void {
   const chips = document.getElementById("session-detail-chips");
@@ -141,54 +238,185 @@ function renderChrome(r: SessionRecord): void {
   }
 }
 
+// ── More-options menu + CTA ───────────────────────────────────────────────────
+
+function wireMenu(root: HTMLElement, r: SessionRecord): void {
+  const menuBtn = root.querySelector<HTMLButtonElement>("#sessionDetailMenuBtn");
+  const menu = root.querySelector<HTMLElement>("#sessionDetailMenu");
+  if (!menuBtn || !menu) return;
+  const sid = sessionIdOf(r);
+  const onDocClick = (e: MouseEvent) => {
+    if (menu.classList.contains("hidden")) return;
+    const target = e.target as Node;
+    if (menu.contains(target) || menuBtn.contains(target)) return;
+    menu.classList.add("hidden");
+  };
+  menuBtn.onclick = (e: MouseEvent) => { e.stopPropagation(); menu.classList.toggle("hidden"); };
+  menu.querySelectorAll<HTMLButtonElement>(".menu-item").forEach((btn) => {
+    btn.onclick = async () => {
+      menu.classList.add("hidden");
+      const act = btn.dataset.act;
+      try {
+        if (act === "copy-pid" && (r.pid ?? 0) > 0) {
+          await navigator.clipboard.writeText(String(r.pid));
+          showToast(`Copied PID ${r.pid}`);
+        } else if (act === "copy-sid" && sid) {
+          await navigator.clipboard.writeText(sid);
+          showToast("Copied session id");
+        }
+      } catch (err) { showToast(`Copy failed: ${err}`); }
+    };
+  });
+  document.addEventListener("click", onDocClick);
+  // Stash cleanup on the menu element so the view teardown can remove it.
+  (menu as unknown as { _cleanup?: () => void })._cleanup = () =>
+    document.removeEventListener("click", onDocClick);
+}
+
+function wireCta(root: HTMLElement, r: SessionRecord): void {
+  const btn = root.querySelector<HTMLButtonElement>("#sessionOpenInChatsBtn");
+  if (!btn) return;
+  const sid = sessionIdOf(r);
+  btn.onclick = () => {
+    if (!sid) return;
+    if (isLive(r)) {
+      queueSessionSelect(sid);
+      showView("sessions");
+    } else {
+      queueHistorySelect(sid);
+      showView("history");
+    }
+  };
+}
+
+// ── Async enrichment for historical records ──────────────────────────────────
+
+async function enrichHistorical(r: SessionRecord, sid: string, ctx: CardCtx): Promise<void> {
+  // Title + start time come from the history index (cheap, no transcript read).
+  try {
+    const entries = await invoke<HistoryEntry[]>("list_history", { projectId: null, search: null, limit: 500, offset: 0 });
+    const entry = (entries || []).find((e) => e.session_id === sid);
+    if (entry) {
+      if (entry.title) {
+        ctx.title = entry.title;
+        const h2 = document.getElementById("sessionDetailTitle");
+        if (h2) h2.textContent = entry.title;
+      }
+      if (!ctx.startedAtMs && entry.started_at) {
+        ctx.startedAtMs = Number(entry.started_at) * 1000; // history timestamps are seconds
+      }
+    }
+  } catch { /* best-effort */ }
+
+  // Message count needs the transcript; count user_message events.
+  try {
+    const events = await invoke<ChatEvent[]>("load_history", { sessionId: sid, cwd: null });
+    ctx.messages = (events || []).filter((e) => e.type === "user_message").length;
+  } catch {
+    ctx.messages = 0;
+  }
+  // Re-render with whatever we resolved (title/date/messages).
+  if (sessionIdOf((getCurrentSessionRecord() as SessionRecord | null) || {}) === sid) {
+    renderCards(r, ctx);
+  }
+}
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
 export async function renderSessionDetailView(
   root: HTMLElement,
 ): Promise<() => void> {
   const r = getCurrentSessionRecord() as SessionRecord | null;
   const { avatar } = projectSubviewHeaderData();
-  const title = r
-    ? isLive(r)
-      ? ((r.name && r.name.trim()) || `Live session ${(r.session_id || "").slice(0, 8) || "?"}`)
-      : ((r.session_id || (r as { sessionId?: string }).sessionId || "").slice(0, 8) || r.date || "unknown")
+  const live = isLive(r);
+  const sid = r ? sessionIdOf(r) : "";
+
+  const fallbackTitle = r
+    ? live
+      ? ((r.name && r.name.trim()) || `Live session ${sid.slice(0, 8) || "?"}`)
+      : `Chat ${sid.slice(0, 8) || ""}`.trim() || r.date || "Session"
     : "Session";
-  render(template(avatar, title), root);
+
+  render(template(avatar, fallbackTitle, r), root);
   void hydrateSubviewHeader(root);
 
   if (!r) return () => { /* nothing */ };
 
+  wireMenu(root, r);
+  wireCta(root, r);
   renderChrome(r);
-  renderBody(r);
+
+  const ctx: CardCtx = {
+    title: fallbackTitle,
+    startedAtMs: live
+      ? (r.started_at ? new Date(r.started_at).getTime() : null)
+      : (r.startedAt ? new Date(r.startedAt).getTime() : null),
+    liveStats: undefined,
+    messages: live ? 0 : null,
+  };
+  renderCards(r, ctx);
+
+  if (!live && sid) {
+    void enrichHistorical(r, sid, ctx);
+  }
 
   let timer: ReturnType<typeof setInterval> | null = null;
-  if (isLive(r) && r.session_id) {
-    const sid = r.session_id;
+  if (live && r.session_id) {
+    const liveSid = r.session_id;
     const tick = async () => {
       try {
-        const stats = (await api.instanceTokenStats(sid)) as unknown as LiveStats;
-        if ((getCurrentSessionRecord() as SessionRecord | null)?.session_id !== sid) return;
-        renderBody(r, stats);
+        const stats = (await api.instanceTokenStats(liveSid)) as unknown as LiveStats;
+        if ((getCurrentSessionRecord() as SessionRecord | null)?.session_id !== liveSid) return;
+        ctx.liveStats = stats;
+        renderCards(r, ctx);
       } catch { /* ignore transient */ }
     };
+    void tick();
     timer = setInterval(tick, 2500);
   }
 
   return () => {
     if (timer) { clearInterval(timer); timer = null; }
+    const menu = root.querySelector<HTMLElement>("#sessionDetailMenu") as unknown as { _cleanup?: () => void } | null;
+    try { menu?._cleanup?.(); } catch { /* ignore */ }
   };
 }
 
-function template(avatar: Avatar, title: string) {
+function menuTemplate(r: SessionRecord | null): TemplateResult {
+  const hasPid = !!r && (r.pid ?? 0) > 0;
+  return html`
+    <div class="menu-anchor">
+      <button class="icon-btn" id="sessionDetailMenuBtn" title="More options">
+        <i class="ph ph-dots-three-vertical"></i>
+      </button>
+      <div id="sessionDetailMenu" class="menu-popover hidden" role="menu">
+        ${hasPid ? html`<button class="menu-item" data-act="copy-pid" role="menuitem">Copy PID</button>` : ""}
+        <button class="menu-item" data-act="copy-sid" role="menuitem">Copy Session id</button>
+      </div>
+    </div>
+  `;
+}
+
+function template(avatar: Avatar, title: string, r: SessionRecord | null) {
   return html`
     <div class="view view-session-detail">
       <div class="view-header subview-header">
-        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
+        <button class="icon-btn" title="Back" @click=${() => backFromSubview()}><i class="ph ph-arrow-left"></i></button>
+        <div class="project-detail-heading">
+          <div class="avatar-mini">${unsafeHTML(renderAvatar(avatar))}</div>
+          <div class="project-detail-titles">
+            <h2 id="sessionDetailTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title=${title}>${title}</h2>
+          </div>
+        </div>
+        ${menuTemplate(r)}
       </div>
       <div class="view-body">
         <div id="session-detail-chips" class="chip-bar" style="display:none"></div>
         <div id="session-detail-actions" class="actions session-detail-actions" style="display:none"></div>
-        <div class="section" style="margin-top:12px">
-          <div id="session-detail-body"></div>
-        </div>
+        <div id="session-detail-body" style="margin-top:12px"></div>
+        <button class="sd-cta" id="sessionOpenInChatsBtn">
+          <i class="ph ph-chats"></i> Open in chats
+        </button>
       </div>
     </div>
   `;

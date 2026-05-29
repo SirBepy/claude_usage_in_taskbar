@@ -24,6 +24,8 @@ import { saveSettings } from "../../shared/settings-save";
 import { refreshProjectsUI } from "../projects/projects";
 import { api } from "../../shared/api";
 import { renderRunningInstances } from "./subviews/running-instances/running-instances";
+import { openModelEffortModal } from "../sessions/model-effort-modal";
+import { queueNewChat } from "../sessions/sessions";
 
 function setHeader(cwd: string): void {
   const settings = getSettings();
@@ -173,6 +175,18 @@ export async function renderProjectDetailView(
       };
     });
     document.addEventListener("click", onDocClick);
+  }
+
+  // New chat in this project (+ on the running-instances header)
+  const newChatBtn = root.querySelector<HTMLButtonElement>("#projectNewChatBtn");
+  if (newChatBtn) {
+    newChatBtn.onclick = async () => {
+      const name = projectLabel(cwd, getSettings().projectAliases || {});
+      const config = await openModelEffortModal(cwd, name);
+      if (!config) return;
+      queueNewChat({ path: cwd, name }, config);
+      showView("sessions");
+    };
   }
 
   // Explorer / VSCode
@@ -425,7 +439,12 @@ function template() {
       </div>
       <div class="view-body">
         <section class="instances-section" id="runningInstancesSection">
-          <div class="section-title">Running instances <span id="runningInstancesCount" class="count-pill">0</span></div>
+          <div class="section-title">
+            <span class="instances-title-text">Running instances <span id="runningInstancesCount" class="count-pill">0</span></span>
+            <button class="icon-btn instances-new-chat" id="projectNewChatBtn" title="New chat in this project">
+              <i class="ph ph-plus"></i>
+            </button>
+          </div>
           <div id="runningInstancesEmpty" class="no-data">No Claude Code instances running in this project.</div>
           <div id="runningInstancesList" style="display:none"></div>
         </section>

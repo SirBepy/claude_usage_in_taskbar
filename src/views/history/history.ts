@@ -26,6 +26,15 @@ let state: HistoryState = {
   renderer: null,
 };
 let nextMountId = 1;
+let _pendingSelect: string | null = null;
+
+/**
+ * Open a specific past session read-only on the next History-view mount. Used
+ * by the session-detail "Open in chats" CTA when the chat is already closed.
+ */
+export function queueHistorySelect(sessionId: string): void {
+  _pendingSelect = sessionId;
+}
 
 
 async function fetchEntries(): Promise<void> {
@@ -173,6 +182,19 @@ export async function renderHistoryView(root: HTMLElement): Promise<() => void> 
   await fetchEntries();
   if (state.mountId !== myMount) return () => { /* superseded */ };
   renderList(listEl);
+
+  // If session-detail asked us to open a specific closed chat, select it now.
+  if (_pendingSelect) {
+    const sid = _pendingSelect;
+    _pendingSelect = null;
+    const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sid)}"]`);
+    if (li) {
+      listEl.querySelectorAll("li[data-session-id]").forEach((el) => el.classList.remove("active"));
+      li.classList.add("active");
+      li.scrollIntoView({ block: "center" });
+    }
+    void selectHistorySession(sid, pane);
+  }
 
   if (filterInput) {
     filterInput.addEventListener("input", () => {

@@ -11,7 +11,7 @@ import "./project-picker.css";
 import "./model-effort-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
-import { openModelEffortModal } from "./model-effort-modal";
+import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName, sessionSubtitle } from "./sessions-helpers";
@@ -20,9 +20,28 @@ import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sid
 let _pane: HTMLElement | null = null;
 let _pendingOpenPicker = false;
 let _pendingHistoryResume: string | null = null;
+let _pendingNewChat: { project: { path: string; name: string }; config: SessionConfig } | null = null;
 
 export function queueHistoryResume(sessionId: string): void {
   _pendingHistoryResume = sessionId;
+}
+
+/**
+ * Select an already-live session on the next Sessions-view mount. Used by the
+ * session-detail "Open in chats" CTA. Functionally the same select-on-mount as
+ * history-resume (both target a session that's live in the registry).
+ */
+export function queueSessionSelect(sessionId: string): void {
+  _pendingHistoryResume = sessionId;
+}
+
+/**
+ * Launch a brand-new chat for a known project on the next Sessions-view mount.
+ * The project + model/effort config are resolved by the caller (e.g. the
+ * project-detail "+" button) so no project-picker is shown here.
+ */
+export function queueNewChat(project: { path: string; name: string }, config: SessionConfig): void {
+  _pendingNewChat = { project, config };
 }
 
 // ── Thinking indicator ────────────────────────────────────────────────────────
@@ -202,9 +221,14 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   renderSidebar(listEl);
   updateThinkingBar();
 
-  // If the user clicked "Continue this chat" in the History view, auto-select
-  // the resumed session (it was registered in the registry before navigation).
-  if (_pendingHistoryResume) {
+  // If a new chat was queued (e.g. project-detail "+"), launch it now. Takes
+  // precedence over history-resume / last-selected restore.
+  if (_pendingNewChat) {
+    const { project, config } = _pendingNewChat;
+    _pendingNewChat = null;
+    await launchNewSession(pane, project, config);
+    updateThinkingBar();
+  } else if (_pendingHistoryResume) {
     const sid = _pendingHistoryResume;
     _pendingHistoryResume = null;
     if (state.sessions.find(s => s.session_id === sid)) {
