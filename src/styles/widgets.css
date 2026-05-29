@@ -1151,6 +1151,7 @@ input:checked + .slider:before {
 /* Recent/all sessions table */
 .session-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.76rem;
 }
