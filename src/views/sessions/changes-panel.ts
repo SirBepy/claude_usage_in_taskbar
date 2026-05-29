@@ -117,9 +117,20 @@ export class ChangesPanel {
         if (!path) return;
         if (cb.checked) this.reviewed.add(path);
         else this.reviewed.delete(path);
-        this.renderRail();
+        this.updateReviewedChip();
       });
     });
+  }
+
+  // Toggling a reviewed checkbox only changes the "N of M reviewed" chip;
+  // the row's checked state is already reflected natively. Mutate the chip in
+  // place so a long list doesn't rebuild every row (and reset scroll).
+  private updateReviewedChip(): void {
+    if (!this.host) return;
+    const rows = dedupeByPath(this.edits);
+    const reviewedCount = rows.filter((r) => this.reviewed.has(r.path)).length;
+    const chip = this.host.querySelector(".changes-rail-chip");
+    if (chip) chip.textContent = `${reviewedCount} of ${rows.length} reviewed`;
   }
 
   private renderSheet(): void {
