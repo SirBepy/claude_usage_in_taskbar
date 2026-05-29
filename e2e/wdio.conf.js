@@ -42,15 +42,35 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function waitForServer(url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
+  let lastBody = null;
   while (Date.now() < deadline) {
     try {
-      await fetch(url);
-      return;
-    } catch {
+      const res = await fetch(url);
+      lastBody = await res.text();
+      // Identity check: a *different* project's dev server may already own
+      // port 1420 (both claude_usage and some sibling repos configure vite to
+      // 1420, and our --strictPort spawn then silently fails to bind). Without
+      // this check the Tauri app loads the FOREIGN SPA and every spec dies with
+      // a baffling `window.showView is not a function` / missing `#sidemenu`.
+      // Require a marker unique to this app's index.html before proceeding.
+      if (lastBody.includes('id="sidemenu"') || lastBody.includes("<title>Claude Usage</title>")) {
+        return;
+      }
+      // Reachable but wrong app — fail fast with an actionable message rather
+      // than waiting out the timeout and then mis-loading the wrong page.
+      throw new Error(
+        `Port 1420 is serving a DIFFERENT app (no claude_usage marker found). ` +
+        `Another project's dev server (e.g. server_supervisor) is likely running on 1420. ` +
+        `Stop it and re-run. First 200 chars:\n${lastBody.slice(0, 200)}`
+      );
+    } catch (e) {
+      // Re-throw the identity-mismatch error immediately; only swallow the
+      // connection-refused churn while the server is still coming up.
+      if (e instanceof Error && e.message.startsWith("Port 1420 is serving")) throw e;
       await sleep(300);
     }
   }
-  throw new Error(`vite dev server not up at ${url} within ${timeoutMs}ms`);
+  throw new Error(`vite dev server not up (or not ours) at ${url} within ${timeoutMs}ms`);
 }
 
 export const config = {
