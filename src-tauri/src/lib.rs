@@ -236,6 +236,7 @@ pub fn run() {
             ipc::refresh_news,
             ipc::mark_news_read,
             ipc::mark_all_news_read,
+            ipc::generate_news_summary,
             ipc::list_slash_commands,
             ipc::list_project_files,
             ipc::get_skill_usage_week,

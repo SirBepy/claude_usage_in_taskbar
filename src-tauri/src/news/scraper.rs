@@ -148,6 +148,57 @@ pub fn parse_summary(html: &str) -> Option<String> {
     None
 }
 
+const ARTICLE_TEXT_CAP: usize = 8000;
+
+/// Fetches an article page and extracts its readable body text, capped to
+/// `ARTICLE_TEXT_CAP` chars to bound the tokens we feed the summarizer.
+pub async fn fetch_article_text(article_url: &str) -> Result<String> {
+    let body = client()
+        .get(article_url)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    Ok(extract_article_text(&body))
+}
+
+/// Pulls paragraph text from `<main>` (falling back to the whole document when
+/// there is no `<main>`), collapses whitespace, joins with blank lines, and
+/// truncates to `ARTICLE_TEXT_CAP` chars on a char boundary.
+pub fn extract_article_text(html: &str) -> String {
+    let doc = Html::parse_document(html);
+    let main_sel = Selector::parse("main").ok();
+    let p_sel = Selector::parse("p").expect("p selector");
+
+    let collect = |root: scraper::ElementRef| -> Vec<String> {
+        root.select(&p_sel)
+            .map(|p| collapse_ws(&p.text().collect::<String>()))
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+
+    let paras: Vec<String> = main_sel
+        .as_ref()
+        .and_then(|sel| doc.select(sel).next())
+        .map(collect)
+        .filter(|v: &Vec<String>| !v.is_empty())
+        .unwrap_or_else(|| {
+            doc.select(&p_sel)
+                .map(|p| collapse_ws(&p.text().collect::<String>()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        });
+
+    let mut text = paras.join("\n\n");
+    if text.len() > ARTICLE_TEXT_CAP {
+        let mut end = ARTICLE_TEXT_CAP;
+        while !text.is_char_boundary(end) { end -= 1; }
+        text.truncate(end);
+    }
+    text
+}
+
 /// "Apr 16, 2026" → "2026-04-16". Returns None for unparsable input.
 pub fn parse_date_iso(label: &str) -> Option<String> {
     chrono::NaiveDate::parse_from_str(label.trim(), "%b %d, %Y")
@@ -250,6 +301,28 @@ mod tests {
         assert!(is_generic_summary("Anthropic is an AI safety and research company that does stuff"));
         assert!(!is_generic_summary("Claude Opus 4.7 brings improved reasoning."));
         assert!(!is_generic_summary(""));
+    }
+
+    #[test]
+    fn extracts_article_paragraphs_and_truncates() {
+        let html = r#"<html><body>
+            <nav><p>NAV LINK</p></nav>
+            <main>
+              <p>First paragraph of the article body.</p>
+              <p>Second paragraph with detail.</p>
+            </main>
+        </body></html>"#;
+        let text = extract_article_text(html);
+        assert!(text.contains("First paragraph of the article body."));
+        assert!(text.contains("Second paragraph with detail."));
+        assert!(!text.contains("NAV LINK"), "nav text must be excluded when <main> exists");
+    }
+
+    #[test]
+    fn article_text_falls_back_to_all_paragraphs_without_main() {
+        let html = r#"<html><body><p>Only paragraph.</p></body></html>"#;
+        let text = extract_article_text(html);
+        assert_eq!(text, "Only paragraph.");
     }
 
     #[test]

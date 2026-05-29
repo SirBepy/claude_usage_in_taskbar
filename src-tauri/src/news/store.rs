@@ -82,6 +82,9 @@ pub fn merge_scraped(
             new_slugs.push(item.slug.clone());
         }
         let summary = prev.and_then(|p| p.summary.clone());
+        let ai_summary = prev.and_then(|p| p.ai_summary.clone());
+        let ai_summary_model = prev.and_then(|p| p.ai_summary_model.clone());
+        let ai_summary_at = prev.and_then(|p| p.ai_summary_at.clone());
         let date_iso = crate::news::scraper::parse_date_iso(&item.date_label);
         next_posts.push(NewsPost {
             slug: item.slug,
@@ -90,6 +93,9 @@ pub fn merge_scraped(
             category: item.category,
             excerpt: item.excerpt,
             summary,
+            ai_summary,
+            ai_summary_model,
+            ai_summary_at,
             date_label: item.date_label,
             date_iso,
             unread,
@@ -160,12 +166,18 @@ mod tests {
     }
 
     #[test]
-    fn merge_preserves_summary_across_refetches() {
+    fn merge_preserves_summary_and_ai_summary_across_refetches() {
         let mut s = NewsStore::default();
         merge_scraped(&mut s, vec![item("a", "May 5, 2026")]);
         s.posts[0].summary = Some("TLDR sentence.".into());
+        s.posts[0].ai_summary = Some("Para one.\n\nPara two.".into());
+        s.posts[0].ai_summary_model = Some("sonnet".into());
+        s.posts[0].ai_summary_at = Some("2026-05-29T00:00:00Z".into());
         merge_scraped(&mut s, vec![item("a", "May 5, 2026")]);
         assert_eq!(s.posts[0].summary.as_deref(), Some("TLDR sentence."));
+        assert_eq!(s.posts[0].ai_summary.as_deref(), Some("Para one.\n\nPara two."));
+        assert_eq!(s.posts[0].ai_summary_model.as_deref(), Some("sonnet"));
+        assert_eq!(s.posts[0].ai_summary_at.as_deref(), Some("2026-05-29T00:00:00Z"));
     }
 
     #[test]

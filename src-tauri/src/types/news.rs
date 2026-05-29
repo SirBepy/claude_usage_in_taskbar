@@ -12,6 +12,14 @@ pub struct NewsPost {
     /// One-sentence TLDR from the article's `<meta name="description">`.
     /// Written by Anthropic, fetched per-article on first sighting.
     pub summary: Option<String>,
+    /// Claude-generated 2-paragraph summary ("what shipped + why it matters").
+    /// Lazily generated on first detail-view open and cached here; distinct
+    /// from `summary`, which is Anthropic's own meta-description.
+    pub ai_summary: Option<String>,
+    /// Model used for `ai_summary` (e.g. "sonnet"). None until generated.
+    pub ai_summary_model: Option<String>,
+    /// RFC3339 timestamp of the last `ai_summary` generation. None until generated.
+    pub ai_summary_at: Option<String>,
     pub date_label: String,
     pub date_iso: Option<String>,
     pub unread: bool,
