@@ -20,3 +20,5 @@ src/types/ipc.generated.ts
 /*.png
 # Version-specific WebDriver binary for the UI e2e layer (download per Edge version)
 e2e/drivers/
+e2e/specs/chat-flow-findings.json
+e2e/chat-flow-findings.json
