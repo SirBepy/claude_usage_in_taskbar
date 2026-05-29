@@ -61,6 +61,13 @@ if (import.meta.env.DEV) {
     };
     sessionEvents.pushSynthetic(sessionId, ev);
   };
+
+  // News e2e seam: inject synthetic posts into the news view so the wdio harness
+  // can exercise the kebab menu + detail view + cached-summary render WITHOUT a
+  // real (billed) claude summary call. The news view listens for this event.
+  (window as unknown as Record<string, unknown>).__injectNews = (posts: unknown): void => {
+    window.dispatchEvent(new CustomEvent("e2e-inject-news", { detail: posts }));
+  };
 }
 
 registerView("dashboard", renderDashboard);

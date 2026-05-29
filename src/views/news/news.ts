@@ -10,6 +10,10 @@ interface NewsState {
   refreshing: boolean;
   error: string | null;
   notifyEnabled: boolean;
+  menuOpen: boolean;
+  selectedSlug: string | null;
+  generating: boolean;
+  detailError: string | null;
 }
 
 const state: NewsState = {
@@ -18,6 +22,10 @@ const state: NewsState = {
   refreshing: false,
   error: null,
   notifyEnabled: false,
+  menuOpen: false,
+  selectedSlug: null,
+  generating: false,
+  detailError: null,
 };
 
 interface SettingsLike { newsNotificationsEnabled?: boolean; [k: string]: unknown; }
@@ -71,21 +79,48 @@ async function refresh(root: HTMLElement): Promise<void> {
   }
 }
 
-async function openPost(post: NewsPost): Promise<void> {
-  try {
-    await invoke("open_external", { url: post.url });
-  } catch (err) {
-    console.warn("[news] open_external failed", err);
-    window.open(post.url, "_blank");
-  }
+function openDetail(post: NewsPost, root: HTMLElement): void {
+  state.selectedSlug = post.slug;
+  state.detailError = null;
+  paint(root);
   if (post.unread) {
     post.unread = false;
-    try {
-      await invoke("mark_news_read", { slug: post.slug });
-    } catch (err) {
-      console.warn("[news] mark_news_read failed", err);
-    }
+    void invoke("mark_news_read", { slug: post.slug }).catch((err) =>
+      console.warn("[news] mark_news_read failed", err)
+    );
   }
+  if (!post.aiSummary) void ensureSummary(post, root);
+}
+
+async function ensureSummary(post: NewsPost, root: HTMLElement): Promise<void> {
+  if (post.aiSummary || state.generating) return;
+  state.generating = true;
+  state.detailError = null;
+  paint(root);
+  try {
+    const updated = await invoke<NewsPost>("generate_news_summary", { slug: post.slug });
+    const idx = state.posts.findIndex((p) => p.slug === post.slug);
+    if (idx >= 0) state.posts[idx] = updated;
+  } catch (err) {
+    console.error("[news] generate_news_summary failed", err);
+    state.detailError = String(err);
+  } finally {
+    state.generating = false;
+    paint(root);
+  }
+}
+
+async function regenerate(post: NewsPost, root: HTMLElement): Promise<void> {
+  if (state.generating) return;
+  // Clear the cached copy in-memory so ensureSummary re-runs.
+  const idx = state.posts.findIndex((p) => p.slug === post.slug);
+  const cleared: NewsPost = { ...(idx >= 0 ? state.posts[idx]! : post), aiSummary: null };
+  if (idx >= 0) state.posts[idx] = cleared;
+  await ensureSummary(cleared, root);
+}
+
+function openOriginal(post: NewsPost): void {
+  void invoke("open_external", { url: post.url }).catch(() => window.open(post.url, "_blank"));
 }
 
 async function markAllRead(root: HTMLElement): Promise<void> {
@@ -113,42 +148,55 @@ function template(root: HTMLElement) {
         </button>
         <h2>Anthropic news</h2>
         <div class="news-header-actions">
-          ${unreadCount > 0
-            ? html`<button
-                class="btn-secondary news-mark-all"
-                @click=${() => markAllRead(root)}
-                title="Mark all as read"
-              >
-                Mark all read
-              </button>`
-            : null}
           <button
             class="icon-btn"
-            title=${state.refreshing ? "Refreshing..." : "Refresh"}
-            ?disabled=${state.refreshing}
-            @click=${() => refresh(root)}
+            title="More"
+            aria-haspopup="true"
+            aria-expanded=${state.menuOpen}
+            @click=${(e: Event) => { e.stopPropagation(); state.menuOpen = !state.menuOpen; paint(root); }}
           >
-            <i class="ph ${state.refreshing ? "ph-spinner news-spin" : "ph-arrow-clockwise"}"></i>
+            <i class="ph ph-dots-three-vertical"></i>
           </button>
+          ${state.menuOpen ? renderMenu(root, unreadCount) : null}
         </div>
       </div>
       <div class="view-body news-body">
-        <div class="news-notify-row">
-          <label class="news-notify-label">
-            <i class="ph ph-bell"></i>
-            Notify me on new posts
-          </label>
-          <label class="switch">
-            <input
-              type="checkbox"
-              .checked=${state.notifyEnabled}
-              @change=${(e: Event) => setNotifyEnabled((e.target as HTMLInputElement).checked, root)}
-            />
-            <span class="slider"></span>
-          </label>
-        </div>
-        ${renderBody(root)}
+        ${state.selectedSlug ? renderDetail(root) : renderBody(root)}
       </div>
+    </div>
+  `;
+}
+
+function renderMenu(root: HTMLElement, unreadCount: number) {
+  const close = () => { state.menuOpen = false; paint(root); };
+  return html`
+    <div class="news-menu" @click=${(e: Event) => e.stopPropagation()}>
+      <button
+        class="news-menu-item"
+        ?disabled=${unreadCount === 0}
+        @click=${() => { close(); void markAllRead(root); }}
+      >
+        <i class="ph ph-checks"></i> Mark all read
+      </button>
+      <button
+        class="news-menu-item"
+        ?disabled=${state.refreshing}
+        @click=${() => { close(); void refresh(root); }}
+      >
+        <i class="ph ${state.refreshing ? "ph-spinner news-spin" : "ph-arrow-clockwise"}"></i>
+        ${state.refreshing ? "Refreshing…" : "Refresh"}
+      </button>
+      <label class="news-menu-item news-menu-toggle">
+        <span><i class="ph ph-bell"></i> Notify me on new posts</span>
+        <label class="switch">
+          <input
+            type="checkbox"
+            .checked=${state.notifyEnabled}
+            @change=${(e: Event) => setNotifyEnabled((e.target as HTMLInputElement).checked, root)}
+          />
+          <span class="slider"></span>
+        </label>
+      </label>
     </div>
   `;
 }
@@ -172,16 +220,16 @@ function renderBody(root: HTMLElement) {
     </div>`;
   }
   return html`<ul class="news-list">
-    ${state.posts.map((p) => renderItem(p))}
+    ${state.posts.map((p) => renderItem(p, root))}
   </ul>`;
 }
 
-function renderItem(post: NewsPost) {
+function renderItem(post: NewsPost, root: HTMLElement) {
   const tldr = post.summary || post.excerpt || null;
   return html`
     <li
       class="news-item ${post.unread ? "news-item-unread" : ""}"
-      @click=${() => openPost(post)}
+      @click=${() => openDetail(post, root)}
       title=${post.url}
     >
       <div class="news-text">
@@ -193,9 +241,65 @@ function renderItem(post: NewsPost) {
         <div class="news-title">${post.title}</div>
         ${tldr ? html`<div class="news-excerpt">${tldr}</div>` : null}
       </div>
-      <i class="ph ph-arrow-up-right news-open-icon"></i>
+      <i class="ph ph-caret-right news-open-icon"></i>
     </li>
   `;
+}
+
+function renderDetail(root: HTMLElement) {
+  const post = state.posts.find((p) => p.slug === state.selectedSlug);
+  if (!post) {
+    state.selectedSlug = null;
+    return renderBody(root);
+  }
+  return html`
+    <div class="news-detail">
+      <button class="btn-secondary news-back" @click=${() => { state.selectedSlug = null; paint(root); }}>
+        <i class="ph ph-arrow-left"></i> Back
+      </button>
+      <div class="news-meta">
+        ${post.category ? html`<span class="news-cat">${post.category}</span>` : null}
+        <time class="news-date">${post.dateLabel}</time>
+      </div>
+      <h3 class="news-detail-title">${post.title}</h3>
+      ${renderSummaryBlock(post, root)}
+      <div class="news-detail-actions">
+        <button class="btn-secondary" @click=${() => openOriginal(post)}>
+          Open original <i class="ph ph-arrow-up-right"></i>
+        </button>
+        <button
+          class="btn-secondary"
+          ?disabled=${state.generating}
+          @click=${() => regenerate(post, root)}
+          title="Regenerate summary"
+        >
+          <i class="ph ${state.generating ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
+          Regenerate
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSummaryBlock(post: NewsPost, root: HTMLElement) {
+  if (state.generating) {
+    return html`<div class="news-summary news-summary-loading">
+      <i class="ph ph-spinner news-spin"></i> Summarizing…
+    </div>`;
+  }
+  if (state.detailError) {
+    return html`<div class="news-summary news-summary-error">
+      <p>Could not generate a summary.</p>
+      <p class="news-error-msg">${state.detailError}</p>
+      <button class="btn-secondary" @click=${() => ensureSummary(post, root)}>Retry</button>
+    </div>`;
+  }
+  if (post.aiSummary) {
+    return html`<div class="news-summary">
+      ${post.aiSummary.split(/\n\n+/).map((para) => html`<p>${para}</p>`)}
+    </div>`;
+  }
+  return html`<div class="news-summary news-summary-loading">Preparing…</div>`;
 }
 
 function paint(root: HTMLElement): void {
@@ -205,9 +309,26 @@ function paint(root: HTMLElement): void {
 export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   state.loading = true;
   state.error = null;
+  state.menuOpen = false;
+  state.selectedSlug = null;
+  state.detailError = null;
   paint(root);
   await Promise.all([fetchPosts(), loadNotifySetting()]);
   paint(root);
+
+  // Close the kebab menu on any click outside it.
+  const onDocClick = () => {
+    if (state.menuOpen) { state.menuOpen = false; paint(root); }
+  };
+  document.addEventListener("click", onDocClick);
+
+  // e2e seam (DEV only): inject synthetic posts without a backend/claude call.
+  const onInject = (e: Event) => {
+    state.posts = ((e as CustomEvent).detail as NewsPost[]) || [];
+    state.loading = false;
+    paint(root);
+  };
+  if (import.meta.env.DEV) window.addEventListener("e2e-inject-news", onInject);
 
   // Live updates from the 6h backend poll, manual refreshes elsewhere, etc.
   type Unlisten = () => void;
@@ -222,6 +343,8 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   }
 
   return () => {
+    document.removeEventListener("click", onDocClick);
+    if (import.meta.env.DEV) window.removeEventListener("e2e-inject-news", onInject);
     try { unlisten(); } catch { /* ignore */ }
   };
 }
