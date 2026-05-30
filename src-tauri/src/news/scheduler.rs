@@ -100,7 +100,9 @@ fn spawn_ai_backfill(app: AppHandle, slugs: Vec<String>) {
             Err(e) => { log::warn!("news AI backfill: {e:#}"); return; }
         };
         for slug in slugs {
-            match news::summarizer::generate_for_slug(&path, &slug).await {
+            // emit=false: background backfill has no viewer to live-write to;
+            // the news-updated emit below fills the list once it's saved.
+            match news::summarizer::generate_for_slug(&app, &path, &slug, false).await {
                 Ok(_) => {
                     let posts = news::load(&path).posts;
                     let unread = posts.iter().filter(|p| p.unread).count();

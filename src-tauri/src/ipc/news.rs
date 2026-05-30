@@ -46,7 +46,8 @@ pub async fn mark_news_read(slug: String, app: AppHandle) -> Result<(), String> 
 #[tauri::command]
 pub async fn generate_news_summary(slug: String, app: AppHandle) -> Result<NewsPost, String> {
     let path = paths::news_file().map_err(|e| e.to_string())?;
-    let updated = news::summarizer::generate_for_slug(&path, &slug)
+    // emit=true: stream phase + delta events so the open detail view live-writes.
+    let updated = news::summarizer::generate_for_slug(&app, &path, &slug, true)
         .await
         .map_err(|e| format!("{e:#}"))?;
 

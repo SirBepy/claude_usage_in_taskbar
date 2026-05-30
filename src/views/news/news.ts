@@ -22,6 +22,10 @@ interface NewsState {
   // generation (a global flag let B bail at the guard and stick on "Preparing…").
   generatingSlugs: Set<string>;
   errorBySlug: Map<string, string>;
+  // Live-stream state while a summary is being written: the running text as it
+  // arrives, and the current phase ("fetching" | "writing"). Keyed by slug.
+  streamBySlug: Map<string, string>;
+  phaseBySlug: Map<string, string>;
 }
 
 const state: NewsState = {
@@ -34,6 +38,8 @@ const state: NewsState = {
   selectedSlug: null,
   generatingSlugs: new Set(),
   errorBySlug: new Map(),
+  streamBySlug: new Map(),
+  phaseBySlug: new Map(),
 };
 
 interface SettingsLike { newsNotificationsEnabled?: boolean; [k: string]: unknown; }
@@ -103,6 +109,8 @@ async function ensureSummary(post: NewsPost, root: HTMLElement): Promise<void> {
   if (post.aiSummary || state.generatingSlugs.has(post.slug)) return;
   state.generatingSlugs.add(post.slug);
   state.errorBySlug.delete(post.slug);
+  state.streamBySlug.set(post.slug, "");
+  state.phaseBySlug.set(post.slug, "fetching");
   paint(root);
   try {
     const updated = await invoke<NewsPost>("generate_news_summary", { slug: post.slug });
@@ -113,6 +121,8 @@ async function ensureSummary(post: NewsPost, root: HTMLElement): Promise<void> {
     state.errorBySlug.set(post.slug, String(err));
   } finally {
     state.generatingSlugs.delete(post.slug);
+    state.streamBySlug.delete(post.slug);
+    state.phaseBySlug.delete(post.slug);
     paint(root);
   }
 }
@@ -311,8 +321,16 @@ function renderDetailMenu(post: NewsPost, root: HTMLElement) {
 
 function renderSummaryBlock(post: NewsPost, root: HTMLElement) {
   if (state.generatingSlugs.has(post.slug)) {
+    const live = state.streamBySlug.get(post.slug) ?? "";
+    if (live) {
+      // Live-write the summary as tokens stream in.
+      return html`<div class="news-summary news-summary-md news-summary-streaming">
+        ${unsafeHTML(md.render(live))}
+      </div>`;
+    }
+    const label = state.phaseBySlug.get(post.slug) === "writing" ? "Writing…" : "Fetching article…";
     return html`<div class="news-summary news-summary-loading">
-      <i class="ph ph-spinner news-spin"></i> Summarizing…
+      <i class="ph ph-spinner news-spin"></i> ${label}
     </div>`;
   }
   const err = state.errorBySlug.get(post.slug);
@@ -348,6 +366,8 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   state.selectedSlug = null;
   state.generatingSlugs.clear();
   state.errorBySlug.clear();
+  state.streamBySlug.clear();
+  state.phaseBySlug.clear();
   paint(root);
   await Promise.all([fetchPosts(), loadNotifySetting()]);
   paint(root);
@@ -366,21 +386,37 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   };
   if (import.meta.env.DEV) window.addEventListener("e2e-inject-news", onInject);
 
-  // Live updates from the 6h backend poll, manual refreshes elsewhere, etc.
+  // Live updates from the 6h backend poll, manual refreshes elsewhere, etc.,
+  // plus the streaming phase/delta events for an in-progress summary.
   type Unlisten = () => void;
-  let unlisten: Unlisten = () => undefined;
+  const unlisteners: Unlisten[] = [];
   const ev = window.__TAURI__?.event;
   if (ev?.listen) {
-    const p = ev.listen<{ posts: NewsPost[] }>("news-updated", (e) => {
-      state.posts = e.payload?.posts || [];
+    const listenFn = ev.listen.bind(ev);
+    const subscribe = <T,>(name: string, handler: (p: T) => void) => {
+      const p = listenFn<T>(name, (e) => handler(e.payload));
+      unlisteners.push(() => { void p.then((u) => u()); });
+    };
+    subscribe<{ posts: NewsPost[] }>("news-updated", (payload) => {
+      state.posts = payload?.posts || [];
       paint(root);
     });
-    unlisten = () => { void p.then((u) => u()); };
+    subscribe<{ slug: string; phase: string }>("news-summary-phase", (payload) => {
+      if (!payload?.slug) return;
+      state.phaseBySlug.set(payload.slug, payload.phase);
+      paint(root);
+    });
+    subscribe<{ slug: string; chunk: string }>("news-summary-delta", (payload) => {
+      if (!payload?.slug) return;
+      const prev = state.streamBySlug.get(payload.slug) ?? "";
+      state.streamBySlug.set(payload.slug, prev + (payload.chunk || ""));
+      paint(root);
+    });
   }
 
   return () => {
     document.removeEventListener("click", onDocClick);
     if (import.meta.env.DEV) window.removeEventListener("e2e-inject-news", onInject);
-    try { unlisten(); } catch { /* ignore */ }
+    for (const u of unlisteners) { try { u(); } catch { /* ignore */ } }
   };
 }
