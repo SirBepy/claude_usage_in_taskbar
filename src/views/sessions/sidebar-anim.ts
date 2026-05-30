@@ -171,10 +171,13 @@ export function reconcileList(
     // Reorder by appending each node in the desired order. appendChild on an
     // already-in-DOM node moves it to the end — so iterating the new order
     // produces the correct sequence with no intermediate empty-list state.
-    for (const node of nodes) listEl.appendChild(node);
+    // Skip nodes that acquired .row-exiting AFTER this reconcileList call built
+    // `nodes` (i.e. a second markSessionExiting fired during the 310 ms wait).
+    const liveNodes = nodes.filter(n => !n.classList.contains("row-exiting"));
+    for (const node of liveNodes) listEl.appendChild(node);
 
     // Enter animations for new rows
-    for (const node of nodes) {
+    for (const node of liveNodes) {
       if (enterKeys.has(keyOf(node))) {
         node.classList.add("row-entering");
         node.addEventListener("animationend", () => node.classList.remove("row-entering"), { once: true });
@@ -182,7 +185,7 @@ export function reconcileList(
     }
 
     // FLIP remaining rows to their new positions
-    flipNodes(nodes, beforeRects);
+    flipNodes(liveNodes, beforeRects);
   };
 
   if (hasExits) {
