@@ -18,7 +18,7 @@ const POSTS = [
     category: "Product",
     excerpt: null,
     summary: null,
-    aiSummary: "Para one about what shipped.\n\nPara two about why it matters.",
+    aiSummary: "**What shipped:** a new model.\n\n*Why it matters:* faster coding for daily Claude Code use.",
     aiSummaryModel: "sonnet",
     aiSummaryAt: "2026-05-29T00:00:00Z",
     dateLabel: "May 5, 2026",
@@ -75,21 +75,31 @@ describe("News redesign: kebab menu + detail view", () => {
     await menu.waitForExist({ timeout: 5000, reverse: true });
   });
 
-  it("opens the detail view and renders the cached AI summary", async () => {
+  it("opens the detail view and renders the cached AI summary as Markdown", async () => {
     await (await $(".news-list .news-item")).click();
 
     const detail = await $(".news-detail");
     await detail.waitForExist({ timeout: 10000 });
 
-    const paras = await $$(".news-summary p");
-    expect(paras.length).toBe(2);
-    expect(await paras[0].getText()).toContain("what shipped");
-    expect(await paras[1].getText()).toContain("why it matters");
+    // Markdown rendered: two paragraphs, bold + italic emphasis preserved.
+    const summary = await $(".news-summary-md");
+    const summaryText = await summary.getText();
+    expect(summaryText).toContain("What shipped");
+    expect(summaryText).toContain("Why it matters");
+    expect(await (await $(".news-summary-md strong")).isExisting()).toBe(true);
+    expect(await (await $(".news-summary-md em")).isExisting()).toBe(true);
 
-    // Both detail actions present (we do NOT click Regenerate: it would bill).
-    const actionsText = await (await $(".news-detail-actions")).getText();
-    expect(actionsText).toContain("Open original");
-    expect(actionsText).toContain("Regenerate");
+    // Open-original is an inline icon button in the title bar.
+    expect(await (await $('.news-detail-titlebar .icon-btn[title="Open original article"]')).isExisting()).toBe(true);
+
+    // Regenerate lives in the detail's own kebab menu (we do NOT click it: billed).
+    await (await $(".news-detail-menu-wrap .icon-btn")).click();
+    const menu = await $(".news-detail-menu-wrap .news-menu");
+    await menu.waitForExist({ timeout: 5000 });
+    expect(await menu.getText()).toContain("Regenerate");
+    // Close it again before leaving.
+    await (await $(".news-detail-title")).click();
+    await menu.waitForExist({ timeout: 5000, reverse: true });
   });
 
   it("returns to the list when Back is clicked", async () => {

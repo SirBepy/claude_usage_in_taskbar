@@ -50,6 +50,13 @@ pub async fn poll_once(app: &AppHandle) -> anyhow::Result<()> {
     news::save(&path, &store)?;
 
     let new_count = new_slugs.len();
+    // Eagerly generate AI summaries for genuinely-new posts in the background so
+    // they're ready by the time the user opens them. Only new slugs (never the
+    // back-catalog) - old posts get a summary lazily on first open. Non-blocking
+    // so the manual Refresh path returns immediately.
+    if !new_slugs.is_empty() {
+        spawn_ai_backfill(app.clone(), new_slugs.clone());
+    }
     let _ = app.emit("news-updated", serde_json::json!({
         "posts": store.posts,
         "newSlugs": new_slugs,
@@ -81,4 +88,30 @@ pub async fn poll_once(app: &AppHandle) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Background task: generate AI summaries for the given (new) slugs one at a
+/// time, emitting `news-updated` after each so the UI fills in progressively.
+/// Best-effort - a failure for one slug is logged and the rest continue.
+fn spawn_ai_backfill(app: AppHandle, slugs: Vec<String>) {
+    tauri::async_runtime::spawn(async move {
+        let path = match paths::news_file() {
+            Ok(p) => p,
+            Err(e) => { log::warn!("news AI backfill: {e:#}"); return; }
+        };
+        for slug in slugs {
+            match news::summarizer::generate_for_slug(&path, &slug).await {
+                Ok(_) => {
+                    let posts = news::load(&path).posts;
+                    let unread = posts.iter().filter(|p| p.unread).count();
+                    let _ = app.emit("news-updated", serde_json::json!({
+                        "posts": posts,
+                        "newSlugs": Vec::<String>::new(),
+                        "unreadCount": unread,
+                    }));
+                }
+                Err(e) => log::warn!("news AI summary backfill failed for {slug}: {e:#}"),
+            }
+        }
+    });
 }

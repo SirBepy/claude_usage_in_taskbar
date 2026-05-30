@@ -5,23 +5,53 @@
 
 use crate::chat::billing::check_metered_billing;
 use crate::settings::paths;
+use crate::types::NewsPost;
 use crate::util::process::hide_console_tokio;
 use anyhow::{anyhow, Context, Result};
+use std::path::Path;
 
-/// Model used for news summaries. Hardcoded for v1 (lazy => low volume, so
-/// prose quality beats haiku's marginal savings).
+/// Model used for news summaries. Hardcoded for v1 (low volume, so prose
+/// quality beats haiku's marginal savings).
 pub const SUMMARY_MODEL: &str = "sonnet";
 
-/// Builds the summarizer prompt: "what shipped + why it matters to a Claude /
-/// Claude Code power user", two plain-text paragraphs, no markdown/preamble.
+/// Builds the summarizer prompt: an ADHD-friendly, scannable Markdown summary
+/// ("what shipped + why it matters" to a Claude / Claude Code power user).
 pub fn build_prompt(title: &str, article_text: &str) -> String {
     format!(
         "Summarize this Anthropic announcement for a power user of Claude and \
-Claude Code. Write exactly two short plain-text paragraphs, no preamble, no \
-markdown headings. Paragraph 1: what shipped - the concrete announcement. \
-Paragraph 2: why it matters to someone who uses Claude and Claude Code daily. \
-Be specific, skip marketing language.\n\nTitle: {title}\n\nArticle: {article_text}"
+Claude Code. Write it ADHD-friendly: short, scannable chunks, never walls of text. \
+Use Markdown - a few small bold lead-ins or `###` sub-headings to break it up, \
+**bold** for key terms, *italics* for nuance, and bullet lists where they fit. \
+Cover what shipped and why it matters to someone using Claude and Claude Code daily. \
+Be specific and concrete; skip marketing language and any preamble. Aim for a few \
+tight chunks total.\n\nTitle: {title}\n\nArticle: {article_text}"
     )
+}
+
+/// Fetches the article text for `slug`, generates its Markdown summary, writes
+/// the `ai_summary*` fields back to the store at `path`, and returns the updated
+/// post. Does NOT emit any event - the caller decides whether to notify the UI.
+/// On any failure nothing is persisted.
+pub async fn generate_for_slug(path: &Path, slug: &str) -> Result<NewsPost> {
+    let (url, title) = {
+        let store = crate::news::load(path);
+        let post = store.posts.iter().find(|p| p.slug == slug)
+            .ok_or_else(|| anyhow!("no post with slug {slug}"))?;
+        (post.url.clone(), post.title.clone())
+    };
+
+    let article_text = crate::news::scraper::fetch_article_text(&url).await?;
+    let summary = generate_summary(&title, &article_text).await?;
+
+    let mut store = crate::news::load(path);
+    let post = store.posts.iter_mut().find(|p| p.slug == slug)
+        .ok_or_else(|| anyhow!("no post with slug {slug}"))?;
+    post.ai_summary = Some(summary);
+    post.ai_summary_model = Some(SUMMARY_MODEL.to_string());
+    post.ai_summary_at = Some(chrono::Utc::now().to_rfc3339());
+    let snapshot = post.clone();
+    crate::news::save(path, &store)?;
+    Ok(snapshot)
 }
 
 /// Runs `claude -p <prompt> --model <SUMMARY_MODEL> --output-format text` in the
@@ -66,11 +96,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prompt_includes_title_article_and_two_paragraph_instruction() {
+    fn prompt_includes_title_article_and_markdown_instruction() {
         let p = build_prompt("Claude Opus 4.8", "Body text here.");
         assert!(p.contains("Claude Opus 4.8"));
         assert!(p.contains("Body text here."));
-        assert!(p.contains("two short plain-text paragraphs"));
+        assert!(p.contains("Markdown"));
         assert!(p.contains("why it matters"));
     }
 

@@ -1,8 +1,14 @@
 import { html, render } from "lit-html";
+import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
+import MarkdownIt from "markdown-it";
 import { openSidemenu } from "../../shared/sidemenu";
 import { invoke } from "../../shared/ipc";
 import type { NewsPost } from "../../types/ipc.generated";
 import "./news.css";
+
+// Renders the AI summary (Claude-authored Markdown) to HTML. `html: false`
+// escapes any raw HTML in the model output, so unsafeHTML is safe here.
+const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
 
 interface NewsState {
   posts: NewsPost[];
@@ -11,6 +17,7 @@ interface NewsState {
   error: string | null;
   notifyEnabled: boolean;
   menuOpen: boolean;
+  detailMenuOpen: boolean;
   selectedSlug: string | null;
   generating: boolean;
   detailError: string | null;
@@ -23,6 +30,7 @@ const state: NewsState = {
   error: null,
   notifyEnabled: false,
   menuOpen: false,
+  detailMenuOpen: false,
   selectedSlug: null,
   generating: false,
   detailError: null,
@@ -261,22 +269,44 @@ function renderDetail(root: HTMLElement) {
         ${post.category ? html`<span class="news-cat">${post.category}</span>` : null}
         <time class="news-date">${post.dateLabel}</time>
       </div>
-      <h3 class="news-detail-title">${post.title}</h3>
-      ${renderSummaryBlock(post, root)}
-      <div class="news-detail-actions">
-        <button class="btn-secondary" @click=${() => openOriginal(post)}>
-          Open original <i class="ph ph-arrow-up-right"></i>
-        </button>
+      <div class="news-detail-titlebar">
+        <h3 class="news-detail-title">${post.title}</h3>
         <button
-          class="btn-secondary"
-          ?disabled=${state.generating}
-          @click=${() => regenerate(post, root)}
-          title="Regenerate summary"
+          class="icon-btn"
+          title="Open original article"
+          @click=${() => openOriginal(post)}
         >
-          <i class="ph ${state.generating ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
-          Regenerate
+          <i class="ph ph-arrow-up-right"></i>
         </button>
+        <div class="news-detail-menu-wrap">
+          <button
+            class="icon-btn"
+            title="More"
+            aria-haspopup="true"
+            aria-expanded=${state.detailMenuOpen}
+            @click=${(e: Event) => { e.stopPropagation(); state.detailMenuOpen = !state.detailMenuOpen; paint(root); }}
+          >
+            <i class="ph ph-dots-three-vertical"></i>
+          </button>
+          ${state.detailMenuOpen ? renderDetailMenu(post, root) : null}
+        </div>
       </div>
+      ${renderSummaryBlock(post, root)}
+    </div>
+  `;
+}
+
+function renderDetailMenu(post: NewsPost, root: HTMLElement) {
+  return html`
+    <div class="news-menu" @click=${(e: Event) => e.stopPropagation()}>
+      <button
+        class="news-menu-item"
+        ?disabled=${state.generating}
+        @click=${() => { state.detailMenuOpen = false; void regenerate(post, root); }}
+      >
+        <i class="ph ${state.generating ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
+        Regenerate summary
+      </button>
     </div>
   `;
 }
@@ -295,8 +325,8 @@ function renderSummaryBlock(post: NewsPost, root: HTMLElement) {
     </div>`;
   }
   if (post.aiSummary) {
-    return html`<div class="news-summary">
-      ${post.aiSummary.split(/\n\n+/).map((para) => html`<p>${para}</p>`)}
+    return html`<div class="news-summary news-summary-md">
+      ${unsafeHTML(md.render(post.aiSummary))}
     </div>`;
   }
   return html`<div class="news-summary news-summary-loading">Preparing…</div>`;
@@ -310,15 +340,20 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   state.loading = true;
   state.error = null;
   state.menuOpen = false;
+  state.detailMenuOpen = false;
   state.selectedSlug = null;
   state.detailError = null;
   paint(root);
   await Promise.all([fetchPosts(), loadNotifySetting()]);
   paint(root);
 
-  // Close the kebab menu on any click outside it.
+  // Close either popover menu on any click outside it.
   const onDocClick = () => {
-    if (state.menuOpen) { state.menuOpen = false; paint(root); }
+    if (state.menuOpen || state.detailMenuOpen) {
+      state.menuOpen = false;
+      state.detailMenuOpen = false;
+      paint(root);
+    }
   };
   document.addEventListener("click", onDocClick);
 
