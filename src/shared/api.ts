@@ -180,6 +180,10 @@ export const api = {
     try { return (await invoke<[string, string] | null>("take_pending_chat_open")) ?? null; }
     catch (e) { console.error("take_pending_chat_open failed", e); return null; }
   },
+  getSessionConfig: async (sessionId: string): Promise<{ model: string; effort: string } | null> => {
+    try { return (await invoke<{ model: string; effort: string } | null>("get_session_config", { sessionId })) ?? null; }
+    catch (e) { console.error("get_session_config failed", e); return null; }
+  },
 
   // --- File system ---
   checkPathsExist: async (paths: string[]): Promise<Record<string, boolean>> => {

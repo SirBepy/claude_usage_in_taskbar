@@ -28,6 +28,8 @@ interface SessionRecord {
   started_at?: string;
   startedAt?: string;
   date?: string;
+  model?: string;
+  effort?: string;
   turns?: number;
   inputTokens?: number;
   outputTokens?: number;
@@ -97,6 +99,27 @@ interface CardCtx {
   startedAtMs: number | null;
   liveStats?: LiveStats;
   messages: number | null; // null = still loading
+  model?: string;
+  effort?: string;
+}
+
+/** Collapse a full model id (e.g. "claude-opus-4-8") to the short family name. */
+function shortModel(m: string): string {
+  const s = m.toLowerCase();
+  if (s.includes("opus")) return "opus";
+  if (s.includes("sonnet")) return "sonnet";
+  if (s.includes("haiku")) return "haiku";
+  return m;
+}
+
+function modelEffortRow(model?: string, effort?: string): string {
+  const m = (model || "").trim();
+  const e = (effort || "").trim();
+  if (!m && !e) return "";
+  const parts: string[] = [];
+  if (m) parts.push(`<span><span class="sd-meta-label">Model</span> ${escapeHtml(shortModel(m))}</span>`);
+  if (e) parts.push(`<span><span class="sd-meta-label">Effort</span> ${escapeHtml(e)}</span>`);
+  return `<div class="sd-meta-row">${parts.join('<span class="sd-meta-sep">|</span>')}</div>`;
 }
 
 function pieCard(r: SessionRecord): string {
@@ -162,6 +185,7 @@ function renderCards(r: SessionRecord, ctx: CardCtx): void {
         <span class="sd-meta-sep">|</span>
         <span><span class="sd-meta-label">Up</span> ${uptimeFrom(r.started_at)}</span>
       </div>
+      ${modelEffortRow(ctx.model, ctx.effort)}
       <div class="sd-total"><span class="sd-meta-label">Total tokens</span> ${formatTokens(s.tokens ?? 0)}</div>
     </div>`;
     counts = countsCard(s.turns ?? 0, s.prompts ?? 0);
@@ -173,6 +197,7 @@ function renderCards(r: SessionRecord, ctx: CardCtx): void {
         <span class="sd-meta-sep">|</span>
         <span><span class="sd-meta-label">Time</span> ${time}</span>
       </div>
+      ${modelEffortRow(ctx.model, ctx.effort)}
       <div class="sd-total"><span class="sd-meta-label">Total tokens</span> ${formatTokens(totalTok(r))}</div>
     </div>`;
     counts = countsCard(r.turns ?? 0, ctx.messages);
@@ -300,12 +325,27 @@ async function enrichHistorical(r: SessionRecord, sid: string, ctx: CardCtx): Pr
     }
   } catch { /* best-effort */ }
 
-  // Message count needs the transcript; count user_message events.
+  // Message count + model come from the transcript; effort (and a fallback
+  // model) come from the durable chat-config store.
+  let transcriptModel = "";
   try {
     const events = await invoke<ChatEvent[]>("load_history", { sessionId: sid, cwd: null });
     ctx.messages = (events || []).filter((e) => e.type === "user_message").length;
+    let startModel = "";
+    for (const e of events || []) {
+      if (e.type === "turn_usage" && e.model) transcriptModel = e.model; // last turn wins
+      else if (e.type === "session_started" && e.model) startModel = e.model;
+    }
+    if (!transcriptModel) transcriptModel = startModel;
   } catch {
     ctx.messages = 0;
+  }
+  try {
+    const cfg = await api.getSessionConfig(sid);
+    ctx.model = cfg?.model || transcriptModel || undefined;
+    ctx.effort = cfg?.effort || undefined;
+  } catch {
+    ctx.model = transcriptModel || undefined;
   }
   // Re-render with whatever we resolved (title/date/messages).
   if (sessionIdOf((getCurrentSessionRecord() as SessionRecord | null) || {}) === sid) {
@@ -345,6 +385,8 @@ export async function renderSessionDetailView(
       : (r.startedAt ? new Date(r.startedAt).getTime() : null),
     liveStats: undefined,
     messages: live ? 0 : null,
+    model: live ? (r.model || undefined) : undefined,
+    effort: live ? (r.effort || undefined) : undefined,
   };
   renderCards(r, ctx);
 
