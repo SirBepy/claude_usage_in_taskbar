@@ -94,6 +94,15 @@ pub fn take_pending_chat_open(app: AppHandle) -> Option<(String, String)> {
     pending.take()
 }
 
+/// The model/effort a chat ran with, from the durable chat-config store. Used by
+/// the chat-detail view to show effort on a CLOSED chat (live chats read it off
+/// the live Instance instead). None for chats that closed before the store
+/// existed.
+#[tauri::command]
+pub fn get_session_config(session_id: String) -> Option<crate::sessions::chat_config::ChatConfig> {
+    crate::sessions::chat_config::get(&session_id)
+}
+
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     use std::sync::atomic::Ordering;

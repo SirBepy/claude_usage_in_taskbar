@@ -72,6 +72,7 @@ pub fn takeover(
     let now = Utc::now().to_rfc3339();
     registry.record_interactive_session(&session_id, &cwd, settings, &now);
     registry.set_model_effort(&session_id, model, effort);
+    crate::sessions::chat_config::record(&session_id, model, effort);
 
     Ok(session_id)
 }

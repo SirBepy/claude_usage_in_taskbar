@@ -69,6 +69,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 }
                 state.registry.upsert_interactive(&sid, &cwd, &project_id, &now);
                 state.registry.set_model_effort(&sid, &model, &effort);
+                crate::sessions::chat_config::record(&sid, &model, &effort);
                 state.registry.set_busy(&sid, true);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);

@@ -54,6 +54,7 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                 let p: EffortParams = serde_json::from_value(params.unwrap_or(Value::Null))
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 state.registry.set_effort(&p.session_id, &p.effort);
+                crate::sessions::chat_config::record(&p.session_id, "", &p.effort);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
