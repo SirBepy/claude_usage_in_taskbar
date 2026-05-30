@@ -103,3 +103,41 @@ describe("sidebar close animation", () => {
     expect(listEl.querySelectorAll("li.row-exiting").length).toBe(0);
   });
 });
+
+// A new chat (the pending draft row) opened WHILE a just-closed row is still
+// sliding out must not be starved by the deferred reorder. The deferred apply
+// is scheduled on a FIXED deadline (not pushed back per reconcile), so even a
+// burst of instances-changed reconciles — the storm a close triggers — lands
+// the new row within one exit-animation window, without waiting for the user
+// to send a message.
+describe("new chat opened during a close", () => {
+  const pending = () => ({ key: "pending", html: `<li data-pending="1" class="pending">draft</li>` });
+  const allIds = (el) =>
+    [...el.querySelectorAll("li")].map((li) => li.dataset.sessionId ?? (li.dataset.pending ? "PENDING" : "?"));
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    vi.useFakeTimers();
+  });
+
+  it("inserts the pending row within the settle window despite a reconcile burst", () => {
+    const listEl = makeList();
+    reconcileList(listEl, [row("X")], true);
+    vi.runAllTimers();
+
+    // Close X, then immediately open a new chat (X still exiting).
+    markSessionExiting(listEl, "X");
+    reconcileList(listEl, [pending()], true);
+
+    // Storm of instances-changed reconciles spaced under the settle window —
+    // the pre-fix code rescheduled the timer every time and never applied.
+    for (let i = 0; i < 8; i++) {
+      vi.advanceTimersByTime(100);
+      reconcileList(listEl, [pending()], true);
+    }
+
+    // The new row is visible and the closed row is gone — no "type to reveal".
+    expect(allIds(listEl)).toContain("PENDING");
+    expect(listEl.querySelector('li[data-session-id="X"]')).toBeNull();
+  });
+});

@@ -22,9 +22,26 @@ const exitingKeys = new Set<string>();
 // the node so the two paths never both fire.
 const exitTimers = new Map<HTMLLIElement, ReturnType<typeof setTimeout>>();
 
-// Version token: incremented on every reconcile call so a delayed applyReorder
-// from a previous call is a no-op if a newer call superseded it.
-let reorderToken = 0;
+// Deferred-reorder single-flight. When an exit is in flight we wait for the
+// slide-out to finish before removing the row and moving survivors up (so the
+// removal + FLIP happen in one synchronized step — see the flash-back fix).
+// Each reconcile only REPLACES the pending work with its own latest closure; it
+// does NOT push the deadline back. A naive "reschedule a fresh 310ms timer on
+// every reconcile" starves the apply during a burst of reconciles (e.g. the
+// instances-changed storm a close triggers): the timer never fires, so a
+// brand-new row opened during that window (a new-chat draft) is never inserted
+// until the burst stops. A fixed deadline guarantees the latest state lands
+// within one exit-animation window regardless of how many reconciles arrive.
+const EXIT_SETTLE_MS = 310; // > slideOutLeft (0.28s) so the row finishes exiting
+let pendingApply: (() => void) | null = null;
+let applyScheduled = false;
+
+function runPendingApply(): void {
+  applyScheduled = false;
+  const fn = pendingApply;
+  pendingApply = null;
+  if (fn) fn();
+}
 
 // Begin a row's slide-out. The node KEEPS occupying layout (slideOutLeft is a
 // translateX, not a removal) until applyReorder takes it out. Crucially we do
@@ -179,11 +196,7 @@ export function reconcileList(
   // Are there any exiting rows in the list right now (this call or markSessionExiting)?
   const hasExits = listEl.querySelector("li.row-exiting") !== null;
 
-  const token = ++reorderToken;
-
   const applyReorder = () => {
-    if (reorderToken !== token) return; // superseded by a newer reconcile call
-
     // Remove the exiting rows HERE — synchronously, just before the FLIP — so
     // the siblings reflow up and the FLIP plays in one step with no flash.
     for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")]) removeExitNode(li);
@@ -192,7 +205,7 @@ export function reconcileList(
     // already-in-DOM node moves it to the end — so iterating the new order
     // produces the correct sequence with no intermediate empty-list state.
     // Skip nodes that acquired .row-exiting AFTER this reconcileList call built
-    // `nodes` (i.e. a second markSessionExiting fired during the 310 ms wait).
+    // `nodes` (i.e. a second markSessionExiting fired during the settle wait).
     const liveNodes = nodes.filter(n => !n.classList.contains("row-exiting"));
     for (const node of liveNodes) listEl.appendChild(node);
 
@@ -209,9 +222,20 @@ export function reconcileList(
   };
 
   if (hasExits) {
-    // Let the exit animation finish first, THEN move the remaining rows up
-    setTimeout(applyReorder, 310);
+    // Defer until the slide-out finishes, then move survivors up + insert new
+    // rows. Single-flight with a FIXED deadline: replace the pending work with
+    // this call's latest closure, but only arm the timer once so a burst of
+    // reconciles can't keep pushing it back (which would starve new-row
+    // insertion — see EXIT_SETTLE_MS note).
+    pendingApply = applyReorder;
+    if (!applyScheduled) {
+      applyScheduled = true;
+      setTimeout(runPendingApply, EXIT_SETTLE_MS);
+    }
   } else {
+    // No exit in flight: apply immediately. Drop any pending deferred apply —
+    // this call's state is newer and already reflects the final layout.
+    pendingApply = null;
     applyReorder();
   }
 }
