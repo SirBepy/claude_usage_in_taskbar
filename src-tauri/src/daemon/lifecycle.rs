@@ -48,11 +48,15 @@ fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
 /// reading stdout to discover it (claude does not emit its `system`/init line
 /// until it receives the first user message, which would otherwise deadlock).
 /// Appended to the system prompt of every session we spawn so Claude
-/// self-reports, at the end of each turn, whether it is done or waiting on the
-/// user. The frontend strips this marker before display (see
-/// `chat-transforms.ts`) and uses it to drive the sidebar state icon (done =
-/// calm check, question = amber flag) instead of guessing from the text.
-const TURN_STATUS_PROMPT: &str = "At the very end of every response, on its own final line with no other text and no markdown formatting, output exactly one status marker: <cc-status:done> if you have finished and are not waiting on the user, or <cc-status:question> if you are asking the user a question or otherwise waiting for their input or decision. Always end with exactly one such marker.";
+/// self-reports, at the end of each turn: (1) a short conversation title and
+/// (2) whether it is done or waiting on the user. The frontend strips both
+/// markers before display (see `chat-transforms.ts`). The status marker drives
+/// the sidebar state icon (done = calm check, question = amber flag). The title
+/// marker is read off the transcript by `tokens::title::ai_milestone_title`,
+/// which only honors the title from the response to user-turn 1, 5, or 15 — so
+/// the title refines as the chat grows without churning every turn. The marker
+/// rides every response (cheap); the read side gates which ones count.
+const TURN_STATUS_PROMPT: &str = "At the end of every response, append two marker lines with no other commentary and no markdown formatting. First, on its own line, a short conversation title in the form <cc-title:Your Title> using 3 to 6 plain words that capture the main topic discussed so far; output this line on every response. Then, on the final line, output exactly one status marker: <cc-status:done> if you have finished and are not waiting on the user, or <cc-status:question> if you are asking the user a question or otherwise waiting for their input or decision. Always end with exactly one such status marker.";
 
 fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str) -> Vec<String> {
     let mut args = vec![
@@ -389,6 +393,7 @@ mod tests {
         let prompt = args.get(p + 1).map(String::as_str).unwrap_or("");
         assert!(prompt.contains("<cc-status:done>"), "prompt must name the done marker: {prompt}");
         assert!(prompt.contains("<cc-status:question>"), "prompt must name the question marker: {prompt}");
+        assert!(prompt.contains("<cc-title:"), "prompt must request the title marker: {prompt}");
     }
 
     #[tokio::test]

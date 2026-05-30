@@ -44,11 +44,12 @@ pub fn spawn(state: Arc<DaemonState>) {
 }
 
 /// For each live session whose transcript mtime advanced since the last tick,
-/// tail-reads the latest `/close` rename override and applies it via
-/// `set_name`. Only overrides drive a rename here — the first user prompt is
-/// already set at registration, so this never does a full-file scan. Prunes
-/// the mtime cache to the sessions still passed in. Returns true if any name
-/// actually changed.
+/// refreshes its name: a `/close` rename override wins, else the AI milestone
+/// title (the `<cc-title:…>` Claude emits, adopted at user-turn 1/5/15). This
+/// is what makes a chat re-title itself live as it grows. The first user prompt
+/// remains the registration-time fallback, so we don't recompute it here.
+/// Prunes the mtime cache to the sessions still passed in. Returns true if any
+/// name actually changed.
 fn refresh_overrides(
     registry: &Registry,
     live: &[(String, PathBuf)],
@@ -59,7 +60,9 @@ fn refresh_overrides(
         let Ok(mtime) = std::fs::metadata(path).and_then(|m| m.modified()) else { continue };
         if mtimes.get(session_id) == Some(&mtime) { continue; }
         mtimes.insert(session_id.clone(), mtime);
-        if let Some(title) = crate::tokens::last_override_title(path, 60) {
+        let title = crate::tokens::last_override_title(path, 60)
+            .or_else(|| crate::tokens::ai_milestone_title(path, 60));
+        if let Some(title) = title {
             if registry.set_name(session_id, title) {
                 changed = true;
             }
@@ -77,6 +80,48 @@ mod tests {
 
     fn override_jsonl(value: &str) -> String {
         serde_json::json!({"type":"custom-title","customTitle":value,"sessionId":"s1"}).to_string()
+    }
+
+    fn assistant_title_jsonl(title: &str) -> String {
+        let user = serde_json::json!({
+            "type": "user", "message": {"role": "user", "content": "hello"}
+        }).to_string();
+        let asst = serde_json::json!({
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [
+                {"type": "text", "text": format!("hi <cc-title:{title}>")}
+            ]}
+        }).to_string();
+        format!("{user}\n{asst}")
+    }
+
+    #[test]
+    fn ai_milestone_title_renames_live_session() {
+        let reg = Registry::new();
+        reg.upsert_interactive("s1", std::path::Path::new("/tmp/x"), "proj", "2026-05-22T00:00:00Z");
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("s1.jsonl");
+        std::fs::write(&path, assistant_title_jsonl("Live AI Title")).unwrap();
+        let mut mtimes = HashMap::new();
+
+        let changed = refresh_overrides(&reg, &[("s1".into(), path)], &mut mtimes);
+        assert!(changed);
+        assert_eq!(reg.get("s1").unwrap().name.as_deref(), Some("Live AI Title"));
+    }
+
+    #[test]
+    fn close_override_beats_ai_milestone_title_live() {
+        let reg = Registry::new();
+        reg.upsert_interactive("s1", std::path::Path::new("/tmp/x"), "proj", "2026-05-22T00:00:00Z");
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("s1.jsonl");
+        // AI title plus a later human /close rename in the same transcript.
+        let body = format!("{}\n{}", assistant_title_jsonl("AI Title"), override_jsonl("Human Title"));
+        std::fs::write(&path, body).unwrap();
+        let mut mtimes = HashMap::new();
+
+        assert!(refresh_overrides(&reg, &[("s1".into(), path)], &mut mtimes));
+        assert_eq!(reg.get("s1").unwrap().name.as_deref(), Some("Human Title"));
     }
 
     #[test]

@@ -127,13 +127,15 @@ pub fn populate_registry(registry: &Registry, sessions: Vec<PersistedInteractive
             registry.set_model_effort(&s.session_id, &s.model, &s.effort);
         }
         // A /close rename written since the last save lives in the transcript,
-        // so a fresh override beats the persisted snapshot name; the snapshot is
-        // the next fallback; only if neither exists do we derive from the first
-        // prompt. This is what makes a rename survive an app restart.
+        // so a fresh override beats everything; then the AI milestone title (so
+        // a chat that re-titled itself keeps that name across a restart); then
+        // the persisted snapshot name; and only if none exist do we derive from
+        // the first prompt. This is what makes a rename survive an app restart.
         let tpath = crate::tokens::transcript_for_session(&s.cwd, &s.session_id);
         let resolved_name = tpath
             .as_deref()
             .and_then(|p| crate::tokens::last_override_title(p, 60))
+            .or_else(|| tpath.as_deref().and_then(|p| crate::tokens::ai_milestone_title(p, 60)))
             .or(s.name)
             .or_else(|| tpath.as_deref().and_then(|p| crate::tokens::first_user_prompt(p, 60)));
         if let Some(name) = resolved_name {

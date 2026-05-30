@@ -28,8 +28,24 @@ const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 const STATUS_TOKEN_RE = /<cc-status:(?:done|question)>/gi;
 const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
 
+// Title marker injected alongside the status marker (see daemon/lifecycle.rs).
+// Claude emits `<cc-title:Some Title>` each turn; the title is read off the
+// transcript for the sidebar and must never display. TITLE_TOKEN_RE matches a
+// complete marker; TITLE_TAIL_RE matches an incomplete trailing fragment (the
+// literal "<cc-title:" with every position optional, plus any partial title
+// text after the colon) so it never flashes mid-stream.
+const TITLE_TOKEN_RE = /<cc-title:[^>]*>/gi;
+const TITLE_TAIL_RE = /<c(?:c(?:-(?:t(?:i(?:t(?:l(?:e(?::[^>]*)?)?)?)?)?)?)?)?\s*$/i;
+
+/** Strips both the status and title markers (complete or partial) plus trailing
+ * whitespace, so neither ever reaches the rendered message body. */
 export function stripStatusToken(text: string): string {
-  return text.replace(STATUS_TOKEN_RE, "").replace(STATUS_TAIL_RE, "").replace(/\s+$/, "");
+  return text
+    .replace(STATUS_TOKEN_RE, "")
+    .replace(TITLE_TOKEN_RE, "")
+    .replace(STATUS_TAIL_RE, "")
+    .replace(TITLE_TAIL_RE, "")
+    .replace(/\s+$/, "");
 }
 
 /** Last status marker in `text`, or null if none. */

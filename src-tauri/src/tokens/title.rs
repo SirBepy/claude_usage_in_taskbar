@@ -75,11 +75,118 @@ pub fn last_override_title(path: &Path, max_chars: usize) -> Option<String> {
     None
 }
 
-/// Resolves a session's display title: a curated override (from /close's
-/// rename) wins, otherwise the first user prompt. This is what the sidebar /
-/// history / restore paths use.
+/// Resolves a session's display title. Precedence, highest first:
+/// 1. a curated override (a `custom-title`/`agent-name` line from /close's
+///    rename or any future manual rename) — sticky, a human choice always wins;
+/// 2. an AI milestone title (the `<cc-title:…>` Claude emits, honored only at
+///    user-turn 1, 5, or 15 — see `ai_milestone_title`);
+/// 3. the first user prompt.
+/// This is what the sidebar / history / restore paths use.
 pub fn session_title(path: &Path, max_chars: usize) -> Option<String> {
-    last_override_title(path, max_chars).or_else(|| first_user_prompt(path, max_chars))
+    last_override_title(path, max_chars)
+        .or_else(|| ai_milestone_title(path, max_chars))
+        .or_else(|| first_user_prompt(path, max_chars))
+}
+
+/// User-turn milestones at which a fresh AI title is adopted. The title from
+/// the highest milestone reached (that carried a marker) wins, so the title
+/// refines as the conversation grows but only ever changes a bounded number of
+/// times — never every turn.
+const TITLE_MILESTONES: [usize; 3] = [1, 5, 15];
+
+/// Extracts the inner text of the LAST `<cc-title:…>` marker in `text`, if any.
+/// Last wins so a response that (oddly) emits more than one keeps the final.
+fn extract_cc_title(text: &str) -> Option<String> {
+    const OPEN: &str = "<cc-title:";
+    let mut result = None;
+    let mut rest = text;
+    while let Some(i) = rest.find(OPEN) {
+        let after = &rest[i + OPEN.len()..];
+        match after.find('>') {
+            Some(end) => {
+                result = Some(after[..end].to_string());
+                rest = &after[end + 1..];
+            }
+            None => break,
+        }
+    }
+    result
+}
+
+/// True for a *real* user turn: a non-meta `user` message carrying actual text
+/// (not a `tool_result`-only message, not the local-command-caveat preamble).
+/// Mirrors `first_user_prompt`'s skip rules so turn counting matches what the
+/// user perceives as a "message", and tool round-trips don't inflate the count.
+fn is_real_user_turn(v: &serde_json::Value) -> bool {
+    if v.get("type").and_then(|t| t.as_str()) != Some("user") { return false; }
+    if v.get("isMeta").and_then(|b| b.as_bool()) == Some(true) { return false; }
+    let Some(msg) = v.get("message") else { return false; };
+    if msg.get("role").and_then(|r| r.as_str()) != Some("user") { return false; }
+    match msg.get("content") {
+        Some(serde_json::Value::String(s)) => {
+            let t = s.trim();
+            !t.is_empty() && !t.starts_with("<local-command-caveat>")
+        }
+        Some(serde_json::Value::Array(items)) => items.iter().any(|it| {
+            it.get("type").and_then(|t| t.as_str()) == Some("text")
+                && it.get("text").and_then(|t| t.as_str())
+                    .map(|s| !s.trim().is_empty()).unwrap_or(false)
+        }),
+        _ => false,
+    }
+}
+
+/// Concatenated text of an `assistant` message's text blocks, or None if the
+/// line isn't an assistant message with text (e.g. a pure tool_use turn).
+fn assistant_text(v: &serde_json::Value) -> Option<String> {
+    if v.get("type").and_then(|t| t.as_str()) != Some("assistant") { return None; }
+    let msg = v.get("message")?;
+    if msg.get("role").and_then(|r| r.as_str()) != Some("assistant") { return None; }
+    match msg.get("content")? {
+        serde_json::Value::String(s) if !s.trim().is_empty() => Some(s.clone()),
+        serde_json::Value::Array(items) => {
+            let mut acc = String::new();
+            for it in items {
+                if it.get("type").and_then(|t| t.as_str()) != Some("text") { continue; }
+                if let Some(t) = it.get("text").and_then(|t| t.as_str()) {
+                    if !acc.is_empty() { acc.push(' '); }
+                    acc.push_str(t);
+                }
+            }
+            if acc.is_empty() { None } else { Some(acc) }
+        }
+        _ => None,
+    }
+}
+
+/// Reads the transcript and returns the AI-generated title from the highest
+/// reached milestone (user-turn 1/5/15) whose assistant response carried a
+/// `<cc-title:…>` marker. Walks real user turns to number them, attributing any
+/// assistant marker to the current turn; the latest milestone marker wins.
+/// Stops once past the last milestone so it never scans an entire long chat.
+/// Returns None when no milestone marker exists (caller falls back).
+pub fn ai_milestone_title(path: &Path, max_chars: usize) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = BufReader::new(file);
+    let last_milestone = *TITLE_MILESTONES.last().unwrap();
+    let mut turn = 0usize;
+    let mut best: Option<String> = None;
+    for line in reader.lines().map_while(|r| r.ok()) {
+        if line.trim().is_empty() { continue; }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        if is_real_user_turn(&v) {
+            turn += 1;
+            if turn > last_milestone { break; }
+            continue;
+        }
+        if turn == 0 || !TITLE_MILESTONES.contains(&turn) { continue; }
+        if let Some(text) = assistant_text(&v) {
+            if let Some(t) = extract_cc_title(&text) {
+                if !t.trim().is_empty() { best = Some(t); }
+            }
+        }
+    }
+    best.and_then(|t| normalise_and_truncate(&t, max_chars))
 }
 
 /// Scans a transcript for the first real user prompt and returns it
@@ -228,5 +335,119 @@ mod tests {
         let path = dir.path().join("t.jsonl");
         std::fs::write(&path, user_line("hi")).unwrap();
         assert_eq!(last_override_title(&path, 60), None);
+    }
+
+    fn assistant_line(text: &str) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}
+        }).to_string()
+    }
+    /// A `tool_result` user message (a turn-internal round-trip, NOT a real user
+    /// turn) — must not advance the turn counter.
+    fn tool_result_line() -> String {
+        serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]}
+        }).to_string()
+    }
+
+    #[test]
+    fn extract_cc_title_takes_last_marker() {
+        assert_eq!(extract_cc_title("body <cc-title:First> more").as_deref(), Some("First"));
+        assert_eq!(extract_cc_title("a <cc-title:One> b <cc-title:Two>").as_deref(), Some("Two"));
+        assert_eq!(extract_cc_title("no marker here"), None);
+        assert_eq!(extract_cc_title("<cc-title:unterminated"), None);
+    }
+
+    #[test]
+    fn milestone_title_from_first_turn() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let body = [
+            user_line("help me with auth"),
+            assistant_line("Sure.\n<cc-title:Auth Setup Help>\n<cc-status:done>"),
+        ].join("\n");
+        std::fs::write(&path, body).unwrap();
+        assert_eq!(ai_milestone_title(&path, 60).as_deref(), Some("Auth Setup Help"));
+        // session_title surfaces it when there's no human override.
+        assert_eq!(session_title(&path, 60).as_deref(), Some("Auth Setup Help"));
+    }
+
+    #[test]
+    fn milestone_title_advances_to_fifth_turn() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let mut lines = vec![
+            user_line("turn one"),
+            assistant_line("<cc-title:Early Topic>"),
+        ];
+        // turns 2,3,4 carry markers too, but only milestones count.
+        for n in 2..=5 {
+            lines.push(user_line(&format!("turn {n}")));
+            lines.push(assistant_line(&format!("<cc-title:Turn {n} Title>")));
+        }
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        // Turn 5 is a milestone; its title wins over turn 1's, turns 2-4 ignored.
+        assert_eq!(ai_milestone_title(&path, 60).as_deref(), Some("Turn 5 Title"));
+    }
+
+    #[test]
+    fn tool_round_trips_do_not_inflate_turn_count() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        // One real user turn whose response includes several tool round-trips.
+        // None of the tool_result lines should count as turns, so this stays
+        // turn 1 and the milestone title is the turn-1 title.
+        let body = [
+            user_line("do a big task"),
+            assistant_line("working <cc-title:Wrong Early>"),
+            tool_result_line(),
+            assistant_line("still working"),
+            tool_result_line(),
+            assistant_line("done\n<cc-title:Big Task Done>\n<cc-status:done>"),
+        ].join("\n");
+        std::fs::write(&path, body).unwrap();
+        // Turn 1, last marker within the turn wins.
+        assert_eq!(ai_milestone_title(&path, 60).as_deref(), Some("Big Task Done"));
+    }
+
+    #[test]
+    fn human_override_beats_ai_milestone_title() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let body = [
+            user_line("first prompt"),
+            assistant_line("<cc-title:AI Picked This>"),
+            override_line("custom-title", "Human Named It"),
+        ].join("\n");
+        std::fs::write(&path, body).unwrap();
+        assert_eq!(ai_milestone_title(&path, 60).as_deref(), Some("AI Picked This"));
+        // Sticky human override wins in the resolved title.
+        assert_eq!(session_title(&path, 60).as_deref(), Some("Human Named It"));
+    }
+
+    #[test]
+    fn no_marker_falls_back_to_first_prompt() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let body = [user_line("just chatting"), assistant_line("hi there, no marker")].join("\n");
+        std::fs::write(&path, body).unwrap();
+        assert_eq!(ai_milestone_title(&path, 60), None);
+        assert_eq!(session_title(&path, 60).as_deref(), Some("just chatting"));
+    }
+
+    #[test]
+    fn title_after_fifteenth_turn_holds_at_turn_fifteen() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let mut lines = Vec::new();
+        for n in 1..=20 {
+            lines.push(user_line(&format!("turn {n}")));
+            lines.push(assistant_line(&format!("<cc-title:Title At {n}>")));
+        }
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        // 15 is the last milestone; turns 16-20 are ignored even though present.
+        assert_eq!(ai_milestone_title(&path, 60).as_deref(), Some("Title At 15"));
     }
 }
