@@ -6,7 +6,7 @@ import { EFFORTS } from "../../shared/effort-presets";
 
 // ── Statusline helpers ────────────────────────────────────────────────────────
 
-export const DEFAULT_STATUSLINE_FIELDS = ["model", "effort", "branch", "repo", "context", "thinking"];
+export const DEFAULT_STATUSLINE_FIELDS = ["model", "effort", "branch", "repo", "context", "thinking", "messages", "turns"];
 
 export const ALL_STATUSLINE_FIELDS = [
   { key: "branch",   label: "Branch" },
@@ -17,6 +17,8 @@ export const ALL_STATUSLINE_FIELDS = [
   { key: "context",  label: "Context %" },
   { key: "thinking", label: "Thinking" },
   { key: "duration", label: "Duration" },
+  { key: "messages", label: "Messages" },
+  { key: "turns",    label: "Turns" },
 ];
 
 
@@ -75,6 +77,13 @@ const gitInfoCache = new Map<string, GitInfo>();
 const gitInflight = new Map<string, Promise<GitInfo>>();
 const metaCache = new Map<string, SessionMeta>();
 
+/** messages (= user prompts sent) and agent turns, parsed from the session
+ *  transcript by the `instance_token_stats` IPC - the SAME source Project
+ *  Detail > Chats uses, so the numbers always match. Cached across mounts to
+ *  avoid the empty→chip flash when switching chats. */
+interface SessionCounts { prompts: number; turns: number; }
+const countsCache = new Map<string, SessionCounts>();
+
 export function fetchGitInfo(cwd: string): Promise<GitInfo> {
   let p = gitInflight.get(cwd);
   if (!p) {
@@ -108,6 +117,8 @@ export class SessionStatusbar {
   private gitInfo: GitInfo = { branch: null, repo: null };
   private gitInfoLoaded = false;
   private metaLoaded = false;
+  private counts: SessionCounts | null = null;
+  private countsLoaded = false;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
@@ -144,10 +155,33 @@ export class SessionStatusbar {
     if (this.sessionId) {
       const cached = metaCache.get(this.sessionId);
       if (cached) { this.meta = cached; this.metaLoaded = true; }
+      const cachedCounts = countsCache.get(this.sessionId);
+      if (cachedCounts) { this.counts = cachedCounts; this.countsLoaded = true; }
     }
 
     this.render();
     if (this.fields.includes("duration")) this.startDurationTimer();
+    if (this.wantsCounts()) void this.refreshCounts();
+  }
+
+  private wantsCounts(): boolean {
+    return this.fields.includes("messages") || this.fields.includes("turns");
+  }
+
+  // Pulls message/turn counts from the transcript via the shared
+  // `instance_token_stats` IPC (same source as Project Detail > Chats).
+  // Fired on mount and after every completed turn (updateMeta).
+  private async refreshCounts(): Promise<void> {
+    const sid = this.sessionId;
+    if (!sid) return;
+    try {
+      const r = await invoke<{ tokens: number; turns: number; prompts?: number }>("instance_token_stats", { sessionId: sid });
+      if (this.sessionId !== sid) return; // session swapped out from under us
+      this.counts = { prompts: r.prompts ?? 0, turns: r.turns ?? 0 };
+      this.countsLoaded = true;
+      countsCache.set(sid, this.counts);
+      this.render();
+    } catch { /* transient - keep last known counts */ }
   }
 
   updateMeta(meta: SessionMeta): void {
@@ -155,6 +189,8 @@ export class SessionStatusbar {
     this.metaLoaded = true;
     if (this.sessionId) metaCache.set(this.sessionId, meta);
     this.render();
+    // A meta update means a turn just finished - refresh the message/turn counts.
+    if (this.wantsCounts()) void this.refreshCounts();
   }
 
   updateGitInfo(info: GitInfo): void {
@@ -166,6 +202,9 @@ export class SessionStatusbar {
 
   setSessionId(id: string): void {
     this.sessionId = id;
+    const cached = countsCache.get(id);
+    if (cached) { this.counts = cached; this.countsLoaded = true; }
+    if (this.wantsCounts()) void this.refreshCounts();
   }
 
   setReadOnlyEffort(readOnly: boolean): void {
@@ -265,10 +304,32 @@ export class SessionStatusbar {
       claudeChips.push(`<span class="sb-chip sb-duration${this.animClass("duration")}"><i class="ph ph-timer"></i><span class="sb-duration-text">${formatDuration(this.startedAt)}</span></span>`);
     }
 
-    const sep = gitChips.length > 0 && claudeChips.length > 0
-      ? `<span class="sb-sep"></span>`
-      : "";
-    const allChips = [...gitChips, ...(sep ? [sep] : []), ...claudeChips];
+    // Counts group: messages (user prompts sent), turns (agent turns).
+    const countChips: string[] = [];
+    if (f.includes("messages")) {
+      if (this.counts) {
+        const n = this.counts.prompts;
+        countChips.push(`<span class="sb-chip sb-messages${this.animClass("messages")}"><i class="ph ph-chat-circle"></i>${n} ${n === 1 ? "msg" : "msgs"}</span>`);
+      } else if (!this.countsLoaded) {
+        countChips.push(this.skeletonChip("messages", "sb-messages", "ph-chat-circle", "52px"));
+      }
+    }
+    if (f.includes("turns")) {
+      if (this.counts) {
+        const n = this.counts.turns;
+        countChips.push(`<span class="sb-chip sb-turns${this.animClass("turns")}"><i class="ph ph-arrows-clockwise"></i>${n} ${n === 1 ? "turn" : "turns"}</span>`);
+      } else if (!this.countsLoaded) {
+        countChips.push(this.skeletonChip("turns", "sb-turns", "ph-arrows-clockwise", "55px"));
+      }
+    }
+
+    // Join non-empty groups with a separator between each adjacent pair.
+    const allChips: string[] = [];
+    for (const group of [gitChips, claudeChips, countChips]) {
+      if (group.length === 0) continue;
+      if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
+      allChips.push(...group);
+    }
 
     const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
     const effortPopoverHtml = this.effortPopoverOpen ? `

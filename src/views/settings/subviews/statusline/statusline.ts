@@ -27,11 +27,14 @@ const MOCK = {
   effort: "Normal",
   contextPct: "45",
   duration: "2m 30s",
+  messages: "12",
+  turns: "8",
 };
 
 function previewChips(fields: string[]): string {
   const git: string[] = [];
   const claude: string[] = [];
+  const counts: string[] = [];
 
   if (fields.includes("branch"))
     git.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${MOCK.branch}</span>`);
@@ -51,11 +54,21 @@ function previewChips(fields: string[]): string {
   if (fields.includes("duration"))
     claude.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${MOCK.duration}</span>`);
 
-  if (git.length === 0 && claude.length === 0)
+  if (fields.includes("messages"))
+    counts.push(`<span class="sb-chip sb-messages"><i class="ph ph-chat-circle"></i>${MOCK.messages} msgs</span>`);
+  if (fields.includes("turns"))
+    counts.push(`<span class="sb-chip sb-turns"><i class="ph ph-arrows-clockwise"></i>${MOCK.turns} turns</span>`);
+
+  if (git.length === 0 && claude.length === 0 && counts.length === 0)
     return `<span class="sb-empty">No fields</span>`;
 
-  const sep = git.length > 0 && claude.length > 0 ? `<span class="sb-sep"></span>` : "";
-  return [...git, ...(sep ? [sep] : []), ...claude].join("");
+  const out: string[] = [];
+  for (const group of [git, claude, counts]) {
+    if (group.length === 0) continue;
+    if (out.length > 0) out.push(`<span class="sb-sep"></span>`);
+    out.push(...group);
+  }
+  return out.join("");
 }
 
 function template(fields: string[]) {
