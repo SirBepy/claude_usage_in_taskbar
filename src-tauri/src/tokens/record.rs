@@ -47,9 +47,10 @@ pub struct TokenTotals {
     /// Includes each tool-call round-trip, so a single user prompt can
     /// produce many turns.
     pub turns: u64,
-    /// Count of `"type":"last-prompt"` lines, i.e. distinct user-typed
-    /// prompts sent to the model. A better proxy for "messages sent by
-    /// me" than `turns`, which inflates with tool-call chatter.
+    /// Count of genuine human messages sent (real `user` turns, excluding
+    /// `last-prompt` checkpoint dupes, tool_result continuations, and meta
+    /// rows - see `title::is_real_user_turn`). A true "messages sent by me"
+    /// count, unlike `turns`, which inflates with tool-call chatter.
     pub user_prompts: u64,
 }
 

@@ -166,11 +166,16 @@ pub fn parse_transcript(path: &Path) -> TokenTotals {
     for line in reader.lines().map_while(|r| r.ok()) {
         if line.trim().is_empty() { continue }
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        // Count genuine human messages, NOT `last-prompt` checkpoint lines:
+        // Claude Code re-writes a `last-prompt` entry (with the same text) on
+        // every turn, so counting those massively over-reports (e.g. 4 typed
+        // messages showed as 19). `is_real_user_turn` is the shared predicate
+        // that skips meta rows, tool_result continuations, and command markup.
+        if crate::tokens::title::is_real_user_turn(&v) {
+            acc.user_prompts += 1;
+            continue;
+        }
         match v.get("type").and_then(|t| t.as_str()) {
-            Some("last-prompt") => {
-                acc.user_prompts += 1;
-                continue;
-            }
             Some("assistant") => {
                 let usage = v.get("message").and_then(|m| m.get("usage")).or_else(|| v.get("usage"));
                 let Some(usage) = usage else { continue };
@@ -242,6 +247,29 @@ mod tests {
         assert_eq!(totals.cache_read_tokens, 5);
         assert_eq!(totals.cache_creation_tokens, 3);
         assert_eq!(totals.turns, 2);
+    }
+
+    #[test]
+    fn parse_transcript_counts_real_user_messages_not_last_prompt() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let content = [
+            // 2 genuine human messages (role:user with text).
+            r#"{"type":"user","message":{"role":"user","content":"first question"}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","usage":{"input_tokens":10,"output_tokens":5}}}"#,
+            // tool_result continuation - also type:user, must NOT count.
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#,
+            // last-prompt checkpoint dupes - must NOT count (the old bug).
+            r#"{"type":"last-prompt","lastPrompt":"first question"}"#,
+            r#"{"type":"last-prompt","lastPrompt":"first question"}"#,
+            // meta row - must NOT count.
+            r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>x"}}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"second question"}]}}"#,
+        ].join("\n");
+        std::fs::write(&path, content).unwrap();
+        let totals = parse_transcript(&path);
+        assert_eq!(totals.user_prompts, 2, "only genuine human messages count");
+        assert_eq!(totals.turns, 1);
     }
 
     #[test]

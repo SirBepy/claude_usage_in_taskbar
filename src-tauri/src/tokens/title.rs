@@ -117,7 +117,7 @@ fn extract_cc_title(text: &str) -> Option<String> {
 /// (not a `tool_result`-only message, not the local-command-caveat preamble).
 /// Mirrors `first_user_prompt`'s skip rules so turn counting matches what the
 /// user perceives as a "message", and tool round-trips don't inflate the count.
-fn is_real_user_turn(v: &serde_json::Value) -> bool {
+pub(crate) fn is_real_user_turn(v: &serde_json::Value) -> bool {
     if v.get("type").and_then(|t| t.as_str()) != Some("user") { return false; }
     if v.get("isMeta").and_then(|b| b.as_bool()) == Some(true) { return false; }
     let Some(msg) = v.get("message") else { return false; };
