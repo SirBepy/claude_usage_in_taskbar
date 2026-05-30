@@ -14,9 +14,36 @@ function keyOf(li: HTMLLIElement): string {
 // Keys already committed to exiting — filtered out of entries on every reconcile.
 const exitingKeys = new Set<string>();
 
+// Per-node safety-removal timers. An exiting row is normally removed by
+// applyReorder (synchronously with the sibling FLIP, so the layout never
+// reflows between the row's disappearance and the rows-move-up animation).
+// These timers are ONLY a fallback for the rare case where no reconcile/
+// applyReorder follows the exit; applyReorder clears the timer when it removes
+// the node so the two paths never both fire.
+const exitTimers = new Map<HTMLLIElement, ReturnType<typeof setTimeout>>();
+
 // Version token: incremented on every reconcile call so a delayed applyReorder
 // from a previous call is a no-op if a newer call superseded it.
 let reorderToken = 0;
+
+// Begin a row's slide-out. The node KEEPS occupying layout (slideOutLeft is a
+// translateX, not a removal) until applyReorder takes it out. Crucially we do
+// NOT remove the node on `animationend`: doing so reflows the siblings up
+// before applyReorder runs its FLIP, and the FLIP — built from positions
+// captured while this row still occupied space — then yanks them back down for
+// one painted frame. That stale invert frame is the "flash-back". Removal is
+// owned by applyReorder; the timeout below is only a no-reconcile safety net.
+function beginExit(li: HTMLLIElement): void {
+  if (li.classList.contains("row-exiting")) return;
+  li.classList.add("row-exiting");
+  exitTimers.set(li, setTimeout(() => removeExitNode(li), 1500));
+}
+
+function removeExitNode(li: HTMLLIElement): void {
+  const t = exitTimers.get(li);
+  if (t !== undefined) { clearTimeout(t); exitTimers.delete(li); }
+  if (li.parentElement) li.remove();
+}
 
 function updateNode(kept: HTMLLIElement, html: string): void {
   const tmp = document.createElement("ul");
@@ -84,13 +111,9 @@ export function markSessionExiting(listEl: HTMLElement, sessionId: string): void
   const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sessionId)}"]`);
   if (!li || li.classList.contains("row-exiting")) return;
   exitingKeys.add(key);
-  li.classList.add("row-exiting");
-  let done = false;
   // exitingKeys is cleared by reconcileList once the session is absent from
   // entries — not here — to prevent a still-live session from re-entering.
-  const cleanup = () => { if (!done) { done = true; if (li.parentElement) li.remove(); } };
-  li.addEventListener("animationend", cleanup, { once: true });
-  setTimeout(cleanup, 600);
+  beginExit(li);
 }
 
 export function reconcileList(
@@ -111,7 +134,7 @@ export function reconcileList(
   const visibleEntries = entries.filter(e => !exitingKeys.has(e.key));
 
   if (!animEnabled) {
-    for (const li of listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")) li.remove();
+    for (const li of listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")) removeExitNode(li);
     listEl.innerHTML = visibleEntries.map(e => e.html).join("");
     return;
   }
@@ -135,11 +158,7 @@ export function reconcileList(
   for (const [k, li] of existing) {
     if (!newKeys.has(k)) {
       exitingKeys.add(k);
-      li.classList.add("row-exiting");
-      let done = false;
-      const cleanup = () => { if (!done) { done = true; if (li.parentElement) li.remove(); } };
-      li.addEventListener("animationend", cleanup, { once: true });
-      setTimeout(cleanup, 600);
+      beginExit(li);
     }
   }
 
@@ -165,8 +184,9 @@ export function reconcileList(
   const applyReorder = () => {
     if (reorderToken !== token) return; // superseded by a newer reconcile call
 
-    // Remove any lingering exit rows
-    for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")]) li.remove();
+    // Remove the exiting rows HERE — synchronously, just before the FLIP — so
+    // the siblings reflow up and the FLIP plays in one step with no flash.
+    for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")]) removeExitNode(li);
 
     // Reorder by appending each node in the desired order. appendChild on an
     // already-in-DOM node moves it to the end — so iterating the new order
