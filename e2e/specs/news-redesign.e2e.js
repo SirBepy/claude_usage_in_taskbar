@@ -92,9 +92,9 @@ describe("News redesign: kebab menu + detail view", () => {
     // Open-original is an inline icon button in the title bar.
     expect(await (await $('.news-detail-titlebar .icon-btn[title="Open original article"]')).isExisting()).toBe(true);
 
-    // Regenerate lives in the detail's own kebab menu (we do NOT click it: billed).
-    await (await $(".news-detail-menu-wrap .icon-btn")).click();
-    const menu = await $(".news-detail-menu-wrap .news-menu");
+    // In detail mode the top-bar ⋮ menu holds Regenerate (we do NOT click it: billed).
+    await (await $(".news-header-actions .icon-btn")).click();
+    const menu = await $(".news-header-actions .news-menu");
     await menu.waitForExist({ timeout: 5000 });
     expect(await menu.getText()).toContain("Regenerate");
     // Close it again before leaving.
@@ -102,8 +102,8 @@ describe("News redesign: kebab menu + detail view", () => {
     await menu.waitForExist({ timeout: 5000, reverse: true });
   });
 
-  it("returns to the list when Back is clicked", async () => {
-    await (await $(".news-detail .news-back")).click();
+  it("returns to the list via the header Back button", async () => {
+    await (await $('.view-header .icon-btn[title="Back"]')).click();
     await (await $(".news-detail")).waitForExist({ timeout: 5000, reverse: true });
     await (await $(".news-list")).waitForExist({ timeout: 5000 });
   });

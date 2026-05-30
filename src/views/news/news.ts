@@ -17,7 +17,6 @@ interface NewsState {
   error: string | null;
   notifyEnabled: boolean;
   menuOpen: boolean;
-  detailMenuOpen: boolean;
   selectedSlug: string | null;
   generating: boolean;
   detailError: string | null;
@@ -30,7 +29,6 @@ const state: NewsState = {
   error: null,
   notifyEnabled: false,
   menuOpen: false,
-  detailMenuOpen: false,
   selectedSlug: null,
   generating: false,
   detailError: null,
@@ -143,17 +141,31 @@ async function markAllRead(root: HTMLElement): Promise<void> {
 
 function template(root: HTMLElement) {
   const unreadCount = state.posts.filter((p) => p.unread).length;
+  const selected = state.selectedSlug
+    ? state.posts.find((p) => p.slug === state.selectedSlug) ?? null
+    : null;
+  // Selected post vanished from the list (e.g. dropped on refresh): fall back
+  // to the list view so we don't strand the header in detail mode.
+  if (state.selectedSlug && !selected) state.selectedSlug = null;
   return html`
     <div class="view view-news">
       <div class="view-header">
-        <button
-          class="icon-btn burger"
-          title="Menu"
-          data-burger="true"
-          @click=${openSidemenu}
-        >
-          <i class="ph ph-list"></i>
-        </button>
+        ${selected
+          ? html`<button
+              class="icon-btn"
+              title="Back"
+              @click=${() => { state.selectedSlug = null; state.menuOpen = false; paint(root); }}
+            >
+              <i class="ph ph-arrow-left"></i>
+            </button>`
+          : html`<button
+              class="icon-btn burger"
+              title="Menu"
+              data-burger="true"
+              @click=${openSidemenu}
+            >
+              <i class="ph ph-list"></i>
+            </button>`}
         <h2>Anthropic news</h2>
         <div class="news-header-actions">
           <button
@@ -165,11 +177,13 @@ function template(root: HTMLElement) {
           >
             <i class="ph ph-dots-three-vertical"></i>
           </button>
-          ${state.menuOpen ? renderMenu(root, unreadCount) : null}
+          ${state.menuOpen
+            ? (selected ? renderDetailMenu(selected, root) : renderMenu(root, unreadCount))
+            : null}
         </div>
       </div>
       <div class="view-body news-body">
-        ${state.selectedSlug ? renderDetail(root) : renderBody(root)}
+        ${selected ? renderDetail(selected, root) : renderBody(root)}
       </div>
     </div>
   `;
@@ -254,17 +268,9 @@ function renderItem(post: NewsPost, root: HTMLElement) {
   `;
 }
 
-function renderDetail(root: HTMLElement) {
-  const post = state.posts.find((p) => p.slug === state.selectedSlug);
-  if (!post) {
-    state.selectedSlug = null;
-    return renderBody(root);
-  }
+function renderDetail(post: NewsPost, root: HTMLElement) {
   return html`
     <div class="news-detail">
-      <button class="btn-secondary news-back" @click=${() => { state.selectedSlug = null; paint(root); }}>
-        <i class="ph ph-arrow-left"></i> Back
-      </button>
       <div class="news-meta">
         ${post.category ? html`<span class="news-cat">${post.category}</span>` : null}
         <time class="news-date">${post.dateLabel}</time>
@@ -278,31 +284,20 @@ function renderDetail(root: HTMLElement) {
         >
           <i class="ph ph-arrow-up-right"></i>
         </button>
-        <div class="news-detail-menu-wrap">
-          <button
-            class="icon-btn"
-            title="More"
-            aria-haspopup="true"
-            aria-expanded=${state.detailMenuOpen}
-            @click=${(e: Event) => { e.stopPropagation(); state.detailMenuOpen = !state.detailMenuOpen; paint(root); }}
-          >
-            <i class="ph ph-dots-three-vertical"></i>
-          </button>
-          ${state.detailMenuOpen ? renderDetailMenu(post, root) : null}
-        </div>
       </div>
       ${renderSummaryBlock(post, root)}
     </div>
   `;
 }
 
+// The detail-mode contents of the top-bar ⋮ menu: a per-article Regenerate.
 function renderDetailMenu(post: NewsPost, root: HTMLElement) {
   return html`
     <div class="news-menu" @click=${(e: Event) => e.stopPropagation()}>
       <button
         class="news-menu-item"
         ?disabled=${state.generating}
-        @click=${() => { state.detailMenuOpen = false; void regenerate(post, root); }}
+        @click=${() => { state.menuOpen = false; void regenerate(post, root); }}
       >
         <i class="ph ${state.generating ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
         Regenerate summary
@@ -340,20 +335,15 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   state.loading = true;
   state.error = null;
   state.menuOpen = false;
-  state.detailMenuOpen = false;
   state.selectedSlug = null;
   state.detailError = null;
   paint(root);
   await Promise.all([fetchPosts(), loadNotifySetting()]);
   paint(root);
 
-  // Close either popover menu on any click outside it.
+  // Close the top-bar menu on any click outside it.
   const onDocClick = () => {
-    if (state.menuOpen || state.detailMenuOpen) {
-      state.menuOpen = false;
-      state.detailMenuOpen = false;
-      paint(root);
-    }
+    if (state.menuOpen) { state.menuOpen = false; paint(root); }
   };
   document.addEventListener("click", onDocClick);
 

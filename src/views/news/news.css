@@ -201,18 +201,20 @@
 
 /* ── Detail view ── */
 .news-detail { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px; }
-.news-back { align-self: flex-start; }
 
 .news-detail-titlebar { display: flex; align-items: flex-start; gap: 6px; }
 .news-detail-title { margin: 0; flex: 1; font-size: 1.25rem; line-height: 1.3; }
 .news-detail-titlebar .icon-btn { flex: none; }
-.news-detail-menu-wrap { position: relative; flex: none; }
 
 .news-summary-loading { opacity: 0.7; display: flex; align-items: center; gap: 8px; }
 .news-summary-error { color: var(--danger, #e05252); display: flex; flex-direction: column; gap: 8px; }
 
-/* AI summary: ADHD-friendly Markdown - tight chunks, clear hierarchy. */
-.news-summary-md { line-height: 1.55; }
+/* AI summary: ADHD-friendly Markdown. Body text sits a touch muted so that the
+   brighter, heavier headings + bold terms pop and carry the scan. */
+.news-summary-md {
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text, #e2e0f0) 72%, var(--text-dim, #6b6990));
+}
 .news-summary-md > :first-child { margin-top: 0; }
 .news-summary-md > :last-child { margin-bottom: 0; }
 .news-summary-md p { margin: 0 0 12px; }
@@ -220,20 +222,21 @@
 .news-summary-md h2,
 .news-summary-md h3,
 .news-summary-md h4 {
-  margin: 18px 0 8px;
-  font-size: 1rem;
-  font-weight: 600;
+  margin: 20px 0 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: var(--text, #e2e0f0);
 }
-.news-summary-md strong { font-weight: 600; color: var(--text, #e2e0f0); }
-.news-summary-md em { font-style: italic; }
+.news-summary-md strong { font-weight: 700; color: var(--text, #e2e0f0); }
+.news-summary-md em { font-style: italic; color: var(--text, #e2e0f0); }
 .news-summary-md ul,
 .news-summary-md ol { margin: 0 0 12px; padding-left: 20px; }
-.news-summary-md li { margin: 0 0 4px; }
+.news-summary-md li { margin: 0 0 5px; }
 .news-summary-md a { color: var(--primary, #9d7dfc); }
 .news-summary-md code {
   background: var(--surface-alt, #242334);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 0.9em;
+  color: var(--text, #e2e0f0);
 }
