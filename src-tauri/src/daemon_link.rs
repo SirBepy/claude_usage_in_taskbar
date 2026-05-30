@@ -122,26 +122,6 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
                         }
                     }
                     *state.cached_instances.lock().unwrap() = parsed;
-                    // Deferred window close: if the user clicked X while instances
-                    // were busy, hide the window once they all go idle.
-                    {
-                        use std::sync::atomic::Ordering;
-                        if state.pending_close.load(Ordering::SeqCst) {
-                            let any_busy = state.cached_instances.lock().unwrap()
-                                .iter().any(|i| i.busy);
-                            if !any_busy {
-                                state.pending_close.store(false, Ordering::SeqCst);
-                                let h = app.clone();
-                                let _ = app.run_on_main_thread(move || {
-                                    if let Some(win) = h.get_webview_window("main") {
-                                        let _ = win.eval("window.navigateTo && window.navigateTo('dashboard')");
-                                        let _ = win.hide();
-                                    }
-                                    crate::tray::menu::render_tray_now(&h);
-                                });
-                            }
-                        }
-                    }
                 }
                 let _ = app.emit("instances-changed", instances);
             }

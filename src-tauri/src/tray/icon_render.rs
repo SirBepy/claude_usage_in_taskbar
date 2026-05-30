@@ -37,29 +37,6 @@ pub struct IconCtx<'a> {
     pub session_safe: Option<f32>,
     pub weekly_safe: Option<f32>,
     pub updating: bool,
-    /// Window close is pending — waiting for busy instances to finish.
-    pub closing: bool,
-}
-
-/// Paints a small gray filled circle in the bottom-left corner to signal that
-/// window close is pending (waiting for active sessions to finish).
-fn paint_closing_badge(img: &mut RgbaImage) {
-    const BADGE_COLOR: [u8; 3] = [140, 140, 140];
-    let cx = 6.0_f32;
-    let cy = SIZE as f32 - 6.0;
-    let r = 4.0_f32;
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let dx = x as f32 - cx + 0.5;
-            let dy = y as f32 - cy + 0.5;
-            let d = (dx * dx + dy * dy).sqrt();
-            if d <= r + 0.5 {
-                let alpha = if d <= r - 0.5 { 255.0 } else { 255.0 * (r + 0.5 - d) };
-                let a = alpha.clamp(0.0, 255.0) as u8;
-                img.put_pixel(x, y, Rgba([BADGE_COLOR[0], BADGE_COLOR[1], BADGE_COLOR[2], a]));
-            }
-        }
-    }
 }
 
 /// Paints a small filled circle in the bottom-right corner so users can see at
@@ -123,7 +100,6 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
         }
     }
     if ctx.updating { paint_update_badge(&mut img); }
-    if ctx.closing { paint_closing_badge(&mut img); }
     encode_png(&img)
 }
 
@@ -231,7 +207,6 @@ pub fn render_spin(frame: u32, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> {
                       color_for(weekly, ctx, ctx.weekly_safe, true));
     }
     if ctx.updating { paint_update_badge(&mut img); }
-    if ctx.closing { paint_closing_badge(&mut img); }
     encode_png(&img)
 }
 
