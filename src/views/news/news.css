@@ -202,9 +202,10 @@
 /* ── Detail view ── */
 .news-detail { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px; }
 
-.news-detail-titlebar { display: flex; align-items: flex-start; gap: 6px; }
-.news-detail-title { margin: 0; flex: 1; font-size: 1.25rem; line-height: 1.3; }
-.news-detail-titlebar .icon-btn { flex: none; }
+.news-detail-metabar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.news-detail-metabar .news-meta { min-width: 0; }
+.news-detail-metabar .icon-btn { flex: none; }
+.news-detail-title { margin: 0; font-size: 1.25rem; line-height: 1.3; }
 
 .news-summary-loading { opacity: 0.7; display: flex; align-items: center; gap: 10px; }
 

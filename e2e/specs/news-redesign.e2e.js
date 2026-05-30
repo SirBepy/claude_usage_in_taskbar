@@ -89,8 +89,8 @@ describe("News redesign: kebab menu + detail view", () => {
     expect(await (await $(".news-summary-md strong")).isExisting()).toBe(true);
     expect(await (await $(".news-summary-md em")).isExisting()).toBe(true);
 
-    // Open-original is an inline icon button in the title bar.
-    expect(await (await $('.news-detail-titlebar .icon-btn[title="Open original article"]')).isExisting()).toBe(true);
+    // Open-original is an inline icon button on the meta line (date row).
+    expect(await (await $('.news-detail-metabar .icon-btn[title="Open original article"]')).isExisting()).toBe(true);
 
     // In detail mode the top-bar ⋮ menu holds Regenerate (we do NOT click it: billed).
     await (await $(".news-header-actions .icon-btn")).click();

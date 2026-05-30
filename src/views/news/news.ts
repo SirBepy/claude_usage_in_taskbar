@@ -283,12 +283,11 @@ function renderItem(post: NewsPost, root: HTMLElement) {
 function renderDetail(post: NewsPost, root: HTMLElement) {
   return html`
     <div class="news-detail">
-      <div class="news-meta">
-        ${post.category ? html`<span class="news-cat">${post.category}</span>` : null}
-        <time class="news-date">${post.dateLabel}</time>
-      </div>
-      <div class="news-detail-titlebar">
-        <h3 class="news-detail-title">${post.title}</h3>
+      <div class="news-detail-metabar">
+        <div class="news-meta">
+          ${post.category ? html`<span class="news-cat">${post.category}</span>` : null}
+          <time class="news-date">${post.dateLabel}</time>
+        </div>
         <button
           class="icon-btn"
           title="Open original article"
@@ -297,6 +296,7 @@ function renderDetail(post: NewsPost, root: HTMLElement) {
           <i class="ph ph-arrow-up-right"></i>
         </button>
       </div>
+      <h3 class="news-detail-title">${post.title}</h3>
       ${renderSummaryBlock(post, root)}
     </div>
   `;
