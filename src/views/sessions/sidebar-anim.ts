@@ -86,7 +86,9 @@ export function markSessionExiting(listEl: HTMLElement, sessionId: string): void
   exitingKeys.add(key);
   li.classList.add("row-exiting");
   let done = false;
-  const cleanup = () => { if (!done) { done = true; exitingKeys.delete(key); if (li.parentElement) li.remove(); } };
+  // exitingKeys is cleared by reconcileList once the session is absent from
+  // entries — not here — to prevent a still-live session from re-entering.
+  const cleanup = () => { if (!done) { done = true; if (li.parentElement) li.remove(); } };
   li.addEventListener("animationend", cleanup, { once: true });
   setTimeout(cleanup, 600);
 }
@@ -96,6 +98,15 @@ export function reconcileList(
   entries: Array<{ key: string; html: string }>,
   animEnabled: boolean,
 ): void {
+  // Once a session is fully absent from entries the backend has confirmed it's
+  // gone — safe to stop suppressing it. While it's still in entries (state
+  // changes before the session is truly ended) keep it suppressed so it never
+  // re-enters visibleEntries and triggers an enter animation.
+  const allKeys = new Set(entries.map(e => e.key));
+  for (const k of exitingKeys) {
+    if (!allKeys.has(k)) exitingKeys.delete(k);
+  }
+
   // Strip rows we've already committed to animating out
   const visibleEntries = entries.filter(e => !exitingKeys.has(e.key));
 
@@ -126,7 +137,7 @@ export function reconcileList(
       exitingKeys.add(k);
       li.classList.add("row-exiting");
       let done = false;
-      const cleanup = () => { if (!done) { done = true; exitingKeys.delete(k); if (li.parentElement) li.remove(); } };
+      const cleanup = () => { if (!done) { done = true; if (li.parentElement) li.remove(); } };
       li.addEventListener("animationend", cleanup, { once: true });
       setTimeout(cleanup, 600);
     }
