@@ -171,6 +171,16 @@ export const api = {
   getPlatform: (): Promise<string> => invoke("get_platform"),
   openExternal: (url: string): Promise<unknown> => invoke("open_external", { url }),
 
+  // --- Chats window ---
+  openChatsForSession: async (sessionId: string, mode: "live" | "history"): Promise<void> => {
+    try { await invoke("open_chats_for_session", { sessionId, mode }); }
+    catch (e) { console.error("open_chats_for_session failed", e); throw e; }
+  },
+  takePendingChatOpen: async (): Promise<[string, string] | null> => {
+    try { return (await invoke<[string, string] | null>("take_pending_chat_open")) ?? null; }
+    catch (e) { console.error("take_pending_chat_open failed", e); return null; }
+  },
+
   // --- File system ---
   checkPathsExist: async (paths: string[]): Promise<Record<string, boolean>> => {
     try { return (await invoke<Record<string, boolean>>("check_paths_exist", { paths })) || {}; }

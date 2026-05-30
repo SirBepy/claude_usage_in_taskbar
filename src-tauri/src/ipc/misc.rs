@@ -24,20 +24,15 @@ pub fn open_dashboard_project(app: AppHandle, cwd: String) {
     }
 }
 
-#[tauri::command]
-pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
-    if let Some(existing) = app.get_webview_window("session-chats") {
-        let _ = existing.show();
-        existing.set_focus().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-    // Build hidden so tauri-plugin-window-state has a chance to restore the
-    // saved size + position before the window is ever painted. Without this
-    // the window flashes briefly at the inner_size default in the OS-default
-    // spot, then jumps to its remembered geometry. Show right after build
-    // (the plugin restores state synchronously during window creation).
+/// Build the chats window (label `session-chats`). Built hidden so
+/// tauri-plugin-window-state can restore the saved size + position before the
+/// window is ever painted. Without this the window flashes briefly at the
+/// inner_size default in the OS-default spot, then jumps to its remembered
+/// geometry. Shown + focused right after build (the plugin restores state
+/// synchronously during window creation).
+fn build_chats_window(app: &AppHandle) -> Result<(), String> {
     let window = tauri::WebviewWindowBuilder::new(
-        &app,
+        app,
         "session-chats",
         tauri::WebviewUrl::App("index.html?chatswindow=1#sessions".into()),
     )
@@ -51,6 +46,52 @@ pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("session-chats") {
+        let _ = existing.show();
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    build_chats_window(&app)
+}
+
+/// Open (or focus) the chats window and tell it to surface a specific session.
+/// `mode` is "live" (select the running session) or "history" (open it
+/// read-only in the History view). When the window already exists we emit
+/// `chats-open-session` for its live listener; when it must be created fresh we
+/// stash the request in `AppState.pending_chat_open` for the window to drain on
+/// boot (the freshly-built webview can't reliably catch an event emitted before
+/// its listener mounts).
+#[tauri::command]
+pub fn open_chats_for_session(app: AppHandle, session_id: String, mode: String) -> Result<(), String> {
+    use tauri::Emitter;
+    if let Some(existing) = app.get_webview_window("session-chats") {
+        let _ = existing.show();
+        existing.set_focus().map_err(|e| e.to_string())?;
+        let _ = app.emit(
+            "chats-open-session",
+            serde_json::json!({ "sessionId": session_id, "mode": mode }),
+        );
+        return Ok(());
+    }
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        if let Ok(mut pending) = state.pending_chat_open.lock() {
+            *pending = Some((session_id, mode));
+        }
+    }
+    build_chats_window(&app)
+}
+
+/// Drain the pending "open this session" request (set by `open_chats_for_session`
+/// when it creates the window). Returns `(session_id, mode)` or null.
+#[tauri::command]
+pub fn take_pending_chat_open(app: AppHandle) -> Option<(String, String)> {
+    let state = app.try_state::<crate::state::AppState>()?;
+    let mut pending = state.pending_chat_open.lock().ok()?;
+    pending.take()
 }
 
 #[tauri::command]

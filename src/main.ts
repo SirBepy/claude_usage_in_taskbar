@@ -5,8 +5,8 @@ import "./styles/widgets.css";
 
 import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
-import { renderSessionsView, renderDetachedSession } from "./views/sessions/sessions";
-import { renderHistoryView } from "./views/history/history";
+import { renderSessionsView, renderDetachedSession, queueSessionSelect } from "./views/sessions/sessions";
+import { renderHistoryView, queueHistorySelect } from "./views/history/history";
 import { renderStatisticsView } from "./views/statistics/statistics";
 import { renderProjectsView } from "./views/projects/projects";
 import { renderCharactersView } from "./views/characters/characters";
@@ -166,6 +166,20 @@ if (detachedSessionId) {
       const { openProjectDetail } = await import("./shared/navigation");
       openProjectDetail(cwd);
     });
+  } else {
+    // Chats window: honour "Open in chats" requests from the main window.
+    // Fresh-created window drains the stashed request on boot; an already-open
+    // window catches the live `chats-open-session` event.
+    void invoke<[string, string] | null>("take_pending_chat_open").then((p) => {
+      if (p) applyChatOpenRequest(p[0], p[1]);
+    }).catch(() => {});
+    const ev = window.__TAURI__?.event;
+    if (ev?.listen) {
+      void ev.listen<{ sessionId: string; mode: string }>(
+        "chats-open-session",
+        (e) => applyChatOpenRequest(e.payload?.sessionId, e.payload?.mode),
+      );
+    }
   }
 
   // Sidemenu wiring (ported from legacy dashboard.js). Burger buttons inside
@@ -191,6 +205,22 @@ if (detachedSessionId) {
   });
 
   setupNewsBadgeAndNotifications();
+}
+
+/**
+ * Surface a session in the chats window. "live" selects the running session in
+ * the Sessions view; "history" opens it read-only in the History view. Both
+ * route through the same select-on-mount queues the in-window flows use.
+ */
+function applyChatOpenRequest(sessionId: string | undefined, mode: string | undefined): void {
+  if (!sessionId) return;
+  if (mode === "history") {
+    queueHistorySelect(sessionId);
+    showView("history");
+  } else {
+    queueSessionSelect(sessionId);
+    showView("sessions");
+  }
 }
 
 function setupNewsBadgeAndNotifications(): void {

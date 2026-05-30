@@ -35,6 +35,11 @@ pub struct AppState {
     /// (covers WebView2 showing a "can't reach this page" error when the
     /// dev/prod start URL fails at boot, e.g. autostart racing with the network).
     pub frontend_alive: Arc<AtomicBool>,
+    /// A pending "open this session in the chats window" request, set when the
+    /// chats window is created fresh from the main window's "Open in chats" CTA.
+    /// The chats window drains it on boot via `take_pending_chat_open`. Holds
+    /// `(session_id, mode)` where mode is "live" or "history".
+    pub pending_chat_open: Mutex<Option<(String, String)>>,
 }
 
 impl AppState {
@@ -60,6 +65,7 @@ impl AppState {
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
             should_quit: Arc::new(AtomicBool::new(false)),
             frontend_alive: Arc::new(AtomicBool::new(false)),
+            pending_chat_open: Mutex::new(None),
         }
     }
 }

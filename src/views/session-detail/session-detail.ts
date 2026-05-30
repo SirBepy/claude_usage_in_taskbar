@@ -2,7 +2,7 @@ import { html, render } from "lit-html";
 import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
 import type { TemplateResult } from "lit-html";
 import { showToast } from "../../shared/toast";
-import { backFromSubview, showView } from "../../shared/navigation";
+import { backFromSubview } from "../../shared/navigation";
 import { getCurrentSessionRecord } from "../../shared/state";
 import { formatTokens } from "../../shared/tokens";
 import { buildPieSvg } from "../../shared/pie";
@@ -13,8 +13,6 @@ import type { ChatEvent, HistoryEntry } from "../../types/ipc.generated";
 import { renderAvatar } from "../../shared/projects";
 import { projectSubviewHeaderData, hydrateSubviewHeader } from "../project-detail/subview-header";
 import type { Avatar } from "../project-detail/subview-header";
-import { queueSessionSelect } from "../sessions/sessions";
-import { queueHistorySelect } from "../history/history";
 import "./session-detail.css";
 
 
@@ -279,13 +277,7 @@ function wireCta(root: HTMLElement, r: SessionRecord): void {
   const sid = sessionIdOf(r);
   btn.onclick = () => {
     if (!sid) return;
-    if (isLive(r)) {
-      queueSessionSelect(sid);
-      showView("sessions");
-    } else {
-      queueHistorySelect(sid);
-      showView("history");
-    }
+    void api.openChatsForSession(sid, isLive(r) ? "live" : "history");
   };
 }
 
