@@ -18,8 +18,10 @@ interface NewsState {
   notifyEnabled: boolean;
   menuOpen: boolean;
   selectedSlug: string | null;
-  generating: boolean;
-  detailError: string | null;
+  // Per-slug so opening post B never gets stranded by post A's in-flight
+  // generation (a global flag let B bail at the guard and stick on "Preparing…").
+  generatingSlugs: Set<string>;
+  errorBySlug: Map<string, string>;
 }
 
 const state: NewsState = {
@@ -30,8 +32,8 @@ const state: NewsState = {
   notifyEnabled: false,
   menuOpen: false,
   selectedSlug: null,
-  generating: false,
-  detailError: null,
+  generatingSlugs: new Set(),
+  errorBySlug: new Map(),
 };
 
 interface SettingsLike { newsNotificationsEnabled?: boolean; [k: string]: unknown; }
@@ -87,7 +89,6 @@ async function refresh(root: HTMLElement): Promise<void> {
 
 function openDetail(post: NewsPost, root: HTMLElement): void {
   state.selectedSlug = post.slug;
-  state.detailError = null;
   paint(root);
   if (post.unread) {
     post.unread = false;
@@ -99,9 +100,9 @@ function openDetail(post: NewsPost, root: HTMLElement): void {
 }
 
 async function ensureSummary(post: NewsPost, root: HTMLElement): Promise<void> {
-  if (post.aiSummary || state.generating) return;
-  state.generating = true;
-  state.detailError = null;
+  if (post.aiSummary || state.generatingSlugs.has(post.slug)) return;
+  state.generatingSlugs.add(post.slug);
+  state.errorBySlug.delete(post.slug);
   paint(root);
   try {
     const updated = await invoke<NewsPost>("generate_news_summary", { slug: post.slug });
@@ -109,15 +110,16 @@ async function ensureSummary(post: NewsPost, root: HTMLElement): Promise<void> {
     if (idx >= 0) state.posts[idx] = updated;
   } catch (err) {
     console.error("[news] generate_news_summary failed", err);
-    state.detailError = String(err);
+    state.errorBySlug.set(post.slug, String(err));
   } finally {
-    state.generating = false;
+    state.generatingSlugs.delete(post.slug);
     paint(root);
   }
 }
 
 async function regenerate(post: NewsPost, root: HTMLElement): Promise<void> {
-  if (state.generating) return;
+  if (state.generatingSlugs.has(post.slug)) return;
+  state.errorBySlug.delete(post.slug);
   // Clear the cached copy in-memory so ensureSummary re-runs.
   const idx = state.posts.findIndex((p) => p.slug === post.slug);
   const cleared: NewsPost = { ...(idx >= 0 ? state.posts[idx]! : post), aiSummary: null };
@@ -292,14 +294,15 @@ function renderDetail(post: NewsPost, root: HTMLElement) {
 
 // The detail-mode contents of the top-bar ⋮ menu: a per-article Regenerate.
 function renderDetailMenu(post: NewsPost, root: HTMLElement) {
+  const busy = state.generatingSlugs.has(post.slug);
   return html`
     <div class="news-menu" @click=${(e: Event) => e.stopPropagation()}>
       <button
         class="news-menu-item"
-        ?disabled=${state.generating}
+        ?disabled=${busy}
         @click=${() => { state.menuOpen = false; void regenerate(post, root); }}
       >
-        <i class="ph ${state.generating ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
+        <i class="ph ${busy ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
         Regenerate summary
       </button>
     </div>
@@ -307,15 +310,16 @@ function renderDetailMenu(post: NewsPost, root: HTMLElement) {
 }
 
 function renderSummaryBlock(post: NewsPost, root: HTMLElement) {
-  if (state.generating) {
+  if (state.generatingSlugs.has(post.slug)) {
     return html`<div class="news-summary news-summary-loading">
       <i class="ph ph-spinner news-spin"></i> Summarizing…
     </div>`;
   }
-  if (state.detailError) {
+  const err = state.errorBySlug.get(post.slug);
+  if (err) {
     return html`<div class="news-summary news-summary-error">
       <p>Could not generate a summary.</p>
-      <p class="news-error-msg">${state.detailError}</p>
+      <p class="news-error-msg">${err}</p>
       <button class="btn-secondary" @click=${() => ensureSummary(post, root)}>Retry</button>
     </div>`;
   }
@@ -324,7 +328,13 @@ function renderSummaryBlock(post: NewsPost, root: HTMLElement) {
       ${unsafeHTML(md.render(post.aiSummary))}
     </div>`;
   }
-  return html`<div class="news-summary news-summary-loading">Preparing…</div>`;
+  // No summary yet and nothing in flight. openDetail kicks generation, so this
+  // is normally a brief flash - but keep an explicit button so it can never be
+  // a dead-end if generation never started for any reason.
+  return html`<div class="news-summary news-summary-loading">
+    <span>No summary yet.</span>
+    <button class="btn-secondary" @click=${() => ensureSummary(post, root)}>Summarize</button>
+  </div>`;
 }
 
 function paint(root: HTMLElement): void {
@@ -336,7 +346,8 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   state.error = null;
   state.menuOpen = false;
   state.selectedSlug = null;
-  state.detailError = null;
+  state.generatingSlugs.clear();
+  state.errorBySlug.clear();
   paint(root);
   await Promise.all([fetchPosts(), loadNotifySetting()]);
   paint(root);
