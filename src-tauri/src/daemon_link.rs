@@ -135,8 +135,14 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
             }
             let _ = app.emit("channels-changed", params);
         }
-        "permission_request" => { let _ = app.emit("permission-requested", params); }
-        "question_request" => { let _ = app.emit("question-requested", params); }
+        "permission_request" => {
+            log::info!("[perm-relay] app received permission_request from daemon, emitting permission-requested: {params}");
+            let _ = app.emit("permission-requested", params);
+        }
+        "question_request" => {
+            log::info!("[perm-relay] app received question_request from daemon, emitting question-requested: {params}");
+            let _ = app.emit("question-requested", params);
+        }
         "token_history_updated" => {
             if let Some(h) = params.get("history") {
                 let _ = app.emit("token-history-updated", h);

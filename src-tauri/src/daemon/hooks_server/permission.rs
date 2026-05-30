@@ -33,7 +33,7 @@ pub(super) async fn on_permission_request(
 ) -> impl IntoResponse {
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     ctx.state.pending.lock().await.insert(body.id.clone(), tx);
-    ctx.state.notifier.publish(
+    let subs = ctx.state.notifier.publish(
         "permission_request",
         json!({
             "id": body.id,
@@ -41,6 +41,10 @@ pub(super) async fn on_permission_request(
             "input": body.input,
             "session_id": body.session_id,
         }),
+    );
+    log::info!(
+        "[perm-relay] published permission_request id={} tool={} session={:?} -> {} subscriber(s)",
+        body.id, body.tool_name, body.session_id, subs
     );
     match tokio::time::timeout(Duration::from_secs(300), rx).await {
         Ok(Ok(val)) => (StatusCode::OK, Json(val)),
@@ -60,13 +64,17 @@ pub(super) async fn on_question_request(
 ) -> impl IntoResponse {
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     ctx.state.pending.lock().await.insert(body.id.clone(), tx);
-    ctx.state.notifier.publish(
+    let subs = ctx.state.notifier.publish(
         "question_request",
         json!({
             "id": body.id,
             "questions": body.questions,
             "session_id": body.session_id,
         }),
+    );
+    log::info!(
+        "[perm-relay] published question_request id={} session={:?} -> {} subscriber(s)",
+        body.id, body.session_id, subs
     );
     match tokio::time::timeout(Duration::from_secs(300), rx).await {
         Ok(Ok(val)) => (StatusCode::OK, Json(val)),

@@ -92,6 +92,7 @@ export function installPermissionModalListener(): void {
 
   ev.listen<PermissionRequestedPayload>("permission-requested", (event) => {
     const payload = event.payload;
+    console.info("[perm-relay] frontend received permission-requested", { tool: payload.tool_name, session: payload.session_id, ...gateDiag() });
     if (!isForSelectedSession(payload.session_id)) {
       if (payload.session_id) {
         // Switched-away busy chat: park the prompt and mark the row so the
@@ -128,6 +129,7 @@ export function installPermissionModalListener(): void {
 
   ev.listen<QuestionRequestedPayload>("question-requested", (event) => {
     const payload = event.payload;
+    console.info("[perm-relay] frontend received question-requested", { session: payload.session_id, ...gateDiag() });
     if (!isForSelectedSession(payload.session_id)) {
       if (payload.session_id) {
         storePendingPrompt(payload.session_id, { kind: "question", payload });
