@@ -82,20 +82,36 @@ function parseHtml(html: string): HTMLLIElement | null {
 
 function flipNodes(nodes: HTMLLIElement[], beforeRects: Map<string, DOMRect>): void {
   requestAnimationFrame(() => {
+    // Measure pass: classify each move and find the bottom-most RISING row.
+    // Only that row casts the lift shadow — otherwise every rising row drops
+    // its own shadow onto the row beneath it, so a group moving up stacks a
+    // pile of shadows on the bottom element. One shadow, under the whole group.
+    const moves: Array<{ node: HTMLLIElement; dy: number; rising: boolean }> = [];
+    let bottomRiser: HTMLLIElement | null = null;
+    let bottomRiserTop = -Infinity;
     for (const node of nodes) {
       const k = keyOf(node);
       if (!beforeRects.has(k)) continue;
-      const dy = beforeRects.get(k)!.top - node.getBoundingClientRect().top;
+      const top = node.getBoundingClientRect().top;
+      const dy = beforeRects.get(k)!.top - top;
       if (Math.abs(dy) < 0.5) continue;
+      const rising = dy > 20;
+      moves.push({ node, dy, rising });
+      if (rising && top > bottomRiserTop) { bottomRiserTop = top; bottomRiser = node; }
+    }
 
+    // Invert: jump each row to its old position with no transition.
+    for (const { node, dy } of moves) {
       node.style.transition = "none";
       node.style.transform = `translateY(${dy}px)`;
+    }
 
-      const rising = dy > 20;
-      requestAnimationFrame(() => {
+    // Play: animate every row to its final spot next frame.
+    requestAnimationFrame(() => {
+      for (const { node, rising } of moves) {
         if (rising) {
           node.style.zIndex = "10";
-          node.style.boxShadow = "0 6px 22px rgba(0,0,0,0.55)";
+          if (node === bottomRiser) node.style.boxShadow = "0 6px 22px rgba(0,0,0,0.55)";
           node.style.transition = "transform 0.34s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.34s";
           node.style.transform = "translateY(0) scale(1.036)";
           setTimeout(() => {
@@ -112,8 +128,8 @@ function flipNodes(nodes: HTMLLIElement[], beforeRects: Map<string, DOMRect>): v
           node.style.transform = "";
           node.addEventListener("transitionend", () => { node.style.transition = ""; }, { once: true });
         }
-      });
-    }
+      }
+    });
   });
 }
 
