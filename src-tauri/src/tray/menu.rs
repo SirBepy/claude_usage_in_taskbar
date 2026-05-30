@@ -26,7 +26,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         icon::render(None, None, &IconCtx {
             settings: &s, display_mode: DisplayMode::Icon,
             session_safe: None, weekly_safe: None,
-            updating: false,
+            updating: false, closing: false,
         })
     };
     let idle_icon = Image::from_bytes(&idle_bytes)?;
@@ -231,7 +231,8 @@ pub fn render_tray_now(app: &AppHandle) {
         let s = state.update_state.lock().unwrap();
         matches!(s.get("state").and_then(|v| v.as_str()), Some("downloading") | Some("downloaded"))
     };
-    let ctx = IconCtx { settings: &icon_s, display_mode: mode, session_safe: sess_safe, weekly_safe, updating };
+    let closing = state.pending_close.load(std::sync::atomic::Ordering::SeqCst);
+    let ctx = IconCtx { settings: &icon_s, display_mode: mode, session_safe: sess_safe, weekly_safe, updating, closing };
 
     let bytes = match spin {
         Some(f) => icon::render_spin(f, weekly, &ctx),
@@ -244,6 +245,9 @@ pub fn render_tray_now(app: &AppHandle) {
         let _ = tray.set_icon_as_template(false);
     }
     let mut tip = usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now);
+    if closing {
+        tip = format!("Closing (waiting for active sessions...)\n\n{}", tip);
+    }
     if pause_in_meeting && state.meeting_active.load(std::sync::atomic::Ordering::Relaxed) {
         tip.push_str("\n\nIn a meeting - notifications paused");
     }

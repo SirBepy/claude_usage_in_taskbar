@@ -345,6 +345,18 @@ pub fn run() {
                             return;
                         }
                         api.prevent_close();
+                        if let Some(state) = w.app_handle().try_state::<crate::state::AppState>() {
+                            let any_busy = state.cached_instances.lock().unwrap()
+                                .iter().any(|i| i.busy);
+                            if any_busy {
+                                state.pending_close.store(true, Ordering::SeqCst);
+                                let h = w.app_handle().clone();
+                                let _ = w.app_handle().run_on_main_thread(move || {
+                                    crate::tray::menu::render_tray_now(&h);
+                                });
+                                return;
+                            }
+                        }
                         let _ = w.eval("window.navigateTo && window.navigateTo('dashboard')");
                         let _ = w.hide();
                     }
