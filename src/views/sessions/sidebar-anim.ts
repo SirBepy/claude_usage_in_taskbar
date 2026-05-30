@@ -11,13 +11,21 @@ function keyOf(li: HTMLLIElement): string {
   return "";
 }
 
+// Keys we've already committed to exiting. Prevents a sort-order change
+// that fires between close and full removal from FLIP-ing the row to the
+// bottom before the exit animation plays.
+const exitingKeys = new Set<string>();
+
 export function reconcileList(
   listEl: HTMLElement,
   entries: Array<{ key: string; html: string }>,
   animEnabled: boolean,
 ): void {
+  // Strip entries we're already animating out, regardless of anim toggle
+  const visibleEntries = entries.filter(e => !exitingKeys.has(e.key));
+
   if (!animEnabled) {
-    listEl.innerHTML = entries.map(e => e.html).join("");
+    listEl.innerHTML = visibleEntries.map(e => e.html).join("");
     return;
   }
 
@@ -32,13 +40,14 @@ export function reconcileList(
   const beforeRects = new Map<string, DOMRect>();
   for (const [k, li] of existing) beforeRects.set(k, li.getBoundingClientRect());
 
-  const newKeys = new Set(entries.map(e => e.key));
+  const newKeys = new Set(visibleEntries.map(e => e.key));
 
   // Exit animation for removed rows
   for (const [k, li] of existing) {
     if (!newKeys.has(k)) {
+      exitingKeys.add(k);
       li.classList.add("row-exiting");
-      const cleanup = () => { if (li.parentElement) li.remove(); };
+      const cleanup = () => { exitingKeys.delete(k); if (li.parentElement) li.remove(); };
       li.addEventListener("animationend", cleanup, { once: true });
       setTimeout(cleanup, 600);
     }
@@ -48,7 +57,7 @@ export function reconcileList(
   const nodes: HTMLLIElement[] = [];
   const enterKeys = new Set<string>();
 
-  for (const entry of entries) {
+  for (const entry of visibleEntries) {
     const kept = existing.get(entry.key);
     if (kept) {
       // Preserve DOM identity; update class + content in-place
