@@ -40,6 +40,11 @@ pub struct AppState {
     /// The chats window drains it on boot via `take_pending_chat_open`. Holds
     /// `(session_id, mode)` where mode is "live" or "history".
     pub pending_chat_open: Mutex<Option<(String, String)>>,
+    /// True while the meeting watcher detects an active meeting (camera/mic in
+    /// use, or an allowlisted meeting app producing audio). Read by
+    /// `notifications::rules::fire` and the tray tooltip. Always false on
+    /// non-Windows. Written by `crate::meeting::start`.
+    pub meeting_active: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -66,6 +71,7 @@ impl AppState {
             should_quit: Arc::new(AtomicBool::new(false)),
             frontend_alive: Arc::new(AtomicBool::new(false)),
             pending_chat_open: Mutex::new(None),
+            meeting_active: Arc::new(AtomicBool::new(false)),
         }
     }
 }

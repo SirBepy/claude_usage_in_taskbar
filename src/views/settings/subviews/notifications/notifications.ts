@@ -288,6 +288,13 @@ async function hydrateNotifications(): Promise<void> {
   muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
   muteSoundsSwitch.addEventListener("change", saveSettings);
 
+  // Meeting pause: default on when the key is absent.
+  const pauseInMeetingSwitch = $("pauseInMeetingSwitch") as HTMLInputElement | null;
+  if (pauseInMeetingSwitch) {
+    pauseInMeetingSwitch.checked = s.pauseInMeeting !== false;
+    pauseInMeetingSwitch.addEventListener("change", saveSettings);
+  }
+
   await populateAudioDevicePicker();
   buildNotifCards();
   const notifs = (s.notifications as Record<string, Record<string, unknown>>) || {};
@@ -357,6 +364,17 @@ function template() {
               <span class="slider"></span>
             </label>
           </div>
+        </div>
+        <div class="section" id="meetingSection">
+          <div class="section-title">Meetings</div>
+          <div class="option">
+            <span class="option-label">Pause notifications during meetings</span>
+            <label class="switch">
+              <input type="checkbox" id="pauseInMeetingSwitch">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Silences sounds and voice while your camera or mic is in use, or a meeting app (Teams, Zoom, Discord...) is in a call. Windows only.</div>
         </div>
         <template id="notifCardTemplate">
           <div class="section notif-card">

@@ -132,6 +132,16 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         });
     }
 
+    // Listener: meeting state changed -> re-render so the tooltip's
+    // "notifications paused" line appears/clears within a poll interval.
+    {
+        let h = app.clone();
+        app.listen("meeting://changed", move |_| {
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || render_tray_now(&h2));
+        });
+    }
+
     // Listener: update-state -> rebuild menu (badge label/items) + re-render badge.
     {
         let h = app.clone();
@@ -201,6 +211,7 @@ pub fn render_tray_now(app: &AppHandle) {
     let settings_guard = state.settings.lock().unwrap();
     let icon_s: IconSettings = (&*settings_guard).try_into().unwrap_or_default();
     let tip_s: TooltipSettings = (&*settings_guard).try_into().unwrap_or_default();
+    let pause_in_meeting = settings_guard.pause_notifications_in_meeting();
     drop(settings_guard);
 
     let st = state.display.lock().unwrap();
@@ -232,7 +243,11 @@ pub fn render_tray_now(app: &AppHandle) {
         #[cfg(target_os = "macos")]
         let _ = tray.set_icon_as_template(false);
     }
-    let _ = tray.set_tooltip(Some(usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)));
+    let mut tip = usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now);
+    if pause_in_meeting && state.meeting_active.load(std::sync::atomic::Ordering::Relaxed) {
+        tip.push_str("\n\nIn a meeting - notifications paused");
+    }
+    let _ = tray.set_tooltip(Some(tip));
 }
 
 fn build_menu(app: &AppHandle, mute_all: bool, update: &serde_json::Value) -> Result<Menu<tauri::Wry>> {

@@ -12,6 +12,7 @@ pub mod news;
 pub mod notifications;
 pub mod history;
 pub mod ipc;
+pub mod meeting;
 pub mod scheduler;
 pub mod scraping;
 pub mod sessions;
@@ -289,6 +290,7 @@ pub fn run() {
             crate::scheduler::spawn(app.handle().clone());
             crate::news::spawn_poll_loop(app.handle().clone());
             crate::slash::watcher::spawn(app.handle().clone());
+            crate::meeting::start(app.handle().clone());
 
             // Auto-backfill token history once, off the main thread. Keeps
             // the stats page populated on first launch / after new sessions.

@@ -71,6 +71,15 @@ pub(crate) fn should_suppress(settings: &Settings, mode: NotifMode) -> bool {
 pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option<&str>) {
     let state = app.state::<AppState>();
     let settings_snapshot = state.settings.lock().unwrap().clone();
+    // Meeting gate: while a meeting is detected (camera/mic in use or a meeting
+    // app producing audio) and the setting is on (default), drop the ping so it
+    // doesn't interrupt the call. The meeting flag is always false off-Windows.
+    if settings_snapshot.pause_notifications_in_meeting()
+        && state.meeting_active.load(std::sync::atomic::Ordering::Relaxed)
+    {
+        log::debug!("notification suppressed: meeting active");
+        return;
+    }
     let cfg: crate::tray::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
     let rule = resolve_with_character(&cfg, &settings_snapshot, kind, cwd_key);
     if !rule.enabled { return; }

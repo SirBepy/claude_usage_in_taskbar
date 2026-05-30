@@ -124,6 +124,12 @@ impl Settings {
     pub fn mute_sounds(&self) -> bool { self.bool_extra("muteSounds") }
     pub fn mute_system_notifications(&self) -> bool { self.bool_extra("muteSystemNotifications") }
 
+    /// Suppress sound/voice notifications while a meeting is detected.
+    /// Defaults to `true` (on) when the key is absent, unlike the mute flags.
+    pub fn pause_notifications_in_meeting(&self) -> bool {
+        self.extra.get("pauseInMeeting").and_then(|v| v.as_bool()).unwrap_or(true)
+    }
+
     fn bool_extra(&self, key: &str) -> bool {
         self.extra.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
     }
@@ -214,6 +220,16 @@ mod tests {
         assert!(!s.mute_all());
         assert!(!s.mute_sounds());
         assert!(!s.mute_system_notifications());
+    }
+
+    #[test]
+    fn pause_in_meeting_defaults_on_and_can_be_disabled() {
+        // Absent key -> on (opposite of the mute flags).
+        assert!(Settings::default().pause_notifications_in_meeting());
+        let s: Settings = serde_json::from_str(r#"{ "pauseInMeeting": false }"#).unwrap();
+        assert!(!s.pause_notifications_in_meeting());
+        let s: Settings = serde_json::from_str(r#"{ "pauseInMeeting": true }"#).unwrap();
+        assert!(s.pause_notifications_in_meeting());
     }
 
     #[test]

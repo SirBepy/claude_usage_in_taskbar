@@ -125,6 +125,8 @@ export function saveSettings(): void {
     muteAll: chkOr("muteAllSwitch", !!prev.muteAll),
     muteSounds: chkOr("muteSoundsSwitch", !!prev.muteSounds),
     muteSystemNotifications: chkOr("muteSystemSwitch", !!prev.muteSystemNotifications),
+    // Default on: absent key or unmounted subview both resolve to true.
+    pauseInMeeting: chkOr("pauseInMeetingSwitch", prev.pauseInMeeting !== false),
     notifications: gatherNotifSettings(prev),
     projectAliases: prev.projectAliases || {},
     projectBlacklist: prev.projectBlacklist || [],
