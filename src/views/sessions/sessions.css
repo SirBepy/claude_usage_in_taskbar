@@ -151,6 +151,8 @@
 .session-state-icon.s-yellow { color: #fbbf24; }
 .session-state-icon.s-red    { color: #ef4444; }
 .session-state-icon.s-blue   { color: #60a5fa; }
+.session-state-icon.s-amber  { color: #f59e0b; }
+.session-state-icon.s-muted  { color: #8b91a0; }
 
 .sessions-list li.active .session-state-icon { color: var(--bg) !important; opacity: 0.9; }
 
@@ -162,7 +164,8 @@
 /* Dot mode overrides (when icons are disabled) */
 .session-status-dot.st-working   { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.6); }
 .session-status-dot.st-done      { background: #fbbf24; box-shadow: 0 0 5px rgba(251,191,36,0.5); }
-.session-status-dot.st-your-turn { background: #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.5); }
+.session-status-dot.st-question  { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.6); }
+.session-status-dot.st-your-turn { background: #8b91a0; }
 .session-status-dot.st-external  { background: #60a5fa; box-shadow: 0 0 5px rgba(96,165,250,0.5); }
 .session-status-dot.st-attention { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.7); animation: attention-pulse 1.4s ease-in-out infinite; }
 

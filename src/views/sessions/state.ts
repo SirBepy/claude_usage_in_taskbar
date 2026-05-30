@@ -56,6 +56,10 @@ export interface SessionsState {
   changesPanel: ChangesPanel | null;
   prevBusyMap: Map<string, boolean>;
   sortedSessionIds: string[];
+  /** Sessions whose last finished turn self-reported `<cc-status:question>`
+   * (Claude is waiting on the user). Drives the amber sidebar flag. Populated
+   * from the active renderer's onStatusUpdate; in-memory only. */
+  questionSessions: Set<string>;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -73,6 +77,7 @@ export function createInitialState(mountId: number): SessionsState {
     changesPanel: null,
     prevBusyMap: new Map(),
     sortedSessionIds: [],
+    questionSessions: new Set(),
   };
 }
 

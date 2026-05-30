@@ -22,22 +22,26 @@ export function sessionSubtitle(i: Instance): string {
   return i.name || "New chat";
 }
 
-/** 0=NeedsPermission, 1=Working, 2=Done(unread), 3=YourTurn, 4=External/Automated */
-export function statusPriority(i: Instance, unread: Set<string>, attention: Set<string>): number {
+/** 0=NeedsPermission, 1=Question, 2=Working, 3=Done(unread), 4=YourTurn, 5=External/Automated.
+ * Question (Claude is waiting on the user) sorts above Working so idle-blocked
+ * agents surface first for triage. */
+export function statusPriority(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>): number {
   if (attention.has(i.session_id)) return 0;
-  if (i.kind === "external" || i.kind === "automated") return 4;
-  if (i.busy) return 1;
-  if (unread.has(i.session_id)) return 2;
-  return 3;
+  if (i.kind === "external" || i.kind === "automated") return 5;
+  if (i.busy) return 2;
+  if (question.has(i.session_id)) return 1;
+  if (unread.has(i.session_id)) return 3;
+  return 4;
 }
 
-export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<string>): string {
+export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>): string {
   if (attention.has(i.session_id)) return "Needs your permission - click to answer";
   if (i.kind === "external") return "External session (read-only)";
   if (i.kind === "automated") return "Automated session (remote-controlled)";
   if (i.busy) return "Claude is running";
+  if (question.has(i.session_id)) return "Claude asked a question - click to answer";
   if (unread.has(i.session_id)) return "Claude responded - click to read";
-  return "Waiting for your input";
+  return "Done - your turn";
 }
 
 export function sortSessions(
@@ -45,6 +49,7 @@ export function sortSessions(
   sort: SessionSort,
   unread: Set<string>,
   attention: Set<string>,
+  question: Set<string>,
 ): Instance[] {
   const copy = sessions.slice();
   if (sort === "name") {
@@ -57,8 +62,8 @@ export function sortSessions(
   }
   // status sort
   return copy.sort((a, b) => {
-    const pa = statusPriority(a, unread, attention);
-    const pb = statusPriority(b, unread, attention);
+    const pa = statusPriority(a, unread, attention, question);
+    const pb = statusPriority(b, unread, attention, question);
     if (pa !== pb) return pa - pb;
     return (b.started_at ?? "").localeCompare(a.started_at ?? "");
   });
@@ -97,16 +102,20 @@ export function statusIndicator(
   i: Instance,
   unread: Set<string>,
   attention: Set<string>,
+  question: Set<string>,
   style: SessionStateStyle,
   escapeHtmlFn: (s: string) => string,
 ): string {
-  const tooltip = escapeHtmlFn(stateTooltip(i, unread, attention));
+  const tooltip = escapeHtmlFn(stateTooltip(i, unread, attention, question));
   const needsAttention = attention.has(i.session_id);
+  const isExternal = i.kind === "external" || i.kind === "automated";
+  const isQuestion = !needsAttention && !isExternal && !i.busy && question.has(i.session_id);
   if (style === "dots") {
     let cls = "session-status-dot";
     if (needsAttention) cls += " st-attention";
-    else if (i.kind === "external" || i.kind === "automated") cls += " st-external";
+    else if (isExternal) cls += " st-external";
     else if (i.busy) cls += " st-working";
+    else if (isQuestion) cls += " st-question";
     else if (unread.has(i.session_id)) cls += " st-done";
     else cls += " st-your-turn";
     return `<span class="${cls}" title="${tooltip}"></span>`;
@@ -124,8 +133,13 @@ export function statusIndicator(
   if (i.busy) {
     return `<i class="session-state-icon ph ph-spinner s-green spinning" title="${tooltip}"></i>`;
   }
+  if (isQuestion) {
+    return `<i class="session-state-icon ph ph-chat-circle-dots s-amber" title="${tooltip}"></i>`;
+  }
   if (unread.has(i.session_id)) {
     return `<i class="session-state-icon ph ph-check-circle s-yellow" title="${tooltip}"></i>`;
   }
-  return `<i class="session-state-icon ph ph-warning-circle s-red" title="${tooltip}"></i>`;
+  // Done / your turn: a calm muted check, NOT the old red exclamation. The red
+  // alarm is reserved for genuine permission prompts (attention-pulse above).
+  return `<i class="session-state-icon ph ph-check s-muted" title="${tooltip}"></i>`;
 }

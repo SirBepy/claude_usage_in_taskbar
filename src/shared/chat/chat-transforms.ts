@@ -16,7 +16,31 @@ const md = new MarkdownIt({
 // Group 1 = path, group 2 = display name (optional).
 const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 
-function renderTextBlock(text: string): string {
+// Turn-status marker injected via `--append-system-prompt` (see
+// daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>` or
+// `<cc-status:question>`. The app reads it for the sidebar state and must never
+// display it. STATUS_TOKEN_RE matches a complete marker anywhere;
+// STATUS_TAIL_RE matches an incomplete trailing fragment (a streamed prefix of
+// the marker) so the token never flashes mid-stream. The tail pattern is the
+// literal "<cc-status:done|question>" with every position optional, anchored to
+// end-of-text, with a mandatory leading "<c" to avoid eating a lone trailing
+// "<".
+const STATUS_TOKEN_RE = /<cc-status:(?:done|question)>/gi;
+const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
+
+export function stripStatusToken(text: string): string {
+  return text.replace(STATUS_TOKEN_RE, "").replace(STATUS_TAIL_RE, "").replace(/\s+$/, "");
+}
+
+/** Last status marker in `text`, or null if none. */
+export function detectStatusToken(text: string): "done" | "question" | null {
+  const matches = [...text.matchAll(/<cc-status:(done|question)>/gi)];
+  if (matches.length === 0) return null;
+  return matches[matches.length - 1]![1]!.toLowerCase() as "done" | "question";
+}
+
+function renderTextBlock(rawText: string): string {
+  const text = stripStatusToken(rawText);
   FILE_TOKEN_RE.lastIndex = 0;
   if (!FILE_TOKEN_RE.test(text)) {
     FILE_TOKEN_RE.lastIndex = 0;

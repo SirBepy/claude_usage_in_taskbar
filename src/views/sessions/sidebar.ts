@@ -64,6 +64,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   const pending = state.pendingNewSession;
   const unread = loadUnreadSet();
   const attention = pendingPromptSessionIds();
+  const question = state.questionSessions;
   const style = loadStateStyle();
   const sort = loadSort();
 
@@ -87,7 +88,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     sessionSubtitle(s).toLowerCase().includes(filter)
   );
 
-  const sorted = sortSessions(filtered, sort, unread, attention);
+  const sorted = sortSessions(filtered, sort, unread, attention, question);
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
   const isManualSlots = getChatSlotMode() === "manual";
@@ -102,7 +103,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   const realRows = sorted.map((s, i) => {
     const isActive = s.session_id === state.selectedId;
     const needsAttention = attention.has(s.session_id);
-    const indicator = statusIndicator(s, unread, attention, style, escapeHtml);
+    const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml);
     let kbdHint = "";
     if (isManualSlots) {
       const slot = slotBySession[s.session_id];

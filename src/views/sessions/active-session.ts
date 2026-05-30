@@ -253,6 +253,16 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     state.changesPanel = panel;
     renderer.onFileEditsChanged = (edits) => panel.onUpdate(edits);
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
+    // Track Claude's self-reported turn status for this session so the sidebar
+    // shows an amber "answer me" flag for questions and a calm icon otherwise.
+    renderer.onStatusUpdate = (status) => {
+      if (state.renderer !== renderer) return;
+      if (status === "question") state.questionSessions.add(sessionId);
+      else state.questionSessions.delete(sessionId);
+      const root = document.querySelector<HTMLElement>(".view-sessions");
+      const listEl = root?.querySelector<HTMLElement>("#sessions-list");
+      if (listEl) renderSidebar(listEl);
+    };
     pane.querySelector(".changes-btn")?.addEventListener("click", () => panel.toggle());
     await renderer.attach(sessionId);
     // Bail if a newer mount or selectSession superseded us during await.

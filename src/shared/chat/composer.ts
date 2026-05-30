@@ -28,6 +28,17 @@ interface Attachment {
   filename: string; // original filename for display; derived from uuid path if absent
 }
 
+/** A large text paste held as a collapsed "log" chip instead of being dumped
+ * into the textarea. In-memory only; inlined into the message text on send. */
+interface PastedBlock {
+  name: string;
+  text: string;
+}
+
+// Paste payloads at or above this many characters become a pasted_log chip
+// rather than landing as a wall of text in the textarea.
+const PASTE_LOG_THRESHOLD = 2000;
+
 export interface ComposerOptions {
   onSend: (blocks: ContentBlock[]) => Promise<void> | void;
   projectDir?: string | null;
@@ -40,6 +51,7 @@ export class Composer {
   private root: HTMLElement;
   private opts: ComposerOptions;
   private attachments: Attachment[] = [];
+  private pastedBlocks: PastedBlock[] = [];
   private sessionId: string | null = null;
   private disabled = false;
   private textarea: HTMLTextAreaElement | null = null;
@@ -231,13 +243,30 @@ export class Composer {
 
   private async onPaste(e: ClipboardEvent): Promise<void> {
     if (!e.clipboardData) return;
+    let handledFile = false;
     for (const item of Array.from(e.clipboardData.items)) {
       if (item.kind !== "file") continue;
       const blob = item.getAsFile();
       if (!blob) continue;
       e.preventDefault();
+      handledFile = true;
       await this.attachBlob(blob, blob.name || `paste.${item.type.split("/")[1] ?? "bin"}`);
     }
+    if (handledFile) return;
+    // A big plain-text paste becomes a collapsed log chip instead of a wall of
+    // text in the textarea. Claude still receives the full text inline on send.
+    const text = e.clipboardData.getData("text/plain");
+    if (text && text.length >= PASTE_LOG_THRESHOLD) {
+      e.preventDefault();
+      this.addPastedBlock(text);
+    }
+  }
+
+  private addPastedBlock(text: string): void {
+    const n = this.pastedBlocks.length;
+    const name = n === 0 ? "pasted_log.txt" : `pasted_log_${n + 1}.txt`;
+    this.pastedBlocks.push({ name, text });
+    this.renderAttachments();
   }
 
   private async attachBlob(blob: Blob, filename: string): Promise<void> {
@@ -326,6 +355,31 @@ export class Composer {
       div.appendChild(rm);
       this.attachmentsEl!.appendChild(div);
     });
+
+    this.pastedBlocks.forEach((b, i) => {
+      const div = document.createElement("div");
+      div.className = "attachment file-chip pasted-log";
+      div.title = "Pasted text — click to view";
+      div.innerHTML = `<i class="ph ph-file-text"></i>`;
+      const label = document.createElement("span");
+      label.textContent = b.name;
+      div.appendChild(label);
+      div.addEventListener("click", () =>
+        openLightbox({ type: "text", content: b.text, filename: b.name }),
+      );
+
+      const rm = document.createElement("button");
+      rm.className = "rm";
+      rm.title = "Remove";
+      rm.innerHTML = '<i class="ph ph-x"></i>';
+      rm.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.pastedBlocks.splice(i, 1);
+        this.renderAttachments();
+      });
+      div.appendChild(rm);
+      this.attachmentsEl!.appendChild(div);
+    });
   }
 
   private builtinCtx(): BuiltinContext {
@@ -344,7 +398,7 @@ export class Composer {
       return;
     }
     const text = (this.textarea?.value ?? "").trim();
-    if (!text && this.attachments.length === 0) return;
+    if (!text && this.attachments.length === 0 && this.pastedBlocks.length === 0) return;
     this.sending = true;
 
     const builtin = parseBuiltin(text);
@@ -360,6 +414,7 @@ export class Composer {
       if (this.textarea) this.textarea.value = "";
       this.autoResize();
       this.attachments = [];
+      this.pastedBlocks = [];
       this.renderAttachments();
       this.persistDraft();
       this.persistAttachments();
@@ -367,8 +422,15 @@ export class Composer {
       return;
     }
 
+    // Inline any held pasted-log blocks after the typed text. Claude sees the
+    // full content; the user only ever saw the collapsed chip.
+    let fullText = text;
+    for (const b of this.pastedBlocks) {
+      fullText += (fullText ? "\n\n" : "") + b.text;
+    }
+
     const blocks: ContentBlock[] = [];
-    if (text) blocks.push({ type: "text", text });
+    if (fullText) blocks.push({ type: "text", text: fullText });
     for (const a of this.attachments) {
       if (a.path) {
         blocks.push({ type: "text", text: `<file:${a.path}::${a.filename}>` });
@@ -383,6 +445,7 @@ export class Composer {
     if (this.textarea) this.textarea.value = "";
     this.autoResize();
     this.attachments = [];
+    this.pastedBlocks = [];
     this.renderAttachments();
     this.persistDraft();
     this.persistAttachments();

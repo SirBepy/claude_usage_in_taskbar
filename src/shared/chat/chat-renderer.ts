@@ -13,7 +13,7 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { showView } from "../navigation";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage, isCompactUserMessage } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage, isCompactUserMessage, detectStatusToken } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
 import { openLightbox } from "./lightbox";
 import { hydrateAttachments, chipToLightboxContent } from "./attachment-hydrator";
@@ -78,6 +78,17 @@ export class ChatRenderer {
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
+  /** Fires when the latest finished turn's self-reported status changes:
+   * "question" (Claude is waiting on the user), "done", or null (turn in
+   * progress / reset by a new user message). Drives the sidebar state icon. */
+  public onStatusUpdate: ((status: "done" | "question" | null) => void) | null = null;
+  private turnStatus: "done" | "question" | null = null;
+
+  private setTurnStatus(s: "done" | "question" | null): void {
+    if (this.turnStatus === s) return;
+    this.turnStatus = s;
+    this.onStatusUpdate?.(s);
+  }
 
   get cumulativeUsage(): CumulativeUsage {
     return { ...this._cumulative };
@@ -312,6 +323,7 @@ export class ChatRenderer {
     }
 
     void highlightCodeBlocks(this.container);
+    this.clampUserMessages();
   }
 
 
@@ -487,6 +499,9 @@ export class ChatRenderer {
         // New turn starts: drop the previous turn's pinned action so the gap
         // before the first action shows a fresh "thinking" verb.
         this.setActivity(null);
+        // A new user message resets the turn status — the ball is back in
+        // Claude's court until it finishes and re-reports.
+        this.setTurnStatus(null);
         // /compact injects the summary back as a user message — show a system
         // notice instead so the multi-KB summary doesn't appear as a chat bubble.
         if (isCompactUserMessage(ev.content)) {
@@ -535,6 +550,13 @@ export class ChatRenderer {
           } else {
             this.messages.push(msg);
           }
+        }
+        // On a finalized turn, read Claude's self-reported status marker (the
+        // result line carries the full final text incl. the token). Absent
+        // token = done (calm). Reset to null happens on the next user_message.
+        if (!ev.streaming) {
+          const joined = ev.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          this.setTurnStatus(detectStatusToken(joined));
         }
         touched = true;
         break;
@@ -663,6 +685,39 @@ export class ChatRenderer {
     // 5. Async syntax highlight pass + blockquote card wrapping.
     void highlightCodeBlocks(this.container);
     wrapBlockquotes(this.container);
+    // 6. Clamp over-long user messages (pasted/typed walls) to ~10 lines.
+    this.clampUserMessages();
+  }
+
+  /**
+   * Collapse any user message taller than ~10 lines behind a "Show more"
+   * toggle. The bubble content moves into an overflow-hidden inner body so the
+   * toggle (a sibling) stays visible; clicking flips an `expanded` class.
+   * Idempotent via a `data-clamp-checked` marker — user messages never stream,
+   * so a row is measured exactly once.
+   */
+  private clampUserMessages(): void {
+    const MAX_PX = 220; // roughly ten lines of bubble text
+    for (let i = 0; i < this.messageEls.length; i++) {
+      if (this.messages[i]?.kind !== "user") continue;
+      const el = this.messageEls[i];
+      if (!el || el.dataset.clampChecked) continue;
+      el.dataset.clampChecked = "1";
+      if (el.scrollHeight <= MAX_PX + 40) continue;
+      const body = document.createElement("div");
+      body.className = "msg-clamp-body";
+      while (el.firstChild) body.appendChild(el.firstChild);
+      el.appendChild(body);
+      el.classList.add("has-clamp");
+      const toggle = document.createElement("button");
+      toggle.className = "msg-clamp-toggle";
+      toggle.textContent = "Show more";
+      toggle.addEventListener("click", () => {
+        const expanded = el.classList.toggle("expanded");
+        toggle.textContent = expanded ? "Show less" : "Show more";
+      });
+      el.appendChild(toggle);
+    }
   }
 
   private enqueueTurnClose(): void {

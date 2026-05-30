@@ -47,6 +47,13 @@ fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
 /// Either way `session_id` is known up front, so the daemon never has to block
 /// reading stdout to discover it (claude does not emit its `system`/init line
 /// until it receives the first user message, which would otherwise deadlock).
+/// Appended to the system prompt of every session we spawn so Claude
+/// self-reports, at the end of each turn, whether it is done or waiting on the
+/// user. The frontend strips this marker before display (see
+/// `chat-transforms.ts`) and uses it to drive the sidebar state icon (done =
+/// calm check, question = amber flag) instead of guessing from the text.
+const TURN_STATUS_PROMPT: &str = "At the very end of every response, on its own final line with no other text and no markdown formatting, output exactly one status marker: <cc-status:done> if you have finished and are not waiting on the user, or <cc-status:question> if you are asking the user a question or otherwise waiting for their input or decision. Always end with exactly one such marker.";
+
 fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str) -> Vec<String> {
     let mut args = vec![
         "-p".to_string(),
@@ -65,6 +72,8 @@ fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effo
     args.push(model.to_string());
     args.push("--effort".to_string());
     args.push(effort.to_string());
+    args.push("--append-system-prompt".to_string());
+    args.push(TURN_STATUS_PROMPT.to_string());
     args
 }
 
@@ -366,6 +375,20 @@ mod tests {
         assert_eq!(args.get(m + 1).map(String::as_str), Some("sonnet"));
         let e = args.iter().position(|a| a == "--effort").expect("--effort");
         assert_eq!(args.get(e + 1).map(String::as_str), Some("medium"));
+    }
+
+    #[test]
+    fn base_args_carry_turn_status_prompt() {
+        // The status marker instruction must ride on every spawn so Claude
+        // self-reports done-vs-question; the sidebar icon depends on it.
+        let args = base_claude_args(None, "new-uuid", "opus", "high");
+        let p = args
+            .iter()
+            .position(|a| a == "--append-system-prompt")
+            .expect("--append-system-prompt must be present");
+        let prompt = args.get(p + 1).map(String::as_str).unwrap_or("");
+        assert!(prompt.contains("<cc-status:done>"), "prompt must name the done marker: {prompt}");
+        assert!(prompt.contains("<cc-status:question>"), "prompt must name the question marker: {prompt}");
     }
 
     #[tokio::test]
