@@ -1169,16 +1169,20 @@ input:checked + .slider:before {
   border-top: 1px solid var(--border, #2e2e40);
   vertical-align: middle;
 }
+/* Column widths drive off the header row under table-layout: fixed, so pin
+   them on the th cells. When + Tokens stay just wide enough; Title (last)
+   gets all the slack. */
+.session-table th:nth-child(1) { width: 44px; }
+.session-table th:nth-child(2) { width: 56px; }
+.session-table th:nth-child(3) { width: auto; }
 .session-table .col-when {
   color: var(--text-dim, #8a8aa0);
   white-space: nowrap;
   font-family: "Fira Code", monospace;
-  width: 60px;
 }
 .session-table .col-tokens {
   font-family: "Fira Code", monospace;
   white-space: nowrap;
-  width: 64px;
 }
 .session-table .col-name {
   font-family: "Fira Code", monospace;

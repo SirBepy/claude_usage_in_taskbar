@@ -390,7 +390,7 @@ async function renderSessionsList(cwd: string, range: string): Promise<void> {
   list.innerHTML = `<div class="section" style="padding:10px 14px">
     <div class="section-title" style="margin-bottom:8px">Recent chats</div>
     <table class="session-table"><thead><tr>
-      <th>when</th><th>tokens</th><th>chat</th>
+      <th>when</th><th>tokens</th><th>title</th>
     </tr></thead><tbody>${rowsHTML}</tbody></table>
     ${seeAll}
   </div>`;
