@@ -168,8 +168,9 @@ export function reconcileList(
     // Remove any lingering exit rows
     for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")]) li.remove();
 
-    // Reorder: remove live nodes and re-insert in new order
-    for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li:not(.row-exiting)")]) li.remove();
+    // Reorder by appending each node in the desired order. appendChild on an
+    // already-in-DOM node moves it to the end — so iterating the new order
+    // produces the correct sequence with no intermediate empty-list state.
     for (const node of nodes) listEl.appendChild(node);
 
     // Enter animations for new rows
