@@ -140,4 +140,28 @@ describe("new chat opened during a close", () => {
     expect(allIds(listEl)).toContain("PENDING");
     expect(listEl.querySelector('li[data-session-id="X"]')).toBeNull();
   });
+
+  // Each draft must carry a DISTINCT key (sidebar keys drafts by placeholderId,
+  // not a constant "pending"). A shared key let a discarded draft's exit
+  // suppression leak onto the next draft, hiding it until the key changed.
+  // Drafts here use distinct `p:<id>` keys to mirror that contract.
+  const draft = (id) => ({ key: `p:${id}`, html: `<li class="pending" data-pending="1" data-placeholder-id="${id}">draft</li>` });
+
+  it("shows a new draft opened right after discarding the previous one", () => {
+    const listEl = makeList();
+
+    // Open draft #1.
+    reconcileList(listEl, [draft("P1")], true);
+    vi.runAllTimers();
+    expect(allIds(listEl)).toContain("PENDING");
+
+    // Discard draft #1 (it begins exiting), then immediately open draft #2.
+    reconcileList(listEl, [], true);
+    reconcileList(listEl, [draft("P2")], true);
+    vi.runAllTimers();
+
+    // Draft #2 must be visible — not suppressed by draft #1's exit.
+    expect(allIds(listEl)).toContain("PENDING");
+    expect(listEl.querySelector('li[data-placeholder-id="P2"]')).not.toBeNull();
+  });
 });

@@ -106,8 +106,15 @@ export function renderSidebar(listEl: HTMLElement): void {
   if (pending) {
     const isPendingActive = state.selectedId === pending.placeholderId;
     const activeCls = isPendingActive ? "active" : "";
+    // Key by placeholderId, NOT a constant "pending": consecutive drafts must
+    // have distinct keys. A constant key let a just-discarded draft's exit
+    // suppression (exitingKeys) leak onto the next draft, so the new draft was
+    // filtered out and never rendered until its key changed (i.e. a message
+    // turned it into a real session). The li carries data-placeholder-id so
+    // keyOf() in sidebar-anim derives the matching `p:<id>` key.
+    const pid = escapeHtml(pending.placeholderId);
     const html = !pending.firstMessageSent
-      ? `<li class="${activeCls} pending draft" data-pending="1" title="Draft — type a message to start">
+      ? `<li class="${activeCls} pending draft" data-pending="1" data-placeholder-id="${pid}" title="Draft — type a message to start">
           <i class="session-state-icon ph ph-note-pencil" title="Draft"></i>
           <div class="session-row-text">
             <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
@@ -117,7 +124,7 @@ export function renderSidebar(listEl: HTMLElement): void {
             <i class="ph ph-x-circle"></i>
           </button>
         </li>`
-      : `<li class="${activeCls} pending" data-pending="1" title="Starting new session... click X to discard if stuck">
+      : `<li class="${activeCls} pending" data-pending="1" data-placeholder-id="${pid}" title="Starting new session... click X to discard if stuck">
           <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
           <div class="session-row-text">
             <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
@@ -127,7 +134,7 @@ export function renderSidebar(listEl: HTMLElement): void {
             <i class="ph ph-x-circle"></i>
           </button>
         </li>`;
-    entries.push({ key: "pending", html });
+    entries.push({ key: `p:${pending.placeholderId}`, html });
   }
 
   for (const d of state.parkedDrafts) {
