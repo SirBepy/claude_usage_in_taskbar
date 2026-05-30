@@ -15,7 +15,7 @@ import {
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
-import { reconcileList, loadAnimEnabled } from "./sidebar-anim";
+import { reconcileList, loadAnimEnabled, markSessionExiting } from "./sidebar-anim";
 
 export function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external" || i.kind === "automated");
@@ -267,6 +267,8 @@ export function openCtxMenu(
   closeItem.innerHTML = `<i class="ph ph-x"></i> ${closeLabel}`;
   closeItem.addEventListener("click", () => {
     closeCtxMenu();
+    const listEl = anchor.closest<HTMLElement>("#sessions-list");
+    if (listEl && loadAnimEnabled()) markSessionExiting(listEl, sessionId);
     void closeChat(sessionId);
   });
   menu.appendChild(closeItem);

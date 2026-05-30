@@ -16,6 +16,23 @@ function keyOf(li: HTMLLIElement): string {
 // bottom before the exit animation plays.
 const exitingKeys = new Set<string>();
 
+/**
+ * Immediately start the exit animation for a session row at click-time,
+ * before the backend round-trip fires instances-changed. This ensures the
+ * slide-left plays first and the row is never FLIP'd to a new sort position.
+ */
+export function markSessionExiting(listEl: HTMLElement, sessionId: string): void {
+  const key = `s:${sessionId}`;
+  if (exitingKeys.has(key)) return;
+  const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sessionId)}"]`);
+  if (!li || li.classList.contains("row-exiting")) return;
+  exitingKeys.add(key);
+  li.classList.add("row-exiting");
+  const cleanup = () => { exitingKeys.delete(key); if (li.parentElement) li.remove(); };
+  li.addEventListener("animationend", cleanup, { once: true });
+  setTimeout(cleanup, 600);
+}
+
 export function reconcileList(
   listEl: HTMLElement,
   entries: Array<{ key: string; html: string }>,
