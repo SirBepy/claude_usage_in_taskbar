@@ -13,7 +13,7 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { showView } from "../navigation";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage, isCompactUserMessage, detectStatusToken } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, eventToRenderedMessage, isCompactUserMessage, detectStatusToken, base64ToUtf8 } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
 import { openLightbox } from "./lightbox";
 import { hydrateAttachments, chipToLightboxContent } from "./attachment-hydrator";
@@ -99,7 +99,16 @@ export class ChatRenderer {
     this.container.addEventListener("click", this.handleCopyClick);
     this.container.addEventListener("click", this.handleSlashClick);
     this.container.addEventListener("click", this.handleAttachmentClick);
+    this.container.addEventListener("click", this.handlePastedLogClick);
   }
+
+  private handlePastedLogClick = (e: MouseEvent): void => {
+    const chip = (e.target as Element).closest<HTMLElement>(".pasted-log-chip");
+    if (!chip) return;
+    const name = chip.dataset.pastedName || "pasted_log.txt";
+    const text = base64ToUtf8(chip.dataset.pastedText || "");
+    openLightbox({ type: "text", content: text, filename: name });
+  };
 
   private handleSlashClick = (e: MouseEvent): void => {
     const span = (e.target as Element).closest<HTMLElement>(".slash-mention[data-skill-target]");

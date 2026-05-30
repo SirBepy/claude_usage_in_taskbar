@@ -16,6 +16,12 @@ const md = new MarkdownIt({
 // Group 1 = path, group 2 = display name (optional).
 const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 
+// A large paste held in the composer is sent wrapped in this sentinel (see
+// composer.ts). Claude reads the full body inline; the chat collapses the
+// wrapper into a clickable chip so the user never sees the wall of text in
+// their own message. Group 1 = display name, group 2 = body.
+const PASTED_LOG_RE = /<pasted-log name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log>/g;
+
 // Turn-status marker injected via `--append-system-prompt` (see
 // daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>` or
 // `<cc-status:question>`. The app reads it for the sidebar state and must never
@@ -57,6 +63,33 @@ export function detectStatusToken(text: string): "done" | "question" | null {
 
 function renderTextBlock(rawText: string): string {
   const text = stripStatusToken(rawText);
+  // First peel off any <pasted-log> blocks into chips; render the surrounding
+  // text (which may still carry <file:> tokens) through the file-token path.
+  PASTED_LOG_RE.lastIndex = 0;
+  if (!PASTED_LOG_RE.test(text)) {
+    PASTED_LOG_RE.lastIndex = 0;
+    return renderFileSegments(text);
+  }
+  PASTED_LOG_RE.lastIndex = 0;
+  const parts: string[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PASTED_LOG_RE.exec(text)) !== null) {
+    if (match.index > last) {
+      const seg = text.slice(last, match.index);
+      if (seg.trim()) parts.push(renderFileSegments(seg));
+    }
+    parts.push(pastedLogChipHtml(match[1] || "pasted_log.txt", match[2] ?? ""));
+    last = match.index + match[0].length;
+  }
+  const tail = text.slice(last);
+  if (tail.trim()) parts.push(renderFileSegments(tail));
+  return parts.join("");
+}
+
+// Renders a text segment, turning any <file:> tokens into attachment chips and
+// the rest into markdown.
+function renderFileSegments(text: string): string {
   FILE_TOKEN_RE.lastIndex = 0;
   if (!FILE_TOKEN_RE.test(text)) {
     FILE_TOKEN_RE.lastIndex = 0;
@@ -83,6 +116,36 @@ function renderTextBlock(rawText: string): string {
 
 function attachmentChipHtml(path: string, name: string): string {
   return `<div class="attachment-chip" data-attachment-path="${escapeHtml(path)}" data-filename="${escapeHtml(name)}"><i class="ph ph-file"></i><span class="chip-name">${escapeHtml(name)}</span></div>`;
+}
+
+/** UTF-8-safe base64 (btoa is Latin1-only). Chunked to avoid arg-count limits
+ * on large pastes. */
+function utf8ToBase64(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+/** Inverse of utf8ToBase64. Returns "" on malformed input. */
+export function base64ToUtf8(b64: string): string {
+  try {
+    const bin = atob(b64);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+// A pasted-log chip mirrors the composer chip: a file-text glyph + name, the
+// full body stashed (base64) on the element so a click can open it in the
+// lightbox without re-parsing the message.
+function pastedLogChipHtml(name: string, body: string): string {
+  return `<div class="attachment-chip pasted-log-chip previewable" data-pasted-name="${escapeHtml(name)}" data-pasted-text="${utf8ToBase64(body)}"><i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span></div>`;
 }
 
 export interface RenderedMessage {

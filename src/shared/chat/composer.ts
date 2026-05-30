@@ -422,11 +422,14 @@ export class Composer {
       return;
     }
 
-    // Inline any held pasted-log blocks after the typed text. Claude sees the
-    // full content; the user only ever saw the collapsed chip.
+    // Append any held pasted-log blocks after the typed text, each wrapped in a
+    // <pasted-log> sentinel. Claude reads the full content inline; the chat
+    // renderer collapses the wrapper into a clickable chip so the user never
+    // sees the wall of text in their own message (mirrors the composer chip).
     let fullText = text;
     for (const b of this.pastedBlocks) {
-      fullText += (fullText ? "\n\n" : "") + b.text;
+      const wrapped = `<pasted-log name="${b.name}">\n${b.text}\n</pasted-log>`;
+      fullText += (fullText ? "\n\n" : "") + wrapped;
     }
 
     const blocks: ContentBlock[] = [];

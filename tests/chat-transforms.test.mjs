@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderBlocks, renderMessage, cleanUserBlocks } from "../src/shared/chat/chat-transforms.ts";
+import { renderBlocks, renderMessage, cleanUserBlocks, base64ToUtf8, detectStatusToken } from "../src/shared/chat/chat-transforms.ts";
 
 describe("renderBlocks — file token handling", () => {
   it("converts a standalone <file:path::name> token to an attachment-chip", () => {
@@ -94,6 +94,44 @@ describe("renderMessage — tool_use branches to edit-window for file mutations"
     });
     expect(html).not.toContain("edit-window");
     expect(html).toContain("<pre>");
+  });
+});
+
+describe("renderBlocks — pasted-log chip", () => {
+  const body = "Hello 世界\nsecond line\nthird line";
+
+  it("collapses a <pasted-log> wrapper into a chip, not raw text", () => {
+    const html = renderBlocks([{ type: "text", text: `<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
+    expect(html).toContain("pasted-log-chip");
+    expect(html).toContain("pasted_log.txt");
+    // the body must NOT render as visible text
+    expect(html).not.toContain("second line");
+    expect(html).not.toContain("世界");
+  });
+
+  it("stashes the full body (base64, utf8-safe) for the lightbox", () => {
+    const html = renderBlocks([{ type: "text", text: `<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
+    const m = html.match(/data-pasted-text="([^"]*)"/);
+    expect(m).toBeTruthy();
+    expect(base64ToUtf8(m[1])).toBe(body);
+  });
+
+  it("renders typed text around the chip normally", () => {
+    const html = renderBlocks([{ type: "text", text: `look at this\n\n<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
+    expect(html).toContain("look at this");
+    expect(html).toContain("pasted-log-chip");
+  });
+});
+
+describe("status marker", () => {
+  it("strips the status marker from rendered text", () => {
+    const html = renderBlocks([{ type: "text", text: "All done here.\n<cc-status:done>" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("All done here");
+  });
+  it("detectStatusToken reads the last marker", () => {
+    expect(detectStatusToken("blah <cc-status:question>")).toBe("question");
+    expect(detectStatusToken("nope")).toBe(null);
   });
 });
 
