@@ -182,6 +182,16 @@ function hydrateVisuals(): void {
       catch { /* ignore */ }
     });
   }
+
+  const sidebarAnimations = $("sidebarAnimations") as HTMLInputElement | null;
+  if (sidebarAnimations) {
+    try { sidebarAnimations.checked = localStorage.getItem("cc_sidebar_animations") !== "off"; }
+    catch { sidebarAnimations.checked = true; }
+    sidebarAnimations.addEventListener("change", () => {
+      try { localStorage.setItem("cc_sidebar_animations", sidebarAnimations.checked ? "on" : "off"); }
+      catch { /* ignore */ }
+    });
+  }
 }
 
 // Back-compat window binding (legacy boot code calls this by name).
@@ -353,6 +363,13 @@ function template() {
               <option value="icons">Icons</option>
               <option value="dots">Dots</option>
             </select>
+          </div>
+          <div class="option">
+            <span class="option-label">Sidebar animations</span>
+            <label class="switch">
+              <input type="checkbox" id="sidebarAnimations">
+              <span class="slider"></span>
+            </label>
           </div>
         </div>
 

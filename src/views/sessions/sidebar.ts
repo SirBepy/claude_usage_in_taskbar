@@ -15,6 +15,7 @@ import {
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
+import { reconcileList, loadAnimEnabled } from "./sidebar-anim";
 
 export function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external" || i.kind === "automated");
@@ -100,7 +101,52 @@ export function renderSidebar(listEl: HTMLElement): void {
     }
   }
 
-  const realRows = sorted.map((s, i) => {
+  const entries: Array<{ key: string; html: string }> = [];
+
+  if (pending) {
+    const isPendingActive = state.selectedId === pending.placeholderId;
+    const activeCls = isPendingActive ? "active" : "";
+    const html = !pending.firstMessageSent
+      ? `<li class="${activeCls} pending draft" data-pending="1" title="Draft — type a message to start">
+          <i class="session-state-icon ph ph-note-pencil" title="Draft"></i>
+          <div class="session-row-text">
+            <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
+            <span class="session-row-subtitle">Draft New Chat</span>
+          </div>
+          <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-draft="1">
+            <i class="ph ph-x-circle"></i>
+          </button>
+        </li>`
+      : `<li class="${activeCls} pending" data-pending="1" title="Starting new session... click X to discard if stuck">
+          <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
+          <div class="session-row-text">
+            <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
+            <span class="session-row-subtitle">starting...</span>
+          </div>
+          <button class="session-row-menu-btn icon-btn" title="Discard stuck session" data-discard-stuck="1">
+            <i class="ph ph-x-circle"></i>
+          </button>
+        </li>`;
+    entries.push({ key: "pending", html });
+  }
+
+  for (const d of state.parkedDrafts) {
+    entries.push({
+      key: `p:${d.placeholderId}`,
+      html: `<li class="parked-draft" data-placeholder-id="${escapeHtml(d.placeholderId)}" title="Parked draft — click to resume">
+        <i class="session-state-icon ph ph-note-pencil" title="Parked draft"></i>
+        <div class="session-row-text">
+          <span class="session-row-project">${escapeHtml(d.projectName || "New session")}</span>
+          <span class="session-row-subtitle">Draft New Chat</span>
+        </div>
+        <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-parked="${escapeHtml(d.placeholderId)}">
+          <i class="ph ph-x-circle"></i>
+        </button>
+      </li>`,
+    });
+  }
+
+  for (const [i, s] of sorted.entries()) {
     const isActive = s.session_id === state.selectedId;
     const needsAttention = attention.has(s.session_id);
     const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml);
@@ -111,61 +157,22 @@ export function renderSidebar(listEl: HTMLElement): void {
     } else {
       if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
     }
-    return `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""}">
-      ${indicator}
-      <div class="session-row-text">
-        <span class="session-row-project">${escapeHtml(projectName(s))}</span>
-        <span class="session-row-subtitle">${escapeHtml(sessionSubtitle(s))}</span>
-      </div>
-      <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
-        <i class="ph ph-dots-three-vertical"></i>
-      </button>
-    </li>`;
-  }).join("");
-
-  let pendingRow = "";
-  if (pending) {
-    const isPendingActive = state.selectedId === pending.placeholderId;
-    const activeCls = isPendingActive ? "active" : "";
-    if (!pending.firstMessageSent) {
-      pendingRow = `<li class="${activeCls} pending draft" data-pending="1" title="Draft — type a message to start">
-        <i class="session-state-icon ph ph-note-pencil" title="Draft"></i>
+    entries.push({
+      key: `s:${s.session_id}`,
+      html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""}">
+        ${indicator}
         <div class="session-row-text">
-          <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
-          <span class="session-row-subtitle">Draft New Chat</span>
+          <span class="session-row-project">${escapeHtml(projectName(s))}</span>
+          <span class="session-row-subtitle">${escapeHtml(sessionSubtitle(s))}</span>
         </div>
-        <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-draft="1">
-          <i class="ph ph-x-circle"></i>
+        <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
+          <i class="ph ph-dots-three-vertical"></i>
         </button>
-      </li>`;
-    } else {
-      pendingRow = `<li class="${activeCls} pending" data-pending="1" title="Starting new session... click X to discard if stuck">
-        <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
-        <div class="session-row-text">
-          <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
-          <span class="session-row-subtitle">starting...</span>
-        </div>
-        <button class="session-row-menu-btn icon-btn" title="Discard stuck session" data-discard-stuck="1">
-          <i class="ph ph-x-circle"></i>
-        </button>
-      </li>`;
-    }
+      </li>`,
+    });
   }
 
-  const parkedRows = state.parkedDrafts.map(d =>
-    `<li class="parked-draft" data-placeholder-id="${escapeHtml(d.placeholderId)}" title="Parked draft — click to resume">
-      <i class="session-state-icon ph ph-note-pencil" title="Parked draft"></i>
-      <div class="session-row-text">
-        <span class="session-row-project">${escapeHtml(d.projectName || "New session")}</span>
-        <span class="session-row-subtitle">Draft New Chat</span>
-      </div>
-      <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-parked="${escapeHtml(d.placeholderId)}">
-        <i class="ph ph-x-circle"></i>
-      </button>
-    </li>`
-  ).join("");
-
-  listEl.innerHTML = pendingRow + parkedRows + realRows;
+  reconcileList(listEl, entries, loadAnimEnabled());
 }
 
 // ── Per-row 3-dot context menu ───────────────────────────────────────────────
