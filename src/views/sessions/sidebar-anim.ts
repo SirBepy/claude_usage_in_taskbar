@@ -11,108 +11,32 @@ function keyOf(li: HTMLLIElement): string {
   return "";
 }
 
-// Keys we've already committed to exiting. Prevents a sort-order change
-// that fires between close and full removal from FLIP-ing the row to the
-// bottom before the exit animation plays.
+// Keys already committed to exiting — filtered out of entries on every reconcile.
 const exitingKeys = new Set<string>();
 
-/**
- * Immediately start the exit animation for a session row at click-time,
- * before the backend round-trip fires instances-changed. This ensures the
- * slide-left plays first and the row is never FLIP'd to a new sort position.
- */
-export function markSessionExiting(listEl: HTMLElement, sessionId: string): void {
-  const key = `s:${sessionId}`;
-  if (exitingKeys.has(key)) return;
-  const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sessionId)}"]`);
-  if (!li || li.classList.contains("row-exiting")) return;
-  exitingKeys.add(key);
-  li.classList.add("row-exiting");
-  const cleanup = () => { exitingKeys.delete(key); if (li.parentElement) li.remove(); };
-  li.addEventListener("animationend", cleanup, { once: true });
-  setTimeout(cleanup, 600);
+// Version token: incremented on every reconcile call so a delayed applyReorder
+// from a previous call is a no-op if a newer call superseded it.
+let reorderToken = 0;
+
+function updateNode(kept: HTMLLIElement, html: string): void {
+  const tmp = document.createElement("ul");
+  tmp.innerHTML = html;
+  const fresh = tmp.firstElementChild as HTMLLIElement | null;
+  if (!fresh) return;
+  kept.className = fresh.className;
+  kept.innerHTML = fresh.innerHTML;
+  for (const attr of fresh.attributes) {
+    if (attr.name !== "class") kept.setAttribute(attr.name, attr.value);
+  }
 }
 
-export function reconcileList(
-  listEl: HTMLElement,
-  entries: Array<{ key: string; html: string }>,
-  animEnabled: boolean,
-): void {
-  // Strip entries we're already animating out, regardless of anim toggle
-  const visibleEntries = entries.filter(e => !exitingKeys.has(e.key));
+function parseHtml(html: string): HTMLLIElement | null {
+  const tmp = document.createElement("ul");
+  tmp.innerHTML = html;
+  return tmp.firstElementChild as HTMLLIElement | null;
+}
 
-  if (!animEnabled) {
-    listEl.innerHTML = visibleEntries.map(e => e.html).join("");
-    return;
-  }
-
-  // Current live nodes (ignore ones already animating out)
-  const existing = new Map<string, HTMLLIElement>();
-  for (const li of listEl.querySelectorAll<HTMLLIElement>("li:not(.row-exiting)")) {
-    const k = keyOf(li);
-    if (k) existing.set(k, li);
-  }
-
-  // Snapshot positions before touching the DOM
-  const beforeRects = new Map<string, DOMRect>();
-  for (const [k, li] of existing) beforeRects.set(k, li.getBoundingClientRect());
-
-  const newKeys = new Set(visibleEntries.map(e => e.key));
-
-  // Exit animation for removed rows
-  for (const [k, li] of existing) {
-    if (!newKeys.has(k)) {
-      exitingKeys.add(k);
-      li.classList.add("row-exiting");
-      const cleanup = () => { exitingKeys.delete(k); if (li.parentElement) li.remove(); };
-      li.addEventListener("animationend", cleanup, { once: true });
-      setTimeout(cleanup, 600);
-    }
-  }
-
-  // Build the ordered node list for the new state
-  const nodes: HTMLLIElement[] = [];
-  const enterKeys = new Set<string>();
-
-  for (const entry of visibleEntries) {
-    const kept = existing.get(entry.key);
-    if (kept) {
-      // Preserve DOM identity; update class + content in-place
-      const tmp = document.createElement("ul");
-      tmp.innerHTML = entry.html;
-      const fresh = tmp.firstElementChild as HTMLLIElement | null;
-      if (fresh) {
-        kept.className = fresh.className;
-        kept.innerHTML = fresh.innerHTML;
-        for (const attr of fresh.attributes) {
-          if (attr.name !== "class") kept.setAttribute(attr.name, attr.value);
-        }
-      }
-      nodes.push(kept);
-    } else {
-      const tmp = document.createElement("ul");
-      tmp.innerHTML = entry.html;
-      const newLi = tmp.firstElementChild as HTMLLIElement | null;
-      if (newLi) { enterKeys.add(entry.key); nodes.push(newLi); }
-    }
-  }
-
-  // Remove all live nodes, re-insert in new order (exiting nodes stay put)
-  for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li:not(.row-exiting)")]) li.remove();
-  const firstExiting = listEl.querySelector<HTMLLIElement>("li.row-exiting");
-  for (const node of nodes) {
-    firstExiting ? listEl.insertBefore(node, firstExiting) : listEl.appendChild(node);
-  }
-
-  // Enter animation for newly added rows
-  for (const node of nodes) {
-    if (enterKeys.has(keyOf(node))) {
-      node.classList.add("row-entering");
-      node.addEventListener("animationend", () => node.classList.remove("row-entering"), { once: true });
-    }
-  }
-
-  // FLIP: animate kept rows from their old position to their new one
+function flipNodes(nodes: HTMLLIElement[], beforeRects: Map<string, DOMRect>): void {
   requestAnimationFrame(() => {
     for (const node of nodes) {
       const k = keyOf(node);
@@ -120,7 +44,6 @@ export function reconcileList(
       const dy = beforeRects.get(k)!.top - node.getBoundingClientRect().top;
       if (Math.abs(dy) < 0.5) continue;
 
-      // Cancel any in-flight transition so we start fresh
       node.style.transition = "none";
       node.style.transform = `translateY(${dy}px)`;
 
@@ -148,4 +71,112 @@ export function reconcileList(
       });
     }
   });
+}
+
+/**
+ * Immediately start the exit animation for a session row at click-time,
+ * before the backend round-trip fires instances-changed. This ensures the
+ * slide-left plays first and the row is never FLIP'd to a new sort position.
+ */
+export function markSessionExiting(listEl: HTMLElement, sessionId: string): void {
+  const key = `s:${sessionId}`;
+  if (exitingKeys.has(key)) return;
+  const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sessionId)}"]`);
+  if (!li || li.classList.contains("row-exiting")) return;
+  exitingKeys.add(key);
+  li.classList.add("row-exiting");
+  let done = false;
+  const cleanup = () => { if (!done) { done = true; exitingKeys.delete(key); if (li.parentElement) li.remove(); } };
+  li.addEventListener("animationend", cleanup, { once: true });
+  setTimeout(cleanup, 600);
+}
+
+export function reconcileList(
+  listEl: HTMLElement,
+  entries: Array<{ key: string; html: string }>,
+  animEnabled: boolean,
+): void {
+  // Strip rows we've already committed to animating out
+  const visibleEntries = entries.filter(e => !exitingKeys.has(e.key));
+
+  if (!animEnabled) {
+    for (const li of listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")) li.remove();
+    listEl.innerHTML = visibleEntries.map(e => e.html).join("");
+    return;
+  }
+
+  // Current live nodes (not animating out)
+  const existing = new Map<string, HTMLLIElement>();
+  for (const li of listEl.querySelectorAll<HTMLLIElement>("li:not(.row-exiting)")) {
+    const k = keyOf(li);
+    if (k) existing.set(k, li);
+  }
+
+  const newKeys = new Set(visibleEntries.map(e => e.key));
+
+  // Snapshot positions of rows that will REMAIN before any DOM change
+  const beforeRects = new Map<string, DOMRect>();
+  for (const [k, li] of existing) {
+    if (newKeys.has(k)) beforeRects.set(k, li.getBoundingClientRect());
+  }
+
+  // Start exit animations for rows dropped from the list this call
+  for (const [k, li] of existing) {
+    if (!newKeys.has(k)) {
+      exitingKeys.add(k);
+      li.classList.add("row-exiting");
+      let done = false;
+      const cleanup = () => { if (!done) { done = true; exitingKeys.delete(k); if (li.parentElement) li.remove(); } };
+      li.addEventListener("animationend", cleanup, { once: true });
+      setTimeout(cleanup, 600);
+    }
+  }
+
+  // Build ordered node list for the new state
+  const nodes: HTMLLIElement[] = [];
+  const enterKeys = new Set<string>();
+  for (const entry of visibleEntries) {
+    const kept = existing.get(entry.key);
+    if (kept) {
+      updateNode(kept, entry.html);
+      nodes.push(kept);
+    } else {
+      const newLi = parseHtml(entry.html);
+      if (newLi) { enterKeys.add(entry.key); nodes.push(newLi); }
+    }
+  }
+
+  // Are there any exiting rows in the list right now (this call or markSessionExiting)?
+  const hasExits = listEl.querySelector("li.row-exiting") !== null;
+
+  const token = ++reorderToken;
+
+  const applyReorder = () => {
+    if (reorderToken !== token) return; // superseded by a newer reconcile call
+
+    // Remove any lingering exit rows
+    for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")]) li.remove();
+
+    // Reorder: remove live nodes and re-insert in new order
+    for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li:not(.row-exiting)")]) li.remove();
+    for (const node of nodes) listEl.appendChild(node);
+
+    // Enter animations for new rows
+    for (const node of nodes) {
+      if (enterKeys.has(keyOf(node))) {
+        node.classList.add("row-entering");
+        node.addEventListener("animationend", () => node.classList.remove("row-entering"), { once: true });
+      }
+    }
+
+    // FLIP remaining rows to their new positions
+    flipNodes(nodes, beforeRects);
+  };
+
+  if (hasExits) {
+    // Let the exit animation finish first, THEN move the remaining rows up
+    setTimeout(applyReorder, 310);
+  } else {
+    applyReorder();
+  }
 }
