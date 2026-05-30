@@ -1,6 +1,6 @@
 import { html, render } from "lit-html";
 import "./project-detail.css";
-import { formatTokens, totalTok } from "../../shared/tokens";
+import { formatTokens, formatMillions, totalTok } from "../../shared/tokens";
 import type { TokenRecord } from "../../shared/tokens";
 import { invoke } from "../../shared/ipc";
 import type { HistoryEntry } from "../../types/ipc.generated";
@@ -377,11 +377,11 @@ async function renderSessionsList(cwd: string, range: string): Promise<void> {
     const rec = r as TokenRecord & { sessionId?: string; lastActiveAt?: string; recordedAt?: string };
     const when = timeAgo(rec.lastActiveAt || rec.recordedAt || rec.date);
     const title = (rec.sessionId && titleMap.get(rec.sessionId)) || "—";
-    const tok = formatTokens(totalTok(r));
+    const tok = formatMillions(totalTok(r));
     return `<tr class="session-row" data-session-idx="${i}" style="cursor:pointer">
       <td class="col-when">${when}</td>
-      <td class="col-name" title="${title}">${title}</td>
       <td class="col-tokens">${tok}</td>
+      <td class="col-name" title="${title}">${title}</td>
     </tr>`;
   }).join("");
   const seeAll = sorted.length > 5
@@ -390,7 +390,7 @@ async function renderSessionsList(cwd: string, range: string): Promise<void> {
   list.innerHTML = `<div class="section" style="padding:10px 14px">
     <div class="section-title" style="margin-bottom:8px">Recent chats</div>
     <table class="session-table"><thead><tr>
-      <th>when</th><th>chat</th><th>tokens</th>
+      <th>when</th><th>tokens</th><th>chat</th>
     </tr></thead><tbody>${rowsHTML}</tbody></table>
     ${seeAll}
   </div>`;

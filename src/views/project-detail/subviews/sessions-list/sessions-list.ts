@@ -1,6 +1,6 @@
 import { html, render } from "lit-html";
 import "./sessions-list.css";
-import { formatTokens, totalTok } from "../../../../shared/tokens";
+import { formatMillions, totalTok } from "../../../../shared/tokens";
 import { timeAgo } from "../../../../shared/time";
 import type { TokenRecord } from "../../../../shared/tokens";
 import { getProjectDetailState, getSettings, getTokenHistory } from "../../../../shared/state";
@@ -27,15 +27,15 @@ export function renderAllSessionsList(cwd: string): void {
     const rec = r as TokenRecord & { sessionId?: string; lastActiveAt?: string; recordedAt?: string };
     const when = timeAgo(rec.lastActiveAt || rec.recordedAt || rec.date);
     const name = (rec.sessionId || "").slice(0, 8) || "—";
-    const tok = formatTokens(totalTok(r));
+    const tok = formatMillions(totalTok(r));
     return `<tr class="session-row" data-session-idx="${i}" style="cursor:pointer">
       <td class="col-when">${when}</td>
-      <td class="col-name">${name}</td>
       <td class="col-tokens">${tok}</td>
+      <td class="col-name">${name}</td>
     </tr>`;
   }).join("");
   list.innerHTML = `<table class="session-table"><thead><tr>
-    <th>when</th><th>session</th><th>tokens</th>
+    <th>when</th><th>tokens</th><th>session</th>
   </tr></thead><tbody>${rowsHTML}</tbody></table>`;
   list.querySelectorAll<HTMLTableRowElement>(".session-row").forEach((el) => {
     el.onclick = () => {

@@ -1164,35 +1164,27 @@ input:checked + .slider:before {
   padding: 0 8px 5px 0;
   font-weight: 600;
 }
-.session-table thead th:last-child {
-  text-align: right;
-  padding-right: 0;
-}
 .session-table tbody td {
   padding: 5px 8px 5px 0;
   border-top: 1px solid var(--border, #2e2e40);
   vertical-align: middle;
 }
-.session-table tbody td:last-child {
-  text-align: right;
-  padding-right: 0;
-}
 .session-table .col-when {
   color: var(--text-dim, #8a8aa0);
   white-space: nowrap;
   font-family: "Fira Code", monospace;
-  width: 72px;
+  width: 60px;
+}
+.session-table .col-tokens {
+  font-family: "Fira Code", monospace;
+  white-space: nowrap;
+  width: 64px;
 }
 .session-table .col-name {
   font-family: "Fira Code", monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.session-table .col-tokens {
-  font-family: "Fira Code", monospace;
-  white-space: nowrap;
-  width: 56px;
 }
 .session-table tr.session-row:hover td {
   background: var(--surface-alt, #2a2a3d);
