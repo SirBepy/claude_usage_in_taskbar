@@ -17,8 +17,8 @@
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 2501;
-  background: var(--surface, #1f1f2c);
-  border: 1px solid var(--border, #2e2e40);
+  background: var(--color-surface, #1f1f2c);
+  border: 1px solid var(--color-border, #2e2e40);
   border-radius: 8px;
   width: min(560px, 90vw);
   max-height: 80vh;
@@ -32,7 +32,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border, #2e2e40);
+  border-bottom: 1px solid var(--color-border, #2e2e40);
 }
 .project-picker-modal .modal-header h3 {
   margin: 0;
@@ -40,9 +40,9 @@
   flex: 1;
 }
 .project-picker-sort {
-  background: var(--surface-alt, #15151e);
-  color: var(--text);
-  border: 1px solid var(--border, #2e2e40);
+  background: var(--color-surface-alt, #15151e);
+  color: var(--color-text);
+  border: 1px solid var(--color-border, #2e2e40);
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 0.8rem;
@@ -60,16 +60,16 @@
 }
 .project-picker-search {
   padding: 8px 10px;
-  background: var(--surface-alt, #15151e);
-  color: var(--text);
-  border: 1px solid var(--border, #2e2e40);
+  background: var(--color-surface-alt, #15151e);
+  color: var(--color-text);
+  border: 1px solid var(--color-border, #2e2e40);
   border-radius: 6px;
   font-size: 0.85rem;
   font-family: inherit;
 }
 .project-picker-search:focus {
   outline: none;
-  border-color: var(--primary, #4c9eff);
+  border-color: var(--color-primary, #4c9eff);
 }
 .project-picker-list {
   list-style: none;
@@ -78,12 +78,12 @@
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--border, #2e2e40);
+  border: 1px solid var(--color-border, #2e2e40);
   border-radius: 6px;
 }
 .project-picker-row {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border, #2e2e40);
+  border-bottom: 1px solid var(--color-border, #2e2e40);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -94,21 +94,21 @@
 }
 .project-picker-row:hover,
 .project-picker-row.selected {
-  background: var(--surface-alt, #15151e);
+  background: var(--color-surface-alt, #15151e);
 }
 .project-picker-row.selected {
   /* Subtle accent stripe so the keyboard-selected row reads distinctly from
      a passive mouse hover. */
-  box-shadow: inset 3px 0 0 0 var(--primary, #4c9eff);
+  box-shadow: inset 3px 0 0 0 var(--color-primary, #4c9eff);
 }
 .project-picker-name {
   font-size: 0.88rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--color-text);
 }
 .project-picker-path {
   font-size: 0.72rem;
-  color: var(--text-dim, #8a8aa0);
+  color: var(--color-text-muted, #8a8aa0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -116,13 +116,13 @@
 .project-picker-empty {
   padding: 16px;
   text-align: center;
-  color: var(--text-dim, #8a8aa0);
+  color: var(--color-text-muted, #8a8aa0);
   font-style: italic;
   list-style: none;
 }
 .project-picker-modal .modal-footer {
   padding: 10px 16px;
-  border-top: 1px solid var(--border, #2e2e40);
+  border-top: 1px solid var(--color-border, #2e2e40);
   display: flex;
   justify-content: flex-end;
   gap: 8px;

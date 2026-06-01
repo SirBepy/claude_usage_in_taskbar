@@ -6,7 +6,7 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   gap: 8px;
 }
 
@@ -29,19 +29,19 @@
 
 .shortcut-row-label {
   font-size: 0.88rem;
-  color: var(--text);
+  color: var(--color-text);
   font-weight: 500;
 }
 
 .shortcut-row-desc {
   font-size: 0.72rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .shortcut-row-todo-tag {
   font-size: 0.65rem;
   background: rgba(255, 255, 255, 0.07);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   border-radius: 3px;
   padding: 1px 5px;
   margin-left: 6px;
@@ -60,26 +60,26 @@
   align-items: center;
   gap: 3px;
   font-size: 0.75rem;
-  color: var(--text);
+  color: var(--color-text);
 }
 
 .shortcut-kbd kbd {
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 2px 6px;
   font-family: inherit;
   font-size: 0.72rem;
-  color: var(--text);
-  box-shadow: 0 1px 0 var(--border);
+  color: var(--color-text);
+  box-shadow: 0 1px 0 var(--color-border);
 }
 
 .shortcut-capture-input {
   font-size: 0.75rem;
-  color: var(--primary);
+  color: var(--color-primary);
   font-style: italic;
   padding: 2px 6px;
-  border: 1px dashed var(--primary);
+  border: 1px dashed var(--color-primary);
   border-radius: 4px;
 }
 
@@ -91,9 +91,9 @@
 
 .shortcut-rebind-btn {
   background: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 5px;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-size: 0.72rem;
   padding: 3px 8px;
   cursor: pointer;
@@ -101,14 +101,14 @@
 }
 
 .shortcut-rebind-btn:hover {
-  color: var(--text);
-  border-color: var(--text-dim);
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
 }
 
 .shortcut-reset-btn {
   background: none;
   border: none;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-size: 0.8rem;
   cursor: pointer;
   padding: 2px 4px;
@@ -117,13 +117,13 @@
 }
 
 .shortcut-reset-btn:hover {
-  color: var(--text);
+  color: var(--color-text);
 }
 
 .shortcut-group-header {
   font-size: 0.68rem;
   font-weight: 700;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin: 12px 0 6px;
@@ -144,8 +144,8 @@
   gap: 10px;
   padding: 10px 0;
   cursor: pointer;
-  border-top: 1px solid var(--border, rgba(255,255,255,0.08));
-  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-top: 1px solid var(--color-border, rgba(255,255,255,0.08));
+  border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.08));
   margin: 8px 0 4px;
 }
 
@@ -163,11 +163,11 @@
 
 .shortcut-slot-mode-label strong {
   font-size: 0.82rem;
-  color: var(--text);
+  color: var(--color-text);
   font-weight: 600;
 }
 
 .shortcut-slot-mode-desc {
   font-size: 0.74rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }

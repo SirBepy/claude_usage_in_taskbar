@@ -11,7 +11,7 @@
 .project-detail-heading .avatar-mini {
   width: 32px; height: 32px;
   border-radius: 7px;
-  background: var(--surface-alt, #3a3a52);
+  background: var(--color-surface-alt, #3a3a52);
   display: flex; align-items: center; justify-content: center;
   font-size: 1.05rem;
   flex-shrink: 0;
@@ -22,7 +22,7 @@
 }
 .project-detail-path {
   font-size: 0.66rem;
-  color: var(--text-dim, #8a8aa0);
+  color: var(--color-text-muted, #8a8aa0);
   font-family: 'Fira Code', monospace;
   white-space: nowrap;
   overflow: hidden;
@@ -40,7 +40,7 @@
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-dim, #9a9ab0);
+  color: var(--color-text-muted, #9a9ab0);
   font-weight: 600;
   margin-bottom: 8px;
 }
@@ -54,7 +54,7 @@
 }
 .instances-section .no-data {
   font-size: 0.78rem;
-  color: var(--text-dim, #8a8aa0);
+  color: var(--color-text-muted, #8a8aa0);
   padding: 10px 0;
 }
 
@@ -62,13 +62,13 @@
 .range-toggle { display: flex; gap: 4px; }
 .range-btn {
   padding: 3px 10px; font-size: 0.75rem; border-radius: 6px;
-  background: var(--surface-alt); color: var(--text-dim);
-  border: 1px solid var(--border); cursor: pointer;
+  background: var(--color-surface-alt); color: var(--color-text-muted);
+  border: 1px solid var(--color-border); cursor: pointer;
   font-family: 'DM Sans', system-ui, sans-serif; font-weight: 600;
   transition: all 0.15s;
 }
-.range-btn.active { background: var(--primary); color: var(--bg); border-color: var(--primary); }
-.range-btn:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+.range-btn.active { background: var(--color-primary); color: var(--color-background); border-color: var(--color-primary); }
+.range-btn:hover:not(.active) { border-color: var(--color-primary); color: var(--color-primary); }
 
 /* Project detail menu popover */
 .menu-anchor { position: relative; display: inline-block; }
@@ -77,8 +77,8 @@
   top: calc(100% + 4px);
   right: 0;
   min-width: 200px;
-  background: var(--surface, #1f1d2e);
-  border: 1px solid var(--border, #2d2c44);
+  background: var(--color-surface, #1f1d2e);
+  border: 1px solid var(--color-border, #2d2c44);
   border-radius: 6px;
   padding: 4px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
@@ -92,9 +92,9 @@
   padding: 8px 12px;
   font-size: 0.82rem;
   background: transparent;
-  color: var(--text);
+  color: var(--color-text);
   border: 0;
   border-radius: 4px;
   cursor: pointer;
 }
-.menu-popover .menu-item:hover { background: var(--surface-alt, #2a2840); }
+.menu-popover .menu-item:hover { background: var(--color-surface-alt, #2a2840); }

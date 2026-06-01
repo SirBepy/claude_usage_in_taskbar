@@ -1,6 +1,6 @@
 .view-settings-presets .presets-hint {
   font-size: 0.82rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   margin: 0 0 12px;
 }
 
@@ -28,9 +28,9 @@
   width: 100%;
   min-width: 0;
   padding: 6px 8px;
-  background: var(--surface-alt);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 0.82rem;
   font-family: inherit;
@@ -38,7 +38,7 @@
 
 .view-settings-presets .presets-error {
   margin-top: 10px;
-  color: var(--danger, #ff4444);
+  color: var(--color-danger, #ff4444);
   font-size: 0.8rem;
 }
 
@@ -51,5 +51,5 @@
 
 .view-settings-presets .presets-status {
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }

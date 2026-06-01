@@ -33,8 +33,8 @@
 
 .prompt-card {
   pointer-events: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.45),
@@ -61,10 +61,10 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--primary) 8%, transparent),
+    color-mix(in srgb, var(--color-primary) 8%, transparent),
     transparent
   );
 }
@@ -75,23 +75,23 @@
   gap: 8px;
   font-size: 0.88rem;
   font-weight: 600;
-  color: var(--text);
+  color: var(--color-text);
 }
 .prompt-card__title i {
-  color: var(--primary);
+  color: var(--color-primary);
   font-size: 1.05rem;
 }
 
 .prompt-card__tool {
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 .prompt-card__tool code {
   font-family: var(--font-mono, ui-monospace, Consolas, monospace);
-  background: var(--bg);
+  background: var(--color-background);
   padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
 }
 
 .prompt-card__body {
@@ -107,8 +107,8 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-alt);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
 }
 .prompt-card__footer button:disabled {
   opacity: 0.45;
@@ -124,13 +124,13 @@
 }
 .prompt-card__footer .btn-tertiary {
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
 }
 .prompt-card__footer .btn-tertiary:hover {
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
-  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 .prompt-card__footer .btn-tertiary i {
   font-size: 0.95rem;
@@ -140,22 +140,22 @@
 .prompt-card__details summary {
   cursor: pointer;
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   user-select: none;
   padding: 2px 0;
 }
 .prompt-card__details summary:hover {
-  color: var(--text);
+  color: var(--color-text);
 }
 .prompt-card__pre {
   margin: 8px 0 0;
   padding: 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-family: var(--font-mono, ui-monospace, Consolas, monospace);
   font-size: 0.75rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 260px;
@@ -167,7 +167,7 @@
 .prompt-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   margin: -4px -4px 4px;
   padding: 0 4px;
 }
@@ -181,7 +181,7 @@
   gap: 6px;
   font-size: 0.78rem;
   font-weight: 500;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   cursor: pointer;
   border-radius: 0;
   transition: color 0.12s, border-color 0.12s;
@@ -195,21 +195,21 @@
   min-width: 0;
 }
 .prompt-tab:hover {
-  color: var(--text);
+  color: var(--color-text);
   filter: none;
   transform: none;
 }
 .prompt-tab.is-active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 .prompt-tab.is-answered .prompt-tab__dot i {
-  color: var(--primary);
+  color: var(--color-primary);
 }
 .prompt-tab__dot {
   display: inline-flex;
   font-size: 0.95rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 /* Per-question block. */
@@ -220,7 +220,7 @@
 }
 .prompt-q + .prompt-q {
   padding-top: 12px;
-  border-top: 1px dashed var(--border);
+  border-top: 1px dashed var(--color-border);
 }
 .prompt-q__head {
   display: flex;
@@ -233,20 +233,20 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
   padding: 2px 8px;
   border-radius: 999px;
 }
 .prompt-q__mode {
   font-size: 0.7rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .prompt-q__text {
   font-size: 0.92rem;
-  color: var(--text);
+  color: var(--color-text);
   line-height: 1.4;
 }
 
@@ -261,24 +261,24 @@
   align-items: flex-start;
   gap: 10px;
   padding: 8px 10px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
 .prompt-opt:hover {
-  background: var(--surface);
-  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: var(--color-surface);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
 }
 .prompt-opt.is-selected {
-  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
-  border-color: var(--primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  border-color: var(--color-primary);
 }
 .prompt-opt > input {
   margin: 3px 0 0;
   flex-shrink: 0;
-  accent-color: var(--primary);
+  accent-color: var(--color-primary);
 }
 .prompt-opt__body {
   display: flex;
@@ -288,12 +288,12 @@
 }
 .prompt-opt__label {
   font-size: 0.88rem;
-  color: var(--text);
+  color: var(--color-text);
   font-weight: 500;
 }
 .prompt-opt__desc {
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   line-height: 1.35;
 }
 
@@ -307,7 +307,7 @@
 }
 .prompt-q__other-label {
   font-size: 0.72rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -316,10 +316,10 @@
   min-height: 32px;
   max-height: 160px;
   padding: 8px 10px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  color: var(--text);
+  color: var(--color-text);
   font: inherit;
   font-size: 0.88rem;
   line-height: 1.4;
@@ -327,9 +327,9 @@
   transition: border-color 0.12s, background 0.12s;
 }
 .prompt-q__other-input:focus {
-  border-color: var(--primary);
-  background: var(--surface);
+  border-color: var(--color-primary);
+  background: var(--color-surface);
 }
 .prompt-q__other-input::placeholder {
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }

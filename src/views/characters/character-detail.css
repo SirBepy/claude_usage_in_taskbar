@@ -12,12 +12,12 @@
   height: 80px;
   image-rendering: pixelated;
   border-radius: 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
 }
 
 .char-detail-game-chip {
-  background: var(--surface-alt);
-  color: var(--text-dim);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
   font-size: 0.68rem;
   font-weight: 700;
   padding: 2px 10px;
@@ -29,7 +29,7 @@
 .char-detail-sub {
   font-size: 0.72rem;
   font-family: 'Fira Code', monospace;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   opacity: 0.7;
 }
 
@@ -39,7 +39,7 @@
   gap: 12px;
   align-items: flex-start;
   padding: 8px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
 }
 
 .section .char-slot-row:first-of-type {
@@ -51,7 +51,7 @@
   width: 130px;
   flex-shrink: 0;
   font-size: 0.82rem;
-  color: var(--text);
+  color: var(--color-text);
 }
 
 .char-slot-files {
@@ -67,10 +67,10 @@
   gap: 4px;
   padding: 3px 8px;
   font-size: 0.76rem;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  color: var(--text);
+  color: var(--color-text);
   cursor: pointer;
   font-family: 'Fira Code', monospace;
   transition: border-color 0.15s, color 0.15s;
@@ -78,13 +78,13 @@
 
 .char-play-btn:hover,
 .char-play-btn.playing {
-  border-color: var(--primary);
-  color: var(--primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .char-slot-empty {
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   opacity: 0.6;
   font-style: italic;
 }

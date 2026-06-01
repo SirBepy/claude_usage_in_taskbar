@@ -59,8 +59,8 @@
 }
 
 .msg.user {
-  background: color-mix(in srgb, var(--primary) 16%, var(--surface-alt));
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface-alt));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
   align-self: flex-end;
   max-width: 85%;
   margin-left: 32px;
@@ -83,7 +83,7 @@
   right: 0;
   bottom: 0;
   height: 46px;
-  background: linear-gradient(transparent, color-mix(in srgb, var(--primary) 16%, var(--surface-alt)));
+  background: linear-gradient(transparent, color-mix(in srgb, var(--color-primary) 16%, var(--color-surface-alt)));
   pointer-events: none;
 }
 .msg.user.has-clamp.expanded .msg-clamp-body::after { display: none; }
@@ -93,7 +93,7 @@
   padding: 2px 0;
   background: none;
   border: none;
-  color: var(--primary);
+  color: var(--color-primary);
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -126,8 +126,8 @@
 }
 
 .msg.assistant {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   position: relative;
   align-self: flex-start;
   max-width: 92%;
@@ -140,12 +140,12 @@
 
 .msg.assistant.streaming::after {
   content: " …";
-  color: var(--primary);
+  color: var(--color-primary);
 }
 
 .msg.system {
   font-size: 0.75rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-style: italic;
   text-align: center;
   background: transparent;
@@ -153,15 +153,15 @@
 }
 
 .msg.tool-use {
-  background: var(--surface-alt);
-  border-left: 3px solid var(--primary);
+  background: var(--color-surface-alt);
+  border-left: 3px solid var(--color-primary);
   font-size: 0.82rem;
 }
 
 .msg.tool-use pre {
   margin: 6px 0 0;
   padding: 6px;
-  background: var(--bg);
+  background: var(--color-background);
   border-radius: 4px;
   overflow-x: auto;
   font-family: "Fira Code", monospace;
@@ -170,19 +170,19 @@
 }
 
 .msg.tool-result {
-  background: var(--surface);
-  border-left: 3px solid var(--success);
+  background: var(--color-surface);
+  border-left: 3px solid var(--color-success);
 }
 
 .msg.tool-result.error {
-  border-left-color: var(--danger);
+  border-left-color: var(--color-danger);
 }
 
 .msg.notification {
-  background: var(--surface-alt);
-  border-left: 3px solid var(--primary);
+  background: var(--color-surface-alt);
+  border-left: 3px solid var(--color-primary);
   font-size: 0.78rem;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .copyable-block {
@@ -191,8 +191,8 @@
 }
 
 .card-block {
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 10px 12px;
   padding-right: 36px;
@@ -202,7 +202,7 @@
   margin: 0;
   padding: 0;
   border-left: none;
-  color: var(--text);
+  color: var(--color-text);
   font-style: normal;
 }
 
@@ -212,22 +212,22 @@
 }
 
 .msg a {
-  color: var(--primary);
+  color: var(--color-primary);
   text-decoration: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
   padding-bottom: 1px;
   transition: color 0.12s, border-color 0.12s, background 0.12s;
   border-radius: 2px;
 }
 
 .msg a:hover {
-  color: var(--text);
-  border-bottom-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .msg a:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
@@ -238,9 +238,9 @@
   width: 26px;
   height: 26px;
   border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--surface-alt);
-  color: var(--text-dim);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -256,12 +256,12 @@
 }
 
 .copy-btn:hover {
-  background: var(--surface);
-  color: var(--text);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .copy-btn.copied {
-  color: var(--success);
+  color: var(--color-success);
 }
 
 .copy-btn i {
@@ -271,7 +271,7 @@
 }
 
 .block.code {
-  background: var(--bg);
+  background: var(--color-background);
   padding: 10px;
   border-radius: 4px;
   overflow-x: auto;
@@ -331,7 +331,7 @@
 }
 
 .sent-attachment-thumb:hover img {
-  border-color: var(--primary);
+  border-color: var(--color-primary);
   transform: scale(1.05);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -366,8 +366,8 @@
   height: 20px;
   border-radius: 50%;
   border: none;
-  background: var(--danger);
-  color: var(--bg);
+  background: var(--color-danger);
+  color: var(--color-background);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -380,7 +380,7 @@
 
 .composer-attachments .attachment:hover .rm {
   transform: scale(1.15);
-  background: color-mix(in srgb, var(--danger) 80%, #fff 20%);
+  background: color-mix(in srgb, var(--color-danger) 80%, #fff 20%);
 }
 
 .composer-attachments .rm i {
@@ -399,9 +399,9 @@
   box-sizing: border-box;
   max-height: 200px;
   overflow-y: auto;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 8px;
   font-family: inherit;
@@ -414,8 +414,8 @@
 }
 
 .composer-textarea:focus-visible {
-  outline: 2px solid var(--primary);
-  border-color: var(--primary);
+  outline: 2px solid var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .composer-textarea:disabled {
@@ -430,8 +430,8 @@
 /* ── AskUserQuestion inline rendering ──────────────────────────────────────────── */
 
 .ask-user-question {
-  background: var(--surface-2, #1e1e1e);
-  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  background: var(--color-surface-2, #1e1e1e);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.1));
   border-radius: 8px;
   padding: 12px 14px;
 }
@@ -441,7 +441,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-secondary, #888);
+  color: var(--color-text-secondary, #888);
   margin-bottom: 10px;
 }
 
@@ -451,7 +451,7 @@
 
 .ask-question-text {
   font-size: 14px;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--color-text-primary, #e0e0e0);
   margin-bottom: 8px;
   line-height: 1.4;
 }
@@ -475,9 +475,9 @@
   cursor: pointer;
   list-style: none;
   font-size: 0.72rem;
-  color: var(--text-dim);
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  color: var(--color-text-muted);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 100px;
   padding: 3px 10px;
   user-select: none;
@@ -488,8 +488,8 @@
 .turn-steps-summary::-webkit-details-marker { display: none; }
 
 .turn-steps-summary:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--border) 60%, var(--surface-alt));
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-border) 60%, var(--color-surface-alt));
 }
 
 .turn-steps-summary i {
@@ -508,10 +508,10 @@
 /* Read-only option labels (inline rendering; interaction is in the modal) */
 .ask-option-label {
   display: inline-block;
-  background: var(--surface-3, #2a2a2a);
-  border: 1px solid var(--border, rgba(255,255,255,0.15));
+  background: var(--color-surface-3, #2a2a2a);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.15));
   border-radius: 6px;
-  color: var(--text-secondary, #c0c0c0);
+  color: var(--color-text-secondary, #c0c0c0);
   padding: 4px 10px;
   font-size: 12px;
 }
@@ -592,8 +592,8 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   cursor: default;
   max-width: 280px;
   margin: 4px 0;
@@ -606,7 +606,7 @@
 }
 
 .attachment-chip.previewable:hover {
-  border-color: var(--accent, #7b6eff);
+  border-color: var(--color-accent, #7b6eff);
 }
 
 .attachment-chip i {
@@ -640,8 +640,8 @@
   min-width: 80px;
   max-width: 160px;
   padding: 6px 8px;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -665,12 +665,12 @@
 
 .composer-attachments .attachment img:hover {
   transform: scale(1.06);
-  box-shadow: 0 0 0 2px var(--primary), 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 4px 14px rgba(0, 0, 0, 0.28);
 }
 
 /* Drag-over state */
 
 .composer-root.drag-over {
-  outline: 2px dashed var(--accent, #7b6eff);
+  outline: 2px dashed var(--color-accent, #7b6eff);
   outline-offset: 2px;
 }

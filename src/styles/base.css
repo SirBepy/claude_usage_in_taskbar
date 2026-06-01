@@ -6,8 +6,8 @@
 
 body {
     font-family: 'DM Sans', system-ui, sans-serif;
-    background-color: var(--bg);
-    color: var(--text);
+    background-color: var(--color-background);
+    color: var(--color-text);
     user-select: none;
     overflow-x: hidden;
     height: 100vh;
@@ -19,9 +19,9 @@ body {
 
 
 ::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: var(--surface); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
 
 /* ── Shared header ── */
 .view-header {
@@ -29,7 +29,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
 }
 
@@ -39,14 +39,14 @@ body {
     font-size: 1rem;
     flex: 1;
     text-align: center;
-    color: var(--text);
+    color: var(--color-text);
     letter-spacing: -0.01em;
 }
 
 .icon-btn {
     background: none;
     border: none;
-    color: var(--text-dim);
+    color: var(--color-text-muted);
     cursor: pointer;
     font-size: 1.1rem;
     padding: 4px 6px;
@@ -60,8 +60,8 @@ body {
 }
 
 .icon-btn:hover {
-    background: var(--surface-alt);
-    color: var(--text);
+    background: var(--color-surface-alt);
+    color: var(--color-text);
 }
 
 .icon-btn.spinning i {
@@ -113,7 +113,7 @@ body.chats-window-mode .icon-btn.burger {
 }
 
 .no-data {
-    color: var(--text-dim);
+    color: var(--color-text-muted);
     font-size: 0.9rem;
     text-align: center;
     padding: 48px 0;
