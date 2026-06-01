@@ -1,3 +1,3 @@
-/* Themes subview - theme-grid, theme-card, theme-swatch, mode-toggle-row rules
- * live in src/dashboard.css (also referenced by dark-mode toggle in other
- * places). Kept shared for now. */
+/* Themes subview - palette picker now uses the kit's .kit-palette-grid/
+ * .kit-palette-card/.kit-palette-swatch (see themes.ts). The dark-mode toggle
+ * row keeps claude_usage's .mode-toggle-row/.mode-toggle-label (widgets.css). */
