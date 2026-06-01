@@ -83,7 +83,14 @@ export function saveSettings(): void {
   const prevSync = (prev.sync as Record<string, unknown>) || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" };
 
   const settings: SettingsShape = {
-    theme: document.documentElement.dataset.theme || (prev.theme as string) || "void",
+    theme: (() => {
+      // Theme is stored as a flat id ("void" | "void-light"); the DOM carries it
+      // as the styleguide 2D pair (data-theme=<palette> + data-mode=light|dark).
+      const el = document.documentElement;
+      const palette = el.dataset.theme;
+      if (!palette) return (prev.theme as string) || "void";
+      return el.dataset.mode === "light" ? `${palette}-light` : palette;
+    })(),
     defaultDisplay: valOr("defaultDisplay", (prev.defaultDisplay as string) || "icon"),
     iconStyle: valOr("iconStyle", (prev.iconStyle as string) || "rings"),
     timeStyle: valOr("timeStyle", (prev.timeStyle as string) || "absolute"),

@@ -1,6 +1,10 @@
 import "./styles/tokens.css";
+// Kit settings layer (neutral --color-* + .kit-* widget CSS) + the 4 palettes
+// (2D [data-theme][data-mode]). Imported BEFORE base.css/widgets.css so
+// claude_usage's own base element rules (e.g. body font) win over the kit reset.
+import "../vendor/tauri_kit/frontend/settings/styles.css";
+import "../vendor/tauri_kit/frontend/settings/palettes/sirbepy-default.css";
 import "./styles/base.css";
-import "./styles/themes.css";
 import "./styles/widgets.css";
 
 import { mountRouter, registerView } from "./router";

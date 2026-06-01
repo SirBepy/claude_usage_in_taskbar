@@ -39,6 +39,17 @@ function parseThemeId(fullId: string): { baseId: string; isLight: boolean } {
   return { baseId: isLight ? fullId.replace("-light", "") : fullId, isLight };
 }
 
+/**
+ * Applies a flat theme id ("void" | "void-light") as the styleguide 2D pair:
+ * data-theme="<palette>" + data-mode="light|dark". Storage stays the flat id.
+ */
+function applyThemeAttrs(fullId: string): void {
+  const { baseId, isLight } = parseThemeId(fullId);
+  const el = document.documentElement;
+  el.dataset.theme = baseId;
+  el.dataset.mode = isLight ? "light" : "dark";
+}
+
 function renderThemeCards(activeTheme: string): void {
   const themeGrid = $("themeGrid");
   const modeLabelDark = $("modeLabelDark");
@@ -67,7 +78,7 @@ function applyTheme(baseId: string): void {
   const themeModToggle = $("themeModToggle") as HTMLInputElement | null;
   const isLight = themeModToggle ? themeModToggle.checked : false;
   const fullId = resolveThemeId(baseId, isLight);
-  document.documentElement.dataset.theme = fullId;
+  applyThemeAttrs(fullId);
   const s = getSettings();
   s.theme = fullId;
   setSettings(s);
@@ -98,7 +109,7 @@ function hydrateThemes(): void {
     const { baseId } = parseThemeId((cur.theme as string) || "void");
     const isLight = themeModToggle.checked;
     const fullId = resolveThemeId(baseId, isLight);
-    document.documentElement.dataset.theme = fullId;
+    applyThemeAttrs(fullId);
     cur.theme = fullId;
     setSettings(cur);
     saveSettings();
