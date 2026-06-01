@@ -60,11 +60,11 @@ function renderThemeCards(activeTheme: string): void {
   themeGrid.innerHTML = "";
   for (const t of THEMES) {
     const card = document.createElement("div");
-    card.className = "theme-card" + (t.id === activeBase ? " active" : "");
-    card.dataset.themeId = t.id;
+    card.className = "kit-palette-card" + (t.id === activeBase ? " kit-palette-card--active" : "");
+    card.dataset.palette = t.id;
     card.innerHTML = `
-      <div class="theme-swatch">${t[colorKey].map((c) => `<span style="background:${c}"></span>`).join("")}</div>
-      <span class="theme-card-label">${t.label}</span>
+      <span class="kit-palette-swatch">${t[colorKey].map((c) => `<span style="background:${c}"></span>`).join("")}</span>
+      <span class="kit-palette-label">${t.label}</span>
     `;
     card.onclick = () => applyTheme(t.id);
     themeGrid.appendChild(card);
@@ -86,8 +86,8 @@ function applyTheme(baseId: string): void {
 
   const themeGrid = $("themeGrid");
   if (themeGrid) {
-    for (const card of themeGrid.querySelectorAll<HTMLElement>(".theme-card")) {
-      card.classList.toggle("active", card.dataset.themeId === baseId);
+    for (const card of themeGrid.querySelectorAll<HTMLElement>(".kit-palette-card")) {
+      card.classList.toggle("kit-palette-card--active", card.dataset.palette === baseId);
     }
   }
   const modeLabelDark = $("modeLabelDark");
@@ -143,24 +143,24 @@ function template() {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
-        <div class="section">
-          <div class="option" style="justify-content: space-between;">
+        <div class="kit-section">
+          <div class="kit-row" style="justify-content: space-between;">
             <div class="option-label-row">
               <i class="ph ph-moon"></i>
               <span>Dark Mode</span>
             </div>
             <div class="mode-toggle-row">
               <span class="mode-toggle-label" id="modeLabelDark">Dark</span>
-              <label class="switch">
+              <label class="kit-toggle">
                 <input type="checkbox" id="themeModToggle">
-                <span class="slider"></span>
+                <span class="kit-toggle-track"></span>
               </label>
               <span class="mode-toggle-label" id="modeLabelLight">Light</span>
             </div>
           </div>
         </div>
-        <div class="section">
-          <div class="theme-grid" id="themeGrid"></div>
+        <div class="kit-section">
+          <div class="kit-palette-grid" id="themeGrid"></div>
         </div>
       </div>
     </div>
