@@ -1,0 +1,3 @@
+[submodule "vendor/tauri_kit"]
+	path = vendor/tauri_kit
+	url = https://github.com/SirBepy/sirbepy_tauri_kit.git
