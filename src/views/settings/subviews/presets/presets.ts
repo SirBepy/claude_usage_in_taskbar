@@ -46,7 +46,7 @@ function template(presets: Preset[], errorMsg: string | null) {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
-        <div class="section">
+        <div class="kit-section">
           <p class="presets-hint">Three quick-pick presets that show in the "New session" modal.</p>
           <div class="presets-list">
             ${presets.map((p, i) => rowTemplate(p, i))}

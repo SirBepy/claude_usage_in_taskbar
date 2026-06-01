@@ -81,8 +81,8 @@ function template(fields: string[]) {
       </div>
       <div class="view-body">
 
-        <div class="section sl-section">
-          <div class="section-title">Preview</div>
+        <div class="kit-section sl-section">
+          <div class="kit-section-title">Preview</div>
           <div class="sl-preview-wrap">
             <div class="sl-preview-chrome">my-project — active session</div>
             <div class="sl-preview-bar sl-preview-bar-live">
@@ -96,8 +96,8 @@ function template(fields: string[]) {
           </div>
         </div>
 
-        <div class="section sl-section">
-          <div class="section-title">Fields</div>
+        <div class="kit-section sl-section">
+          <div class="kit-section-title">Fields</div>
           <div class="sl-fields">
             ${ALL_STATUSLINE_FIELDS.map(({ key, label }) => html`
               <label class="sl-field-row">
@@ -108,7 +108,7 @@ function template(fields: string[]) {
           </div>
         </div>
 
-        <div class="section">
+        <div class="kit-section">
           <button class="btn-secondary" id="slResetBtn" style="font-size:0.8rem;">Reset to defaults</button>
         </div>
 

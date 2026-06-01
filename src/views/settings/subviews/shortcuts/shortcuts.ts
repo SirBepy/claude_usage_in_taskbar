@@ -184,7 +184,7 @@ function template() {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
-        <div class="section">
+        <div class="kit-section">
           <div id="shortcuts-section-container"></div>
         </div>
       </div>

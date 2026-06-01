@@ -1,5 +1,5 @@
-/* Shortcuts subview styles. Shared rules (.section, .section-title, etc.)
- * live in src/styles/widgets.css. */
+/* Shortcuts subview styles. Shared rules (.kit-section, .kit-section-title, etc.)
+ * live in the kit. */
 
 .shortcut-row {
   display: flex;

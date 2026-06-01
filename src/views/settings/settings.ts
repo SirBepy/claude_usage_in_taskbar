@@ -201,65 +201,65 @@ function template() {
       </div>
       <div class="view-body">
 
-        <div class="section">
-          <div class="section-title">Appearance</div>
-          <div class="nav-row" id="nav-visuals">
-            <span class="nav-row-label">Visuals</span>
-            <span class="nav-row-arrow">›</span>
+        <div class="kit-section">
+          <div class="kit-section-title">Appearance</div>
+          <div class="kit-row kit-nav-row" id="nav-visuals">
+            <span class="kit-row-label">Visuals</span>
+            <span class="kit-nav-arrow">›</span>
           </div>
-          <div class="nav-row" id="nav-themes">
-            <span class="nav-row-label">Themes</span>
-            <span class="nav-row-arrow">›</span>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Agent</div>
-          <div class="nav-row" id="nav-presets">
-            <span class="nav-row-label">Session presets</span>
-            <span class="nav-row-arrow">›</span>
-          </div>
-          <div class="nav-row" id="nav-permissions">
-            <span class="nav-row-label">Permissions</span>
-            <span class="nav-row-arrow">›</span>
-          </div>
-          <div class="nav-row" id="nav-statusline">
-            <span class="nav-row-label">Statusline</span>
-            <span class="nav-row-arrow">›</span>
+          <div class="kit-row kit-nav-row" id="nav-themes">
+            <span class="kit-row-label">Themes</span>
+            <span class="kit-nav-arrow">›</span>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-title">System</div>
-          <div class="nav-row" id="nav-notifications">
-            <span class="nav-row-label">Notifications</span>
-            <span class="nav-row-arrow">›</span>
+        <div class="kit-section">
+          <div class="kit-section-title">Agent</div>
+          <div class="kit-row kit-nav-row" id="nav-presets">
+            <span class="kit-row-label">Session presets</span>
+            <span class="kit-nav-arrow">›</span>
           </div>
-          <div class="nav-row" id="nav-shortcuts">
-            <span class="nav-row-label">Shortcuts</span>
-            <span class="nav-row-arrow">›</span>
+          <div class="kit-row kit-nav-row" id="nav-permissions">
+            <span class="kit-row-label">Permissions</span>
+            <span class="kit-nav-arrow">›</span>
           </div>
-          <div class="option">
-            <span class="option-label">Launch at Login</span>
-            <label class="switch">
+          <div class="kit-row kit-nav-row" id="nav-statusline">
+            <span class="kit-row-label">Statusline</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-title">System</div>
+          <div class="kit-row kit-nav-row" id="nav-notifications">
+            <span class="kit-row-label">Notifications</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
+          <div class="kit-row kit-nav-row" id="nav-shortcuts">
+            <span class="kit-row-label">Shortcuts</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
+          <div class="kit-row">
+            <span class="kit-row-label">Launch at Login</span>
+            <label class="kit-toggle">
               <input type="checkbox" id="launchAtLogin">
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-title">Version</div>
-          <div class="option" id="autoUpdateRow">
-            <span class="option-label">Auto-Update</span>
+        <div class="kit-section">
+          <div class="kit-section-title">Version</div>
+          <div class="kit-row" id="autoUpdateRow">
+            <span class="kit-row-label">Auto-Update</span>
             <select id="autoUpdate">
               <option value="never">Never</option>
               <option value="onStartup">On startup only</option>
               <option value="immediate">Immediate (auto-install)</option>
             </select>
           </div>
-          <div class="option" id="updateStatusOption">
-            <span class="option-label" id="appVersionLabel">Version: ...</span>
+          <div class="kit-row" id="updateStatusOption">
+            <span class="kit-row-label" id="appVersionLabel">Version: ...</span>
             <div style="display: flex; align-items: center; gap: 8px;">
               <button class="btn-secondary" id="refreshUpdateBtn" style="padding: 3px 7px; font-size: 0.7rem;">↻</button>
               <span id="updateStateLabel" style="font-size: 0.78rem; color: var(--text-dim);"></span>
@@ -276,8 +276,8 @@ function template() {
           </div>
         </div>
 
-        <div class="section" style="border-color: rgba(224,82,82,0.3);">
-          <div class="section-title" style="color: var(--danger);">Account</div>
+        <div class="kit-section" style="border-color: rgba(224,82,82,0.3);">
+          <div class="kit-section-title" style="color: var(--danger);">Account</div>
           <button class="btn-danger" id="logoutBtn">Log Out</button>
         </div>
 

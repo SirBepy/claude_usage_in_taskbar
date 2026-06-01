@@ -53,7 +53,7 @@ function template(rulesByCwd: Record<string, PermissionRule[]>) {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
-        <div class="section">
+        <div class="kit-section">
           <p class="perm-hint">
             Tool permissions you've marked as "Always Allow" in a chat. Rules are scoped per project (cwd). Destructive Bash patterns
             (rm -rf, git push --force, drop database, etc.) always prompt regardless of rules.

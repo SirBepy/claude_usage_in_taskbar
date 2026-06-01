@@ -18,7 +18,7 @@ function $(id: string): HTMLElement | null {
 
 function createColorRow(min = 0, color = "#ffffff"): HTMLElement {
   const row = document.createElement("div");
-  row.className = "option color-row";
+  row.className = "kit-row color-row";
   row.innerHTML = `
     <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
       <input type="number" class="color-min" value="${min}" min="0" max="100" style="width:50px">
@@ -221,18 +221,18 @@ function template() {
       </div>
       <div class="view-body">
 
-        <div class="section">
-          <div class="section-title">ICON</div>
-          <div class="option">
-            <span class="option-label">Default Display</span>
+        <div class="kit-section">
+          <div class="kit-section-title">ICON</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Default Display</span>
             <select id="defaultDisplay">
               <option value="icon">Icon</option>
               <option value="session">Session %</option>
               <option value="weekly">Weekly %</option>
             </select>
           </div>
-          <div class="option" id="iconStyleSection">
-            <span class="option-label">Icon Style</span>
+          <div class="kit-row" id="iconStyleSection">
+            <span class="kit-row-label">Icon Style</span>
             <select id="iconStyle">
               <option value="rings">Rings</option>
               <option value="bars">Bars</option>
@@ -241,18 +241,18 @@ function template() {
           </div>
         </div>
 
-        <div class="section" id="fourBarsSafeColorsSection" style="display:none">
-          <div class="section-title">4 BARS - SAFE PACE COLORS</div>
-          <div class="option">
-            <span class="option-label">Session safe</span>
+        <div class="kit-section" id="fourBarsSafeColorsSection" style="display:none">
+          <div class="kit-section-title">4 BARS - SAFE PACE COLORS</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Session safe</span>
             <div style="display:flex;gap:6px;align-items:center">
               <input type="color" id="fourBarsSessionSafeColorPicker" value="#6496dc">
               <button id="fourBarsSessionSafeAutoBtn" class="btn-secondary">Auto</button>
             </div>
             <input type="hidden" id="fourBarsSessionSafeColor" value="">
           </div>
-          <div class="option">
-            <span class="option-label">Weekly safe</span>
+          <div class="kit-row">
+            <span class="kit-row-label">Weekly safe</span>
             <div style="display:flex;gap:6px;align-items:center">
               <input type="color" id="fourBarsWeeklySafeColorPicker" value="#6496dc">
               <button id="fourBarsWeeklySafeAutoBtn" class="btn-secondary">Auto</button>
@@ -261,114 +261,114 @@ function template() {
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-title">TOOLTIP</div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Time Display<span class="info-icon">?</span><span class="info-tooltip">Absolute shows clock time (e.g. 3:45 PM), Countdown shows time remaining (e.g. 2h 15m)</span></span></span>
+        <div class="kit-section">
+          <div class="kit-section-title">TOOLTIP</div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Time Display<span class="info-icon">?</span><span class="info-tooltip">Absolute shows clock time (e.g. 3:45 PM), Countdown shows time remaining (e.g. 2h 15m)</span></span></span>
             <select id="timeStyle">
               <option value="absolute">Absolute Time</option>
               <option value="countdown">Time Until</option>
             </select>
           </div>
-          <div class="option">
-            <span class="option-label">Layout</span>
+          <div class="kit-row">
+            <span class="kit-row-label">Layout</span>
             <select id="tooltipLayout">
               <option value="rows">Rows</option>
               <option value="columns">Columns</option>
             </select>
           </div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">?</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
-            <label class="switch">
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Show Safe Pace<span class="info-icon">?</span><span class="info-tooltip">Shows what percentage of usage you'd have if you used Claude at a steady rate across the full window</span></span></span>
+            <label class="kit-toggle">
               <input type="checkbox" id="tooltipShowSafePace">
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-title">COLORS</div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Toolbar Icon<span class="info-icon">?</span><span class="info-tooltip">Colors the icon (rings or bars) in the system tray</span></span></span>
-            <label class="switch">
+        <div class="kit-section">
+          <div class="kit-section-title">COLORS</div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Toolbar Icon<span class="info-icon">?</span><span class="info-tooltip">Colors the icon (rings or bars) in the system tray</span></span></span>
+            <label class="kit-toggle">
               <input type="checkbox" id="colorApplyIcon" checked>
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Toolbar Number<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage number shown in the system tray when cycling away from the icon</span></span></span>
-            <label class="switch">
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Toolbar Number<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage number shown in the system tray when cycling away from the icon</span></span></span>
+            <label class="kit-toggle">
               <input type="checkbox" id="colorApplyNumber" checked>
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Dashboard<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage numbers shown in the dashboard</span></span></span>
-            <label class="switch">
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Dashboard<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage numbers shown in the dashboard</span></span></span>
+            <label class="kit-toggle">
               <input type="checkbox" id="colorApplyDashboard" checked>
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Tooltip<span class="info-icon">?</span><span class="info-tooltip">Colors the icon shown in the system tray tooltip</span></span></span>
-            <label class="switch">
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Tooltip<span class="info-icon">?</span><span class="info-tooltip">Colors the icon shown in the system tray tooltip</span></span></span>
+            <label class="kit-toggle">
               <input type="checkbox" id="colorApplyTooltip" checked>
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <div class="option">
-            <span class="option-label"><span class="info-wrap">Color Mode<span class="info-icon">?</span><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Color Mode<span class="info-icon">?</span><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
             <select id="colorMode">
               <option value="pace">Safe Pace</option>
               <option value="threshold">Threshold</option>
             </select>
           </div>
         </div>
-        <div class="section">
-          <div class="section-title">COLOR MODE CONFIG</div>
+        <div class="kit-section">
+          <div class="kit-section-title">COLOR MODE CONFIG</div>
           <div id="thresholdSection">
             <div id="colorContainer"></div>
             <button class="btn-secondary" id="addColorBtn" style="margin-top: 10px; width: 100%; font-size: 0.8rem;">+ Add Color Threshold</button>
           </div>
           <div id="paceSection" style="display:none">
-            <div class="option">
-              <span class="option-label"><span class="info-wrap">Band %<span class="info-icon">?</span><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
+            <div class="kit-row">
+              <span class="kit-row-label"><span class="info-wrap">Band %<span class="info-icon">?</span><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
               <input type="number" id="paceBand" value="10" min="0" max="50" style="width:60px">
             </div>
-            <div class="section-title" style="margin-top:10px">Colors</div>
-            <div class="option">
-              <span class="option-label">Under</span>
+            <div class="kit-section-title" style="margin-top:10px">Colors</div>
+            <div class="kit-row">
+              <span class="kit-row-label">Under</span>
               <input type="color" id="paceColorUnder" value="#27ae60">
             </div>
-            <div class="option">
-              <span class="option-label">Near (safe side)</span>
+            <div class="kit-row">
+              <span class="kit-row-label">Near (safe side)</span>
               <input type="color" id="paceColorNearSafe" value="#f1c40f">
             </div>
-            <div class="option">
-              <span class="option-label">Near (over side)</span>
+            <div class="kit-row">
+              <span class="kit-row-label">Near (over side)</span>
               <input type="color" id="paceColorNearOver" value="#e67e22">
             </div>
-            <div class="option">
-              <span class="option-label">Over</span>
+            <div class="kit-row">
+              <span class="kit-row-label">Over</span>
               <input type="color" id="paceColorOver" value="#e74c3c">
             </div>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-title">SESSIONS</div>
-          <div class="option">
-            <span class="option-label">Session state style</span>
+        <div class="kit-section">
+          <div class="kit-section-title">SESSIONS</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Session state style</span>
             <select id="sessionStateStyle">
               <option value="icons">Icons</option>
               <option value="dots">Dots</option>
             </select>
           </div>
-          <div class="option">
-            <span class="option-label">Sidebar animations</span>
-            <label class="switch">
+          <div class="kit-row">
+            <span class="kit-row-label">Sidebar animations</span>
+            <label class="kit-toggle">
               <input type="checkbox" id="sidebarAnimations">
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
         </div>

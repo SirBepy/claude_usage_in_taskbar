@@ -332,81 +332,81 @@ function template() {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
-        <div class="section">
-          <div class="section-title">Audio output</div>
-          <div class="option">
-            <span class="option-label">Output device</span>
+        <div class="kit-section">
+          <div class="kit-section-title">Audio output</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Output device</span>
             <select id="audioOutputDevice">
               <option value="">System default</option>
             </select>
           </div>
         </div>
-        <div class="section" id="muteSection">
-          <div class="section-title">Mute</div>
-          <div class="option">
-            <span class="option-label">Mute all notifications</span>
-            <label class="switch">
+        <div class="kit-section" id="muteSection">
+          <div class="kit-section-title">Mute</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Mute all notifications</span>
+            <label class="kit-toggle">
               <input type="checkbox" id="muteAllSwitch">
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <div class="option mute-child">
-            <span class="option-label">Mute sounds</span>
-            <label class="switch">
+          <div class="kit-row mute-child">
+            <span class="kit-row-label">Mute sounds</span>
+            <label class="kit-toggle">
               <input type="checkbox" id="muteSoundsSwitch">
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <div class="option mute-child is-disabled" title="Coming soon - OS toasts aren't implemented yet">
-            <span class="option-label">Mute system notifications <span style="color:var(--text-dim);font-size:0.75rem">(coming soon)</span></span>
-            <label class="switch">
+          <div class="kit-row mute-child is-disabled" title="Coming soon - OS toasts aren't implemented yet">
+            <span class="kit-row-label">Mute system notifications <span style="color:var(--text-dim);font-size:0.75rem">(coming soon)</span></span>
+            <label class="kit-toggle">
               <input type="checkbox" id="muteSystemSwitch" disabled>
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
         </div>
-        <div class="section" id="meetingSection">
-          <div class="section-title">Meetings</div>
-          <div class="option">
-            <span class="option-label">Pause notifications during meetings</span>
-            <label class="switch">
+        <div class="kit-section" id="meetingSection">
+          <div class="kit-section-title">Meetings</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Pause notifications during meetings</span>
+            <label class="kit-toggle">
               <input type="checkbox" id="pauseInMeetingSwitch">
-              <span class="slider"></span>
+              <span class="kit-toggle-track"></span>
             </label>
           </div>
           <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Silences sounds and voice while your camera or mic is in use, or a meeting app (Teams, Zoom, Discord...) is in a call. Windows only.</div>
         </div>
         <template id="notifCardTemplate">
-          <div class="section notif-card">
-            <div class="section-title notif-title"></div>
-            <div class="option">
-              <span class="option-label">Enabled</span>
-              <label class="switch">
+          <div class="kit-section notif-card">
+            <div class="kit-section-title notif-title"></div>
+            <div class="kit-row">
+              <span class="kit-row-label">Enabled</span>
+              <label class="kit-toggle">
                 <input type="checkbox" class="notif-enabled">
-                <span class="slider"></span>
+                <span class="kit-toggle-track"></span>
               </label>
             </div>
-            <div class="option notif-body" style="display:none">
-              <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Type</span>
+            <div class="kit-row notif-body" style="display:none">
+              <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Type</span>
               <div style="display:flex;gap:10px">
                 <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="radio" class="notif-mode" value="sound"> Sound</label>
                 <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="radio" class="notif-mode" value="voice"> Voice</label>
               </div>
             </div>
-            <div class="option notif-sound-row" style="display:none">
-              <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
+            <div class="kit-row notif-sound-row" style="display:none">
+              <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
                 <select class="notif-sound-file"></select>
                 <button class="btn-secondary notif-sound-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
               </div>
             </div>
             <div class="notif-voice-rows" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
-              <div class="option" style="border:none;padding:0">
-                <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Voice</span>
+              <div class="kit-row" style="border:none;padding:0">
+                <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Voice</span>
                 <select class="notif-voice-select" style="flex:1;max-width:220px"></select>
               </div>
-              <div class="option" style="border:none;padding:0;flex-direction:column;align-items:stretch;gap:4px">
-                <span class="option-label notif-template-label" style="font-size:0.82rem;color:var(--text-dim)">Message</span>
+              <div class="kit-row" style="border:none;padding:0;flex-direction:column;align-items:stretch;gap:4px">
+                <span class="kit-row-label notif-template-label" style="font-size:0.82rem;color:var(--text-dim)">Message</span>
                 <div style="display:flex;align-items:center;gap:8px">
                   <input type="text" class="notif-template" style="flex:1;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.85rem">
                   <button class="btn-secondary notif-voice-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
@@ -417,8 +417,8 @@ function template() {
           </div>
         </template>
         <div id="notifCards"></div>
-        <div class="option" id="voicePreviewProjectRow" style="display:none">
-          <span class="option-label" style="font-size:0.82rem;color:var(--text-dim)">Preview with project</span>
+        <div class="kit-row" id="voicePreviewProjectRow" style="display:none">
+          <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Preview with project</span>
           <select id="voicePreviewProject" style="flex:1;max-width:220px"></select>
         </div>
       </div>
