@@ -2,6 +2,7 @@
 
 ### Urgent
 
+- Capture `[perm-relay]` logs for the broken AskUserQuestion card (ai_todo 16, needs v0.1.65+): run `cargo tauri dev`, open a chat, trigger an AskUserQuestion (or just have a turn ask you a question), then grep the daemon + app logs and the webview console for `[perm-relay]`. Paste them back - the table in ai_todo 16 maps the log pattern to the exact dead hop so the fix becomes one-shot. (Can't be Claude-tested: GUI app + the sandbox blocks daemon spawn.)
 - Relaunch the Claude Usage tray app - I killed it during the AFK e2e run (the wdio harness kept nuking its daemon); it's currently down so usage tracking is off.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 

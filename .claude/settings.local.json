@@ -187,7 +187,12 @@
       "WebFetch(domain:soundfxcenter.com)",
       "WebFetch(domain:archive.org)",
       "WebFetch(domain:en.wikipedia.org)",
-      "WebFetch(domain:www.mariowiki.com)"
+      "WebFetch(domain:www.mariowiki.com)",
+      "PowerShell(Get-Item *)",
+      "Bash(Get-ChildItem *)",
+      "Bash(sort -t'-' -k2 -n)",
+      "PowerShell(cargo check *)",
+      "PowerShell($p = Join-Path $env:APPDATA \"claude-usage-tauri\\\\hooks_port.txt\"; Write-Output \"path=$p\"; if \\(Test-Path $p\\) { Write-Output \\(\"port=\" + \\(Get-Content $p\\)\\); Write-Output \\(\"modified=\" + \\(Get-Item $p\\).LastWriteTime\\) } else { Write-Output \"MISSING\" })"
     ]
   }
 }
