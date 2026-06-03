@@ -13,8 +13,11 @@ use crate::settings::paths;
 use crate::types::NewsPost;
 use crate::util::process::hide_console_tokio;
 use anyhow::{anyhow, Context, Result};
+use std::collections::HashSet;
 use std::path::Path;
-use tauri::{AppHandle, Emitter};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 /// Model used for news summaries. Hardcoded for v1 (low volume, so prose
@@ -125,17 +128,88 @@ pub async fn generate_summary_streaming<F: FnMut(&str)>(
     Ok(text)
 }
 
+/// RAII guard: removes `slug` from the inflight set on drop (success or error).
+struct InFlightGuard {
+    inflight: Arc<Mutex<HashSet<String>>>,
+    slug: String,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.inflight.lock().unwrap().remove(&self.slug);
+    }
+}
+
 /// Fetches the article for `slug`, streams a Markdown summary, writes the
 /// `ai_summary*` fields back to the store, and returns the updated post. When
 /// `emit` is true, fires `news-summary-phase` (fetching -> writing) and
 /// `news-summary-delta` events keyed by slug so the open detail view can show
 /// progress and live-write the text. On any failure nothing is persisted.
+///
+/// If a generation for the same slug is already in-flight (from the eager
+/// backfill racing with this call), this function polls the store until the
+/// inflight task writes the summary or times out - no second claude spawn.
 pub async fn generate_for_slug(
     app: &AppHandle,
     path: &Path,
     slug: &str,
     emit: bool,
 ) -> Result<NewsPost> {
+    // Grab the inflight set from AppState (absent in unit tests where there is no state).
+    let inflight = app
+        .try_state::<crate::state::AppState>()
+        .map(|s| Arc::clone(&s.news_inflight));
+
+    if let Some(ref set) = inflight {
+        let already_running = {
+            let mut guard = set.lock().unwrap();
+            if guard.contains(slug) {
+                true
+            } else {
+                guard.insert(slug.to_string());
+                false
+            }
+        };
+
+        if already_running {
+            // Another task is generating this slug; poll until it saves the
+            // summary (or clears the inflight entry on error) rather than
+            // spawning a competing claude process.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+            loop {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                let still_running = set.lock().unwrap().contains(slug);
+                if !still_running {
+                    break;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(anyhow!(
+                        "timed out waiting for in-flight summary for {slug}"
+                    ));
+                }
+            }
+            // The other task finished; return whatever it wrote (or error if it failed).
+            let store = crate::news::load(path);
+            return store
+                .posts
+                .iter()
+                .find(|p| p.slug == slug)
+                .ok_or_else(|| anyhow!("post {slug} not found"))
+                .and_then(|p| {
+                    p.ai_summary
+                        .as_ref()
+                        .map(|_| p.clone())
+                        .ok_or_else(|| anyhow!("in-flight generation for {slug} failed"))
+                });
+        }
+    }
+
+    // This call owns the slot; the guard clears it on exit (success or error).
+    let _guard = inflight.map(|set| InFlightGuard {
+        inflight: set,
+        slug: slug.to_string(),
+    });
+
     let (url, title) = {
         let store = crate::news::load(path);
         let post = store.posts.iter().find(|p| p.slug == slug)

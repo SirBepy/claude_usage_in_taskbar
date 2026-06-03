@@ -45,6 +45,10 @@ pub struct AppState {
     /// `notifications::rules::fire` and the tray tooltip. Always false on
     /// non-Windows. Written by `crate::meeting::start`.
     pub meeting_active: Arc<AtomicBool>,
+    /// Slugs for which a `news::summarizer::generate_for_slug` call is currently
+    /// running. Guards against double-spawning when the eager backfill and the
+    /// lazy IPC path race on the same new post.
+    pub news_inflight: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 
 impl AppState {
@@ -72,6 +76,7 @@ impl AppState {
             frontend_alive: Arc::new(AtomicBool::new(false)),
             pending_chat_open: Mutex::new(None),
             meeting_active: Arc::new(AtomicBool::new(false)),
+            news_inflight: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
     }
 }
