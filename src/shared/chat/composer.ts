@@ -428,7 +428,8 @@ export class Composer {
     // sees the wall of text in their own message (mirrors the composer chip).
     let fullText = text;
     for (const b of this.pastedBlocks) {
-      const wrapped = `<pasted-log name="${b.name}">\n${b.text}\n</pasted-log>`;
+      const nonce = Math.random().toString(36).slice(2, 10);
+      const wrapped = `<pasted-log id="${nonce}" name="${b.name}">\n${b.text}\n</pasted-log:${nonce}>`;
       fullText += (fullText ? "\n\n" : "") + wrapped;
     }
 

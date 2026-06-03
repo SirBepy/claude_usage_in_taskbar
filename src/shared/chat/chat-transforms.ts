@@ -20,7 +20,11 @@ const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 // composer.ts). Claude reads the full body inline; the chat collapses the
 // wrapper into a clickable chip so the user never sees the wall of text in
 // their own message. Group 1 = display name, group 2 = body.
-const PASTED_LOG_RE = /<pasted-log name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log>/g;
+// Matches both nonce format (new) and legacy format (old messages without nonce).
+// New:    <pasted-log id="NONCE" name="NAME">BODY</pasted-log:NONCE>
+// Legacy: <pasted-log name="NAME">BODY</pasted-log>
+// Groups: [1]=nonce, [2]=name (new) | [3]=body (new) | [4]=name (legacy) | [5]=body (legacy)
+const PASTED_LOG_RE = /<pasted-log id="([^"]+)" name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log:\1>|<pasted-log name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log>/g;
 
 // Turn-status marker injected via `--append-system-prompt` (see
 // daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>` or
@@ -79,7 +83,9 @@ function renderTextBlock(rawText: string): string {
       const seg = text.slice(last, match.index);
       if (seg.trim()) parts.push(renderFileSegments(seg));
     }
-    parts.push(pastedLogChipHtml(match[1] || "pasted_log.txt", match[2] ?? ""));
+    const chipName = match[2] ?? match[4] ?? "pasted_log.txt";
+    const chipBody = match[3] ?? match[5] ?? "";
+    parts.push(pastedLogChipHtml(chipName, chipBody));
     last = match.index + match[0].length;
   }
   const tail = text.slice(last);
