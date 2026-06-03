@@ -63,17 +63,8 @@ pub fn save_snapshot(registry: &Registry, path: &Path) {
             return;
         }
     };
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let tmp = path.with_extension("json.tmp");
-    if let Err(e) = fs::write(&tmp, json) {
-        log::warn!("persist sessions: write tmp failed: {e}");
-        return;
-    }
-    if let Err(e) = fs::rename(&tmp, path) {
-        log::warn!("persist sessions: rename failed: {e}");
-        let _ = fs::remove_file(&tmp);
+    if let Err(e) = crate::util::write_json_atomic(path, &json) {
+        log::warn!("persist sessions: write failed: {e}");
     }
 }
 

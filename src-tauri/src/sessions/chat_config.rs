@@ -47,16 +47,8 @@ fn write_atomic(path: &Path, map: &HashMap<String, ChatConfig>) {
             return;
         }
     };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let tmp = path.with_extension("json.tmp");
-    if let Err(e) = std::fs::write(&tmp, json) {
-        log::warn!("chat-config: write tmp failed: {e}");
-        return;
-    }
-    if let Err(e) = std::fs::rename(&tmp, path) {
-        log::warn!("chat-config: rename failed: {e}");
+    if let Err(e) = crate::util::write_json_atomic(path, &json) {
+        log::warn!("chat-config: write failed: {e}");
     }
 }
 

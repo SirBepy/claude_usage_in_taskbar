@@ -126,9 +126,6 @@ pub fn install(cfg: HookConfig) -> Result<()> {
         .with_context(|| format!("parsing {path:?} as JSON, not modifying"))?;
     let merged = merge_hooks(&existing, &cfg);
     let out = serde_json::to_string_pretty(&merged)?;
-    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).ok(); }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, out)?;
-    std::fs::rename(&tmp, &path)?;
+    crate::util::write_json_atomic(&path, &out)?;
     Ok(())
 }
