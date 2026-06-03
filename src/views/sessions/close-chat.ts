@@ -9,6 +9,7 @@ export async function closeChat(sessionId: string): Promise<void> {
   }
   try {
     await invoke<void>("clear_session", { sessionId });
+    document.dispatchEvent(new CustomEvent("cc:session-closed", { detail: { sessionId } }));
   } catch (err) {
     console.error("[sessions] close chat failed", err);
   }

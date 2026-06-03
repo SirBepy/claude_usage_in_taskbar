@@ -445,7 +445,20 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   view.addEventListener("dragleave", onViewDragLeave);
   view.addEventListener("drop", onViewDrop);
 
+  const onSessionClosed = (e: Event) => {
+    const { sessionId } = (e as CustomEvent<{ sessionId: string }>).detail;
+    if (state.selectedId !== sessionId) return;
+    if (state.renderer) state.renderer.detach();
+    state.renderer = null;
+    state.composer?.destroy();
+    state.composer = null;
+    setActiveSession(null);
+    pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+  };
+  document.addEventListener("cc:session-closed", onSessionClosed);
+
   return () => {
+    document.removeEventListener("cc:session-closed", onSessionClosed);
     view.removeEventListener("dragover", onViewDragOver);
     view.removeEventListener("dragleave", onViewDragLeave);
     view.removeEventListener("drop", onViewDrop);
