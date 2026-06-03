@@ -192,7 +192,8 @@
       "Bash(Get-ChildItem *)",
       "Bash(sort -t'-' -k2 -n)",
       "PowerShell(cargo check *)",
-      "PowerShell($p = Join-Path $env:APPDATA \"claude-usage-tauri\\\\hooks_port.txt\"; Write-Output \"path=$p\"; if \\(Test-Path $p\\) { Write-Output \\(\"port=\" + \\(Get-Content $p\\)\\); Write-Output \\(\"modified=\" + \\(Get-Item $p\\).LastWriteTime\\) } else { Write-Output \"MISSING\" })"
+      "PowerShell($p = Join-Path $env:APPDATA \"claude-usage-tauri\\\\hooks_port.txt\"; Write-Output \"path=$p\"; if \\(Test-Path $p\\) { Write-Output \\(\"port=\" + \\(Get-Content $p\\)\\); Write-Output \\(\"modified=\" + \\(Get-Item $p\\).LastWriteTime\\) } else { Write-Output \"MISSING\" })",
+      "Bash(pnpm vite *)"
     ]
   }
 }
