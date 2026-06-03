@@ -16,6 +16,7 @@ jobs:
       should_release: ${{ steps.check.outputs.should_release }}
       tag: ${{ steps.check.outputs.tag }}
       version: ${{ steps.check.outputs.version }}
+      product_name: ${{ steps.check.outputs.product_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,9 +27,11 @@ jobs:
         shell: bash
         run: |
           VERSION=$(jq -r .version package.json)
+          PRODUCT_NAME=$(jq -r .productName src-tauri/tauri.conf.json)
           TAG="tauri-v$VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "product_name=$PRODUCT_NAME" >> "$GITHUB_OUTPUT"
           if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists. Skipping release."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
@@ -268,6 +271,6 @@ jobs:
             artifacts/*.AppImage.sig
             artifacts/latest.json
           tag_name: ${{ needs.check.outputs.tag }}
-          name: Claude Usage v${{ needs.check.outputs.version }}
+          name: ${{ needs.check.outputs.product_name }} v${{ needs.check.outputs.version }}
           draft: false
           make_latest: "true"
