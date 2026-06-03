@@ -17,6 +17,7 @@ jobs:
       tag: ${{ steps.check.outputs.tag }}
       version: ${{ steps.check.outputs.version }}
       product_name: ${{ steps.check.outputs.product_name }}
+      product_slug: ${{ steps.check.outputs.product_slug }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,10 +29,12 @@ jobs:
         run: |
           VERSION=$(jq -r .version package.json)
           PRODUCT_NAME=$(jq -r .productName src-tauri/tauri.conf.json)
+          PRODUCT_SLUG=$(echo "$PRODUCT_NAME" | tr ' ' '-')
           TAG="tauri-v$VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "product_name=$PRODUCT_NAME" >> "$GITHUB_OUTPUT"
+          echo "product_slug=$PRODUCT_SLUG" >> "$GITHUB_OUTPUT"
           if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists. Skipping release."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
@@ -161,13 +164,14 @@ jobs:
         run: |
           TAG="${{ needs.check.outputs.tag }}"
           VERSION="${{ needs.check.outputs.version }}"
+          SLUG="${{ needs.check.outputs.product_slug }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
           EXE_FILE=$(ls *_x64-setup.exe | head -n 1)
-          ASSET="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.exe"
+          ASSET="${SLUG}_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.exe"
           cp "$EXE_FILE" "$GITHUB_WORKSPACE/release-staging/$ASSET"
           cp "${EXE_FILE}.sig" "$GITHUB_WORKSPACE/release-staging/${ASSET}.sig"
           SIG=$(cat "${EXE_FILE}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${ASSET}"
+          URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${TAG}/${ASSET}"
           jq -n --arg sig "$SIG" --arg url "$URL" \
             '{signature:$sig, url:$url}' \
             > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
@@ -179,20 +183,21 @@ jobs:
         run: |
           TAG="${{ needs.check.outputs.tag }}"
           VERSION="${{ needs.check.outputs.version }}"
+          SLUG="${{ needs.check.outputs.product_slug }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
           # Updater payload: .app.tar.gz + .sig (createUpdaterArtifacts=true).
           APP_TGZ=$(ls macos/*.app.tar.gz | head -n 1)
-          ASSET_TGZ="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.app.tar.gz"
+          ASSET_TGZ="${SLUG}_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.app.tar.gz"
           cp "$APP_TGZ" "$GITHUB_WORKSPACE/release-staging/$ASSET_TGZ"
           cp "${APP_TGZ}.sig" "$GITHUB_WORKSPACE/release-staging/${ASSET_TGZ}.sig"
           SIG=$(cat "${APP_TGZ}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${ASSET_TGZ}"
+          URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${TAG}/${ASSET_TGZ}"
           jq -n --arg sig "$SIG" --arg url "$URL" \
             '{signature:$sig, url:$url}' \
             > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
           # DMG for first-time installs.
           DMG_FILE=$(ls dmg/*.dmg | head -n 1)
-          ASSET_DMG="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.dmg"
+          ASSET_DMG="${SLUG}_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.dmg"
           cp "$DMG_FILE" "$GITHUB_WORKSPACE/release-staging/$ASSET_DMG"
 
       - name: Stage Linux artifacts
@@ -202,20 +207,21 @@ jobs:
         run: |
           TAG="${{ needs.check.outputs.tag }}"
           VERSION="${{ needs.check.outputs.version }}"
+          SLUG="${{ needs.check.outputs.product_slug }}"
           mkdir -p "$GITHUB_WORKSPACE/release-staging"
           # AppImage doubles as updater payload + portable run; signed in place.
           APPIMG=$(ls appimage/*.AppImage | head -n 1)
-          ASSET_APP="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.AppImage"
+          ASSET_APP="${SLUG}_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.AppImage"
           cp "$APPIMG" "$GITHUB_WORKSPACE/release-staging/$ASSET_APP"
           cp "${APPIMG}.sig" "$GITHUB_WORKSPACE/release-staging/${ASSET_APP}.sig"
           SIG=$(cat "${APPIMG}.sig")
-          URL="https://github.com/SirBepy/claude_usage_in_taskbar/releases/download/${TAG}/${ASSET_APP}"
+          URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${TAG}/${ASSET_APP}"
           jq -n --arg sig "$SIG" --arg url "$URL" \
             '{signature:$sig, url:$url}' \
             > "$GITHUB_WORKSPACE/release-staging/${{ matrix.updater_key }}.json"
           # DEB for apt-managed installs.
           DEB=$(ls deb/*.deb | head -n 1)
-          ASSET_DEB="Claude-Usage_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.deb"
+          ASSET_DEB="${SLUG}_${VERSION}_${{ matrix.os_label }}_${{ matrix.arch_label }}.deb"
           cp "$DEB" "$GITHUB_WORKSPACE/release-staging/$ASSET_DEB"
 
       - name: Upload artifacts
