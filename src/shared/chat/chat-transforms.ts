@@ -44,8 +44,12 @@ const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?
 // complete marker; TITLE_TAIL_RE matches an incomplete trailing fragment (the
 // literal "<cc-title:" with every position optional, plus any partial title
 // text after the colon) so it never flashes mid-stream.
+// Some model versions emit XML-style `<cc-title>Text</cc-title>` instead of
+// the colon form; TITLE_XML_TOKEN_RE and TITLE_XML_TAIL_RE handle that variant.
 const TITLE_TOKEN_RE = /<cc-title:[^>]*>/gi;
 const TITLE_TAIL_RE = /<c(?:c(?:-(?:t(?:i(?:t(?:l(?:e(?::[^>]*)?)?)?)?)?)?)?)?\s*$/i;
+const TITLE_XML_TOKEN_RE = /<cc-title>[\s\S]*?<\/cc-title>/gi;
+const TITLE_XML_TAIL_RE = /<cc-title>[\s\S]*$/i;
 
 /** Strips both the status and title markers (complete or partial) plus trailing
  * whitespace, so neither ever reaches the rendered message body. */
@@ -53,8 +57,10 @@ export function stripStatusToken(text: string): string {
   return text
     .replace(STATUS_TOKEN_RE, "")
     .replace(TITLE_TOKEN_RE, "")
+    .replace(TITLE_XML_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
+    .replace(TITLE_XML_TAIL_RE, "")
     .replace(/\s+$/, "");
 }
 

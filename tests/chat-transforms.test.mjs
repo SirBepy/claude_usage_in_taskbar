@@ -135,6 +135,24 @@ describe("status marker", () => {
   });
 });
 
+describe("title marker — XML form", () => {
+  it("strips XML-form <cc-title>...</cc-title> from rendered text", () => {
+    const html = renderBlocks([{ type: "text", text: "Hello world\n<cc-title>Casual greeting exchange</cc-title>\n<cc-status:done>" }]);
+    expect(html).not.toContain("cc-title");
+    expect(html).toContain("Hello world");
+  });
+  it("strips XML-form title without status marker", () => {
+    const html = renderBlocks([{ type: "text", text: "Some response\n<cc-title>Chat About Foo</cc-title>" }]);
+    expect(html).not.toContain("cc-title");
+    expect(html).toContain("Some response");
+  });
+  it("strips partial XML-form tail during streaming", () => {
+    const html = renderBlocks([{ type: "text", text: "text\n<cc-title>partial content still streaming" }]);
+    expect(html).not.toContain("cc-title");
+    expect(html).toContain("text");
+  });
+});
+
 describe("cleanUserBlocks — strips background-task notifications", () => {
   it("drops a user message containing only a task-notification block", () => {
     const out = cleanUserBlocks([{ type: "text", text: "<task-notification>\n<task-id>abc</task-id>\n<status>completed</status>\n<summary>did the thing</summary>\n</task-notification>" }]);
