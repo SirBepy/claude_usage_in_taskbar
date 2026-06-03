@@ -184,16 +184,17 @@ export async function renderHistoryView(root: HTMLElement): Promise<() => void> 
   renderList(listEl);
 
   // If session-detail asked us to open a specific closed chat, select it now.
-  if (_pendingSelect) {
-    const sid = _pendingSelect;
-    _pendingSelect = null;
-    const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sid)}"]`);
+  // Otherwise auto-select the most recent session so the pane isn't blank.
+  const pendingOrFirst = _pendingSelect ?? state.entries[0]?.session_id ?? null;
+  if (pendingOrFirst) {
+    if (_pendingSelect) _pendingSelect = null;
+    const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(pendingOrFirst)}"]`);
     if (li) {
       listEl.querySelectorAll("li[data-session-id]").forEach((el) => el.classList.remove("active"));
       li.classList.add("active");
       li.scrollIntoView({ block: "center" });
     }
-    void selectHistorySession(sid, pane);
+    void selectHistorySession(pendingOrFirst, pane);
   }
 
   if (filterInput) {

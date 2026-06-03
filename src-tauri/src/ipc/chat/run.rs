@@ -201,6 +201,15 @@ pub async fn register_historical_session(
     let guard = state.daemon_client.lock().await;
     let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
     client.register_historical(&session_id, &cwd).await.map_err(|e| e.to_string())?;
+    // Sync the instance cache immediately so the Sessions view's list_instances
+    // call sees the new entry before the async instances_changed notification
+    // arrives via daemon_link (avoids a race that caused the resume to silently
+    // no-op when the cache was still stale on mount).
+    if let Ok(instances) = client.list_instances().await {
+        if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances) {
+            *state.cached_instances.lock().unwrap() = parsed;
+        }
+    }
     Ok(())
 }
 
