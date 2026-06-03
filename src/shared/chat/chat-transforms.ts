@@ -213,7 +213,24 @@ function renderMarkdown(text: string): string {
 // `<command-name>`, `<command-message>`, `<command-args>`, and shells out
 // stdout via `<local-command-stdout>`. These are session bookkeeping, not
 // content the user wants to see in the chat.
+//
+// command-name/message/local-command-stdout: strip the ENTIRE block including
+// content (the name "rate-it" or stdout output should not appear in the bubble).
+// command-args: strip only the tags, keep content (it's the user's typed text).
+const COMMAND_BLOCK_RE = /<(?:command-name|command-message|local-command-stdout)(?:\s[^>]*)?>[\s\S]*?<\/(?:command-name|command-message|local-command-stdout)>/gi;
 const COMMAND_TAG_RE = /<\/?(?:command-name|command-message|command-args|local-command-stdout)(?:\s[^>]*)?>/gi;
+
+// Normalize raw user-message text for display and cross-source dedup: removes
+// the command scaffolding Claude Code adds when expanding slash commands, leaving
+// only the user's typed text (which lives between the command-args tags).
+export function normalizeUserMessageText(text: string): string {
+  return text
+    .replace(COMMAND_BLOCK_RE, "")
+    .replace(COMMAND_TAG_RE, "")
+    .replace(SKILL_BODY_RE, "")
+    .replace(TASK_NOTIFICATION_RE, "")
+    .trim();
+}
 
 // Background-task completion events the harness injects as synthetic
 // user-role messages when `run_in_background: true` finishes. Multi-line
@@ -242,9 +259,7 @@ export function cleanUserBlocks(blocks: ContentBlock[]): ContentBlock[] {
   const out: ContentBlock[] = [];
   for (const b of blocks) {
     if (b.type === "text") {
-      let stripped = b.text.replace(COMMAND_TAG_RE, "");
-      stripped = stripped.replace(SKILL_BODY_RE, "");
-      stripped = stripped.replace(TASK_NOTIFICATION_RE, "");
+      let stripped = normalizeUserMessageText(b.text);
       stripped = stripped.trim();
       if (stripped.length === 0) continue;
       out.push({ type: "text", text: stripped });

@@ -14,6 +14,7 @@
 
 import type { ChatEvent, HistoryPage } from "../../types/ipc.generated";
 import { invoke } from "../ipc";
+import { normalizeUserMessageText } from "./chat-transforms";
 
 type Unlisten = () => void;
 type EventListener = (ev: ChatEvent) => void;
@@ -242,8 +243,14 @@ class SessionEventStore {
       case "assistant_message":
         // Streaming partials mutate every chunk; dedup only the finalized form.
         return ev.streaming ? null : `a:${this.contentText(ev)}`;
-      case "user_message":
-        return `u:${this.contentText(ev)}`;
+      case "user_message": {
+        // Normalize before hashing: the file-watcher event contains the full
+        // JSONL transcript (with <command-name>/<command-args> scaffolding) while
+        // the synthetic push carries only the raw typed text. Without normalization
+        // the sigs differ and the dedup misses, producing a duplicate bubble.
+        const raw = this.contentText(ev) ?? "";
+        return `u:${normalizeUserMessageText(raw)}`;
+      }
       case "tool_use":
         return `tu:${ev.id}`;
       case "tool_result":
