@@ -4,20 +4,22 @@
 // closed it slides left, the rows below animate up, and then the closed row
 // (or the slot it vacated) briefly snaps back before disappearing.
 //
-// Root cause: the exiting <li> uses translateX for the slide-out, so it keeps
-// occupying vertical space. Two independent timers then race:
-//   - the node's `animationend` cleanup removes it (~280ms), which reflows the
-//     siblings UP instantly, and
-//   - `applyReorder` runs the FLIP at +310ms using `beforeRects` captured while
-//     the node STILL occupied space, yanking the siblings back DOWN for one
-//     painted frame before animating them up.
-// That stale invert frame is the visible flash. The fix makes `applyReorder`
-// the sole owner of exit-node removal, so the removal + FLIP happen in one
-// synchronized step and the early `animationend` no longer reflows siblings.
+// OLD root cause (FLIP design): the exiting <li> used translateX for the
+// slide-out, so it kept occupying vertical space. Removing it on `animationend`
+// reflowed siblings up, then a deferred FLIP built from stale rects yanked them
+// back down for one painted frame — the flash.
 //
-// Contract under test: an exiting row is NOT removed by its own `animationend`
-// while a reconcile/applyReorder pass is responsible for it. It is removed by
-// applyReorder, atomically with the sibling reorder.
+// NEW design (this contract): the exiting row is taken OUT of layout flow
+// (position:absolute) the instant it starts exiting. Siblings reflow up
+// immediately and a single, undeferred FLIP slides them. Because the exiting
+// row no longer occupies a slot, removing it on `animationend` can't reflow
+// anything — the flash-back is structurally impossible, and there is no
+// deferral / single-flight scheduler / applyReorder-owns-removal coupling.
+//
+// Contract under test:
+//   - an exiting row is pinned position:absolute (out of flow) on close, and
+//   - it is removed on its own `animationend`, OR by a safety timer if no
+//     animationend ever fires.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -49,35 +51,32 @@ describe("sidebar close animation", () => {
     vi.useFakeTimers();
   });
 
-  it("does not remove the exiting row on animationend (applyReorder owns removal)", () => {
+  it("pins the exiting row out of flow and removes it on animationend", () => {
     const listEl = makeList();
 
-    // Initial paint: X, A, B (all enter; applyReorder runs synchronously).
+    // Initial paint: X, A, B (all enter; the reorder runs synchronously).
     reconcileList(listEl, [row("X"), row("A"), row("B")], true);
     vi.runAllTimers();
     expect(ids(listEl)).toEqual(["X", "A", "B"]);
 
-    // User closes X — slide-out begins immediately.
+    // User closes X — slide-out begins immediately and X leaves layout flow.
     markSessionExiting(listEl, "X");
     const xLi = listEl.querySelector('li[data-session-id="X"]');
     expect(xLi.classList.contains("row-exiting")).toBe(true);
+    expect(xLi.style.position).toBe("absolute");
 
-    // Backend confirms X gone -> reconcile schedules applyReorder (+310ms).
+    // Backend confirms X gone -> reconcile reorders survivors synchronously.
     reconcileList(listEl, [row("A"), row("B")], true);
 
-    // The slide-out animation finishes (~280ms) and fires animationend BEFORE
-    // applyReorder runs. The exiting node must STILL be in the DOM here:
-    // removing it now would reflow the siblings up and cause the flash.
+    // The slide-out finishes and fires animationend. Because X is out of flow,
+    // removing it here cannot reflow the survivors — so removal is correct now
+    // (the opposite of the old FLIP contract, where this would flash).
     xLi.dispatchEvent(new window.Event("animationend"));
-    expect(listEl.querySelector('li[data-session-id="X"]')).not.toBeNull();
-
-    // applyReorder fires: it removes the exiting node and reorders, atomically.
-    vi.advanceTimersByTime(400);
     expect(listEl.querySelector('li[data-session-id="X"]')).toBeNull();
     expect(ids(listEl)).toEqual(["A", "B"]);
   });
 
-  it("removes the exiting row even if no reconcile follows (safety net)", () => {
+  it("removes the exiting row even if no animationend fires (safety net)", () => {
     const listEl = makeList();
     reconcileList(listEl, [row("X"), row("A")], true);
     vi.runAllTimers();
@@ -85,7 +84,7 @@ describe("sidebar close animation", () => {
     markSessionExiting(listEl, "X");
     expect(listEl.querySelector('li[data-session-id="X"]')).not.toBeNull();
 
-    // No reconcile arrives. The safety timeout must still clean the node up.
+    // No animationend, no reconcile. The safety timeout must still clean up.
     vi.advanceTimersByTime(3000);
     expect(listEl.querySelector('li[data-session-id="X"]')).toBeNull();
   });
@@ -97,6 +96,7 @@ describe("sidebar close animation", () => {
 
     markSessionExiting(listEl, "X");
     reconcileList(listEl, [row("A"), row("B"), row("C")], true);
+    // Let the slide-out + safety timer resolve so the exiting node is gone.
     vi.runAllTimers();
 
     expect(ids(listEl)).toEqual(["A", "B", "C"]);
@@ -105,11 +105,10 @@ describe("sidebar close animation", () => {
 });
 
 // A new chat (the pending draft row) opened WHILE a just-closed row is still
-// sliding out must not be starved by the deferred reorder. The deferred apply
-// is scheduled on a FIXED deadline (not pushed back per reconcile), so even a
-// burst of instances-changed reconciles — the storm a close triggers — lands
-// the new row within one exit-animation window, without waiting for the user
-// to send a message.
+// sliding out must appear immediately — never starved waiting for the close to
+// settle. With the out-of-flow design there is no deferral: new rows insert
+// synchronously in the same reconcile, so even a burst of instances-changed
+// reconciles can't hide the new draft.
 describe("new chat opened during a close", () => {
   const pending = () => ({ key: "pending", html: `<li data-pending="1" class="pending">draft</li>` });
   const allIds = (el) =>
@@ -120,7 +119,7 @@ describe("new chat opened during a close", () => {
     vi.useFakeTimers();
   });
 
-  it("inserts the pending row within the settle window despite a reconcile burst", () => {
+  it("inserts the pending row immediately despite a reconcile burst", () => {
     const listEl = makeList();
     reconcileList(listEl, [row("X")], true);
     vi.runAllTimers();
@@ -129,15 +128,19 @@ describe("new chat opened during a close", () => {
     markSessionExiting(listEl, "X");
     reconcileList(listEl, [pending()], true);
 
-    // Storm of instances-changed reconciles spaced under the settle window —
-    // the pre-fix code rescheduled the timer every time and never applied.
+    // The new row is visible right away — no "type to reveal", no deferral.
+    expect(allIds(listEl)).toContain("PENDING");
+
+    // Storm of instances-changed reconciles under the old settle window: the
+    // pending row stays visible throughout.
     for (let i = 0; i < 8; i++) {
       vi.advanceTimersByTime(100);
       reconcileList(listEl, [pending()], true);
+      expect(allIds(listEl)).toContain("PENDING");
     }
 
-    // The new row is visible and the closed row is gone — no "type to reveal".
-    expect(allIds(listEl)).toContain("PENDING");
+    // The closed row is gone once its slide-out / safety timer resolves.
+    vi.runAllTimers();
     expect(listEl.querySelector('li[data-session-id="X"]')).toBeNull();
   });
 

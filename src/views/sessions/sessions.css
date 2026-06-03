@@ -48,6 +48,9 @@
   padding: 0;
   overflow-y: auto;
   flex: 1;
+  /* Positioning context for exiting rows, which are pinned position:absolute
+     and slid out of flow so survivors reflow up (see sidebar-anim.ts). */
+  position: relative;
 }
 
 .sessions-list li {

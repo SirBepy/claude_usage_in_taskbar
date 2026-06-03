@@ -14,52 +14,52 @@ function keyOf(li: HTMLLIElement): string {
 // Keys already committed to exiting — filtered out of entries on every reconcile.
 const exitingKeys = new Set<string>();
 
-// Per-node safety-removal timers. An exiting row is normally removed by
-// applyReorder (synchronously with the sibling FLIP, so the layout never
-// reflows between the row's disappearance and the rows-move-up animation).
-// These timers are ONLY a fallback for the rare case where no reconcile/
-// applyReorder follows the exit; applyReorder clears the timer when it removes
-// the node so the two paths never both fire.
+// Per-node safety-removal timers. An exiting row is normally removed on its own
+// `animationend`. Because the row is taken OUT of layout flow the instant it
+// starts exiting (see beginExit), removing it can no longer reflow its
+// siblings, so `animationend` removal is safe — there is no flash-back to
+// guard against. This timer is only a fallback for when no `animationend`
+// fires (animations disabled mid-flight, detached node, etc.).
 const exitTimers = new Map<HTMLLIElement, ReturnType<typeof setTimeout>>();
 
-// Deferred-reorder single-flight. When an exit is in flight we wait for the
-// slide-out to finish before removing the row and moving survivors up (so the
-// removal + FLIP happen in one synchronized step — see the flash-back fix).
-// Each reconcile only REPLACES the pending work with its own latest closure; it
-// does NOT push the deadline back. A naive "reschedule a fresh 310ms timer on
-// every reconcile" starves the apply during a burst of reconciles (e.g. the
-// instances-changed storm a close triggers): the timer never fires, so a
-// brand-new row opened during that window (a new-chat draft) is never inserted
-// until the burst stops. A fixed deadline guarantees the latest state lands
-// within one exit-animation window regardless of how many reconciles arrive.
-const EXIT_SETTLE_MS = 310; // > slideOutLeft (0.28s) so the row finishes exiting
-let pendingApply: (() => void) | null = null;
-let applyScheduled = false;
-
-function runPendingApply(): void {
-  applyScheduled = false;
-  const fn = pendingApply;
-  pendingApply = null;
-  if (fn) fn();
-}
-
-// Begin a row's slide-out. The node KEEPS occupying layout (slideOutLeft is a
-// translateX, not a removal) until applyReorder takes it out. Crucially we do
-// NOT remove the node on `animationend`: doing so reflows the siblings up
-// before applyReorder runs its FLIP, and the FLIP — built from positions
-// captured while this row still occupied space — then yanks them back down for
-// one painted frame. That stale invert frame is the "flash-back". Removal is
-// owned by applyReorder; the timeout below is only a no-reconcile safety net.
-function beginExit(li: HTMLLIElement): void {
-  if (li.classList.contains("row-exiting")) return;
-  li.classList.add("row-exiting");
-  exitTimers.set(li, setTimeout(() => removeExitNode(li), 1500));
-}
+const EXIT_SAFETY_MS = 1500; // > slideOutLeft (0.28s); fallback remover only.
 
 function removeExitNode(li: HTMLLIElement): void {
   const t = exitTimers.get(li);
   if (t !== undefined) { clearTimeout(t); exitTimers.delete(li); }
   if (li.parentElement) li.remove();
+}
+
+// Pin a row at its current geometry and take it out of layout flow. Its
+// siblings immediately reflow into the freed space (no JS), so a plain FLIP can
+// then slide them up. The pinned row keeps painting on its own layer and slides
+// out via the `slideOutLeft` animation without affecting anyone else's layout.
+function pinOutOfFlow(li: HTMLLIElement): void {
+  // Read all geometry BEFORE mutating styles (offset* are relative to the
+  // positioned list container — see `.sessions-list { position: relative }`).
+  const top = li.offsetTop;
+  const left = li.offsetLeft;
+  const width = li.offsetWidth;
+  const height = li.offsetHeight;
+  li.style.position = "absolute";
+  li.style.boxSizing = "border-box";
+  li.style.top = `${top}px`;
+  li.style.left = `${left}px`;
+  li.style.width = `${width}px`;
+  li.style.height = `${height}px`;
+  li.style.margin = "0";
+}
+
+// Start a row's exit: pin it out of flow, play the slide-out, remove on end.
+// Does NOT animate the survivors — the caller owns that (reconcileList runs one
+// FLIP over all moved rows; markSessionExiting runs its own survivor FLIP).
+function beginExit(li: HTMLLIElement): void {
+  if (li.classList.contains("row-exiting")) return;
+  pinOutOfFlow(li);
+  li.classList.add("row-exiting");
+  const remove = () => removeExitNode(li);
+  li.addEventListener("animationend", remove, { once: true });
+  exitTimers.set(li, setTimeout(remove, EXIT_SAFETY_MS));
 }
 
 function updateNode(kept: HTMLLIElement, html: string): void {
@@ -134,9 +134,11 @@ function flipNodes(nodes: HTMLLIElement[], beforeRects: Map<string, DOMRect>): v
 }
 
 /**
- * Immediately start the exit animation for a session row at click-time,
- * before the backend round-trip fires instances-changed. This ensures the
- * slide-left plays first and the row is never FLIP'd to a new sort position.
+ * Immediately start the exit animation for a session row at click-time, before
+ * the backend round-trip fires instances-changed. Pins the row out of flow and
+ * slides the survivors up right away (more responsive than waiting for the
+ * reconcile). The follow-up reconcile finds the survivors already at their
+ * final positions, so its own FLIP no-ops them.
  */
 export function markSessionExiting(listEl: HTMLElement, sessionId: string): void {
   const key = `s:${sessionId}`;
@@ -146,7 +148,18 @@ export function markSessionExiting(listEl: HTMLElement, sessionId: string): void
   exitingKeys.add(key);
   // exitingKeys is cleared by reconcileList once the session is absent from
   // entries — not here — to prevent a still-live session from re-entering.
+
+  // Snapshot the in-flow survivors BEFORE the pin reflows them up.
+  const survivors = [...listEl.querySelectorAll<HTMLLIElement>("li:not(.row-exiting)")]
+    .filter((n) => n !== li);
+  const before = new Map<string, DOMRect>();
+  for (const n of survivors) {
+    const k = keyOf(n);
+    if (k) before.set(k, n.getBoundingClientRect());
+  }
+
   beginExit(li);
+  flipNodes(survivors, before);
 }
 
 export function reconcileList(
@@ -181,13 +194,15 @@ export function reconcileList(
 
   const newKeys = new Set(visibleEntries.map(e => e.key));
 
-  // Snapshot positions of rows that will REMAIN before any DOM change
+  // Snapshot positions of rows that will REMAIN before any DOM change.
   const beforeRects = new Map<string, DOMRect>();
   for (const [k, li] of existing) {
     if (newKeys.has(k)) beforeRects.set(k, li.getBoundingClientRect());
   }
 
-  // Start exit animations for rows dropped from the list this call
+  // Start exit animations for rows dropped from the list this call. Each pins
+  // itself out of flow, so the survivors reflow up immediately and the single
+  // FLIP below animates the move — no deferral, no removal-ordering games.
   for (const [k, li] of existing) {
     if (!newKeys.has(k)) {
       exitingKeys.add(k);
@@ -209,49 +224,22 @@ export function reconcileList(
     }
   }
 
-  // Are there any exiting rows in the list right now (this call or markSessionExiting)?
-  const hasExits = listEl.querySelector("li.row-exiting") !== null;
+  // Reorder + insert synchronously. appendChild on an already-in-DOM node moves
+  // it to the end, so iterating the new order produces the correct sequence.
+  // Exiting rows are position:absolute (out of flow), so they neither occupy a
+  // slot nor get disturbed by this reordering.
+  for (const node of nodes) listEl.appendChild(node);
 
-  const applyReorder = () => {
-    // Remove the exiting rows HERE — synchronously, just before the FLIP — so
-    // the siblings reflow up and the FLIP plays in one step with no flash.
-    for (const li of [...listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")]) removeExitNode(li);
-
-    // Reorder by appending each node in the desired order. appendChild on an
-    // already-in-DOM node moves it to the end — so iterating the new order
-    // produces the correct sequence with no intermediate empty-list state.
-    // Skip nodes that acquired .row-exiting AFTER this reconcileList call built
-    // `nodes` (i.e. a second markSessionExiting fired during the settle wait).
-    const liveNodes = nodes.filter(n => !n.classList.contains("row-exiting"));
-    for (const node of liveNodes) listEl.appendChild(node);
-
-    // Enter animations for new rows
-    for (const node of liveNodes) {
-      if (enterKeys.has(keyOf(node))) {
-        node.classList.add("row-entering");
-        node.addEventListener("animationend", () => node.classList.remove("row-entering"), { once: true });
-      }
+  // Enter animations for new rows
+  for (const node of nodes) {
+    if (enterKeys.has(keyOf(node))) {
+      node.classList.add("row-entering");
+      node.addEventListener("animationend", () => node.classList.remove("row-entering"), { once: true });
     }
-
-    // FLIP remaining rows to their new positions
-    flipNodes(liveNodes, beforeRects);
-  };
-
-  if (hasExits) {
-    // Defer until the slide-out finishes, then move survivors up + insert new
-    // rows. Single-flight with a FIXED deadline: replace the pending work with
-    // this call's latest closure, but only arm the timer once so a burst of
-    // reconciles can't keep pushing it back (which would starve new-row
-    // insertion — see EXIT_SETTLE_MS note).
-    pendingApply = applyReorder;
-    if (!applyScheduled) {
-      applyScheduled = true;
-      setTimeout(runPendingApply, EXIT_SETTLE_MS);
-    }
-  } else {
-    // No exit in flight: apply immediately. Drop any pending deferred apply —
-    // this call's state is newer and already reflects the final layout.
-    pendingApply = null;
-    applyReorder();
   }
+
+  // FLIP the surviving rows from their snapshotted positions to their new ones.
+  // Rows that markSessionExiting already settled this frame measure dy<0.5 and
+  // no-op, so a click-then-reconcile sequence never double-animates.
+  flipNodes(nodes, beforeRects);
 }
