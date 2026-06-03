@@ -82,17 +82,7 @@ fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
 /// back to HOOK_PORT.
 fn daemon_hook_port() -> u16 {
     let suffix = crate::daemon::instance::instance_suffix();
-    crate::settings::paths::hooks_port_file()
-        .ok()
-        .map(|p| {
-            if suffix.is_empty() {
-                p
-            } else {
-                p.with_file_name(format!("hooks_port{suffix}.txt"))
-            }
-        })
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| s.trim().parse().ok())
+    crate::settings::paths::read_hook_port(&suffix)
         .unwrap_or(crate::daemon::hooks_server::HOOK_PORT)
 }
 

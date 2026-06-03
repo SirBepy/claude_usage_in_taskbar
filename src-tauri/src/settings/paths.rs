@@ -106,6 +106,16 @@ pub fn hooks_port_file() -> anyhow::Result<std::path::PathBuf> {
     Ok(data_dir()?.join("hooks_port.txt"))
 }
 
+/// Read the daemon hook port from `hooks_port[suffix].txt`. Returns `None` if
+/// the file is absent or the content cannot be parsed as a `u16`.
+pub(crate) fn read_hook_port(suffix: &str) -> Option<u16> {
+    hooks_port_file().ok().map(|p| {
+        if suffix.is_empty() { p } else { p.with_file_name(format!("hooks_port{suffix}.txt")) }
+    })
+    .and_then(|p| std::fs::read_to_string(p).ok())
+    .and_then(|s| s.trim().parse().ok())
+}
+
 pub fn news_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("news.json"))
 }

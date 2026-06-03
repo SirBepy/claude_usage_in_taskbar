@@ -14,9 +14,7 @@ const TOOL_QUESTION: &str = "ask_user_question";
 
 /// Read the hooks port from <app-data>/hooks_port.txt.
 fn read_port() -> Option<u16> {
-    let base = dirs::config_dir()?.join("claude-usage-tauri").join("hooks_port.txt");
-    let s = std::fs::read_to_string(&base).ok()?;
-    s.trim().parse().ok()
+    crate::settings::paths::read_hook_port("")
 }
 
 /// HTTP POST helper (blocking via tokio runtime).
