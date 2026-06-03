@@ -3,107 +3,27 @@ import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
-import { modelLabel } from "../../shared/model-name";
-
-// ── Statusline helpers ────────────────────────────────────────────────────────
-
-export const DEFAULT_STATUSLINE_FIELDS = ["model", "effort", "branch", "repo", "context", "thinking", "messages", "turns"];
-
-export const ALL_STATUSLINE_FIELDS = [
-  { key: "branch",   label: "Branch" },
-  { key: "repo",     label: "Repo" },
-  { key: "folder",   label: "Project Folder" },
-  { key: "model",    label: "Model" },
-  { key: "effort",   label: "Effort" },
-  { key: "context",  label: "Context %" },
-  { key: "thinking", label: "Thinking" },
-  { key: "duration", label: "Duration" },
-  { key: "messages", label: "Messages" },
-  { key: "turns",    label: "Turns" },
-];
-
-
-export async function loadStatuslineFields(): Promise<string[]> {
-  try {
-    const s = await invoke<Record<string, unknown>>("get_settings");
-    const v = s["statuslineFields"];
-    if (Array.isArray(v)) return v as string[];
-  } catch { /* ignore */ }
-  return [...DEFAULT_STATUSLINE_FIELDS];
-}
-
-export async function saveStatuslineFields(fields: string[]): Promise<void> {
-  try {
-    const s = await invoke<Record<string, unknown>>("get_settings");
-    await invoke("save_settings", { updated: { ...s, statuslineFields: fields } });
-  } catch (e) {
-    console.error("[statusbar] save fields failed", e);
-  }
-}
-
-export function modelContextWindow(model: string | null): number {
-  // Opus (currently 4.7) has a 1M token context window; all other current
-  // models use 200K. Claude Code does not emit context_window in the
-  // stream-json init line, so we derive it from the model name. Accept both
-  // the locked session short name ("opus") and the full stream id
-  // ("claude-opus-4-7") so the denominator stays correct regardless of source.
-  if (model && model.includes("opus")) return 1_000_000;
-  return 200_000;
-}
-
-export const shortModelName = modelLabel;
-
-export function formatDuration(startedAt: string): string {
-  const ms = Math.max(0, Date.now() - new Date(startedAt).getTime());
-  const totalSecs = Math.floor(ms / 1000);
-  const h = Math.floor(totalSecs / 3600);
-  const m = Math.floor((totalSecs % 3600) / 60);
-  const s = totalSecs % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-// ── Cross-mount caches ───────────────────────────────────────────────────────
-// Switching between chats re-creates the statusbar each time. These caches
-// avoid the visible "empty bar → chips pop in" flash by keeping the last
-// known values around for re-use on the next mount, while still firing a
-// background refresh (stale-while-revalidate for git).
-
-const gitInfoCache = new Map<string, GitInfo>();
-const gitInflight = new Map<string, Promise<GitInfo>>();
-const metaCache = new Map<string, SessionMeta>();
-
-/** messages (= user prompts sent) and agent turns, parsed from the session
- *  transcript by the `instance_token_stats` IPC - the SAME source Project
- *  Detail > Chats uses, so the numbers always match. Cached across mounts to
- *  avoid the empty→chip flash when switching chats. */
-interface SessionCounts { prompts: number; turns: number; }
-const countsCache = new Map<string, SessionCounts>();
-
-export function fetchGitInfo(cwd: string): Promise<GitInfo> {
-  let p = gitInflight.get(cwd);
-  if (!p) {
-    p = invoke<GitInfo>("get_git_info", { cwd })
-      .then((info) => { gitInfoCache.set(cwd, info); gitInflight.delete(cwd); return info; })
-      .catch((e) => { gitInflight.delete(cwd); throw e; });
-    gitInflight.set(cwd, p);
-  }
-  return p;
-}
-
-// ── SessionStatusbar ─────────────────────────────────────────────────────────
-
-export interface StatusbarOptions {
-  cwd?: string | null;
-  effort?: string;
-  sessionId?: string | null;
-  readOnly?: boolean;
-  /** Locked session model (short name e.g. "opus"). Authoritative source for
-   *  the context-window denominator - meta.model can be polluted by per-turn
-   *  sub-call models (internal Haiku calls), which would collapse the window. */
-  sessionModel?: string | null;
-}
+import {
+  formatDuration,
+  shortModelName,
+  modelContextWindow,
+  gitInfoCache,
+  metaCache,
+  countsCache,
+  type SessionCounts,
+  type StatusbarOptions,
+} from "./session-statusbar-helpers";
+export {
+  DEFAULT_STATUSLINE_FIELDS,
+  ALL_STATUSLINE_FIELDS,
+  loadStatuslineFields,
+  saveStatuslineFields,
+  shortModelName,
+  modelContextWindow,
+  formatDuration,
+  fetchGitInfo,
+  type StatusbarOptions,
+} from "./session-statusbar-helpers";
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
 
@@ -125,9 +45,6 @@ export class SessionStatusbar {
   private durationTimer: ReturnType<typeof setInterval> | null = null;
   private effortPopoverOpen = false;
   private modelPopoverOpen = false;
-  // Tracks which chip keys have already been rendered with real data, so the
-  // fade-in animation only plays the first time a chip appears - not on every
-  // duration tick or popover toggle.
   private animatedKeys = new Set<string>();
 
   constructor(container: HTMLElement, startedAt: string | null, fields: string[], opts: StatusbarOptions = {}) {
@@ -141,12 +58,10 @@ export class SessionStatusbar {
     this.readOnlyEffort = opts.readOnly ?? false;
     this.container.className = "session-statusbar";
 
-    // Warm from caches before first paint so revisits avoid the empty flash.
     if (this.cwd) {
       const cached = gitInfoCache.get(this.cwd);
       if (cached) { this.gitInfo = cached; this.gitInfoLoaded = true; }
     } else {
-      // No cwd = no git data is ever coming; skip the skeleton entirely.
       this.gitInfoLoaded = true;
     }
     if (this.sessionId) {
@@ -165,15 +80,12 @@ export class SessionStatusbar {
     return this.fields.includes("messages") || this.fields.includes("turns");
   }
 
-  // Pulls message/turn counts from the transcript via the shared
-  // `instance_token_stats` IPC (same source as Project Detail > Chats).
-  // Fired on mount and after every completed turn (updateMeta).
   private async refreshCounts(): Promise<void> {
     const sid = this.sessionId;
     if (!sid) return;
     try {
       const r = await invoke<{ tokens: number; turns: number; prompts?: number }>("instance_token_stats", { sessionId: sid });
-      if (this.sessionId !== sid) return; // session swapped out from under us
+      if (this.sessionId !== sid) return;
       this.counts = { prompts: r.prompts ?? 0, turns: r.turns ?? 0 };
       this.countsLoaded = true;
       countsCache.set(sid, this.counts);
@@ -186,7 +98,6 @@ export class SessionStatusbar {
     this.metaLoaded = true;
     if (this.sessionId) metaCache.set(this.sessionId, meta);
     this.render();
-    // A meta update means a turn just finished - refresh the message/turn counts.
     if (this.wantsCounts()) void this.refreshCounts();
   }
 
@@ -214,8 +125,6 @@ export class SessionStatusbar {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
   }
 
-  // Targeted duration-text update. Avoids a full re-render every second,
-  // which would replay the fade-in animation on every chip.
   private tickDuration(): void {
     if (!this.startedAt) return;
     const el = this.container.querySelector<HTMLElement>(".sb-duration .sb-duration-text");
@@ -230,8 +139,6 @@ export class SessionStatusbar {
     return `<span class="sb-chip sb-skeleton ${extraClass}" data-skeleton="${key}" style="min-width:${width}"><i class="ph ${iconClass}"></i><span class="sb-skel-bar"></span></span>`;
   }
 
-  // Marks a key as "seen with real data". Returns the class fragment for the
-  // chip - " sb-fadein" only on first real appearance, "" thereafter.
   private animClass(key: string): string {
     if (this.animatedKeys.has(key)) return "";
     this.animatedKeys.add(key);
@@ -241,7 +148,6 @@ export class SessionStatusbar {
   private render(): void {
     const f = this.fields;
 
-    // Git group: branch, repo, folder
     const gitChips: string[] = [];
     if (f.includes("branch")) {
       if (this.gitInfo.branch) {
@@ -263,7 +169,6 @@ export class SessionStatusbar {
       gitChips.push(`<span class="sb-chip sb-folder sb-folder-btn${this.animClass("folder")}" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`);
     }
 
-    // Claude group: model, effort, context, thinking, duration
     const claudeChips: string[] = [];
     if (f.includes("model")) {
       if (this.meta.model) {
@@ -278,10 +183,6 @@ export class SessionStatusbar {
     }
     if (f.includes("context")) {
       if (this.meta.inputTokens > 0) {
-        // Denominator uses the locked session model, NOT meta.model: the latter
-        // can be transiently overwritten by an internal sub-call's model (e.g.
-        // Haiku), which would collapse a 1M Opus window to 200K and pin ctx at
-        // 100%. Fall back to meta.model only when the session model is unknown.
         const window = modelContextWindow(this.sessionModel || this.meta.model);
         const raw = (this.meta.inputTokens / window) * 100;
         if (raw >= 100) {
@@ -301,7 +202,6 @@ export class SessionStatusbar {
       claudeChips.push(`<span class="sb-chip sb-duration${this.animClass("duration")}"><i class="ph ph-timer"></i><span class="sb-duration-text">${formatDuration(this.startedAt)}</span></span>`);
     }
 
-    // Counts group: messages (user prompts sent), turns (agent turns).
     const countChips: string[] = [];
     if (f.includes("messages")) {
       if (this.counts) {
@@ -320,7 +220,6 @@ export class SessionStatusbar {
       }
     }
 
-    // Join non-empty groups with a separator between each adjacent pair.
     const allChips: string[] = [];
     for (const group of [gitChips, claudeChips, countChips]) {
       if (group.length === 0) continue;
@@ -411,6 +310,5 @@ export class SessionStatusbar {
       };
       setTimeout(() => document.addEventListener("click", closeOnOutsideModel), 0);
     }
-
   }
 }

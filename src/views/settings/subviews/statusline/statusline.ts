@@ -4,8 +4,8 @@ import {
   DEFAULT_STATUSLINE_FIELDS,
   loadStatuslineFields,
   saveStatuslineFields,
-  shortModelName,
-} from "../../../sessions/session-statusbar";
+} from "../../../sessions/session-statusbar-helpers";
+import { modelLabel as shortModelName } from "../../../../shared/model-name";
 import "../../settings.css";
 import "./statusline.css";
 import "../../../sessions/session-statusbar.css";
