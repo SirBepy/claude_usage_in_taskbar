@@ -13,7 +13,7 @@ description: Use when invoked via /local-session-chat. Loads full context for th
    - `src/views/sessions/sessions.css` - all layout/styling for the sidebar + rows
    - `src/shared/chat/chat-renderer.ts` - virtualized chat DOM, markdown + shiki pass
    - `src/shared/chat/composer.ts` - textarea, image paste, mountId race guard
-   - `src-tauri/src/chat/runner.rs` - per-turn spawn, stdout pump, cancel slot
+   - `src-tauri/src/daemon/lifecycle.rs` - spawn_session, send_message, cancel_turn, end_session, stdout reader
    - `src-tauri/src/chat/parser.rs` - stream-json -> ChatEvent, CRLF handling
    - `src-tauri/src/sessions/registry.rs` - Instance registry, busy flag, upsert helpers
    - `src-tauri/src/ipc/chat.rs` - IPC surface: start_session / send_message / cancel_turn / paste_image / takeover_manual / load_history / detach_window
@@ -22,9 +22,9 @@ description: Use when invoked via /local-session-chat. Loads full context for th
 
 ## Key architecture facts
 
-**Per-turn model.** Each user message = one short-lived `claude -p --resume <id> --output-format=stream-json --verbose --include-partial-messages` process. Claude exits when the turn ends. Cancel = `kill_tree(pid)`.
+**Per-turn model.** Each user message = one short-lived `claude -p --resume <id> --output-format=stream-json --verbose --include-partial-messages` process spawned by `daemon/lifecycle.rs`. Claude exits when the turn ends. Cancel = `kill_tree(pid)`.
 
-**Subscription-only.** `check_metered_billing` in `runner.rs` refuses to spawn if any API key env var is set. No metered path.
+**Subscription-only.** `check_metered_billing` in `chat/billing.rs` refuses to spawn if any API key env var is set. No metered path.
 
 **State machine (frontend).** Module-level `state: SessionsState` singleton. `mountId` guards every async callback against stale-mount writes. `pendingNewSession` tracks an optimistically-rendered row while `start_session` is in flight; once the real `session_id` arrives from the first `SessionStarted` event, `pending.realId` is set so `renderSidebar` can suppress the duplicate registry entry.
 
@@ -45,6 +45,6 @@ description: Use when invoked via /local-session-chat. Loads full context for th
 | Pending-row / optimistic UI  | `sessions.ts:launchNewSession`, `renderSidebar`      |
 | Chat rendering bugs          | `chat-renderer.ts`                                   |
 | Composer (text input, paste) | `composer.ts`                                        |
-| Turn spawn / cancel / errors | `runner.rs`, `parser.rs`                             |
+| Turn spawn / cancel / errors | `daemon/lifecycle.rs`, `chat/parser.rs`               |
 | Registry / busy state        | `registry.rs`                                        |
 | IPC surface changes          | `ipc/chat.rs` + `capabilities/default.json`          |
