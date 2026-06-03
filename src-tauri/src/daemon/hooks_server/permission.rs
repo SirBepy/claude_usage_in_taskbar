@@ -31,22 +31,21 @@ pub(super) async fn on_permission_request(
     AxState(ctx): AxState<Arc<HookCtx>>,
     Json(body): Json<PermRequestBody>,
 ) -> impl IntoResponse {
+    let payload = json!({
+        "id": body.id,
+        "tool_name": body.tool_name,
+        "input": body.input,
+        "session_id": body.session_id,
+    });
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     ctx.state.pending.lock().await.insert(body.id.clone(), tx);
-    let subs = ctx.state.notifier.publish(
-        "permission_request",
-        json!({
-            "id": body.id,
-            "tool_name": body.tool_name,
-            "input": body.input,
-            "session_id": body.session_id,
-        }),
-    );
+    ctx.state.add_prompt(&body.id, "permission-requested", payload.clone()).await;
+    let subs = ctx.state.notifier.publish("permission_request", payload);
     log::info!(
         "[perm-relay] published permission_request id={} tool={} session={:?} -> {} subscriber(s)",
         body.id, body.tool_name, body.session_id, subs
     );
-    match tokio::time::timeout(Duration::from_secs(300), rx).await {
+    let result = match tokio::time::timeout(Duration::from_secs(300), rx).await {
         Ok(Ok(val)) => (StatusCode::OK, Json(val)),
         _ => {
             ctx.state.pending.lock().await.remove(&body.id);
@@ -55,7 +54,9 @@ pub(super) async fn on_permission_request(
                 Json(json!({"behavior": "deny", "message": "user did not respond in time"})),
             )
         }
-    }
+    };
+    ctx.state.remove_prompt(&body.id).await;
+    result
 }
 
 pub(super) async fn on_question_request(

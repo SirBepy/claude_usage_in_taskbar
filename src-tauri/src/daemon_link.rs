@@ -184,14 +184,10 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
             }
             let _ = app.emit("channels-changed", params);
         }
-        "permission_request" => {
-            log::info!("[perm-relay] app received permission_request from daemon, emitting permission-requested: {params}");
-            let _ = app.emit("permission-requested", params);
-        }
-        // "question_request" is intentionally NOT handled here. Question prompts
-        // are delivered via the reliable `list_pending_prompts` poll (see
-        // `spawn_pending_prompt_poll`) because the broadcast can silently drop the
-        // frame. Handling it here too would double-emit the card.
+        // "permission_request" and "question_request" are intentionally NOT handled
+        // here. Both are delivered via the reliable `list_pending_prompts` poll (see
+        // `spawn_pending_prompt_poll`) because the broadcast can silently drop frames
+        // under pipe backpressure. Handling them here too would double-emit cards.
         "token_history_updated" => {
             if let Some(h) = params.get("history") {
                 let _ = app.emit("token-history-updated", h);
