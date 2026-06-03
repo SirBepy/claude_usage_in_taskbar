@@ -1,46 +1,10 @@
 import { html, render } from "lit-html";
-import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
-import MarkdownIt from "markdown-it";
 import { openSidemenu } from "../../shared/sidemenu";
 import { invoke } from "../../shared/ipc";
 import type { NewsPost } from "../../types/ipc.generated";
+import { state, setPaint } from "./news-state";
+import { openDetail, renderDetail, renderDetailMenu } from "./news-detail";
 import "./news.css";
-
-// Renders the AI summary (Claude-authored Markdown) to HTML. `html: false`
-// escapes any raw HTML in the model output, so unsafeHTML is safe here.
-const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
-
-interface NewsState {
-  posts: NewsPost[];
-  loading: boolean;
-  refreshing: boolean;
-  error: string | null;
-  notifyEnabled: boolean;
-  menuOpen: boolean;
-  selectedSlug: string | null;
-  // Per-slug so opening post B never gets stranded by post A's in-flight
-  // generation (a global flag let B bail at the guard and stick on "Preparing…").
-  generatingSlugs: Set<string>;
-  errorBySlug: Map<string, string>;
-  // Live-stream state while a summary is being written: the running text as it
-  // arrives, and the current phase ("fetching" | "writing"). Keyed by slug.
-  streamBySlug: Map<string, string>;
-  phaseBySlug: Map<string, string>;
-}
-
-const state: NewsState = {
-  posts: [],
-  loading: true,
-  refreshing: false,
-  error: null,
-  notifyEnabled: false,
-  menuOpen: false,
-  selectedSlug: null,
-  generatingSlugs: new Set(),
-  errorBySlug: new Map(),
-  streamBySlug: new Map(),
-  phaseBySlug: new Map(),
-};
 
 interface SettingsLike { newsNotificationsEnabled?: boolean; [k: string]: unknown; }
 
@@ -93,54 +57,6 @@ async function refresh(root: HTMLElement): Promise<void> {
   }
 }
 
-function openDetail(post: NewsPost, root: HTMLElement): void {
-  state.selectedSlug = post.slug;
-  paint(root);
-  if (post.unread) {
-    post.unread = false;
-    void invoke("mark_news_read", { slug: post.slug }).catch((err) =>
-      console.warn("[news] mark_news_read failed", err)
-    );
-  }
-  if (!post.aiSummary) void ensureSummary(post, root);
-}
-
-async function ensureSummary(post: NewsPost, root: HTMLElement): Promise<void> {
-  if (post.aiSummary || state.generatingSlugs.has(post.slug)) return;
-  state.generatingSlugs.add(post.slug);
-  state.errorBySlug.delete(post.slug);
-  state.streamBySlug.set(post.slug, "");
-  state.phaseBySlug.set(post.slug, "fetching");
-  paint(root);
-  try {
-    const updated = await invoke<NewsPost>("generate_news_summary", { slug: post.slug });
-    const idx = state.posts.findIndex((p) => p.slug === post.slug);
-    if (idx >= 0) state.posts[idx] = updated;
-  } catch (err) {
-    console.error("[news] generate_news_summary failed", err);
-    state.errorBySlug.set(post.slug, String(err));
-  } finally {
-    state.generatingSlugs.delete(post.slug);
-    state.streamBySlug.delete(post.slug);
-    state.phaseBySlug.delete(post.slug);
-    paint(root);
-  }
-}
-
-async function regenerate(post: NewsPost, root: HTMLElement): Promise<void> {
-  if (state.generatingSlugs.has(post.slug)) return;
-  state.errorBySlug.delete(post.slug);
-  // Clear the cached copy in-memory so ensureSummary re-runs.
-  const idx = state.posts.findIndex((p) => p.slug === post.slug);
-  const cleared: NewsPost = { ...(idx >= 0 ? state.posts[idx]! : post), aiSummary: null };
-  if (idx >= 0) state.posts[idx] = cleared;
-  await ensureSummary(cleared, root);
-}
-
-function openOriginal(post: NewsPost): void {
-  void invoke("open_external", { url: post.url }).catch(() => window.open(post.url, "_blank"));
-}
-
 async function markAllRead(root: HTMLElement): Promise<void> {
   for (const p of state.posts) p.unread = false;
   paint(root);
@@ -156,8 +72,6 @@ function template(root: HTMLElement) {
   const selected = state.selectedSlug
     ? state.posts.find((p) => p.slug === state.selectedSlug) ?? null
     : null;
-  // Selected post vanished from the list (e.g. dropped on refresh): fall back
-  // to the list view so we don't strand the header in detail mode.
   if (state.selectedSlug && !selected) state.selectedSlug = null;
   return html`
     <div class="view view-news">
@@ -280,86 +194,12 @@ function renderItem(post: NewsPost, root: HTMLElement) {
   `;
 }
 
-function renderDetail(post: NewsPost, root: HTMLElement) {
-  return html`
-    <div class="news-detail">
-      <div class="news-detail-metabar">
-        <div class="news-meta">
-          ${post.category ? html`<span class="news-cat">${post.category}</span>` : null}
-          <time class="news-date">${post.dateLabel}</time>
-        </div>
-        <button
-          class="icon-btn"
-          title="Open original article"
-          @click=${() => openOriginal(post)}
-        >
-          <i class="ph ph-arrow-up-right"></i>
-        </button>
-      </div>
-      <h3 class="news-detail-title">${post.title}</h3>
-      ${renderSummaryBlock(post, root)}
-    </div>
-  `;
-}
-
-// The detail-mode contents of the top-bar ⋮ menu: a per-article Regenerate.
-function renderDetailMenu(post: NewsPost, root: HTMLElement) {
-  const busy = state.generatingSlugs.has(post.slug);
-  return html`
-    <div class="news-menu" @click=${(e: Event) => e.stopPropagation()}>
-      <button
-        class="news-menu-item"
-        ?disabled=${busy}
-        @click=${() => { state.menuOpen = false; void regenerate(post, root); }}
-      >
-        <i class="ph ${busy ? "ph-spinner news-spin" : "ph-arrows-clockwise"}"></i>
-        Regenerate summary
-      </button>
-    </div>
-  `;
-}
-
-function renderSummaryBlock(post: NewsPost, root: HTMLElement) {
-  if (state.generatingSlugs.has(post.slug)) {
-    const live = state.streamBySlug.get(post.slug) ?? "";
-    if (live) {
-      // Live-write the summary as tokens stream in.
-      return html`<div class="news-summary news-summary-md news-summary-streaming">
-        ${unsafeHTML(md.render(live))}
-      </div>`;
-    }
-    const label = state.phaseBySlug.get(post.slug) === "writing" ? "Writing…" : "Fetching article…";
-    return html`<div class="news-summary news-summary-loading">
-      <i class="ph ph-spinner news-spin"></i> ${label}
-    </div>`;
-  }
-  const err = state.errorBySlug.get(post.slug);
-  if (err) {
-    return html`<div class="news-summary news-summary-error">
-      <p>Could not generate a summary.</p>
-      <p class="news-error-msg">${err}</p>
-      <button class="btn-secondary" @click=${() => ensureSummary(post, root)}>Retry</button>
-    </div>`;
-  }
-  if (post.aiSummary) {
-    return html`<div class="news-summary news-summary-md">
-      ${unsafeHTML(md.render(post.aiSummary))}
-    </div>`;
-  }
-  // No summary yet and nothing in flight. openDetail kicks generation, so this
-  // is normally a brief flash - but keep an explicit button so it can never be
-  // a dead-end if generation never started for any reason.
-  return html`<div class="news-summary news-summary-loading">
-    <span>No summary yet.</span>
-    <button class="btn-secondary" @click=${() => ensureSummary(post, root)}>Summarize</button>
-  </div>`;
-}
-
 function paint(root: HTMLElement): void {
   render(template(root), root);
 }
 
 export async function renderNewsView(root: HTMLElement): Promise<() => void> {
+  setPaint(paint);
   state.loading = true;
   state.error = null;
   state.menuOpen = false;
@@ -372,13 +212,11 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   await Promise.all([fetchPosts(), loadNotifySetting()]);
   paint(root);
 
-  // Close the top-bar menu on any click outside it.
   const onDocClick = () => {
     if (state.menuOpen) { state.menuOpen = false; paint(root); }
   };
   document.addEventListener("click", onDocClick);
 
-  // e2e seam (DEV only): inject synthetic posts without a backend/claude call.
   const onInject = (e: Event) => {
     state.posts = ((e as CustomEvent).detail as NewsPost[]) || [];
     state.loading = false;
@@ -386,8 +224,6 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   };
   if (import.meta.env.DEV) window.addEventListener("e2e-inject-news", onInject);
 
-  // Live updates from the 6h backend poll, manual refreshes elsewhere, etc.,
-  // plus the streaming phase/delta events for an in-progress summary.
   type Unlisten = () => void;
   const unlisteners: Unlisten[] = [];
   const ev = window.__TAURI__?.event;
