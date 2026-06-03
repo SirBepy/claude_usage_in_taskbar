@@ -370,7 +370,7 @@ export class ChatRenderer {
         touched = true;
         break;
       case "turn_usage": {
-        const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens) + Number(ev.output_tokens);
+        const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens);
         console.debug("[ctx] turn_usage", { model: ev.model, input: Number(ev.input_tokens), cacheCreate: Number(ev.cache_creation_input_tokens), cacheRead: Number(ev.cache_read_input_tokens), output: Number(ev.output_tokens), totalCtx });
         this.meta.inputTokens = totalCtx;
         this.meta.totalCostUsd += ev.total_cost_usd;
