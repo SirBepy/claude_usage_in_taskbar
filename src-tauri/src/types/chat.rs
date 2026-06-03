@@ -63,6 +63,10 @@ pub enum ChatEvent {
         /// (where the model field lives on the message object) and left None
         /// when emitted from the live `result` stream line.
         model: Option<String>,
+        /// Self-reported turn status detected from the `<cc-status:..>` marker
+        /// in the result text. `Some("question")` or `Some("done")`, or None if
+        /// no marker was found.
+        awaiting: Option<String>,
     },
 }
 

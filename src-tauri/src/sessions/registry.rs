@@ -65,6 +65,7 @@ impl Registry {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
@@ -115,6 +116,7 @@ impl Registry {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         };
         guard.insert(session_id.to_string(), instance);
         project_id
@@ -155,8 +157,18 @@ impl Registry {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         };
         guard.insert(session_id.to_string(), instance);
+    }
+
+    /// Set the self-reported turn status. `None` clears it (e.g. when a new
+    /// turn starts). No-op if session is unknown.
+    pub fn set_awaiting(&self, session_id: &str, awaiting: Option<String>) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            i.awaiting = awaiting;
+        }
     }
 
     /// Path C helper: flip the `busy` flag on a session entry. Sidebar uses
@@ -342,6 +354,18 @@ mod tests {
         assert_eq!(entry.busy, false);
         assert_eq!(entry.pid, 0);
         assert_eq!(entry.project_id, project_id);
+    }
+
+    #[test]
+    fn set_awaiting_updates_and_clears() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s1", Path::new("/tmp/x"), &settings, "2026-01-01T00:00:00Z");
+        assert!(registry.get("s1").unwrap().awaiting.is_none());
+        registry.set_awaiting("s1", Some("question".into()));
+        assert_eq!(registry.get("s1").unwrap().awaiting.as_deref(), Some("question"));
+        registry.set_awaiting("s1", None);
+        assert!(registry.get("s1").unwrap().awaiting.is_none());
     }
 
     #[test]

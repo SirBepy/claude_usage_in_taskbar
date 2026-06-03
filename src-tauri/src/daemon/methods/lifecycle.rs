@@ -70,6 +70,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 state.registry.upsert_interactive(&sid, &cwd, &project_id, &now);
                 state.registry.set_model_effort(&sid, &model, &effort);
                 crate::sessions::chat_config::record(&sid, &model, &effort);
+                state.registry.set_awaiting(&sid, None);
                 state.registry.set_busy(&sid, true);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);
@@ -90,6 +91,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                     .ok_or_else(|| err_to_rpc(LifecycleError::NotFound(p.session_id.clone())))?
                     .clone();
                 lifecycle::send_message(&session, &p.text).await.map_err(err_to_rpc)?;
+                state.registry.set_awaiting(&p.session_id, None);
                 state.registry.set_busy(&p.session_id, true);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 Ok(json!({"ok": true}))

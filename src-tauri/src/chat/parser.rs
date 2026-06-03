@@ -139,9 +139,12 @@ impl ParserContext {
         let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
         let mut events = Vec::new();
 
-        if let Some(t) = v.get("result").and_then(|s| s.as_str()) {
+        let result_text = v.get("result").and_then(|s| s.as_str()).unwrap_or("");
+        let awaiting = detect_awaiting(result_text);
+
+        if !result_text.is_empty() {
             events.push(ChatEvent::AssistantMessage {
-                content: vec![crate::types::chat::ContentBlock::Text { text: t.to_string() }],
+                content: vec![crate::types::chat::ContentBlock::Text { text: result_text.to_string() }],
                 streaming: false,
                 timestamp: ts,
             });
@@ -164,9 +167,24 @@ impl ParserContext {
             duration_ms,
             has_thinking: self.has_thinking,
             model: None,
+            awaiting,
         });
 
         Some(events)
+    }
+}
+
+/// Returns the last `<cc-status:done|question>` marker found in `text`, or
+/// `None` if no marker is present.
+fn detect_awaiting(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let q_pos = lower.rfind("<cc-status:question>");
+    let d_pos = lower.rfind("<cc-status:done>");
+    match (q_pos, d_pos) {
+        (Some(q), Some(d)) => Some(if q > d { "question" } else { "done" }.into()),
+        (Some(_), None) => Some("question".into()),
+        (None, Some(_)) => Some("done".into()),
+        (None, None) => None,
     }
 }
 
@@ -264,6 +282,15 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                 let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
                 let cache_creation = usage.and_then(|u| u.get("cache_creation_input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
                 let cache_read = usage.and_then(|u| u.get("cache_read_input_tokens")).and_then(|v| v.as_u64()).unwrap_or(0);
+                // Detect status marker from the text content of this assistant line.
+                let awaiting_from_content = content_val
+                    .as_array()
+                    .and_then(|arr| {
+                        arr.iter()
+                            .filter_map(|b| if b.get("type")?.as_str()? == "text" { b.get("text")?.as_str() } else { None })
+                            .last()
+                    })
+                    .and_then(|t| detect_awaiting(t));
                 evs.push(ChatEvent::TurnUsage {
                     input_tokens,
                     output_tokens,
@@ -273,6 +300,7 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                     duration_ms: 0,
                     has_thinking,
                     model,
+                    awaiting: awaiting_from_content,
                 });
             }
 
@@ -713,6 +741,42 @@ mod tests {
                 }
             }
             _ => panic!("expected finalized AssistantMessage from result line"),
+        }
+    }
+
+    #[test]
+    fn result_line_detects_question_awaiting() {
+        let mut ctx = ParserContext::new_live();
+        let line = r#"{"type":"result","subtype":"success","result":"What should I do? <cc-status:question>","total_cost_usd":0.0,"duration_ms":100,"usage":{"input_tokens":10,"output_tokens":5},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("question")),
+            _ => panic!("expected TurnUsage"),
+        }
+    }
+
+    #[test]
+    fn result_line_detects_done_awaiting() {
+        let mut ctx = ParserContext::new_live();
+        let line = r#"{"type":"result","subtype":"success","result":"All done! <cc-status:done>","total_cost_usd":0.0,"duration_ms":100,"usage":{"input_tokens":10,"output_tokens":5},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("done")),
+            _ => panic!("expected TurnUsage"),
+        }
+    }
+
+    #[test]
+    fn result_line_no_marker_gives_none_awaiting() {
+        let mut ctx = ParserContext::new_live();
+        let line = r#"{"type":"result","subtype":"success","result":"plain reply","total_cost_usd":0.0,"duration_ms":100,"usage":{"input_tokens":10,"output_tokens":5},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { awaiting, .. }) => assert!(awaiting.is_none()),
+            _ => panic!("expected TurnUsage"),
         }
     }
 

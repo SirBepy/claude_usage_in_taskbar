@@ -79,6 +79,11 @@ pub struct Instance {
     pub model: String,
     #[serde(default)]
     pub effort: String,
+    /// Self-reported turn status from the last completed turn.
+    /// `Some("question")` = Claude ended with a question; `Some("done")` = done normally.
+    /// `None` until the first turn completes or after a new turn starts.
+    #[serde(default)]
+    pub awaiting: Option<String>,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a
@@ -158,6 +163,7 @@ mod tests {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();

@@ -273,6 +273,7 @@ mod tests {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         }
     }
 

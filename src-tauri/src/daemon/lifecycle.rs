@@ -161,9 +161,13 @@ pub async fn spawn_session(
                             continue;
                         }
                         // A `result` line parses to TurnUsage and marks the turn
-                        // complete: clear the busy flag so the UI thinking bar
-                        // stops, and broadcast the registry change.
-                        let turn_done = matches!(ev, ChatEvent::TurnUsage { .. });
+                        // complete: update awaiting status, clear busy, and
+                        // broadcast the registry change.
+                        let turn_done_awaiting = if let ChatEvent::TurnUsage { ref awaiting, .. } = ev {
+                            Some(awaiting.clone())
+                        } else {
+                            None
+                        };
                         if log::log_enabled!(log::Level::Debug) {
                             let variant = serde_json::to_value(&ev)
                                 .ok()
@@ -172,7 +176,8 @@ pub async fn spawn_session(
                             log::debug!("daemon publish: {variant} for {}", pump_session.session_id);
                         }
                         broadcast::publish(&pump_session, ev);
-                        if turn_done {
+                        if let Some(awaiting) = turn_done_awaiting {
+                            state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
                             state_for_pump.registry.set_busy(&pump_session.session_id, false);
                             state_for_pump.notifier.publish(
                                 "instances_changed",

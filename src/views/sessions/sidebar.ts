@@ -65,7 +65,11 @@ export function renderSidebar(listEl: HTMLElement): void {
   const pending = state.pendingNewSession;
   const unread = loadUnreadSet();
   const attention = pendingPromptSessionIds();
-  const question = state.questionSessions;
+  // Union: renderer-detected (opened sessions) + registry-backed (all sessions incl. background).
+  const question = new Set<string>([
+    ...state.questionSessions,
+    ...state.sessions.filter(s => s.awaiting === "question").map(s => s.session_id),
+  ]);
   const style = loadStateStyle();
   const sort = loadSort();
 

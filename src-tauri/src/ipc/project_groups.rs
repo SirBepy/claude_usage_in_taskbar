@@ -289,6 +289,7 @@ mod build_groups_tests {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         };
         let groups = build_groups(&[], &[], &[inst], 1714389600000);
         assert_eq!(groups.len(), 1);
@@ -315,6 +316,7 @@ mod build_groups_tests {
             busy: false,
             model: String::new(),
             effort: String::new(),
+            awaiting: None,
         };
         let groups = build_groups(&[], &[], &[inst], 0);
         assert_eq!(groups.len(), 0, "ended instances must not appear");
