@@ -12,6 +12,7 @@ use tauri::Manager;
 /// Windows and a Unix socket on macOS/Linux; channel automation stays
 /// Windows-only (see `daemon::channel_adopt`).
 pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
+    spawn_pending_prompt_poll(app_handle.clone());
     let state = app_handle.state::<crate::state::AppState>();
     {
         // Reconnect loop: on connection loss, respawn the daemon
@@ -78,6 +79,54 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
     }
 }
 
+/// Reliable delivery of question prompts. The lossy notifier broadcast can
+/// silently drop a `question_request` frame under pipe backpressure, which left
+/// AskUserQuestion turns hung with no card. So in addition to (now: instead of)
+/// the broadcast, the app polls `list_pending_prompts` over the reliable RPC
+/// channel and emits each open prompt's Tauri event exactly once. Spawned once;
+/// reads the current daemon client from shared state each tick.
+fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    tokio::spawn(async move {
+        let state = app_handle.state::<crate::state::AppState>();
+        let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let prompts = {
+                let guard = state.daemon_client.lock().await;
+                match guard.as_ref() {
+                    Some(c) => c.list_pending_prompts().await.ok(),
+                    None => None,
+                }
+            };
+            let Some(prompts) = prompts else { continue };
+            let arr = match prompts.as_array() {
+                Some(a) => a.clone(),
+                None => continue,
+            };
+            let mut present: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for p in &arr {
+                let Some(id) = p.get("id").and_then(|v| v.as_str()) else { continue };
+                present.insert(id.to_string());
+                if emitted.contains(id) {
+                    continue;
+                }
+                let event = p.get("event").and_then(|v| v.as_str()).unwrap_or("");
+                if event.is_empty() {
+                    continue;
+                }
+                if let Some(payload) = p.get("payload") {
+                    let _ = app_handle.emit(event, payload.clone());
+                    emitted.insert(id.to_string());
+                }
+            }
+            // Forget prompts that closed (answered/timed out) so a later reuse of
+            // the id (shouldn't happen - uuids) would re-emit.
+            emitted.retain(|id| present.contains(id));
+        }
+    });
+}
+
 /// Given the set of currently-attached session ids and the latest instance
 /// snapshot, return the attached ids that should be detached: those that have
 /// ended (`ended_at` set) or have vanished from the snapshot entirely. Used to
@@ -139,10 +188,10 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
             log::info!("[perm-relay] app received permission_request from daemon, emitting permission-requested: {params}");
             let _ = app.emit("permission-requested", params);
         }
-        "question_request" => {
-            log::info!("[perm-relay] app received question_request from daemon, emitting question-requested: {params}");
-            let _ = app.emit("question-requested", params);
-        }
+        // "question_request" is intentionally NOT handled here. Question prompts
+        // are delivered via the reliable `list_pending_prompts` poll (see
+        // `spawn_pending_prompt_poll`) because the broadcast can silently drop the
+        // frame. Handling it here too would double-emit the card.
         "token_history_updated" => {
             if let Some(h) = params.get("history") {
                 let _ = app.emit("token-history-updated", h);

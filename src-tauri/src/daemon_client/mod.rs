@@ -209,6 +209,13 @@ impl PersistentClient {
         Ok(())
     }
 
+    /// Open prompts the app must surface (question cards), fetched over the
+    /// reliable RPC channel rather than the lossy notifier broadcast. Polled by
+    /// the app so a dropped broadcast frame can't hang an AskUserQuestion turn.
+    pub async fn list_pending_prompts(&self) -> Result<serde_json::Value, ClientError> {
+        self.call("list_pending_prompts", json!({})).await
+    }
+
     pub async fn start_channel(&self, project_id: &str) -> Result<(), ClientError> {
         self.call("start_channel", json!({"project_id": project_id})).await?;
         Ok(())

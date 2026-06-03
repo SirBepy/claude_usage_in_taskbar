@@ -35,7 +35,7 @@ import { renderStatuslineView } from "./views/settings/subviews/statusline/statu
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
-import { installPermissionModalListener, setSidebarRerenderHook } from "./views/sessions/permission-modal";
+import { installPermissionModalListener, setSidebarRerenderHook, setSelectedSessionId } from "./views/sessions/permission-modal";
 import { renderSidebar } from "./views/sessions/sidebar";
 import { installExternalLinkInterceptor } from "./shared/external-links";
 import { invoke } from "./shared/ipc";
@@ -71,6 +71,18 @@ if (import.meta.env.DEV) {
   // real (billed) claude summary call. The news view listens for this event.
   (window as unknown as Record<string, unknown>).__injectNews = (posts: unknown): void => {
     window.dispatchEvent(new CustomEvent("e2e-inject-news", { detail: posts }));
+  };
+
+  // AskUserQuestion e2e seam (ai_todo 16): exercise the question-card relay's
+  // FRONTEND hop (Tauri `question-requested` event -> installed listener -> gate
+  // -> showQuestionCard) WITHOUT a real claude turn or the daemon. `__injectQuestion`
+  // emits the real Tauri event so the actual listener + gate fire; `__setSelectedSession`
+  // primes the gate's selected id so a matching question is not parked.
+  (window as unknown as Record<string, unknown>).__setSelectedSession = (id: string | null): void => {
+    setSelectedSessionId(id);
+  };
+  (window as unknown as Record<string, unknown>).__injectQuestion = (payload: unknown): void => {
+    void window.__TAURI__?.event?.emit("question-requested", payload);
   };
 }
 

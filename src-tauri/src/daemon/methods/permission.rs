@@ -45,6 +45,16 @@ pub fn register_responders(router: &mut Router, state: Arc<DaemonState>) {
             }
         });
     }
+    {
+        let state = state.clone();
+        router.register("list_pending_prompts", move |_params, _ctx| {
+            let state = state.clone();
+            // Reliable poll path: the app fetches open prompts over RPC instead
+            // of relying on the lossy notifier broadcast (which silently dropped
+            // question_request frames and hung AskUserQuestion turns).
+            async move { Ok(serde_json::Value::Array(state.list_prompts().await)) }
+        });
+    }
     router.register("respond_question", move |params, _ctx| {
         let state = state.clone();
         async move {

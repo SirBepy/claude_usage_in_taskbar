@@ -36,6 +36,66 @@ fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+/// Write a per-session settings.json that registers a `PreToolUse` hook for the
+/// builtin `AskUserQuestion` tool. The hook `curl`s the payload to the daemon's
+/// `/hooks/ask-question` endpoint. Returns None if the app-data dir is
+/// unavailable (non-fatal; AskUserQuestion just won't be answerable this session).
+///
+/// Why a hook and not the permission relay: current `claude` no longer routes
+/// the builtin `AskUserQuestion` through `--permission-prompt-tool`, so the
+/// approval-prompt relay never fires and the turn hangs. A `PreToolUse` hook
+/// still fires for it; the daemon endpoint surfaces the question through the
+/// existing question relay and returns the answer as a `deny` reason claude
+/// reads as feedback. We use `curl` (not the app exe) because the GUI-subsystem
+/// exe cannot reliably do short-lived hook stdin/stdout - this mirrors the
+/// existing Stop hook. Scoped via `--settings` so it never touches the project's
+/// own `.claude/settings.json`; `--permission-prompt-tool` stays for real
+/// permission gates (Bash/Edit/etc.).
+fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
+    let dir = crate::settings::paths::mcp_temp_dir().ok()?;
+    // Target the daemon's ACTUAL hook port (a test instance binds an ephemeral
+    // port, not 27182). `--max-time 320` exceeds the daemon's 300s question wait
+    // so curl doesn't cut off early.
+    let command = format!(
+        "curl -s --max-time 320 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/ask-question",
+        daemon_hook_port()
+    );
+    let config = serde_json::json!({
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "AskUserQuestion",
+                    "hooks": [ { "type": "command", "command": command } ]
+                }
+            ]
+        }
+    });
+    let path = dir.join(format!("{turn_id}.settings.json"));
+    std::fs::write(&path, serde_json::to_string(&config).ok()?).ok()?;
+    Some(path)
+}
+
+/// The hook server's actual bound port. The production daemon pins HOOK_PORT
+/// (27182); a test instance (CC_DAEMON_INSTANCE set) binds an ephemeral port and
+/// records it in a suffixed `hooks_port-<suffix>.txt`. Read that file so the
+/// AskUserQuestion hook curls the RIGHT daemon under the e2e harness too. Falls
+/// back to HOOK_PORT.
+fn daemon_hook_port() -> u16 {
+    let suffix = crate::daemon::instance::instance_suffix();
+    crate::settings::paths::hooks_port_file()
+        .ok()
+        .map(|p| {
+            if suffix.is_empty() {
+                p
+            } else {
+                p.with_file_name(format!("hooks_port{suffix}.txt"))
+            }
+        })
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(crate::daemon::hooks_server::HOOK_PORT)
+}
+
 /// Build the base `claude` argument list (everything except the MCP flags).
 ///
 /// **Critical session-id handling:** `claude` rejects `--resume <id>` for an id
@@ -140,6 +200,7 @@ pub async fn spawn_session(
     }
 
     let mcp_config_path = write_mcp_config(&session_id, &session_id);
+    let hook_settings_path = write_hook_settings(&session_id);
 
     let mut cmd = Command::new("claude");
     cmd.args(base_claude_args(
@@ -153,6 +214,9 @@ pub async fn spawn_session(
            .arg("mcp__cc_companion__approval_prompt")
            .arg("--mcp-config")
            .arg(mcp_path);
+    }
+    if let Some(ref settings_path) = hook_settings_path {
+        cmd.arg("--settings").arg(settings_path);
     }
     cmd.current_dir(&params.cwd)
         .stdin(std::process::Stdio::piped())

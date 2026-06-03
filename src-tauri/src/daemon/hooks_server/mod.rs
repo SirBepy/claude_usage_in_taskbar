@@ -74,6 +74,7 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
         .route("/hooks/stop", post(stop::on_stop))
         .route("/permissions/request", post(permission::on_permission_request))
         .route("/questions/request", post(permission::on_question_request))
+        .route("/hooks/ask-question", post(permission::on_ask_question_hook))
         .with_state(ctx);
 
     tokio::spawn(async move {
