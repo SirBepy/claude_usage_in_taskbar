@@ -268,6 +268,6 @@ jobs:
             artifacts/*.AppImage.sig
             artifacts/latest.json
           tag_name: ${{ needs.check.outputs.tag }}
-          name: Tauri ${{ needs.check.outputs.tag }}
+          name: Claude Usage v${{ needs.check.outputs.version }}
           draft: false
           make_latest: "true"
