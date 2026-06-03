@@ -3,6 +3,7 @@ import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
+import { modelLabel } from "../../shared/model-name";
 
 // ── Statusline helpers ────────────────────────────────────────────────────────
 
@@ -50,11 +51,7 @@ export function modelContextWindow(model: string | null): number {
   return 200_000;
 }
 
-export function shortModelName(model: string): string {
-  // "claude-opus-4-7" -> "Opus 4.7", "claude-sonnet-4-6" -> "Sonnet 4.6"
-  const m = model.replace(/^claude-/, "").replace(/-(\d)/, " $1");
-  return m.charAt(0).toUpperCase() + m.slice(1);
-}
+export const shortModelName = modelLabel;
 
 export function formatDuration(startedAt: string): string {
   const ms = Math.max(0, Date.now() - new Date(startedAt).getTime());

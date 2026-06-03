@@ -4,210 +4,25 @@ import type { TemplateResult } from "lit-html";
 import { showToast } from "../../shared/toast";
 import { backFromSubview } from "../../shared/navigation";
 import { getCurrentSessionRecord } from "../../shared/state";
-import { formatTokens } from "../../shared/tokens";
-import { buildPieSvg } from "../../shared/pie";
-import { escapeHtml } from "../../shared/escape-html";
 import { api } from "../../shared/api";
 import { invoke } from "../../shared/ipc";
 import type { ChatEvent, HistoryEntry } from "../../types/ipc.generated";
 import { renderAvatar } from "../../shared/projects";
 import { projectSubviewHeaderData, hydrateSubviewHeader } from "../project-detail/subview-header";
 import type { Avatar } from "../project-detail/subview-header";
+import {
+  type SessionRecord,
+  type CardCtx,
+  isLive,
+  renderCards,
+} from "./session-detail-cards";
 import "./session-detail.css";
-
-
-interface SessionRecord {
-  session_id?: string;
-  sessionId?: string;
-  kind?: string;
-  pid?: number;
-  project_id?: string;
-  is_remote?: boolean;
-  bridge_session_id?: string | null;
-  name?: string | null;
-  started_at?: string;
-  startedAt?: string;
-  date?: string;
-  model?: string;
-  effort?: string;
-  turns?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-}
-
-interface LiveStats {
-  tokens?: number;
-  turns?: number;
-  prompts?: number;
-}
-
-const PIE = {
-  input: "#9d7dfc",
-  output: "#f2b457",
-  cacheRead: "#6ad98a",
-  cacheCreate: "#8a9eff",
-};
-
-function isLive(r: SessionRecord | null): boolean {
-  return !!(r && r.session_id && r.kind);
-}
 
 function sessionIdOf(r: SessionRecord): string {
   return r.session_id || r.sessionId || "";
 }
 
-function totalTok(r: SessionRecord): number {
-  return (r.inputTokens || 0) + (r.outputTokens || 0) + (r.cacheReadTokens || 0) + (r.cacheCreationTokens || 0);
-}
-
-function cacheEffPct(r: SessionRecord): number {
-  const denom = (r.inputTokens || 0) + (r.cacheReadTokens || 0) + (r.cacheCreationTokens || 0);
-  if (!denom) return 0;
-  return Math.round((r.cacheReadTokens || 0) / denom * 100);
-}
-
-function uptimeFrom(iso: string | undefined): string {
-  if (!iso) return "-";
-  const start = new Date(iso).getTime();
-  const delta = Math.max(0, Date.now() - start);
-  const s = Math.floor(delta / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-}
-
-function dateTimeParts(r: SessionRecord, startedAtMs: number | null): { date: string; time: string } {
-  const ms = startedAtMs
-    ?? (r.startedAt ? new Date(r.startedAt).getTime() : null)
-    ?? (r.started_at ? new Date(r.started_at).getTime() : null);
-  if (ms && !Number.isNaN(ms)) {
-    const d = new Date(ms);
-    return {
-      date: d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }),
-      time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-    };
-  }
-  return { date: r.date || "-", time: "-" };
-}
-
-// ── Card rendering ──────────────────────────────────────────────────────────
-
-interface CardCtx {
-  title: string;
-  startedAtMs: number | null;
-  liveStats?: LiveStats;
-  messages: number | null; // null = still loading
-  model?: string;
-  effort?: string;
-}
-
-/** Collapse a full model id (e.g. "claude-opus-4-8") to the short family name. */
-function shortModel(m: string): string {
-  const s = m.toLowerCase();
-  if (s.includes("opus")) return "opus";
-  if (s.includes("sonnet")) return "sonnet";
-  if (s.includes("haiku")) return "haiku";
-  return m;
-}
-
-function modelEffortRow(model?: string, effort?: string): string {
-  const m = (model || "").trim();
-  const e = (effort || "").trim();
-  if (!m && !e) return "";
-  const parts: string[] = [];
-  if (m) parts.push(`<span><span class="sd-meta-label">Model</span> ${escapeHtml(shortModel(m))}</span>`);
-  if (e) parts.push(`<span><span class="sd-meta-label">Effort</span> ${escapeHtml(e)}</span>`);
-  return `<div class="sd-meta-row">${parts.join('<span class="sd-meta-sep">|</span>')}</div>`;
-}
-
-function pieCard(r: SessionRecord): string {
-  const input = r.inputTokens || 0;
-  const output = r.outputTokens || 0;
-  const cacheRead = r.cacheReadTokens || 0;
-  const cacheCreate = r.cacheCreationTokens || 0;
-  const total = input + output + cacheRead + cacheCreate;
-  if (total <= 0) {
-    return `<div class="sd-card"><div class="sd-card-title">Token breakdown</div>
-      <div class="sd-empty">No token data</div></div>`;
-  }
-  const slices = [
-    { label: "Input", value: input, color: PIE.input },
-    { label: "Output", value: output, color: PIE.output },
-    { label: "Cache read", value: cacheRead, color: PIE.cacheRead },
-    { label: "Cache create", value: cacheCreate, color: PIE.cacheCreate },
-  ];
-  const svg = buildPieSvg(slices.map((s) => ({ value: s.value, color: s.color })), total, { r: 46, cx: 52, cy: 52, size: 104 });
-  const legend = slices.map((s) => `
-    <div class="sd-legend-item">
-      <span class="sd-swatch" style="background:${s.color}"></span>
-      <span class="sd-legend-label">${s.label}</span>
-      <span class="sd-legend-val">${formatTokens(s.value)}</span>
-    </div>`).join("");
-  return `<div class="sd-card"><div class="sd-card-title">Token breakdown</div>
-    <div class="sd-pie-wrap">${svg}<div class="sd-legend">${legend}</div></div></div>`;
-}
-
-function cacheCard(r: SessionRecord): string {
-  return `<div class="sd-card"><div class="sd-card-title">Cache</div>
-    <div class="sd-cache">
-      <div class="sd-cache-row"><span>Read</span><span>${formatTokens(r.cacheReadTokens || 0)}</span></div>
-      <div class="sd-cache-row"><span>Created</span><span>${formatTokens(r.cacheCreationTokens || 0)}</span></div>
-      <div class="sd-cache-row"><span>Efficiency</span><span>${cacheEffPct(r)}%</span></div>
-    </div></div>`;
-}
-
-function countsCard(turns: number, messages: number | null): string {
-  const msg = messages === null ? "…" : String(messages);
-  return `<div class="sd-card"><div class="sd-counts">
-    <div class="sd-count"><div class="sd-count-label">Turns</div><div class="sd-count-value">${turns}</div></div>
-    <div class="sd-count"><div class="sd-count-label">Messages</div><div class="sd-count-value">${msg}</div></div>
-  </div></div>`;
-}
-
-function renderCards(r: SessionRecord, ctx: CardCtx): void {
-  const body = document.getElementById("session-detail-body");
-  if (!body) return;
-  const live = isLive(r);
-  const { date, time } = dateTimeParts(r, ctx.startedAtMs);
-
-  let overview: string;
-  let counts: string;
-  let extra = "";
-
-  if (live) {
-    const s = ctx.liveStats || {};
-    overview = `<div class="sd-card sd-overview">
-      <div class="sd-title">${escapeHtml(ctx.title)}</div>
-      <div class="sd-meta-row">
-        <span><span class="sd-meta-label">Started</span> ${date} · ${time}</span>
-        <span class="sd-meta-sep">|</span>
-        <span><span class="sd-meta-label">Up</span> ${uptimeFrom(r.started_at)}</span>
-      </div>
-      ${modelEffortRow(ctx.model, ctx.effort)}
-      <div class="sd-total"><span class="sd-meta-label">Total tokens</span> ${formatTokens(s.tokens ?? 0)}</div>
-    </div>`;
-    counts = countsCard(s.turns ?? 0, s.prompts ?? 0);
-  } else {
-    overview = `<div class="sd-card sd-overview">
-      <div class="sd-title">${escapeHtml(ctx.title)}</div>
-      <div class="sd-meta-row">
-        <span><span class="sd-meta-label">Date</span> ${date}</span>
-        <span class="sd-meta-sep">|</span>
-        <span><span class="sd-meta-label">Time</span> ${time}</span>
-      </div>
-      ${modelEffortRow(ctx.model, ctx.effort)}
-      <div class="sd-total"><span class="sd-meta-label">Total tokens</span> ${formatTokens(totalTok(r))}</div>
-    </div>`;
-    counts = countsCard(r.turns ?? 0, ctx.messages);
-    extra = pieCard(r) + cacheCard(r);
-  }
-
-  body.innerHTML = `<div class="sd-cards">${overview}${counts}${extra}</div>`;
-}
-
-// ── Live chips + automated actions (carried over) ────────────────────────────
+// ── Live chips + automated actions ──────────────────────────────────────────
 
 function renderChrome(r: SessionRecord): void {
   const chips = document.getElementById("session-detail-chips");
@@ -291,7 +106,6 @@ function wireMenu(root: HTMLElement, r: SessionRecord): void {
     };
   });
   document.addEventListener("click", onDocClick);
-  // Stash cleanup on the menu element so the view teardown can remove it.
   (menu as unknown as { _cleanup?: () => void })._cleanup = () =>
     document.removeEventListener("click", onDocClick);
 }
@@ -309,7 +123,6 @@ function wireCta(root: HTMLElement, r: SessionRecord): void {
 // ── Async enrichment for historical records ──────────────────────────────────
 
 async function enrichHistorical(r: SessionRecord, sid: string, ctx: CardCtx): Promise<void> {
-  // Title + start time come from the history index (cheap, no transcript read).
   try {
     const entries = await invoke<HistoryEntry[]>("list_history", { projectId: null, search: null, limit: 500, offset: 0 });
     const entry = (entries || []).find((e) => e.session_id === sid);
@@ -320,20 +133,18 @@ async function enrichHistorical(r: SessionRecord, sid: string, ctx: CardCtx): Pr
         if (h2) h2.textContent = entry.title;
       }
       if (!ctx.startedAtMs && entry.started_at) {
-        ctx.startedAtMs = Number(entry.started_at) * 1000; // history timestamps are seconds
+        ctx.startedAtMs = Number(entry.started_at) * 1000;
       }
     }
   } catch { /* best-effort */ }
 
-  // Message count + model come from the transcript; effort (and a fallback
-  // model) come from the durable chat-config store.
   let transcriptModel = "";
   try {
     const events = await invoke<ChatEvent[]>("load_history", { sessionId: sid, cwd: null });
     ctx.messages = (events || []).filter((e) => e.type === "user_message").length;
     let startModel = "";
     for (const e of events || []) {
-      if (e.type === "turn_usage" && e.model) transcriptModel = e.model; // last turn wins
+      if (e.type === "turn_usage" && e.model) transcriptModel = e.model;
       else if (e.type === "session_started" && e.model) startModel = e.model;
     }
     if (!transcriptModel) transcriptModel = startModel;
@@ -347,7 +158,6 @@ async function enrichHistorical(r: SessionRecord, sid: string, ctx: CardCtx): Pr
   } catch {
     ctx.model = transcriptModel || undefined;
   }
-  // Re-render with whatever we resolved (title/date/messages).
   if (sessionIdOf((getCurrentSessionRecord() as SessionRecord | null) || {}) === sid) {
     renderCards(r, ctx);
   }
@@ -399,7 +209,7 @@ export async function renderSessionDetailView(
     const liveSid = r.session_id;
     const tick = async () => {
       try {
-        const stats = (await api.instanceTokenStats(liveSid)) as unknown as LiveStats;
+        const stats = (await api.instanceTokenStats(liveSid)) as unknown as { tokens?: number; turns?: number; prompts?: number };
         if ((getCurrentSessionRecord() as SessionRecord | null)?.session_id !== liveSid) return;
         ctx.liveStats = stats;
         renderCards(r, ctx);
