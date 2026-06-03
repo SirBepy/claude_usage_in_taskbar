@@ -42,26 +42,6 @@ tight chunks total.\n\nTitle: {title}\n\nArticle: {article_text}"
     )
 }
 
-/// Extracts the visible text chunk from one `stream-json` line, if it is a
-/// `content_block_delta` carrying a `text_delta`. Returns None for every other
-/// line (system init, thinking deltas, message/result envelopes, blank lines).
-/// `text_delta` is emitted only for text content blocks, so this cleanly skips
-/// thinking output (which uses `thinking_delta`/`signature_delta`).
-fn parse_text_delta(line: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    if v.get("type")?.as_str()? != "stream_event" {
-        return None;
-    }
-    let event = v.get("event")?;
-    if event.get("type")?.as_str()? != "content_block_delta" {
-        return None;
-    }
-    let delta = event.get("delta")?;
-    if delta.get("type")?.as_str()? != "text_delta" {
-        return None;
-    }
-    Some(delta.get("text")?.as_str()?.to_string())
-}
 
 /// Spawns claude in the app-data dir (never the repo, so it can't ingest a stray
 /// CLAUDE.md), streams its stdout, invokes `on_delta` for each text chunk as it
@@ -110,7 +90,7 @@ pub async fn generate_summary_streaming<F: FnMut(&str)>(
     let mut full = String::new();
     let mut lines = BufReader::new(stdout).lines();
     while let Some(line) = lines.next_line().await.context("read claude stdout")? {
-        if let Some(chunk) = parse_text_delta(&line) {
+        if let Some(chunk) = crate::chat::parser::text_delta(&line) {
             full.push_str(&chunk);
             on_delta(&chunk);
         }
@@ -271,7 +251,7 @@ mod tests {
     #[test]
     fn parse_text_delta_extracts_visible_text_only() {
         let textline = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}"#;
-        assert_eq!(parse_text_delta(textline).as_deref(), Some("Hello"));
+        assert_eq!(crate::chat::parser::text_delta(textline).as_deref(), Some("Hello"));
     }
 
     #[test]
@@ -279,10 +259,10 @@ mod tests {
         let thinking = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"abc"}}}"#;
         let start = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#;
         let system = r#"{"type":"system","subtype":"init"}"#;
-        assert_eq!(parse_text_delta(thinking), None);
-        assert_eq!(parse_text_delta(start), None);
-        assert_eq!(parse_text_delta(system), None);
-        assert_eq!(parse_text_delta(""), None);
-        assert_eq!(parse_text_delta("not json"), None);
+        assert_eq!(crate::chat::parser::text_delta(thinking), None);
+        assert_eq!(crate::chat::parser::text_delta(start), None);
+        assert_eq!(crate::chat::parser::text_delta(system), None);
+        assert_eq!(crate::chat::parser::text_delta(""), None);
+        assert_eq!(crate::chat::parser::text_delta("not json"), None);
     }
 }

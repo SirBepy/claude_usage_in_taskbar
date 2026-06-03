@@ -107,11 +107,8 @@ impl ParserContext {
                 Some(Vec::new())
             }
             "content_block_delta" => {
-                let delta = event.get("delta")?;
-                let delta_type = delta.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                if delta_type == "text_delta" {
-                    let text = delta.get("text").and_then(|t| t.as_str()).unwrap_or("");
-                    self.current_text.push_str(text);
+                if let Some(t) = text_delta(line) {
+                    self.current_text.push_str(&t);
                     return Some(vec![ChatEvent::AssistantMessage {
                         content: vec![ContentBlock::Text { text: self.current_text.clone() }],
                         streaming: true,
@@ -186,6 +183,25 @@ fn detect_awaiting(text: &str) -> Option<String> {
         (None, Some(_)) => Some("done".into()),
         (None, None) => None,
     }
+}
+
+/// Extracts the visible text from one stream-json line if it is a
+/// `content_block_delta` carrying a `text_delta`. Returns `None` for any
+/// other line (thinking/signature deltas, block-start/stop, result, blank).
+pub fn text_delta(line: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(line.trim()).ok()?;
+    if v.get("type")?.as_str()? != "stream_event" {
+        return None;
+    }
+    let event = v.get("event")?;
+    if event.get("type")?.as_str()? != "content_block_delta" {
+        return None;
+    }
+    let delta = event.get("delta")?;
+    if delta.get("type")?.as_str()? != "text_delta" {
+        return None;
+    }
+    Some(delta.get("text")?.as_str()?.to_string())
 }
 
 /// True if `line` is a full `assistant` message line (`"type":"assistant"`),
