@@ -30,6 +30,17 @@ pub async fn clear_session(
     let guard = state.daemon_client.lock().await;
     if let Some(client) = guard.as_ref() {
         let _ = client.mark_session_ended(&session_id).await;
+        // Re-seed the instance cache directly rather than waiting for the
+        // `instances_changed` notification: that broadcast is lossy (can be
+        // dropped under pipe backpressure), and if the frame carrying this
+        // session's `ended_at` is dropped, `cached_instances` stays stale and
+        // the closed chat reappears in the sidebar on the next window reopen.
+        // Same direct-sync pattern register_historical uses for the inverse race.
+        if let Ok(instances) = client.list_instances().await {
+            if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances) {
+                *state.cached_instances.lock().unwrap() = parsed;
+            }
+        }
     }
     Ok(())
 }
