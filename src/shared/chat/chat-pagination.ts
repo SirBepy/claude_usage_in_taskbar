@@ -17,7 +17,7 @@ export interface PaginatorCallbacks {
 }
 
 /** Walk up to the direct child of container. Used to find insertion point for prepend. */
-export function rootChildOf(container: HTMLElement, el: HTMLElement): HTMLElement {
+function rootChildOf(container: HTMLElement, el: HTMLElement): HTMLElement {
   let n = el;
   while (n.parentElement && n.parentElement !== container) {
     n = n.parentElement as HTMLElement;
