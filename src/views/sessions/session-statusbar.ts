@@ -190,7 +190,7 @@ export class SessionStatusbar {
         }
         const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
         const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
-        claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens"><i class="ph ph-stack"></i>${pctStr}%</span>`);
+        claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens (conversation + system prompt + tools)"><i class="ph ph-stack"></i>${pctStr}%</span>`);
       } else if (!this.metaLoaded) {
         claudeChips.push(this.skeletonChip("context", "sb-context", "ph-stack", "40px"));
       }

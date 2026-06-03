@@ -24,4 +24,7 @@ describe("modelContextWindow", () => {
   it("null -> 200K", () => {
     expect(modelContextWindow(null)).toBe(200_000);
   });
+  it("claude-3-opus -> 200K (not 1M)", () => {
+    expect(modelContextWindow("claude-3-opus-20240229")).toBe(200_000);
+  });
 });

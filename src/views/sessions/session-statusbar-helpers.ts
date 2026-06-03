@@ -37,6 +37,9 @@ export async function saveStatuslineFields(fields: string[]): Promise<void> {
 }
 
 export function modelContextWindow(model: string | null): number {
+  // claude-3-opus family is 200K; all other/future opus (opus-4, opus-5, ...) default to 1M.
+  // Blocklist approach: adding a new opus version never requires updating this function.
+  if (model && /claude-3[^0-9]*opus/i.test(model)) return 200_000;
   if (model && model.includes("opus")) return 1_000_000;
   return 200_000;
 }
