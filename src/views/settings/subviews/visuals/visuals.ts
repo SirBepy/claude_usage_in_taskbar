@@ -1,6 +1,7 @@
 import { html, render } from "lit-html";
 import { saveSettings } from "../../../../shared/settings-save";
 import { getSettings } from "../../../../shared/state";
+import { LS_ANIM } from "../../../sessions/sidebar-anim";
 import "./visuals.css";
 
 interface LegacyGlobals {
@@ -185,10 +186,10 @@ function hydrateVisuals(): void {
 
   const sidebarAnimations = $("sidebarAnimations") as HTMLInputElement | null;
   if (sidebarAnimations) {
-    try { sidebarAnimations.checked = localStorage.getItem("cc_sidebar_animations") !== "off"; }
+    try { sidebarAnimations.checked = localStorage.getItem(LS_ANIM) !== "off"; }
     catch { sidebarAnimations.checked = true; }
     sidebarAnimations.addEventListener("change", () => {
-      try { localStorage.setItem("cc_sidebar_animations", sidebarAnimations.checked ? "on" : "off"); }
+      try { localStorage.setItem(LS_ANIM, sidebarAnimations.checked ? "on" : "off"); }
       catch { /* ignore */ }
     });
   }
