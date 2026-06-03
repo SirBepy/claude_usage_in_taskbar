@@ -1,6 +1,12 @@
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Convert a UTF-8 string to a null-terminated UTF-16 buffer for Windows APIs.
+#[cfg(windows)]
+pub(crate) fn to_wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
 /// Apply Windows-only console-suppression flag so spawning a console-subsystem
 /// binary (claude.exe, git.exe, ...) from a GUI Tauri app doesn't flash a black
 /// console window. No-op on non-Windows platforms.

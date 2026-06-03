@@ -46,9 +46,7 @@ impl SignalSource for WindowsSignalSource {
 
 // ---- registry (camera / mic) ----
 
-fn to_wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
+use crate::util::process::to_wide;
 
 /// Returns true if any app under
 /// `...\CapabilityAccessManager\ConsentStore\<device>` (or its `NonPackaged`

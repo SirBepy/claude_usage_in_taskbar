@@ -70,7 +70,7 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
     let cmdline = build_cmdline(&input);
-    let mut cmdline_w: Vec<u16> = cmdline.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut cmdline_w = crate::util::process::to_wide(&cmdline);
     let cwd_w: Vec<u16> = input
         .cwd
         .as_os_str()
