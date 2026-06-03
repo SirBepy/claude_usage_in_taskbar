@@ -3,6 +3,7 @@
 
 pub mod broadcast;
 pub mod channel_adopt;
+pub mod claude_config;
 pub mod channels;
 pub mod detector_task;
 pub mod frame;

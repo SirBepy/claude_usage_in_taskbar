@@ -6,6 +6,7 @@
 use crate::chat::parser::ParserContext;
 use crate::chat::billing::check_metered_billing;
 use crate::daemon::broadcast;
+use crate::daemon::claude_config::{base_claude_args, write_hook_settings, write_mcp_config};
 use crate::daemon::session::{Session, SessionMap};
 use crate::daemon::state::DaemonState;
 use crate::types::chat::ChatEvent;
@@ -15,121 +16,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-
-/// Write a temporary .mcp.json file for the current turn and return its path.
-/// Returns None if the app-data dir is unavailable (non-fatal; permission
-/// relay simply won't be wired up for this turn).
-fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathBuf> {
-    let mcp_dir = crate::settings::paths::mcp_temp_dir().ok()?;
-    let exe = std::env::current_exe().ok()?;
-    let config = serde_json::json!({
-        "mcpServers": {
-            "cc_companion": {
-                "command": exe.to_string_lossy(),
-                "args": ["--mcp-permission"],
-                "env": {"CC_SESSION_ID": tracking_id}
-            }
-        }
-    });
-    let path = mcp_dir.join(format!("{turn_id}.json"));
-    std::fs::write(&path, serde_json::to_string(&config).ok()?).ok()?;
-    Some(path)
-}
-
-/// Write a per-session settings.json that registers a `PreToolUse` hook for the
-/// builtin `AskUserQuestion` tool. The hook `curl`s the payload to the daemon's
-/// `/hooks/ask-question` endpoint. Returns None if the app-data dir is
-/// unavailable (non-fatal; AskUserQuestion just won't be answerable this session).
-///
-/// Why a hook and not the permission relay: current `claude` no longer routes
-/// the builtin `AskUserQuestion` through `--permission-prompt-tool`, so the
-/// approval-prompt relay never fires and the turn hangs. A `PreToolUse` hook
-/// still fires for it; the daemon endpoint surfaces the question through the
-/// existing question relay and returns the answer as a `deny` reason claude
-/// reads as feedback. We use `curl` (not the app exe) because the GUI-subsystem
-/// exe cannot reliably do short-lived hook stdin/stdout - this mirrors the
-/// existing Stop hook. Scoped via `--settings` so it never touches the project's
-/// own `.claude/settings.json`; `--permission-prompt-tool` stays for real
-/// permission gates (Bash/Edit/etc.).
-fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
-    let dir = crate::settings::paths::mcp_temp_dir().ok()?;
-    // Target the daemon's ACTUAL hook port (a test instance binds an ephemeral
-    // port, not 27182). `--max-time 320` exceeds the daemon's 300s question wait
-    // so curl doesn't cut off early.
-    let command = format!(
-        "curl -s --max-time 320 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/ask-question",
-        daemon_hook_port()
-    );
-    let config = serde_json::json!({
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "AskUserQuestion",
-                    "hooks": [ { "type": "command", "command": command } ]
-                }
-            ]
-        }
-    });
-    let path = dir.join(format!("{turn_id}.settings.json"));
-    std::fs::write(&path, serde_json::to_string(&config).ok()?).ok()?;
-    Some(path)
-}
-
-/// The hook server's actual bound port. The production daemon pins HOOK_PORT
-/// (27182); a test instance (CC_DAEMON_INSTANCE set) binds an ephemeral port and
-/// records it in a suffixed `hooks_port-<suffix>.txt`. Read that file so the
-/// AskUserQuestion hook curls the RIGHT daemon under the e2e harness too. Falls
-/// back to HOOK_PORT.
-fn daemon_hook_port() -> u16 {
-    let suffix = crate::daemon::instance::instance_suffix();
-    crate::settings::paths::read_hook_port(&suffix)
-        .unwrap_or(crate::daemon::hooks_server::HOOK_PORT)
-}
-
-/// Build the base `claude` argument list (everything except the MCP flags).
-///
-/// **Critical session-id handling:** `claude` rejects `--resume <id>` for an id
-/// that has no existing conversation ("No conversation found with session ID")
-/// and exits. So we must NOT `--resume` a freshly generated id. Instead:
-/// - new session  -> `--session-id <our-uuid>` (claude creates a new
-///   conversation using exactly that id; verified the id round-trips).
-/// - resume        -> `--resume <existing-id>`.
-/// Either way `session_id` is known up front, so the daemon never has to block
-/// reading stdout to discover it (claude does not emit its `system`/init line
-/// until it receives the first user message, which would otherwise deadlock).
-/// Appended to the system prompt of every session we spawn so Claude
-/// self-reports, at the end of each turn: (1) a short conversation title and
-/// (2) whether it is done or waiting on the user. The frontend strips both
-/// markers before display (see `chat-transforms.ts`). The status marker drives
-/// the sidebar state icon (done = calm check, question = amber flag). The title
-/// marker is read off the transcript by `tokens::title::ai_milestone_title`,
-/// which only honors the title from the response to user-turn 1, 5, or 15 — so
-/// the title refines as the chat grows without churning every turn. The marker
-/// rides every response (cheap); the read side gates which ones count.
-const TURN_STATUS_PROMPT: &str = "At the end of every response, append two marker lines with no other commentary and no markdown formatting. First, on its own line, a short conversation title in the form <cc-title:Your Title> using 3 to 6 plain words that capture the main topic discussed so far; output this line on every response. Then, on the final line, output exactly one status marker: <cc-status:done> if you have finished and are not waiting on the user, or <cc-status:question> if you are asking the user a question or otherwise waiting for their input or decision. Always end with exactly one such status marker.";
-
-fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str) -> Vec<String> {
-    let mut args = vec![
-        "-p".to_string(),
-        "--input-format=stream-json".to_string(),
-        "--output-format=stream-json".to_string(),
-        "--verbose".to_string(),
-        "--include-partial-messages".to_string(),
-    ];
-    if resume_id.is_some() {
-        args.push("--resume".to_string());
-    } else {
-        args.push("--session-id".to_string());
-    }
-    args.push(session_id.to_string());
-    args.push("--model".to_string());
-    args.push(model.to_string());
-    args.push("--effort".to_string());
-    args.push(effort.to_string());
-    args.push("--append-system-prompt".to_string());
-    args.push(TURN_STATUS_PROMPT.to_string());
-    args
-}
 
 const VALID_MODELS: &[&str] = &["haiku", "sonnet", "opus"];
 const VALID_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
