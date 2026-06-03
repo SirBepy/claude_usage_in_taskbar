@@ -12,6 +12,7 @@ declare global {
           event: string,
           cb: (payload: { payload: T }) => void,
         ) => Promise<() => void>;
+        emit?: (event: string, payload?: unknown) => Promise<void>;
       };
     };
   }

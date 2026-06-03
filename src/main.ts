@@ -82,7 +82,7 @@ if (import.meta.env.DEV) {
     setSelectedSessionId(id);
   };
   (window as unknown as Record<string, unknown>).__injectQuestion = (payload: unknown): void => {
-    void window.__TAURI__?.event?.emit("question-requested", payload);
+    void window.__TAURI__?.event?.emit?.("question-requested", payload);
   };
 }
 
@@ -170,13 +170,13 @@ if (detachedSessionId) {
   initBoot();
 
   if (!document.body.classList.contains("chats-window-mode")) {
-    void window.__TAURI__?.event?.listen("navigate-to-dashboard", () => {
+    void window.__TAURI__?.event?.listen?.("navigate-to-dashboard", () => {
       void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("dashboard");
     });
 
     // Cross-window jump from the chats window's per-chat menu: navigate to
     // a specific project's detail page in the main dashboard.
-    void window.__TAURI__?.event?.listen<string>("navigate-to-project", async (e) => {
+    void window.__TAURI__?.event?.listen?.("navigate-to-project", async (e: { payload: string }) => {
       const cwd = e.payload;
       if (!cwd) return;
       const { openProjectDetail } = await import("./shared/navigation");
