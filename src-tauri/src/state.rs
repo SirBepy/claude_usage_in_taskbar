@@ -40,6 +40,11 @@ pub struct AppState {
     /// The chats window drains it on boot via `take_pending_chat_open`. Holds
     /// `(session_id, mode)` where mode is "live" or "history".
     pub pending_chat_open: Mutex<Option<(String, String)>>,
+    /// A pending "start a new chat in the chats window" request, set when the
+    /// chats window is created fresh from the project-detail "+" button.
+    /// The chats window drains it on boot via `take_pending_new_chat`. Holds
+    /// `(project_path, project_name, model, effort)`.
+    pub pending_new_chat: Mutex<Option<(String, String, String, String)>>,
     /// True while the meeting watcher detects an active meeting (camera/mic in
     /// use, or an allowlisted meeting app producing audio). Read by
     /// `notifications::rules::fire` and the tray tooltip. Always false on
@@ -75,6 +80,7 @@ impl AppState {
             should_quit: Arc::new(AtomicBool::new(false)),
             frontend_alive: Arc::new(AtomicBool::new(false)),
             pending_chat_open: Mutex::new(None),
+            pending_new_chat: Mutex::new(None),
             meeting_active: Arc::new(AtomicBool::new(false)),
             news_inflight: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }

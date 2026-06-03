@@ -25,7 +25,6 @@ import { refreshProjectsUI } from "../projects/projects";
 import { api } from "../../shared/api";
 import { renderRunningInstances } from "./subviews/running-instances/running-instances";
 import { openModelEffortModal } from "../sessions/model-effort-modal";
-import { queueNewChat } from "../sessions/sessions";
 
 function setHeader(cwd: string): void {
   const settings = getSettings();
@@ -184,8 +183,12 @@ export async function renderProjectDetailView(
       const name = projectLabel(cwd, getSettings().projectAliases || {});
       const config = await openModelEffortModal(cwd, name);
       if (!config) return;
-      queueNewChat({ path: cwd, name }, config);
-      showView("sessions");
+      await invoke("open_chats_new_chat", {
+        projectPath: cwd,
+        projectName: name,
+        model: config.model,
+        effort: config.effort,
+      });
     };
   }
 

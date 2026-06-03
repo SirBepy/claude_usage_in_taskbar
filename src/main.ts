@@ -9,7 +9,7 @@ import "./styles/widgets.css";
 
 import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
-import { renderSessionsView, renderDetachedSession, queueSessionSelect } from "./views/sessions/sessions";
+import { renderSessionsView, renderDetachedSession, queueSessionSelect, queueNewChat } from "./views/sessions/sessions";
 import { renderHistoryView, queueHistorySelect } from "./views/history/history";
 import { renderStatisticsView } from "./views/statistics/statistics";
 import { renderProjectsView } from "./views/projects/projects";
@@ -183,17 +183,24 @@ if (detachedSessionId) {
       openProjectDetail(cwd);
     });
   } else {
-    // Chats window: honour "Open in chats" requests from the main window.
-    // Fresh-created window drains the stashed request on boot; an already-open
-    // window catches the live `chats-open-session` event.
+    // Chats window: honour "Open in chats" and "new chat" requests from the
+    // main window. Fresh-created window drains the stashed request on boot;
+    // an already-open window catches the live event.
     void invoke<[string, string] | null>("take_pending_chat_open").then((p) => {
       if (p) applyChatOpenRequest(p[0], p[1]);
+    }).catch(() => {});
+    void invoke<[string, string, string, string] | null>("take_pending_new_chat").then((p) => {
+      if (p) applyChatNewRequest(p[0], p[1], p[2], p[3]);
     }).catch(() => {});
     const ev = window.__TAURI__?.event;
     if (ev?.listen) {
       void ev.listen<{ sessionId: string; mode: string }>(
         "chats-open-session",
         (e) => applyChatOpenRequest(e.payload?.sessionId, e.payload?.mode),
+      );
+      void ev.listen<{ projectPath: string; projectName: string; model: string; effort: string }>(
+        "chats-new-chat",
+        (e) => applyChatNewRequest(e.payload?.projectPath, e.payload?.projectName, e.payload?.model, e.payload?.effort),
       );
     }
   }
@@ -237,6 +244,20 @@ function applyChatOpenRequest(sessionId: string | undefined, mode: string | unde
     queueSessionSelect(sessionId);
     showView("sessions");
   }
+}
+
+function applyChatNewRequest(
+  projectPath: string | undefined,
+  projectName: string | undefined,
+  model: string | undefined,
+  effort: string | undefined,
+): void {
+  if (!projectPath) return;
+  queueNewChat(
+    { path: projectPath, name: projectName ?? projectPath },
+    { model: model ?? "", effort: effort ?? "" },
+  );
+  showView("sessions");
 }
 
 function setupNewsBadgeAndNotifications(): void {

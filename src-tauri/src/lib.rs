@@ -156,6 +156,8 @@ pub fn run() {
             ipc::open_chats_window,
             ipc::open_chats_for_session,
             ipc::take_pending_chat_open,
+            ipc::open_chats_new_chat,
+            ipc::take_pending_new_chat,
             ipc::get_session_config,
             ipc::quit_app,
             ipc::logout,

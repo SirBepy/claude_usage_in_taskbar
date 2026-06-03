@@ -94,6 +94,51 @@ pub fn take_pending_chat_open(app: AppHandle) -> Option<(String, String)> {
     pending.take()
 }
 
+/// Open (or focus) the chats window and tell it to start a new chat for a
+/// project with the given model/effort. When the window already exists we emit
+/// `chats-new-chat` for its live listener; when it must be created fresh we
+/// stash the request in `AppState.pending_new_chat` for the window to drain on
+/// boot.
+#[tauri::command]
+pub fn open_chats_new_chat(
+    app: AppHandle,
+    project_path: String,
+    project_name: String,
+    model: String,
+    effort: String,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    if let Some(existing) = app.get_webview_window("session-chats") {
+        let _ = existing.show();
+        existing.set_focus().map_err(|e| e.to_string())?;
+        let _ = app.emit(
+            "chats-new-chat",
+            serde_json::json!({
+                "projectPath": project_path,
+                "projectName": project_name,
+                "model": model,
+                "effort": effort,
+            }),
+        );
+        return Ok(());
+    }
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        if let Ok(mut pending) = state.pending_new_chat.lock() {
+            *pending = Some((project_path, project_name, model, effort));
+        }
+    }
+    build_chats_window(&app)
+}
+
+/// Drain the pending "start a new chat" request (set by `open_chats_new_chat`
+/// when it creates the window). Returns `(project_path, project_name, model, effort)` or null.
+#[tauri::command]
+pub fn take_pending_new_chat(app: AppHandle) -> Option<(String, String, String, String)> {
+    let state = app.try_state::<crate::state::AppState>()?;
+    let mut pending = state.pending_new_chat.lock().ok()?;
+    pending.take()
+}
+
 /// The model/effort a chat ran with, from the durable chat-config store. Used by
 /// the chat-detail view to show effort on a CLOSED chat (live chats read it off
 /// the live Instance instead). None for chats that closed before the store
