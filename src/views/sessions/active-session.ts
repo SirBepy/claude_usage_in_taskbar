@@ -2,6 +2,7 @@ import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
+import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { Composer } from "../../shared/chat/composer";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
@@ -142,18 +143,6 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
       if (listEl) renderSidebar(listEl);
     }
   }
-}
-
-function showChatLoadingOverlay(pane: HTMLElement): HTMLElement {
-  pane.querySelector(".chat-loading-overlay")?.remove();
-  if (getComputedStyle(pane).position === "static") {
-    pane.style.position = "relative";
-  }
-  const overlay = document.createElement("div");
-  overlay.className = "chat-loading-overlay";
-  overlay.innerHTML = '<div class="chat-loading-ring"></div><div>Loading transcript&hellip;</div>';
-  pane.appendChild(overlay);
-  return overlay;
 }
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
