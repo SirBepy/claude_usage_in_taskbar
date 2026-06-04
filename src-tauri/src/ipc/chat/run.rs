@@ -205,11 +205,7 @@ pub async fn register_historical_session(
     // call sees the new entry before the async instances_changed notification
     // arrives via daemon_link (avoids a race that caused the resume to silently
     // no-op when the cache was still stale on mount).
-    if let Ok(instances) = client.list_instances().await {
-        if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances) {
-            *state.cached_instances.lock().unwrap() = parsed;
-        }
-    }
+    crate::daemon_link::fetch_and_reseed_instances(client, &state).await;
     Ok(())
 }
 

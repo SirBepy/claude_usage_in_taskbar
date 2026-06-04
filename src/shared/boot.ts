@@ -260,6 +260,16 @@ export function initBoot(): void {
   api.onInstancesChanged(() => {
     if (activeViewName() === "projects") void renderProjectsList();
   });
+  let _daemonWasConnected = true;
+  api.onDaemonStatus((s) => {
+    if (!s.connected) {
+      _daemonWasConnected = false;
+      showToast("Daemon disconnected - reconnecting...");
+    } else if (!_daemonWasConnected) {
+      _daemonWasConnected = true;
+      showToast("Daemon reconnected.");
+    }
+  });
 
   // Modal + banner wiring (idempotent; safe to call on boot).
   wireHookModal();

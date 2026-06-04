@@ -36,11 +36,7 @@ pub async fn clear_session(
         // session's `ended_at` is dropped, `cached_instances` stays stale and
         // the closed chat reappears in the sidebar on the next window reopen.
         // Same direct-sync pattern register_historical uses for the inverse race.
-        if let Ok(instances) = client.list_instances().await {
-            if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances) {
-                *state.cached_instances.lock().unwrap() = parsed;
-            }
-        }
+        crate::daemon_link::fetch_and_reseed_instances(client, &state).await;
     }
     Ok(())
 }

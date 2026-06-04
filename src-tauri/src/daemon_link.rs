@@ -51,11 +51,8 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
             // `channels-changed` listeners re-read the caches.
             {
                 use tauri::Emitter;
-                if let Ok(instances) = client.list_instances().await {
-                    if let Ok(parsed) = serde_json::from_value::<Vec<crate::types::Instance>>(instances.clone()) {
-                        *state.cached_instances.lock().unwrap() = parsed;
-                        let _ = app_handle.emit("instances-changed", instances);
-                    }
+                if let Some(instances) = fetch_and_reseed_instances(&client, &state).await {
+                    let _ = app_handle.emit("instances-changed", instances);
                 }
                 if let Ok(channels) = client.list_channels().await {
                     if let Some(arr) = channels.as_array() {
@@ -68,13 +65,18 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
                 let mut slot = state.daemon_client.lock().await;
                 *slot = Some(client);
             }
+            { use tauri::Emitter; let _ = app_handle.emit("daemon-status-changed", serde_json::json!({"connected": true})); }
             while let Some(frame) = rx.recv().await {
                 let method = frame.get("method").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let params = frame.get("params").cloned().unwrap_or(serde_json::Value::Null);
                 handle_daemon_notification(&app_handle, &method, params).await;
             }
             log::warn!("daemon connection lost; respawning + reconnecting");
-            { *state.daemon_client.lock().await = None; }
+            {
+                use tauri::Emitter;
+                *state.daemon_client.lock().await = None;
+                let _ = app_handle.emit("daemon-status-changed", serde_json::json!({"connected": false}));
+            }
         }
     }
 }
@@ -127,6 +129,24 @@ fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
     });
 }
 
+/// Overwrites `cached_instances` with `instances`. Single place for this assignment.
+pub(crate) fn store_cached_instances(state: &crate::state::AppState, instances: Vec<crate::types::Instance>) {
+    *state.cached_instances.lock().unwrap() = instances;
+}
+
+/// Fetches the current instance list from the daemon, parses it, stores it via
+/// `store_cached_instances`, and returns the raw JSON for the caller to emit if
+/// needed. Returns `None` if the RPC or parse fails.
+pub(crate) async fn fetch_and_reseed_instances(
+    client: &crate::daemon_client::PersistentClient,
+    state: &crate::state::AppState,
+) -> Option<serde_json::Value> {
+    let raw = client.list_instances().await.ok()?;
+    let parsed = serde_json::from_value::<Vec<crate::types::Instance>>(raw.clone()).ok()?;
+    store_cached_instances(state, parsed);
+    Some(raw)
+}
+
 /// Given the set of currently-attached session ids and the latest instance
 /// snapshot, return the attached ids that should be detached: those that have
 /// ended (`ended_at` set) or have vanished from the snapshot entirely. Used to
@@ -170,7 +190,7 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
                             }
                         }
                     }
-                    *state.cached_instances.lock().unwrap() = parsed;
+                    store_cached_instances(&state, parsed);
                 }
                 let _ = app.emit("instances-changed", instances);
             }

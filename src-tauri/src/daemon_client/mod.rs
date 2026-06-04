@@ -335,19 +335,34 @@ pub fn daemon_addr_for_current_user() -> String {
 }
 
 /// Try to connect to the daemon; if none is listening, spawn one detached
-/// (`<exe> --daemon`) and poll the transport until it binds (~6s budget), then
+/// (`<exe> --daemon`) and poll the transport until it binds (~10s budget), then
 /// connect. The daemon's lockfile prevents a duplicate if two apps race here.
+///
+/// Pre-spawn poll (2s): handles the simultaneous-launch race where the OS
+/// auto-updater restarts the app and daemon at the exact same second. Without
+/// this window, the app immediately spawns a redundant daemon that exits on the
+/// lockfile, and the 10s post-spawn poll competes with the original daemon's
+/// startup. The pre-spawn poll skips the redundant spawn if the original daemon
+/// becomes ready within 2s.
 pub async fn ensure_daemon() -> Result<PersistentClient, ClientError> {
     let addr = daemon_addr_for_current_user();
     if let Ok(c) = PersistentClient::connect(&addr).await {
         return Ok(c);
     }
+    // Pre-spawn: wait up to 2s in case the daemon is already starting.
+    for _ in 0..10 {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        if let Ok(c) = PersistentClient::connect(&addr).await {
+            return Ok(c);
+        }
+    }
+    // Still nothing: spawn the daemon ourselves.
     match crate::daemon::spawn_self::spawn_detached_daemon() {
         Ok(pid) => log::info!("spawned daemon (pid {pid})"),
         Err(e) => log::error!("failed to spawn daemon: {e}"),
     }
-    // Poll for the daemon to bind its transport (bind + hook server). ~6s budget.
-    for _ in 0..30 {
+    // Post-spawn poll: ~10s budget (heavier init paths can take a few seconds).
+    for _ in 0..50 {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         if let Ok(c) = PersistentClient::connect(&addr).await {
             return Ok(c);

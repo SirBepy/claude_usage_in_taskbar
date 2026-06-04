@@ -376,6 +376,8 @@ export const api = {
   },
   onSkillUsageChanged: (cb: () => void): Unlisten =>
     listenEvent("skill-usage-changed", () => cb()),
+  onDaemonStatus: (cb: (status: { connected: boolean }) => void): Unlisten =>
+    listenEvent<{ connected: boolean }>("daemon-status-changed", cb),
 };
 
 export type Api = typeof api;
