@@ -1,6 +1,6 @@
 [package]
 name = "claude-usage-tauri"
-version = "0.1.70"
+version = "0.1.71"
 edition = "2021"
 rust-version = "1.80"
 # Two bins live here (the app + cc-companion-daemon). `cargo tauri dev`/`cargo
