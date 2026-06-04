@@ -88,6 +88,33 @@
   background: transparent;
 }
 
+.history-sidebar li.history-loading-row {
+  cursor: default;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+}
+
+.history-sidebar li.history-loading-row:hover {
+  background: transparent;
+}
+
+.history-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: history-spin 0.7s linear infinite;
+}
+
+@keyframes history-spin {
+  to { transform: rotate(360deg); }
+}
+
 .history-row-title {
   font-weight: 500;
   white-space: nowrap;

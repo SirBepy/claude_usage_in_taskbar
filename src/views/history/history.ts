@@ -4,10 +4,12 @@ import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { showView } from "../../shared/navigation";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
+import { sessionEvents } from "../../shared/chat/event-store";
+import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { queueHistoryResume } from "../sessions/sessions";
 import "../../shared/chat/chat.css";
 import "./history.css";
-import type { ChatEvent, HistoryEntry } from "../../types/ipc.generated";
+import type { HistoryEntry } from "../../types/ipc.generated";
 import { cwdToProjectName } from "../sessions/sessions-helpers";
 
 interface HistoryState {
@@ -102,6 +104,10 @@ function renderList(listEl: HTMLElement): void {
   listEl.innerHTML = html.join("");
 }
 
+function renderListLoading(listEl: HTMLElement): void {
+  listEl.innerHTML = `<li class="history-loading-row"><span class="history-spinner"></span>Loading sessions&hellip;</li>`;
+}
+
 function formatTime(secs: number | bigint | null | undefined): string {
   if (secs === null || secs === undefined) return "";
   const n = typeof secs === "bigint" ? Number(secs) : secs;
@@ -143,19 +149,30 @@ async function selectHistorySession(sessionId: string, pane: HTMLElement): Promi
   const renderer = new ChatRenderer(messagesEl);
   state.renderer = renderer;
 
-  let events: ChatEvent[] = [];
-  try {
-    events = (await invoke<ChatEvent[]>("load_history", { sessionId, cwd: null })) || [];
-  } catch (err) {
-    console.error("[history] load_history failed", err);
-    pane.innerHTML = `<div class="history-empty">Failed to load: ${escapeHtml(String(err))}</div>`;
-    return;
-  }
+  await renderer.attach(sessionId);
   if (state.mountId !== myMount || state.selectedId !== sessionId) {
     renderer.detach();
     return;
   }
-  renderer.loadHistory(events);
+  // Paginated load via the shared event store: last ~20 messages now, older
+  // ones fetched on scroll by the renderer's paginator (load_history_page under
+  // the hood). Passing the entry's cwd lets the backend locate the transcript
+  // directly instead of scanning every project dir. A cache hit renders with no
+  // IPC; a miss shows the loading overlay while the first page loads.
+  const cwd = entry?.cwd ? String(entry.cwd) : undefined;
+  const overlay = sessionEvents.isLoaded(sessionId) ? null : showChatLoadingOverlay(messagesEl);
+  try {
+    await renderer.loadFromStore(cwd);
+    if (state.mountId !== myMount || state.selectedId !== sessionId) {
+      renderer.detach();
+      return;
+    }
+  } catch (err) {
+    console.error("[history] loadFromStore failed", err);
+    pane.innerHTML = `<div class="history-empty">Failed to load: ${escapeHtml(String(err))}</div>`;
+  } finally {
+    overlay?.remove();
+  }
 }
 
 export async function renderHistoryView(root: HTMLElement): Promise<() => void> {
@@ -179,6 +196,7 @@ export async function renderHistoryView(root: HTMLElement): Promise<() => void> 
     return () => { /* no-op */ };
   }
 
+  renderListLoading(listEl);
   await fetchEntries();
   if (state.mountId !== myMount) return () => { /* superseded */ };
   renderList(listEl);
