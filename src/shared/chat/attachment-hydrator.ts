@@ -14,7 +14,6 @@ export function mimeToIcon(mime: string): string {
 export async function hydrateAttachments(el: HTMLElement): Promise<void> {
   const chips = Array.from(el.querySelectorAll<HTMLElement>(".attachment-chip[data-attachment-path]"));
   for (const chip of chips) {
-    if (!document.contains(chip)) continue;
     const path = chip.dataset.attachmentPath;
     if (!path) continue;
     const name = chip.dataset.filename ?? basename(path) ?? "file";
