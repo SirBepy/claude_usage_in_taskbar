@@ -9,6 +9,7 @@
 //! boot scaffolding (HookCtx, HOOK_PORT, health, spawn) and the route table,
 //! the only place that "sees" every category at once.
 
+mod context;
 mod lifecycle;
 mod permission;
 mod relay;
@@ -66,6 +67,7 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
     let ctx = Arc::new(HookCtx { state });
     let router = Router::new()
         .route("/health", get(health_endpoint))
+        .route("/context", get(context::on_context))
         .route("/refresh", post(relay::on_refresh))
         .route("/notify", post(relay::on_notify))
         .route("/quit", post(relay::on_quit))

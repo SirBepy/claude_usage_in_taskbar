@@ -341,6 +341,62 @@ pub struct GitInfo {
     pub repo: Option<String>,
 }
 
+/// Daemon-aligned context-window status for a session. The transcript lives on
+/// local disk, so the app resolves it itself (cwd from the mirrored instance
+/// cache, else a project-dir scan) and runs the same core scorer the daemon's
+/// `/context` endpoint uses. This is the least-coupled option: no daemon RPC,
+/// one shared `compute_context_status` for both surfaces. Returns None when the
+/// transcript can't be resolved or carries no usage lines.
+#[tauri::command]
+pub async fn context_status(
+    session_id: String,
+    state: tauri::State<'_, crate::state::AppState>,
+) -> Result<Option<crate::context_status::ContextStatus>, String> {
+    use crate::tokens::walker;
+
+    // Resolve the transcript path from the app's mirrored instance cache. The
+    // daemon registry isn't directly reachable here; `cached_instances` is the
+    // app-side mirror refreshed via `instances_changed`.
+    let resolved: Option<std::path::PathBuf> = {
+        let instances = state.cached_instances.lock().unwrap();
+        instances
+            .iter()
+            .find(|i| i.session_id == session_id)
+            .and_then(|inst| {
+                inst.transcript_path
+                    .as_ref()
+                    .filter(|p| p.exists())
+                    .cloned()
+                    .or_else(|| walker::transcript_for_session(&inst.cwd, &session_id))
+            })
+    };
+
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        if let Some(path) = resolved {
+            return crate::context_status::compute_context_status(&path);
+        }
+        // Fallback: scan ~/.claude/projects/*/<session_id>.jsonl directly.
+        let projects = walker::claude_projects_dir()?;
+        let target = format!("{session_id}.jsonl");
+        let entries = std::fs::read_dir(&projects).ok()?;
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let candidate = dir.join(&target);
+            if candidate.exists() {
+                return crate::context_status::compute_context_status(&candidate);
+            }
+        }
+        None
+    })
+    .await
+    .map_err(|e| format!("context_status join error: {e}"))?;
+
+    Ok(status)
+}
+
 /// Returns the list of files with uncommitted changes in the given directory.
 /// Used to detect whether there is work to commit before closing a chat session.
 /// Returns an empty vec if the directory is not a git repo or git is unavailable.

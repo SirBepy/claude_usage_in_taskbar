@@ -1,5 +1,6 @@
 pub mod channels;
 pub mod characters;
+pub mod context_status;
 pub mod daemon;
 pub mod daemon_client;
 mod daemon_link;
@@ -238,6 +239,7 @@ pub fn run() {
             ipc::open_session_in_terminal,
             ipc::get_git_info,
             ipc::get_git_dirty,
+            ipc::context_status,
             ipc::respond_permission,
             ipc::respond_question,
             ipc::list_news,
