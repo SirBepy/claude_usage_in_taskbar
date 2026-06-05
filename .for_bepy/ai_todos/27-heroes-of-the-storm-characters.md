@@ -2,21 +2,19 @@
 
 ## Goal
 
-Build a set of HotS heroes as character bundles. Joe needs to specify the exact heroes he plays most before this executes.
+Build the ENTIRE HotS hero roster as character bundles.
 
-## Context
+## Scope (CONFIRMED 2026-06-05)
 
-Joe expressed interest on 2026-06-05. He plays HotS a lot but went to sleep before naming specific heroes. Tentative list from the session:
+Joe confirmed: **EVERY hero (~90), the full roster. Do NOT ask which heroes.** This supersedes the earlier "name the ones you play" gate. Scheduled to run via a one-shot `/autopilot` Windows Scheduled Task at 17:00 on 2026-06-05 (`.for_bepy/run-autopilot-hots.ps1`).
 
-**Tentative (pending Joe's confirmation):**
+Heroes that are extra-quotable (build these well if time-constrained):
 - The Butcher ("FRESH MEAT!")
 - Deckard Cain ("Stay a while and listen!")
 - Illidan ("You are not prepared!")
 - Abathur ("Evolution complete" - beloved weird character)
 - Murky (baby murloc - speaks murloc + funny translated lines)
 - ETC (rock band orc - Stage Dive etc.)
-
-**Joe said he'll name the exact heroes he plays a lot** - ask him before starting: "Which HotS heroes do you want? (I have a tentative list of 6 from last session - confirm or replace)"
 
 ## Approach
 
@@ -29,6 +27,6 @@ Follow `/character-creator` skill (Steps 1-9). Key notes for HotS:
 
 ## Acceptance
 
-- Joe confirms the final hero list first (ask at session start).
+- Build the full roster (~90); no confirmation needed (see Scope above).
 - Each hero dir at `%APPDATA%\claude-usage-tauri\characters\heroes-of-the-storm\<hero>\` with `character.json` + `icon.png` + slots.
 - Refresh Characters view - `HEROES OF THE STORM` group appears with correct chars.

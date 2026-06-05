@@ -14,6 +14,7 @@ Thumbs.db
 .playwright-mcp/
 .superpowers/
 .for_bepy/spike_fixtures/
+.for_bepy/autopilot-hots/
 .claude/scheduled_tasks.lock
 docs/superpowers/
 src/types/ipc.generated.ts
