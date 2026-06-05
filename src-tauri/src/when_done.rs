@@ -118,6 +118,62 @@ fn instance_is_idle(i: &crate::types::Instance) -> bool {
     !i.busy
 }
 
+/// True when every live (not-ended) session is idle. An empty list (after
+/// filtering out ended sessions) counts as idle: nothing left to wait on.
+/// Pure mirror of the inline all-idle check in the Watching loop.
+fn all_sessions_idle(instances: &[crate::types::Instance]) -> bool {
+    instances
+        .iter()
+        .filter(|i| i.ended_at.is_none())
+        .all(instance_is_idle)
+}
+
+/// Session ids still busy, from a `(session_id, busy)` snapshot. Returns exactly
+/// the ids whose busy flag is true, in input order; empty when all idle. Pure
+/// mirror of the inline `waiting` computation in the Watching loop.
+fn waiting_on_ids(busy_map: &[(String, bool)]) -> Vec<String> {
+    busy_map
+        .iter()
+        .filter(|(_, busy)| *busy)
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+/// Pure countdown step: the value to emit next, or `None` when the countdown
+/// has reached zero and the terminal action should fire. Mirrors the
+/// `while remaining > 0 { remaining -= 1; ... }` loop's decision: a positive
+/// `remaining` yields `Some(remaining - 1)`, zero yields `None`.
+fn next_countdown(remaining: u32) -> Option<u32> {
+    if remaining > 0 {
+        Some(remaining - 1)
+    } else {
+        None
+    }
+}
+
+/// Per-tick close-turn completion check. Given whether the target session is
+/// still present in the live list (`Some(busy)`), or has vanished (`None`),
+/// updates the `saw_busy` latch and returns true when the close turn is
+/// complete: the session vanished, OR it went busy then back to idle. Pure
+/// mirror of the inline match in the Closing wait loop (timeout handled by the
+/// caller, which stays timing-bound).
+fn close_turn_complete(present: Option<bool>, saw_busy: &mut bool) -> bool {
+    match present {
+        None => true, // session closed/vanished -> done.
+        Some(busy) => {
+            if busy {
+                *saw_busy = true;
+                false
+            } else if *saw_busy {
+                // ran a turn and is now idle again -> done.
+                true
+            } else {
+                false
+            }
+        }
+    }
+}
+
 /// Currently-live (not ended) session ids from the cached instance list.
 fn live_session_ids(app: &AppHandle) -> Vec<String> {
     let state = app.state::<AppState>();
@@ -287,11 +343,7 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
         auto_resolve_prompts(&app).await;
 
         let busy_map = live_busy_map(&app);
-        let waiting: Vec<String> = busy_map
-            .iter()
-            .filter(|(_, busy)| *busy)
-            .map(|(id, _)| id.clone())
-            .collect();
+        let waiting: Vec<String> = waiting_on_ids(&busy_map);
 
         update_and_emit(&app, |s| {
             s.phase = ProtocolPhase::Watching;
@@ -317,10 +369,7 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
         let guard_idle = {
             let state = app.state::<AppState>();
             let guard = state.cached_instances.lock().unwrap();
-            guard
-                .iter()
-                .filter(|i| i.ended_at.is_none())
-                .all(instance_is_idle)
+            all_sessions_idle(&guard)
         };
         if guard_idle {
             break;
@@ -366,17 +415,12 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
             auto_resolve_prompts(&app).await;
 
             let busy_map = live_busy_map(&app);
-            let present = busy_map.iter().find(|(id, _)| id == session_id);
-            match present {
-                None => break, // session closed/vanished -> done.
-                Some((_, busy)) => {
-                    if *busy {
-                        saw_busy = true;
-                    } else if saw_busy {
-                        // ran a turn and is now idle again -> done.
-                        break;
-                    }
-                }
+            let present = busy_map
+                .iter()
+                .find(|(id, _)| id == session_id)
+                .map(|(_, busy)| *busy);
+            if close_turn_complete(present, &mut saw_busy) {
+                break;
             }
 
             if started.elapsed() > PER_SESSION_TIMEOUT {
@@ -404,7 +448,7 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
     });
 
     let mut remaining = COUNTDOWN_SECS;
-    while remaining > 0 {
+    while let Some(next) = next_countdown(remaining) {
         if is_cancelled(&app) {
             return;
         }
@@ -412,7 +456,7 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
         if is_cancelled(&app) {
             return;
         }
-        remaining -= 1;
+        remaining = next;
         update_and_emit(&app, |s| {
             s.countdown_remaining_secs = Some(remaining);
         });
@@ -508,7 +552,152 @@ pub async fn get_when_done_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Instance;
     use serde_json::json;
+
+    // --- Fixtures -----------------------------------------------------------
+
+    /// Minimal `Instance` for the pure decision tests. `Instance` has no
+    /// `Default`, so build it explicitly; only `session_id`, `busy`, and
+    /// `ended_at` drive the logic under test, the rest are inert fillers.
+    fn instance(session_id: &str, busy: bool, ended: bool) -> Instance {
+        Instance {
+            session_id: session_id.into(),
+            pid: 0,
+            cwd: std::path::PathBuf::from("C:/x"),
+            project_id: "proj".into(),
+            kind: crate::sessions::kinds::InstanceKind::External,
+            is_remote: false,
+            started_at: "2026-06-05T00:00:00Z".into(),
+            transcript_path: None,
+            bridge_session_id: None,
+            name: None,
+            ended_at: if ended {
+                Some("2026-06-05T01:00:00Z".into())
+            } else {
+                None
+            },
+            end_reason: None,
+            busy,
+            model: String::new(),
+            effort: String::new(),
+            awaiting: None,
+        }
+    }
+
+    // --- all_sessions_idle --------------------------------------------------
+
+    #[test]
+    fn all_sessions_idle_true_when_every_live_instance_not_busy() {
+        let live = vec![instance("a", false, false), instance("b", false, false)];
+        assert!(all_sessions_idle(&live));
+    }
+
+    #[test]
+    fn all_sessions_idle_false_when_any_live_instance_busy() {
+        let mixed = vec![instance("a", false, false), instance("b", true, false)];
+        assert!(!all_sessions_idle(&mixed));
+    }
+
+    #[test]
+    fn all_sessions_idle_ignores_ended_sessions() {
+        // A busy session that has already ended must not block: only live
+        // (ended_at == None) sessions count toward the idle check.
+        let with_ended_busy = vec![
+            instance("live-idle", false, false),
+            instance("ended-busy", true, true),
+        ];
+        assert!(all_sessions_idle(&with_ended_busy));
+    }
+
+    #[test]
+    fn all_sessions_idle_true_for_empty_and_all_ended() {
+        // Empty list -> nothing to wait on -> idle.
+        assert!(all_sessions_idle(&[]));
+        // All sessions ended (even if busy) -> no live sessions -> idle.
+        let all_ended = vec![instance("x", true, true), instance("y", true, true)];
+        assert!(all_sessions_idle(&all_ended));
+    }
+
+    // --- waiting_on_ids -----------------------------------------------------
+
+    #[test]
+    fn waiting_on_ids_returns_only_busy_ids_in_order() {
+        let busy_map = vec![
+            ("a".to_string(), true),
+            ("b".to_string(), false),
+            ("c".to_string(), true),
+        ];
+        assert_eq!(waiting_on_ids(&busy_map), vec!["a".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn waiting_on_ids_empty_when_all_idle() {
+        let busy_map = vec![("a".to_string(), false), ("b".to_string(), false)];
+        assert!(waiting_on_ids(&busy_map).is_empty());
+        assert!(waiting_on_ids(&[]).is_empty());
+    }
+
+    // --- next_countdown -----------------------------------------------------
+
+    #[test]
+    fn next_countdown_decrements_until_zero_then_fires() {
+        assert_eq!(next_countdown(30), Some(29));
+        assert_eq!(next_countdown(29), Some(28));
+        assert_eq!(next_countdown(2), Some(1));
+        assert_eq!(next_countdown(1), Some(0));
+        // Zero -> None: the terminal action should fire.
+        assert_eq!(next_countdown(0), None);
+    }
+
+    #[test]
+    fn next_countdown_full_sequence_emits_29_down_to_0() {
+        // Drive it the way the loop does and collect every emitted value.
+        let mut remaining = COUNTDOWN_SECS;
+        let mut emitted = Vec::new();
+        while let Some(next) = next_countdown(remaining) {
+            remaining = next;
+            emitted.push(remaining);
+        }
+        let expected: Vec<u32> = (0..COUNTDOWN_SECS).rev().collect(); // 29,28,...,0
+        assert_eq!(emitted, expected);
+        assert_eq!(emitted.len(), COUNTDOWN_SECS as usize);
+    }
+
+    // --- close_turn_complete ------------------------------------------------
+
+    #[test]
+    fn close_turn_complete_busy_then_idle_yields_complete() {
+        // Sequence: present+idle (no busy yet) -> not done; present+busy ->
+        // latch saw_busy, not done; present+idle again -> done.
+        let mut saw_busy = false;
+        assert!(!close_turn_complete(Some(false), &mut saw_busy)); // idle, never busy
+        assert!(!saw_busy);
+        assert!(!close_turn_complete(Some(true), &mut saw_busy)); // went busy
+        assert!(saw_busy);
+        assert!(close_turn_complete(Some(false), &mut saw_busy)); // busy -> idle = done
+    }
+
+    #[test]
+    fn close_turn_complete_vanished_session_yields_complete() {
+        // Session gone from the live list -> done immediately, regardless of
+        // whether it was ever seen busy.
+        let mut saw_busy = false;
+        assert!(close_turn_complete(None, &mut saw_busy));
+
+        let mut saw_busy2 = true;
+        assert!(close_turn_complete(None, &mut saw_busy2));
+    }
+
+    #[test]
+    fn close_turn_complete_idle_without_prior_busy_keeps_waiting() {
+        // A session that is present and idle but never went busy is NOT done:
+        // its /close turn has not started yet, so keep waiting.
+        let mut saw_busy = false;
+        assert!(!close_turn_complete(Some(false), &mut saw_busy));
+        assert!(!close_turn_complete(Some(false), &mut saw_busy));
+        assert!(!saw_busy);
+    }
 
     // default_question_answers builds the `{ question_text: first_option_label }`
     // map the auto-resolver hands to respond_question. It is fully pure over a
