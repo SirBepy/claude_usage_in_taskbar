@@ -1,7 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
-import type { GitInfo } from "../../types/ipc.generated";
+import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
 import {
   formatDuration,
@@ -10,6 +10,7 @@ import {
   gitInfoCache,
   metaCache,
   countsCache,
+  ctxStatusCache,
   type SessionCounts,
   type StatusbarOptions,
 } from "./session-statusbar-helpers";
@@ -36,6 +37,10 @@ export class SessionStatusbar {
   private metaLoaded = false;
   private counts: SessionCounts | null = null;
   private countsLoaded = false;
+  // Daemon-computed context occupancy is the source of truth for the context
+  // chip; the frontend modelContextWindow calc is only a transition/offline
+  // fallback (see render). null = not yet fetched or unavailable for this session.
+  private ctxStatus: ContextStatus | null = null;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
@@ -69,15 +74,22 @@ export class SessionStatusbar {
       if (cached) { this.meta = cached; this.metaLoaded = true; }
       const cachedCounts = countsCache.get(this.sessionId);
       if (cachedCounts) { this.counts = cachedCounts; this.countsLoaded = true; }
+      const cachedCtx = ctxStatusCache.get(this.sessionId);
+      if (cachedCtx) this.ctxStatus = cachedCtx;
     }
 
     this.render();
     if (this.fields.includes("duration")) this.startDurationTimer();
     if (this.wantsCounts()) void this.refreshCounts();
+    if (this.wantsContext()) void this.refreshContextStatus();
   }
 
   private wantsCounts(): boolean {
     return this.fields.includes("messages") || this.fields.includes("turns");
+  }
+
+  private wantsContext(): boolean {
+    return this.fields.includes("context");
   }
 
   private async refreshCounts(): Promise<void> {
@@ -93,12 +105,33 @@ export class SessionStatusbar {
     } catch { /* transient - keep last known counts */ }
   }
 
+  // Fetch the daemon-computed context occupancy (source of truth). Does not
+  // block render; render reads the cached this.ctxStatus and falls back to the
+  // frontend calc until this resolves. arg key is camelCase `sessionId` to
+  // match the Rust `session_id` param (Tauri auto-converts), same convention
+  // as instance_token_stats above.
+  private async refreshContextStatus(): Promise<void> {
+    const sid = this.sessionId;
+    if (!sid) return;
+    try {
+      const r = await invoke<ContextStatus | null>("context_status", { sessionId: sid });
+      if (this.sessionId !== sid) return;
+      if (r) {
+        this.ctxStatus = r;
+        ctxStatusCache.set(sid, r);
+        this.render();
+      }
+      // r === null: keep last known / fall back to frontend calc, no re-render needed.
+    } catch { /* command may predate this binary, or transient - keep fallback */ }
+  }
+
   updateMeta(meta: SessionMeta): void {
     this.meta = meta;
     this.metaLoaded = true;
     if (this.sessionId) metaCache.set(this.sessionId, meta);
     this.render();
     if (this.wantsCounts()) void this.refreshCounts();
+    if (this.wantsContext()) void this.refreshContextStatus();
   }
 
   updateGitInfo(info: GitInfo): void {
@@ -112,7 +145,10 @@ export class SessionStatusbar {
     this.sessionId = id;
     const cached = countsCache.get(id);
     if (cached) { this.counts = cached; this.countsLoaded = true; }
+    const cachedCtx = ctxStatusCache.get(id);
+    if (cachedCtx) this.ctxStatus = cachedCtx;
     if (this.wantsCounts()) void this.refreshCounts();
+    if (this.wantsContext()) void this.refreshContextStatus();
   }
 
   setReadOnlyEffort(readOnly: boolean): void {
@@ -182,7 +218,27 @@ export class SessionStatusbar {
       claudeChips.push(`<span class="sb-chip sb-effort${cls}${this.animClass("effort")}" role="button" tabindex="0"><i class="ph ph-gauge"></i>${escapeHtml(this.effort)}</span>`);
     }
     if (f.includes("context")) {
-      if (this.meta.inputTokens > 0) {
+      // Source of truth is the daemon's context_status (this.ctxStatus): it
+      // computes occupancy + window app-side with a sticky >200K correction
+      // that fixes the old "pinned at 100%" bug. The frontend calc below is a
+      // transition/offline fallback for when the IPC returns null/throws (e.g.
+      // a running binary that predates the command, or no usage yet).
+      if (this.ctxStatus) {
+        const c = this.ctxStatus;
+        const raw = c.pct_used;
+        const estimated = c.confidence !== "proven";
+        if (raw >= 100) {
+          console.warn("[ctx-100] context pinned at 100% (daemon)", { occupancy: String(c.occupancy), window: String(c.window), model: c.model, confidence: c.confidence });
+        }
+        const pctNum = raw < 1 && raw > 0 ? "<1" : String(Math.min(100, Math.round(raw)));
+        const pctStr = `${estimated ? "~" : ""}${pctNum}`;
+        const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
+        const occ = Number(c.occupancy).toLocaleString();
+        const win = Number(c.window).toLocaleString();
+        const note = estimated ? " (estimated)" : "";
+        claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${occ} / ${win} tokens (conversation + system prompt + tools)${note}"><i class="ph ph-stack"></i>${pctStr}%</span>`);
+      } else if (this.meta.inputTokens > 0) {
+        // Fallback: frontend-only calc (transition/offline, not source of truth).
         const window = modelContextWindow(this.sessionModel || this.meta.model);
         const raw = (this.meta.inputTokens / window) * 100;
         if (raw >= 100) {

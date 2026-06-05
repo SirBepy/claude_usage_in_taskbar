@@ -1,6 +1,6 @@
 import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
-import type { GitInfo } from "../../types/ipc.generated";
+import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { modelLabel } from "../../shared/model-name";
 
 export const DEFAULT_STATUSLINE_FIELDS = ["model", "effort", "branch", "repo", "context", "thinking", "messages", "turns"];
@@ -70,6 +70,12 @@ export const metaCache = new Map<string, SessionMeta>();
  *  Detail > Chats uses, so the numbers always match. */
 export interface SessionCounts { prompts: number; turns: number; }
 export const countsCache = new Map<string, SessionCounts>();
+
+/** Last known daemon-computed context occupancy per session, fetched via the
+ *  `context_status` IPC (the source of truth for the context chip). Cached so a
+ *  re-mounted statusbar shows the last value instead of flashing the frontend
+ *  fallback while the async refetch is in flight. */
+export const ctxStatusCache = new Map<string, ContextStatus>();
 
 export function fetchGitInfo(cwd: string): Promise<GitInfo> {
   let p = gitInflight.get(cwd);
