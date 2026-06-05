@@ -1,8 +1,12 @@
-# SpongeBob + Family Guy character bundles
+# SpongeBob + Family Guy + Simpsons character bundles
 
 ## Goal
 
-Build 9 characters across two cartoon franchises using the `/character-creator` skill workflow. Output goes to `%APPDATA%\claude-usage-tauri\characters\`.
+Build 14 characters across three cartoon franchises using the `/character-creator` skill workflow. Output goes to `%APPDATA%\claude-usage-tauri\characters\`.
+
+## Scheduled run (2026-06-05)
+
+Runs via a one-shot `/autopilot` Windows Scheduled Task at 19:00 (`.for_bepy/run-autopilot-cartoons.ps1`), staggered 2h after the HotS run. Scope confirmed by Joe; no interactive picking - autopilot auto-resolves Step 7.
 
 ## Context
 
@@ -14,6 +18,8 @@ Joe chose these during a session on 2026-06-04. He went to sleep before the inte
   - `spongebob`, `patrick`, `squidward`
 - Game: `family-guy`
   - `stewie`, `peter`, `brian`, `quagmire`, `cleveland`, `meg`
+- Game: `simpsons` (The Simpsons)
+  - `homer`, `marge`, `bart`, `lisa`, `abe` (Grandpa / Abraham Simpson) - the family except Maggie, plus Grandpa
 
 ## Approach
 

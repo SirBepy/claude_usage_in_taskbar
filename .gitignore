@@ -15,6 +15,7 @@ Thumbs.db
 .superpowers/
 .for_bepy/spike_fixtures/
 .for_bepy/autopilot-hots/
+.for_bepy/autopilot-cartoons/
 .claude/scheduled_tasks.lock
 docs/superpowers/
 src/types/ipc.generated.ts
