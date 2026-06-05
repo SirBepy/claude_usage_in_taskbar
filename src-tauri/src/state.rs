@@ -54,6 +54,10 @@ pub struct AppState {
     /// running. Guards against double-spawning when the eager backfill and the
     /// lazy IPC path race on the same new post.
     pub news_inflight: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// State + task handle for the "do-X-when-all-sessions-idle" protocol
+    /// (sleep/shutdown when every session goes idle). At most one armed at a
+    /// time; arming aborts any prior task. See `crate::when_done`.
+    pub when_done: Arc<Mutex<crate::when_done::WhenDoneInner>>,
 }
 
 impl AppState {
@@ -83,6 +87,7 @@ impl AppState {
             pending_new_chat: Mutex::new(None),
             meeting_active: Arc::new(AtomicBool::new(false)),
             news_inflight: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            when_done: Arc::new(Mutex::new(crate::when_done::WhenDoneInner::default())),
         }
     }
 }

@@ -20,10 +20,12 @@ pub mod settings;
 pub mod skill_usage;
 pub mod slash;
 pub mod state;
+pub mod system_control;
 pub mod tokens;
 pub mod tray;
 pub mod types;
 pub mod util;
+pub mod when_done;
 
 use crate::settings::paths;
 use crate::state::AppState;
@@ -249,6 +251,9 @@ pub fn run() {
             ipc::get_skill_usage_detail,
             ipc::list_installed_skills,
             ipc::frontend_ready,
+            when_done::arm_when_done,
+            when_done::cancel_when_done,
+            when_done::get_when_done_state,
         ])
         .setup(|app| {
             log::info!("claude-usage-tauri started");

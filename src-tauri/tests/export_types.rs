@@ -15,6 +15,7 @@ use claude_usage_tauri_lib::skill_usage::types::{
 use claude_usage_tauri_lib::slash::{SlashEntry, SlashSource};
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
+use claude_usage_tauri_lib::when_done::{ProtocolPhase, ProtocolState, TerminalAction};
 use std::fs;
 use std::path::PathBuf;
 use ts_rs::TS;
@@ -96,6 +97,11 @@ fn emit_ipc_types() {
     out.push_str(&decl::<SkillUsageWeek>());
     out.push_str(&decl::<SkillDetail>());
     out.push_str(&decl::<InstalledSkill>());
+
+    // when-done protocol (sleep/shutdown when all sessions idle)
+    out.push_str(&decl::<TerminalAction>());
+    out.push_str(&decl::<ProtocolPhase>());
+    out.push_str(&decl::<ProtocolState>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {
