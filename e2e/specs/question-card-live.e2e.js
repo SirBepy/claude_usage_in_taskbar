@@ -23,6 +23,10 @@ async function drainLogs() {
   return browser.execute(() => { const o = window.__qLogs || []; window.__qLogs = []; return o; });
 }
 async function startHaikuChat() {
+  // New chat now lives in the view-header "more options" overflow menu.
+  const moreBtn = await $("#viewMoreBtn");
+  await moreBtn.waitForClickable({ timeout: 15000 });
+  await moreBtn.click();
   const newBtn = await $("#newSessionBtn");
   await newBtn.waitForClickable({ timeout: 15000 });
   await newBtn.click();

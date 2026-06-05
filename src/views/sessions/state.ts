@@ -1,4 +1,4 @@
-import type { Instance } from "../../types/ipc.generated";
+import type { Instance, ProtocolState } from "../../types/ipc.generated";
 import type { ChatRenderer } from "../../shared/chat/chat-renderer";
 import type { Composer } from "../../shared/chat/composer";
 import { setSelectedSessionId } from "./permission-modal";
@@ -60,6 +60,10 @@ export interface SessionsState {
    * (Claude is waiting on the user). Drives the amber sidebar flag. Populated
    * from the active renderer's onStatusUpdate; in-memory only. */
   questionSessions: Set<string>;
+  /** Latest global sleep/shutdown-when-done protocol state, hydrated on mount
+   * via get_when_done_state and kept fresh by the `when-done-state` event.
+   * Null until first hydration. In-memory only (the daemon owns the truth). */
+  whenDone: ProtocolState | null;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -78,6 +82,7 @@ export function createInitialState(mountId: number): SessionsState {
     prevBusyMap: new Map(),
     sortedSessionIds: [],
     questionSessions: new Set(),
+    whenDone: null,
   };
 }
 

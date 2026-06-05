@@ -96,6 +96,10 @@ async function activeSessionId() {
 
 // Start a new chat picking the first project, forcing model=haiku effort=normal.
 async function startHaikuChat() {
+  // New chat now lives in the view-header "more options" overflow menu.
+  const moreBtn = await $("#viewMoreBtn");
+  await moreBtn.waitForClickable({ timeout: 15000 });
+  await moreBtn.click();
   const newBtn = await $("#newSessionBtn");
   await newBtn.waitForClickable({ timeout: 15000 });
   await newBtn.click();

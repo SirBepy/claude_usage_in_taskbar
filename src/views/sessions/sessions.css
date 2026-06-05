@@ -376,6 +376,88 @@
   box-shadow: 0 0 0 2px var(--color-surface-alt);
 }
 
+/* View-header "more options" button indicator (mirrors .session-header). */
+.view-header .more-btn {
+  position: relative;
+}
+
+.view-header .more-btn.has-indicator::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 0 2px var(--color-surface-alt);
+}
+
+/* View-level overflow menu: reuses .session-more-menu look. */
+.view-more-menu .view-more-sort-label {
+  display: block;
+  padding: 6px 10px 2px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.view-more-menu #sessions-sort {
+  width: calc(100% - 12px);
+  margin: 0 6px 4px;
+}
+
+/* The relocated New chat / History buttons render as menu items. */
+.view-more-menu .smore-item.icon-btn {
+  width: 100%;
+}
+
+/* Active when-done toggle (armed) reuses the amber accent. */
+.smore-item.is-on,
+.smore-item.is-on i {
+  color: #fbbf24;
+}
+
+/* Armed-status / countdown chip inside the overflow menu. */
+.when-done-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  color: var(--color-text);
+}
+
+.when-done-chip-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.when-done-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.when-done-cancel:hover {
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
+.when-done-cancel i {
+  font-size: 0.9rem;
+}
+
 /* More-options dropdown menu */
 .session-more-menu {
   position: fixed;

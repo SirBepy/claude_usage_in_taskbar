@@ -14,27 +14,44 @@ export function template() {
         >
           <i class="ph ph-list"></i>
         </button>
+        <h2>Chats</h2>
+        <button
+          class="icon-btn more-btn"
+          id="viewMoreBtn"
+          title="More options"
+        >
+          <i class="ph ph-dots-three-vertical"></i>
+        </button>
+      </div>
+      <!--
+        Host for the controls that now live inside the "more options" overflow
+        menu. They render here (hidden) so their existing handlers in
+        sessions.ts still bind by id at mount; openViewMoreMenu() relocates the
+        live nodes into the menu on open and moves them back on close, keeping
+        the bound listeners intact.
+      -->
+      <div id="view-more-host" hidden>
+        <label class="view-more-sort-label" for="sessions-sort">Sort by</label>
         <select id="sessions-sort" class="sessions-sort sessions-sort-inline">
           <option value="status">Status</option>
           <option value="recent">Recent</option>
           <option value="name">Name</option>
         </select>
-        <h2>Chats</h2>
         <button
-          class="icon-btn"
-          id="historyBtn"
-          title="History"
-          @click=${() => showView("history")}
-        >
-          <i class="ph ph-clock-counter-clockwise"></i>
-        </button>
-        <button
-          class="icon-btn"
+          class="smore-item"
           id="newSessionBtn"
           title="Loading..."
           disabled
         >
-          <i class="ph ph-plus"></i>
+          <i class="ph ph-plus"></i>New chat
+        </button>
+        <button
+          class="smore-item"
+          id="historyBtn"
+          title="History"
+          @click=${() => showView("history")}
+        >
+          <i class="ph ph-clock-counter-clockwise"></i>History
         </button>
       </div>
       <div class="view-body sessions-layout">
