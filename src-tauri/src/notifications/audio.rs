@@ -348,6 +348,23 @@ mod tests {
     }
 
     #[test]
+    fn decodes_ogg_vorbis() {
+        // Regression: rodio was built without the vorbis feature, so every .ogg
+        // character clip (HotS, SSB) decoded to silence. This fixture is a real
+        // trimmed HotS Ogg Vorbis clip; it must decode through the same
+        // rodio::Decoder the playback paths use, on every platform.
+        use rodio::Source;
+        use std::io::Cursor;
+        let bytes: &[u8] = include_bytes!("../../tests/fixtures/vorbis-sample.ogg");
+        assert_eq!(&bytes[..4], b"OggS", "fixture is not an Ogg container");
+        let decoder = Decoder::new(Cursor::new(bytes))
+            .expect("Ogg Vorbis must decode (rodio needs the `vorbis` feature)");
+        assert!(decoder.channels() >= 1, "decoded source has no channels");
+        let sample_count = decoder.take(1000).count();
+        assert!(sample_count > 0, "Ogg Vorbis decoder yielded zero samples");
+    }
+
+    #[test]
     fn open_device_unknown_name_falls_back_to_default() {
         // Should not panic; may return None in headless CI.
         let _result = open_device(Some("__nonexistent_device_xyz__"));
