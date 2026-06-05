@@ -3,10 +3,27 @@
 
 #![cfg(windows)]
 
+use crate::daemon::frame::FrameError;
 use crate::daemon::rpc::Router;
 use crate::daemon::transport_common::serve_connection;
 use std::io;
-use tokio::net::windows::named_pipe::ServerOptions;
+use std::os::windows::io::AsRawHandle;
+use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+
+/// Best-effort lookup of the PID owning the client end of a connected named
+/// pipe. Used only for diagnostic logging when a client sends a garbage frame
+/// (e.g. raw, unframed JSON from an old pre-frame-protocol binary), so we can
+/// correlate the noise to the owning process. Returns `None` if the Win32 call
+/// fails (cheap, never fatal).
+fn client_pid(pipe: &NamedPipeServer) -> Option<u32> {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
+    let handle = HANDLE(pipe.as_raw_handle() as _);
+    let mut pid: u32 = 0;
+    // SAFETY: `handle` is a live server-side pipe handle owned by `pipe` for the
+    // duration of this call; `pid` is a valid out pointer.
+    unsafe { GetNamedPipeClientProcessId(handle, &mut pid).ok().map(|_| pid) }
+}
 
 pub fn pipe_name_for_user() -> String {
     // SID-based naming is added in a later phase. For Phase 1, a per-user
@@ -33,6 +50,9 @@ pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {
             continue;
         }
         let connected = server;
+        // Capture the client PID up front: `connected` is moved into the task
+        // below, so the owning process can't be looked up at the log site.
+        let peer_pid = client_pid(&connected);
         // Pre-create the next server BEFORE handling the current client so the
         // pipe stays open for the next connection (standard tokio pattern).
         server = ServerOptions::new().create(pipe_name)?;
@@ -40,7 +60,29 @@ pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {
         let router_clone = router.clone();
         tokio::spawn(async move {
             if let Err(e) = serve_connection(connected, router_clone).await {
-                log::warn!("daemon: connection ended with error: {e}");
+                match e {
+                    // A garbage frame length means the client wrote bytes that
+                    // are not length-prefixed. The classic case is raw,
+                    // newline-delimited JSON: the first 4 bytes ("{\"..") decode
+                    // to a huge big-endian length (e.g. 2065852772 = `{"` + two
+                    // more ASCII chars) that trips the MAX_FRAME_SIZE cap. Every
+                    // current writer in this codebase uses `write_frame`, so the
+                    // culprit is almost always an OLD pre-frame-protocol app
+                    // binary connecting during an auto-update transition. The
+                    // daemon drops the frame and the connection dies cleanly, so
+                    // this is harmless: log at debug (with the client PID, when
+                    // available, to correlate the owning binary) instead of warn
+                    // to keep the daemon log clean.
+                    FrameError::TooLarge(len) => {
+                        log::debug!(
+                            "daemon: dropped unframed/garbage frame (len {len}) from pid {}",
+                            peer_pid.map_or_else(|| "unknown".to_string(), |p| p.to_string())
+                        );
+                    }
+                    other => {
+                        log::warn!("daemon: connection ended with error: {other}");
+                    }
+                }
             }
         });
     }
