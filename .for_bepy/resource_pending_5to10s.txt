@@ -1,0 +1,127 @@
+# 5-10s clips re-sourced FULL-length (replaced in place) - APPROVE BY EAR.
+# These are real full lines (not 2s crops) but longer than a typical chime; if any feels too long,
+# tell Claude "find a shorter <char> <action> line" and it will swap it.
+# Base dir: %APPDATA%/claude-usage-tauri/characters/
+# Total: 113
+
+
+## family-guy
+family-guy/stewie/sounds/stewie-outrageous-0.mp3 | 6.8s
+
+## heroes-of-the-storm
+heroes-of-the-storm/abathur/sounds/abathur-introquestion-brightwing-0.ogg | 8.7s
+heroes-of-the-storm/abathur/sounds/abathur-taunt-1.ogg | 5.7s
+heroes-of-the-storm/alexstrasza/sounds/alexstrasza-introboast-0.ogg | 6.6s
+heroes-of-the-storm/ana/sounds/ana-laugh-0.ogg | 9.1s
+heroes-of-the-storm/anduin/sounds/anduin-introboast-1.ogg | 5.0s
+heroes-of-the-storm/anduin/sounds/anduin-introquestion-0.ogg | 5.6s
+heroes-of-the-storm/anub-arak/sounds/anub-arak-pissed-2.ogg | 6.2s
+heroes-of-the-storm/artanis/sounds/artanis-taunt-0.ogg | 5.1s
+heroes-of-the-storm/arthas/sounds/arthas-introquestion-uther-0.ogg | 5.3s
+heroes-of-the-storm/auriel/sounds/auriel-introquestion-0.ogg | 5.3s
+heroes-of-the-storm/auriel/sounds/auriel-pissed-2.ogg | 6.1s
+heroes-of-the-storm/azmodan/sounds/azmodan-pissed-2.ogg | 6.6s
+heroes-of-the-storm/blaze/sounds/blaze-pissed-1.ogg | 5.1s
+heroes-of-the-storm/brightwing/sounds/brightwing-pissed-2.ogg | 7.2s
+heroes-of-the-storm/brightwing/sounds/brightwing-taunt-1.ogg | 7.0s
+heroes-of-the-storm/brightwing/sounds/brightwing-taunt-2.ogg | 7.3s
+heroes-of-the-storm/chromie/sounds/chromie-introboast-1.ogg | 5.6s
+heroes-of-the-storm/chromie/sounds/chromie-introquestion-0.ogg | 6.3s
+heroes-of-the-storm/chromie/sounds/chromie-introquestion-1.ogg | 5.4s
+heroes-of-the-storm/chromie/sounds/chromie-pissed-1.ogg | 7.5s
+heroes-of-the-storm/chromie/sounds/chromie-pissed-2.ogg | 8.7s
+heroes-of-the-storm/deathwing/sounds/deathwing-ai-goodjob-1.ogg | 5.7s
+heroes-of-the-storm/deathwing/sounds/deathwing-introquestion-0.ogg | 5.7s
+heroes-of-the-storm/deathwing/sounds/deathwing-introquestion-1.ogg | 7.1s
+heroes-of-the-storm/deathwing/sounds/deathwing-laugh-0.ogg | 5.0s
+heroes-of-the-storm/deathwing/sounds/deathwing-laugh-1.ogg | 5.1s
+heroes-of-the-storm/deathwing/sounds/deathwing-laugh-2.ogg | 5.0s
+heroes-of-the-storm/deathwing/sounds/deathwing-pissed-2.ogg | 5.5s
+heroes-of-the-storm/deathwing/sounds/deathwing-yes-1.ogg | 5.4s
+heroes-of-the-storm/deckard-cain/sounds/deckard-cain-introboast-1.ogg | 5.9s
+heroes-of-the-storm/deckard-cain/sounds/deckard-cain-introquestion-1.ogg | 6.3s
+heroes-of-the-storm/deckard-cain/sounds/deckard-cain-pissed-2.ogg | 5.8s
+heroes-of-the-storm/dehaka/sounds/dehaka-introboast-0.ogg | 5.0s
+heroes-of-the-storm/dehaka/sounds/dehaka-introboast-1.ogg | 5.8s
+heroes-of-the-storm/diablo/sounds/diablo-introboast-1.ogg | 5.9s
+heroes-of-the-storm/diablo/sounds/diablo-taunt-1.ogg | 5.2s
+heroes-of-the-storm/diablo/sounds/diablo-worthit-1.ogg | 5.4s
+heroes-of-the-storm/dva/sounds/dva-pissed-1.ogg | 7.2s
+heroes-of-the-storm/dva/sounds/dva-pissed-2.ogg | 7.0s
+heroes-of-the-storm/garrosh/sounds/garrosh-pissed-2.ogg | 6.2s
+heroes-of-the-storm/gazlowe/sounds/gazlowe-taunt-0.ogg | 5.0s
+heroes-of-the-storm/gazlowe/sounds/gazlowe-taunt-1.ogg | 5.4s
+heroes-of-the-storm/genji/sounds/genji-introboast-0.ogg | 5.2s
+heroes-of-the-storm/genji/sounds/genji-pissed-2.ogg | 8.6s
+heroes-of-the-storm/greymane/sounds/greymane-pissed-2.ogg | 5.6s
+heroes-of-the-storm/guldan/sounds/guldan-introboast-0.ogg | 5.1s
+heroes-of-the-storm/guldan/sounds/guldan-introboast-1.ogg | 5.4s
+heroes-of-the-storm/guldan/sounds/guldan-introquestion-0.ogg | 6.0s
+heroes-of-the-storm/guldan/sounds/guldan-introquestion-1.ogg | 7.0s
+heroes-of-the-storm/hogger/sounds/hogger-ai-goodjob-0.ogg | 5.6s
+heroes-of-the-storm/hogger/sounds/hogger-introquestion-1.ogg | 5.3s
+heroes-of-the-storm/illidan/sounds/illidan-introboast-1.ogg | 5.3s
+heroes-of-the-storm/jaina/sounds/jaina-pissed-2.ogg | 7.3s
+heroes-of-the-storm/johanna/sounds/johanna-pissed-2.ogg | 5.9s
+heroes-of-the-storm/kaelthas/sounds/kaelthas-pissed-2.ogg | 9.9s
+heroes-of-the-storm/kelthuzad/sounds/kelthuzad-pissed-2.ogg | 7.5s
+heroes-of-the-storm/kerrigan/sounds/kerrigan-pissed-2.ogg | 5.2s
+heroes-of-the-storm/kharazim/sounds/kharazim-pissed-1.ogg | 6.4s
+heroes-of-the-storm/kharazim/sounds/kharazim-pissed-2.ogg | 6.6s
+heroes-of-the-storm/li-li/sounds/li-li-pissed-2.ogg | 6.2s
+heroes-of-the-storm/li-li/sounds/li-li-taunt-1.ogg | 7.2s
+heroes-of-the-storm/li-ming/sounds/li-ming-pissed-2.ogg | 5.6s
+heroes-of-the-storm/lt-morales/sounds/lt-morales-pissed-2.ogg | 6.9s
+heroes-of-the-storm/maiev/sounds/maiev-pissed-2.ogg | 5.6s
+heroes-of-the-storm/malfurion/sounds/malfurion-pissed-2.ogg | 5.7s
+heroes-of-the-storm/malganis/sounds/malganis-ai-goodjob-1.ogg | 5.7s
+heroes-of-the-storm/malganis/sounds/malganis-introboast-0.ogg | 9.8s
+heroes-of-the-storm/malganis/sounds/malganis-introboast-1.ogg | 6.2s
+heroes-of-the-storm/malganis/sounds/malganis-introquestion-1.ogg | 7.2s
+heroes-of-the-storm/malthael/sounds/malthael-introboast-0.ogg | 7.8s
+heroes-of-the-storm/malthael/sounds/malthael-introboast-1.ogg | 6.0s
+heroes-of-the-storm/malthael/sounds/malthael-pissed-2.ogg | 8.1s
+heroes-of-the-storm/medivh/sounds/medivh-introboast-1.ogg | 5.2s
+heroes-of-the-storm/medivh/sounds/medivh-pissed-2.ogg | 7.7s
+heroes-of-the-storm/mephisto/sounds/mephisto-introboast-0.ogg | 8.4s
+heroes-of-the-storm/mephisto/sounds/mephisto-introboast-1.ogg | 7.6s
+heroes-of-the-storm/mephisto/sounds/mephisto-introquestion-0.ogg | 5.9s
+heroes-of-the-storm/mephisto/sounds/mephisto-introquestion-1.ogg | 6.7s
+heroes-of-the-storm/mephisto/sounds/mephisto-pissed-0.ogg | 6.5s
+heroes-of-the-storm/mephisto/sounds/mephisto-pissed-1.ogg | 5.3s
+heroes-of-the-storm/mephisto/sounds/mephisto-pissed-2.ogg | 6.5s
+heroes-of-the-storm/muradin/sounds/muradin-pissed-2.ogg | 6.7s
+heroes-of-the-storm/nazeebo/sounds/nazeebo-introquestion-d3hero-0.ogg | 5.9s
+heroes-of-the-storm/orphea/sounds/orphea-introboast-1.ogg | 6.4s
+heroes-of-the-storm/qhira/sounds/qhira-introboast-0.ogg | 6.1s
+heroes-of-the-storm/qhira/sounds/qhira-introboast-1.ogg | 5.1s
+heroes-of-the-storm/qhira/sounds/qhira-pissed-2.ogg | 5.7s
+heroes-of-the-storm/rehgar/sounds/rehgar-pissed-2.ogg | 9.8s
+heroes-of-the-storm/rexxar/sounds/rexxar-pissed-2.ogg | 9.8s
+heroes-of-the-storm/samuro/sounds/samuro-pissed-2.ogg | 7.4s
+heroes-of-the-storm/sonya/sounds/sonya-pissed-2.ogg | 7.4s
+heroes-of-the-storm/stitches/sounds/stitches-pissed-2.ogg | 5.2s
+heroes-of-the-storm/stukov/sounds/stukov-introboast-0.ogg | 7.1s
+heroes-of-the-storm/stukov/sounds/stukov-introboast-1.ogg | 7.0s
+heroes-of-the-storm/tassadar/sounds/tassadar-pissed-2.ogg | 8.2s
+heroes-of-the-storm/the-lost-vikings/sounds/the-lost-vikings-introboast-0.ogg | 5.5s
+heroes-of-the-storm/the-lost-vikings/sounds/the-lost-vikings-introboast-1.ogg | 5.0s
+heroes-of-the-storm/the-lost-vikings/sounds/the-lost-vikings-introquestion-1.ogg | 5.7s
+heroes-of-the-storm/the-lost-vikings/sounds/the-lost-vikings-pissed-0.ogg | 6.5s
+heroes-of-the-storm/the-lost-vikings/sounds/the-lost-vikings-pissed-2.ogg | 7.8s
+heroes-of-the-storm/thrall/sounds/thrall-pissed-2.ogg | 7.6s
+heroes-of-the-storm/tyrande/sounds/tyrande-pissed-2.ogg | 5.2s
+heroes-of-the-storm/valeera/sounds/valeera-creepylaugh-0.ogg | 8.1s
+heroes-of-the-storm/valeera/sounds/valeera-pissed-2.ogg | 7.0s
+heroes-of-the-storm/valla/sounds/valla-pissed-1.ogg | 5.5s
+heroes-of-the-storm/varian/sounds/varian-pissed-2.ogg | 8.2s
+heroes-of-the-storm/whitemane/sounds/whitemane-introboast-0.ogg | 5.1s
+heroes-of-the-storm/whitemane/sounds/whitemane-pissed-2.ogg | 6.1s
+heroes-of-the-storm/zarya/sounds/zarya-pissed-2.ogg | 6.2s
+heroes-of-the-storm/zuljin/sounds/zuljin-pissed-2.ogg | 5.7s
+
+## simpsons
+simpsons/_shared/sounds/shared-prankcall-0.wav | 5.9s
+
+## spongebob
+spongebob/spongebob/sounds/spongebob-imready-0.mp3 | 7.7s
