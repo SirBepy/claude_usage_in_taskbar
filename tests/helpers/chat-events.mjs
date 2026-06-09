@@ -16,3 +16,7 @@ export function streamingEvent(text, ts = 0) {
 export function finalEvent(text, ts = 0) {
   return { type: "assistant_message", content: [{ type: "text", text }], streaming: false, timestamp: ts };
 }
+
+export function toolUseEvent(toolName, input, id, ts = 0) {
+  return { type: "tool_use", tool_name: toolName, input, id, timestamp: ts };
+}

@@ -97,6 +97,35 @@ describe("renderMessage — tool_use branches to edit-window for file mutations"
   });
 });
 
+describe("renderMessage — non-file tool_use renders a collapsed details row", () => {
+  it("renders a <details> tool-row with name + target, NOT open by default", () => {
+    const html = renderMessage({
+      kind: "tool_use",
+      tool: "Grep",
+      input: { pattern: "foo.*bar" },
+      id: "x",
+      ts: 0,
+    });
+    expect(html).toMatch(/^<details class="msg tool-use tool-row"/);
+    expect(html).not.toMatch(/<details[^>]*\sopen/);
+    expect(html).toContain("tool-row-summary");
+    expect(html).toContain("ph-magnifying-glass");
+    expect(html).toContain("Grep");
+    expect(html).toContain("foo.*bar");
+    expect(html).toContain("<pre>");
+  });
+
+  it("renders tool_result as a collapsed details row keeping error class", () => {
+    const ok = renderMessage({ kind: "tool_result", tool_use_id: "y", output: { type: "text", text: "out" }, is_error: false, ts: 0 });
+    expect(ok).toMatch(/^<details class="msg tool-result tool-row"/);
+    expect(ok).not.toMatch(/<details[^>]*\sopen/);
+    expect(ok).toContain("ph-arrow-bend-down-right");
+
+    const err = renderMessage({ kind: "tool_result", tool_use_id: "y", output: { type: "text", text: "boom" }, is_error: true, ts: 0 });
+    expect(err).toContain("tool-result tool-row error");
+  });
+});
+
 describe("renderBlocks — pasted-log chip", () => {
   const body = "Hello 世界\nsecond line\nthird line";
 

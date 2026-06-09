@@ -5,6 +5,7 @@ import { highlightCodeBlocks } from "./code-highlighter";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
 import { basename } from "../path-utils";
+import { toolSummary, classifyTarget, type ToolTally } from "./tool-meta";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { applyTurnCollapse, clampUserMessages } from "./turn-collapse";
 import { ChatPaginator } from "./chat-pagination";
@@ -52,8 +53,16 @@ export class ChatRenderer {
   private closeTurnQueue: { start: number; end: number }[] = [];
   private fileEdits: FileEditView[] = [];
   private lastActivity: string | null = null;
+  // By-type tool tally. Maps preserve insertion (first-seen) order; the public
+  // ToolTally clone reflects that order. `_talliedIds` dedups by tool_use id so
+  // re-delivery/pagination can't double-count a tool_use.
+  private _byType = new Map<string, number>();
+  private _files = new Map<string, number>();
+  private _images = new Map<string, number>();
+  private _talliedIds = new Set<string>();
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
+  public onToolTally: ((t: ToolTally) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
   public onStatusUpdate: ((status: "done" | "question" | null) => void) | null = null;
   private turnStatus: "done" | "question" | null = null;
@@ -112,7 +121,9 @@ export class ChatRenderer {
     this._cumulative = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
     this.fileEdits = [];
     this.lastActivity = null;
+    this.resetToolTally();
     this.onFileEditsChanged?.([]);
+    this.onToolTally?.(this.buildToolTally());
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
     this.activeTurnStart = null;
@@ -186,41 +197,69 @@ export class ChatRenderer {
     return [...this.fileEdits];
   }
 
+  /** Clone of the by-type tool tally (no internal refs leaked). */
+  get toolTally(): ToolTally {
+    return this.buildToolTally();
+  }
+
+  private buildToolTally(): ToolTally {
+    return {
+      byType: [...this._byType].map(([tool, count]) => ({ tool, count })),
+      files: [...this._files].map(([path, count]) => ({ path, count })),
+      images: [...this._images].map(([path, count]) => ({ path, filename: basename(path), count })),
+    };
+  }
+
+  private resetToolTally(): void {
+    this._byType.clear();
+    this._files.clear();
+    this._images.clear();
+    this._talliedIds.clear();
+  }
+
+  /** Counts a tool_use exactly once (dedup by id) and fires onToolTally. */
+  private tallyToolUse(tool: string, input: unknown, id: string | undefined): void {
+    if (id !== undefined) {
+      if (this._talliedIds.has(id)) return;
+      this._talliedIds.add(id);
+    }
+    this._byType.set(tool, (this._byType.get(tool) ?? 0) + 1);
+    const cls = classifyTarget(tool, input);
+    if (cls.kind === "image" && cls.path) {
+      this._images.set(cls.path, (this._images.get(cls.path) ?? 0) + 1);
+    } else if (cls.kind === "file" && cls.path) {
+      this._files.set(cls.path, (this._files.get(cls.path) ?? 0) + 1);
+    }
+    this.onToolTally?.(this.buildToolTally());
+  }
+
   private describeActivity(toolName: string, input: unknown): string {
-    const obj = (input && typeof input === "object") ? input as Record<string, unknown> : {};
-    const fp = typeof obj.file_path === "string"
-      ? obj.file_path
-      : typeof obj.notebook_path === "string"
-        ? obj.notebook_path
-        : "";
-    const bname = fp ? basename(fp) : "";
+    const { target } = toolSummary(toolName, input);
     let s: string;
     switch (toolName) {
       case "Edit":
       case "MultiEdit":
       case "NotebookEdit":
-        s = `Editing ${bname}`;
+        s = `Editing ${target}`;
         break;
       case "Write":
-        s = `Writing ${bname}`;
+        s = `Writing ${target}`;
         break;
       case "Read":
-        s = `Reading ${bname}`;
+        s = `Reading ${target}`;
         break;
-      case "Bash": {
-        const cmd = typeof obj.command === "string" ? obj.command : "";
-        const cmdShort = cmd.length > 40 ? cmd.slice(0, 40) + "…" : cmd;
-        s = `Running: ${cmdShort}`;
+      case "Bash":
+      case "PowerShell":
+        s = `Running: ${target}`;
         break;
-      }
       case "Grep":
-      case "Glob": {
-        const pat = typeof obj.pattern === "string" ? obj.pattern : "";
-        s = `Searching ${pat}`;
+        s = `Grepping ${target}`;
         break;
-      }
+      case "Glob":
+        s = `Searching ${target}`;
+        break;
       default:
-        s = `Calling ${toolName}`;
+        s = `${toolName}…`;
     }
     return s.length > 60 ? s.slice(0, 59) + "…" : s;
   }
@@ -244,7 +283,9 @@ export class ChatRenderer {
     this.streamingIndex = null;
     this.fileEdits = [];
     this.lastActivity = null;
+    this.resetToolTally();
     this.onFileEditsChanged?.([]);
+    this.onToolTally?.(this.buildToolTally());
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
     const CHUNK = 8;
@@ -342,6 +383,7 @@ export class ChatRenderer {
           this.fileEdits.push(view);
           this.onFileEditsChanged?.(this.getFileEdits());
         }
+        this.tallyToolUse(ev.tool_name, ev.input, ev.id);
         this.setActivity(this.describeActivity(ev.tool_name, ev.input));
         touched = true;
         break;

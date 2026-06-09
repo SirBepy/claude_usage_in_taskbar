@@ -5,6 +5,7 @@ import { lookupSlash, skillDetailTarget, slashKindClass } from "./slash-registry
 import { parseFileEdit } from "./file-edits";
 import { renderEditWindow } from "./edit-window";
 import { basename } from "../path-utils";
+import { toolSummary } from "./tool-meta";
 
 const md = new MarkdownIt({
   html: false,
@@ -200,10 +201,11 @@ export function renderMessage(m: RenderedMessage): string {
     case "tool_use": {
       const view = parseFileEdit(m.tool ?? "", m.input);
       if (view) return `<div class="msg tool-use tool-use--file">${renderEditWindow(view)}</div>`;
-      return `<div class="msg tool-use"><b>${escapeHtml(m.tool ?? "")}</b><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></div>`;
+      const summary = toolSummary(m.tool ?? "", m.input);
+      return `<details class="msg tool-use tool-row"><summary class="tool-row-summary"><i class="ph ${escapeHtml(summary.icon)}"></i><span class="tool-row-name">${escapeHtml(summary.tool)}</span><span class="tool-row-target">${escapeHtml(summary.target)}</span></summary><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></details>`;
     }
     case "tool_result":
-      return `<div class="msg tool-result${m.is_error ? " error" : ""}">${m.output ? renderBlocks([m.output]) : ""}</div>`;
+      return `<details class="msg tool-result tool-row${m.is_error ? " error" : ""}"><summary class="tool-row-summary"><i class="ph ph-arrow-bend-down-right"></i><span class="tool-row-name">result</span></summary>${m.output ? renderBlocks([m.output]) : ""}</details>`;
     case "notification":
       return `<div class="msg notification">${escapeHtml(m.text ?? "")}</div>`;
     default:
