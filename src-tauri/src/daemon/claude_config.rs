@@ -93,7 +93,7 @@ pub(crate) fn daemon_hook_port() -> u16 {
 /// Either way `session_id` is known up front, so the daemon never has to block
 /// reading stdout to discover it (claude does not emit its `system`/init line
 /// until it receives the first user message, which would otherwise deadlock).
-pub(crate) fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str) -> Vec<String> {
+pub(crate) fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str, remote: bool) -> Vec<String> {
     let mut args = vec![
         "-p".to_string(),
         "--input-format=stream-json".to_string(),
@@ -113,5 +113,12 @@ pub(crate) fn base_claude_args(resume_id: Option<&str>, session_id: &str, model:
     args.push(effort.to_string());
     args.push("--append-system-prompt".to_string());
     args.push(TURN_STATUS_PROMPT.to_string());
+    if remote {
+        // Spawn the chat under claude's remote-control bridge. NOTE: pairing
+        // `--remote-control` with `--input-format=stream-json` is an untested
+        // Phase-5b combination; behavior of the bridge under stdin-driven turns
+        // has not been verified.
+        args.push("--remote-control".to_string());
+    }
     args
 }

@@ -258,6 +258,7 @@ impl PersistentClient {
         model: &str,
         effort: &str,
         resume_id: Option<&str>,
+        remote: bool,
     ) -> Result<String, ClientError> {
         let res = self
             .call("start_session", json!({
@@ -265,6 +266,7 @@ impl PersistentClient {
                 "model": model,
                 "effort": effort,
                 "resume_id": resume_id,
+                "remote": remote,
             }))
             .await?;
         res.get("session_id")

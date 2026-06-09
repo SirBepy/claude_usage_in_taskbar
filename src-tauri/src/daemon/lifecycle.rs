@@ -27,6 +27,10 @@ pub struct StartSessionParams {
     pub effort: String,
     /// If Some, resume an existing session JSONL; if None, generate a new UUID.
     pub resume_id: Option<String>,
+    /// If true, spawn claude with `--remote-control`. Defaults to false when the
+    /// caller omits it so non-chat spawn paths never register a bridge.
+    #[serde(default)]
+    pub remote: bool,
 }
 
 #[derive(Debug, Error)]
@@ -84,6 +88,7 @@ pub async fn spawn_session(
         &session_id,
         &params.model,
         &params.effort,
+        params.remote,
     ));
     if let Some(ref mcp_path) = mcp_config_path {
         cmd.arg("--permission-prompt-tool")
@@ -305,7 +310,7 @@ mod tests {
         // Root-cause guard: a brand-new session must use `--session-id <uuid>`,
         // NOT `--resume <uuid>`. claude rejects `--resume` of an unknown id
         // ("No conversation found with session ID") and exits.
-        let args = base_claude_args(None, "new-uuid", "opus", "high");
+        let args = base_claude_args(None, "new-uuid", "opus", "high", false);
         assert!(
             !args.iter().any(|a| a == "--resume"),
             "new session must not pass --resume: {args:?}"
@@ -319,7 +324,7 @@ mod tests {
 
     #[test]
     fn resume_session_uses_resume_not_session_id() {
-        let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high");
+        let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high", false);
         assert!(
             !args.iter().any(|a| a == "--session-id"),
             "resume must not pass --session-id: {args:?}"
@@ -333,7 +338,7 @@ mod tests {
 
     #[test]
     fn base_args_always_carry_model_and_effort() {
-        let args = base_claude_args(None, "new-uuid", "sonnet", "medium");
+        let args = base_claude_args(None, "new-uuid", "sonnet", "medium", false);
         let m = args.iter().position(|a| a == "--model").expect("--model");
         assert_eq!(args.get(m + 1).map(String::as_str), Some("sonnet"));
         let e = args.iter().position(|a| a == "--effort").expect("--effort");
@@ -344,7 +349,7 @@ mod tests {
     fn base_args_carry_turn_status_prompt() {
         // The status marker instruction must ride on every spawn so Claude
         // self-reports done-vs-question; the sidebar icon depends on it.
-        let args = base_claude_args(None, "new-uuid", "opus", "high");
+        let args = base_claude_args(None, "new-uuid", "opus", "high", false);
         let p = args
             .iter()
             .position(|a| a == "--append-system-prompt")
@@ -365,6 +370,7 @@ mod tests {
                 model: "bogus".into(),
                 effort: "high".into(),
                 resume_id: None,
+                remote: false,
             },
         )
         .await;
@@ -382,6 +388,7 @@ mod tests {
                 model: "opus".into(),
                 effort: "ultra".into(),
                 resume_id: None,
+                remote: false,
             },
         )
         .await;
@@ -399,6 +406,7 @@ mod tests {
                 model: "opus".into(),
                 effort: "high".into(),
                 resume_id: None,
+                remote: false,
             },
         )
         .await;
