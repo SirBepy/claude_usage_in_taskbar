@@ -38,6 +38,7 @@ async function loadRenderer() {
 function makeContainer() {
   return {
     innerHTML: "",
+    dataset: {},
     appendChild: () => {},
     addEventListener: () => {},
     querySelector: () => null,

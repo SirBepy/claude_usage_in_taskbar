@@ -5,6 +5,7 @@
 
 import type { FileEditView } from "../../shared/chat/file-edits";
 import { renderStackedDiff } from "../../shared/chat/edit-window";
+import { enhanceEditDiffs } from "../../shared/chat/diff-enhancer";
 import { escapeHtml } from "../../shared/escape-html";
 
 export interface DedupedRow {
@@ -41,6 +42,7 @@ export class ChangesPanel {
   private edits: FileEditView[] = [];
   private reviewed = new Set<string>();
   private openSheetPath: string | null = null;
+  private sheetSig: string | null = null;
   private isOpen = false;
 
   mount(host: HTMLElement, chatEl: HTMLElement): void {
@@ -79,6 +81,7 @@ export class ChangesPanel {
     if (!this.host) return;
     this.isOpen = false;
     this.openSheetPath = null;
+    this.sheetSig = null;
     this.chatEl?.classList.remove("chat--dimmed");
     this.host.querySelector(".changes-rail")?.remove();
     this.host.querySelector(".changes-sheet")?.remove();
@@ -137,6 +140,15 @@ export class ChangesPanel {
     if (!this.host || !this.openSheetPath) return;
     const path = this.openSheetPath;
     const matching = this.edits.filter((e) => e.path === path);
+    // Streaming churn guard: onUpdate fires per chat event while a turn runs;
+    // rebuilding (and re-enhancing) the open sheet is only worth it when the
+    // edits for this path actually changed.
+    const sig = `${path}|${matching.length}|${matching.reduce(
+      (n, e) => n + e.hunks.reduce((m, h) => m + h.oldText.length + h.newText.length, 0),
+      0,
+    )}`;
+    if (sig === this.sheetSig && this.host.querySelector(".changes-sheet")) return;
+    this.sheetSig = sig;
     const basename = matching[0]?.basename ?? path;
     const body = renderStackedDiff(matching);
     const html = `<section class="changes-sheet"><header class="changes-sheet-hdr"><span>${escapeHtml(basename)}</span><button class="changes-sheet-close" aria-label="Close"><i class="ph ph-x"></i></button></header><div class="changes-sheet-body">${body}</div></section>`;
@@ -145,7 +157,10 @@ export class ChangesPanel {
     else this.host.insertAdjacentHTML("beforeend", html);
     this.host.querySelector(".changes-sheet-close")?.addEventListener("click", () => {
       this.openSheetPath = null;
+      this.sheetSig = null;
       this.host?.querySelector(".changes-sheet")?.remove();
     });
+    const sheetBody = this.host.querySelector<HTMLElement>(".changes-sheet-body");
+    if (sheetBody) void enhanceEditDiffs(sheetBody);
   }
 }

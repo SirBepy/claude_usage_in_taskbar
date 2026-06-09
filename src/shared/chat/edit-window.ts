@@ -44,6 +44,6 @@ export function renderStackedDiff(views: FileEditView[]): string {
   return views.map((v) => {
     const header = `<div class="stacked-diff-header"><i class="ph ${KIND_ICON[v.kind]}"></i><span>${escapeHtml(v.basename)}</span>${diffBadgeHtml(v.addedLines, v.removedLines)}</div>`;
     const body = v.hunks.map((h) => hunkHtml(h, v.kind)).join("");
-    return `<div class="stacked-diff-file">${header}${body}</div>`;
+    return `<div class="stacked-diff-file" data-path="${escapeHtml(v.path)}">${header}${body}</div>`;
   }).join("");
 }

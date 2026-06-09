@@ -2,6 +2,7 @@ import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, detectStatusToken } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
+import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
 import { basename } from "../path-utils";
@@ -80,6 +81,8 @@ export class ChatRenderer {
 
   constructor(container: HTMLElement) {
     this.container = container;
+    // Edit windows are default-collapsed; their diffs enhance on first open.
+    armLazyDiffEnhance(this.container);
     this.container.addEventListener("click", handleCopyClick);
     this.container.addEventListener("click", handleSlashClick);
     this.container.addEventListener("click", handleAttachmentClick);

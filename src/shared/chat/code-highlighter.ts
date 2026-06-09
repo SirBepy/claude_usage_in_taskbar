@@ -1,4 +1,7 @@
-import { codeToHtml } from "shiki/bundle/web";
+// bundle/full (not /web): the web bundle lacks rust/toml/etc grammars that
+// this app's sessions edit constantly; grammars are lazy dynamic imports so
+// unused languages cost nothing at runtime.
+import { codeToHtml } from "shiki/bundle/full";
 import { escapeHtml } from "../escape-html";
 
 function extractFenceLang(className: string): string | null {
