@@ -30,6 +30,23 @@ describe("toolSummary — target + icon", () => {
     expect(s.target).toBe("x".repeat(48));
   });
 
+  it("Agent → 'starting subagent' target, ph-robot (ignores prompt/description)", () => {
+    const s = toolSummary("Agent", { description: "do a thing", prompt: "y".repeat(5000) });
+    expect(s).toEqual({ icon: "ph-robot", tool: "Agent", target: "starting subagent" });
+  });
+
+  it("Task → 'starting subagent' target, ph-robot", () => {
+    const s = toolSummary("Task", { prompt: "huge prompt" });
+    expect(s).toEqual({ icon: "ph-robot", tool: "Task", target: "starting subagent" });
+  });
+
+  it("caps a >100-char Bash description at 100 chars + ellipsis", () => {
+    const desc = "d".repeat(150);
+    const s = toolSummary("Bash", { description: desc });
+    expect(s.target).toBe("d".repeat(100) + "…");
+    expect(s.target.length).toBe(101);
+  });
+
   it("unknown tool → empty target, ph-wrench", () => {
     expect(toolSummary("Frobnicate", { whatever: 1 })).toEqual({ icon: "ph-wrench", tool: "Frobnicate", target: "" });
   });

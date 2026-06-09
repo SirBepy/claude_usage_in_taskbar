@@ -23,31 +23,44 @@ function extOf(path: string): string {
  * One-line summary for a tool_use: a Phosphor icon class, the display tool name,
  * and the primary target string. Defensive: `input` may be null/non-object.
  */
+/** Max length for a tool summary target before it gets ellipsized. */
+const TARGET_MAX = 100;
+
+/** Cap a target at TARGET_MAX chars, appending a single ellipsis when truncated. */
+function capTarget(target: string): string {
+  return target.length > TARGET_MAX ? target.slice(0, TARGET_MAX) + "…" : target;
+}
+
 export function toolSummary(tool: string, input: unknown): { icon: string; tool: string; target: string } {
   const obj = asObj(input);
-  switch (tool) {
-    case "Read":
-      return { icon: "ph-file", tool, target: basename(strField(obj, "file_path")) };
-    case "Edit":
-    case "MultiEdit":
-      return { icon: "ph-pencil-simple", tool, target: basename(strField(obj, "file_path")) };
-    case "Write":
-      return { icon: "ph-pencil-simple", tool, target: basename(strField(obj, "file_path")) };
-    case "NotebookEdit":
-      return { icon: "ph-pencil-simple", tool, target: basename(strField(obj, "notebook_path")) };
-    case "Grep":
-      return { icon: "ph-magnifying-glass", tool, target: strField(obj, "pattern") };
-    case "Glob":
-      return { icon: "ph-folder", tool, target: strField(obj, "pattern") };
-    case "Bash":
-    case "PowerShell": {
-      const desc = strField(obj, "description");
-      const target = desc || strField(obj, "command").slice(0, 48);
-      return { icon: "ph-terminal-window", tool, target };
+  const { icon, target } = ((): { icon: string; target: string } => {
+    switch (tool) {
+      case "Read":
+        return { icon: "ph-file", target: basename(strField(obj, "file_path")) };
+      case "Edit":
+      case "MultiEdit":
+        return { icon: "ph-pencil-simple", target: basename(strField(obj, "file_path")) };
+      case "Write":
+        return { icon: "ph-pencil-simple", target: basename(strField(obj, "file_path")) };
+      case "NotebookEdit":
+        return { icon: "ph-pencil-simple", target: basename(strField(obj, "notebook_path")) };
+      case "Grep":
+        return { icon: "ph-magnifying-glass", target: strField(obj, "pattern") };
+      case "Glob":
+        return { icon: "ph-folder", target: strField(obj, "pattern") };
+      case "Bash":
+      case "PowerShell": {
+        const desc = strField(obj, "description");
+        return { icon: "ph-terminal-window", target: desc || strField(obj, "command").slice(0, 48) };
+      }
+      case "Agent":
+      case "Task":
+        return { icon: "ph-robot", target: "starting subagent" };
+      default:
+        return { icon: "ph-wrench", target: "" };
     }
-    default:
-      return { icon: "ph-wrench", tool, target: "" };
-  }
+  })();
+  return { icon, tool, target: capTarget(target) };
 }
 
 /** Classify a tool_use's target for the open-on-click popover. */
