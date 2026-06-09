@@ -245,6 +245,71 @@ pub async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     app.shell().open(url, None).map_err(|e| e.to_string())
 }
 
+/// Open a file path in VS Code. Spawns detached (never waits on the child).
+///
+/// On Windows VS Code's CLI is `code.cmd`, so `Command::new("code")` won't
+/// resolve - we go through `cmd /C code <path>` with CREATE_NO_WINDOW
+/// (via `hide_console`) so no console window flashes (a known freeze/flicker
+/// source in this app). If `code` can't be spawned we fall back to the OS
+/// default handler via the same `tauri-plugin-shell` mechanism `open_external`
+/// uses to open URLs/paths.
+#[tauri::command]
+pub async fn open_in_editor(app: AppHandle, path: String) -> Result<(), String> {
+    use std::process::Command;
+
+    let spawned = {
+        #[cfg(target_os = "windows")]
+        {
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", "code", &path]);
+            crate::util::process::hide_console(&mut cmd);
+            cmd.spawn().is_ok()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new("code").arg(&path).spawn().is_ok()
+        }
+    };
+
+    if spawned {
+        return Ok(());
+    }
+
+    // VS Code not found / spawn failed - fall back to the OS default handler,
+    // mirroring `open_external`.
+    use tauri_plugin_shell::ShellExt;
+    #[allow(deprecated)]
+    app.shell().open(path, None).map_err(|e| e.to_string())
+}
+
+/// Read an arbitrary local image file as `{mime, base64}` for an in-app
+/// lightbox. Unlike `read_attachment` (which is sandboxed to the
+/// chat-attachments directory), this reads any absolute path the agent
+/// surfaced - e.g. a `.png` the model Read. MIME is inferred from the
+/// extension; unknown extensions fall back to `application/octet-stream`.
+#[tauri::command]
+pub async fn read_image_file(
+    path: String,
+) -> Result<crate::ipc::chat::attachments::AttachmentData, String> {
+    use base64::Engine;
+    let target = std::path::PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|e| format!("file not found: {e}"))?;
+    let bytes = std::fs::read(&target).map_err(|e| e.to_string())?;
+    let mime = match target.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("svg") => "image/svg+xml",
+        _ => "application/octet-stream",
+    }
+    .to_string();
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(crate::ipc::chat::attachments::AttachmentData { mime, base64 })
+}
+
 /// Caches the latest update state in AppState and emits `update-state` so the
 /// settings UI + tray menu can stay in sync without polling.
 pub fn set_update_state(app: &AppHandle, value: serde_json::Value) {
