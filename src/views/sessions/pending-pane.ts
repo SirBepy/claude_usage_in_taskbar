@@ -81,6 +81,9 @@ export async function renderPendingPane(
       if (payload.type !== "session_started") return;
       const realId = payload.session_id;
       if (!realId) return;
+      // New-chat auto-accept (modal checkbox, default on): arm it the instant
+      // the real session id is known so first-turn prompts auto-allow.
+      if (config.autoAccept !== false) setAutoAccept(realId, true);
       if (unsubPlaceholderWatch) {
         try { unsubPlaceholderWatch(); } catch { /* ignore */ }
         unsubPlaceholderWatch = null;
@@ -142,6 +145,7 @@ export async function renderPendingPane(
             });
             if (state.mountId !== myMount) return;
             if (sessionId) {
+              if (config.autoAccept !== false) setAutoAccept(sessionId, true);
               const isStillActive = state.selectedId === placeholderId || state.selectedId === sessionId;
               if (isStillActive && state.renderer && state.renderer.currentSessionId() !== sessionId) {
                 await state.renderer.swapSubscription(sessionId);

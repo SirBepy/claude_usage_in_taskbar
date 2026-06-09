@@ -35,6 +35,9 @@ export async function openModelEffortModal(
 
     let model = initial.model;
     let effort = initial.effort;
+    // New chats default to auto-allowing permission prompts (see CLAUDE.md
+    // "Auto allow permissions"); the user can opt out per chat via the checkbox.
+    let autoAccept = initial.autoAccept ?? true;
     let activePresetIndex = -1;
 
     function syncActivePreset() {
@@ -76,6 +79,11 @@ export async function openModelEffortModal(
             <div class="me-stop-labels">${effortLabels}</div>
           </div>
 
+          <label class="me-auto-accept">
+            <input type="checkbox" class="me-auto-accept-input"${autoAccept ? " checked" : ""}>
+            Auto allow permissions
+          </label>
+
           <div class="me-actions">
             <button type="button" class="me-cancel">Cancel</button>
             <button type="button" class="me-confirm">Start session</button>
@@ -114,9 +122,13 @@ export async function openModelEffortModal(
         renderBody();
       });
 
+      overlay.querySelector<HTMLInputElement>(".me-auto-accept-input")?.addEventListener("change", (e) => {
+        autoAccept = (e.target as HTMLInputElement).checked;
+      });
+
       overlay.querySelector<HTMLButtonElement>(".me-cancel")?.addEventListener("click", () => close(null));
       overlay.querySelector<HTMLButtonElement>(".me-confirm")?.addEventListener("click", () => {
-        void persistChoice().then(() => close({ model, effort }));
+        void persistChoice().then(() => close({ model, effort, autoAccept }));
       });
     }
 
@@ -145,7 +157,7 @@ export async function openModelEffortModal(
         close(null);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        void persistChoice().then(() => close({ model, effort }));
+        void persistChoice().then(() => close({ model, effort, autoAccept }));
       }
     }
 

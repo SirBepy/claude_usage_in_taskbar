@@ -65,6 +65,22 @@
   accent-color: var(--color-primary, #6e8fff);
 }
 
+.model-effort-modal-card .me-auto-accept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  font-size: 0.82rem;
+  color: var(--color-text, #e8e8ee);
+  cursor: pointer;
+  user-select: none;
+}
+
+.model-effort-modal-card .me-auto-accept input[type="checkbox"] {
+  accent-color: var(--color-primary, #6e8fff);
+  cursor: pointer;
+}
+
 .model-effort-modal-card .me-stop-labels {
   display: flex;
   justify-content: space-between;

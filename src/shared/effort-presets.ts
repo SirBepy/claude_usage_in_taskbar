@@ -7,6 +7,9 @@ export interface Preset {
 export interface SessionConfig {
   model: string;
   effort: string;
+  // Auto-allow tool permission prompts for this session. Defaults on for new
+  // chats (the modal checkbox); undefined on legacy drafts is treated as on.
+  autoAccept?: boolean;
 }
 
 export const MODELS = ["haiku", "sonnet", "opus"] as const;
