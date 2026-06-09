@@ -24,7 +24,7 @@ import {
   replayPendingPrompt,
 } from "./permission-modal";
 import { closeChat } from "./close-chat";
-import { ChangesPanel } from "./changes-panel";
+import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { setThinkingActivity } from "./sessions";
 
 // ── More-options dropdown ────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <header class="session-header">
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}</span>
-      <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i></button>
+      <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i><span class="changes-count" hidden></span></button>
       <button class="icon-btn more-btn${!readOnly && isAutoAccept(sess.session_id) ? " has-indicator" : ""}" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
     </header>
     <div class="session-statusbar-host"></div>
@@ -249,7 +249,15 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     const panel = new ChangesPanel();
     panel.mount(pane, messagesEl);
     state.changesPanel = panel;
-    renderer.onFileEditsChanged = (edits) => panel.onUpdate(edits);
+    renderer.onFileEditsChanged = (edits) => {
+      panel.onUpdate(edits);
+      const badge = pane.querySelector<HTMLElement>(".changes-btn .changes-count");
+      if (badge) {
+        const n = dedupeByPath(edits).length;
+        badge.textContent = String(n);
+        badge.toggleAttribute("hidden", n === 0);
+      }
+    };
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
     // Track Claude's self-reported turn status for this session so the sidebar
     // shows an amber "answer me" flag for questions and a calm icon otherwise.
