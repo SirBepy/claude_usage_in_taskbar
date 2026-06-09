@@ -95,6 +95,10 @@ pub fn session_title(path: &Path, max_chars: usize) -> Option<String> {
 const TITLE_MILESTONES: [usize; 3] = [1, 5, 15];
 
 /// Extracts the inner text of the LAST `<cc-title:…>` marker in `text`, if any.
+/// Tolerates the XML-style `<cc-title>…</cc-title>` variant some model versions
+/// emit, and the mixed `<cc-title:…</cc-title>` form (a colon open with an XML
+/// close) — without the cleanup the `>` of the close tag becomes the colon
+/// form's delimiter and the title keeps a trailing `</cc-title`.
 /// Last wins so a response that (oddly) emits more than one keeps the final.
 fn extract_cc_title(text: &str) -> Option<String> {
     const OPEN: &str = "<cc-title:";
@@ -110,7 +114,33 @@ fn extract_cc_title(text: &str) -> Option<String> {
             None => break,
         }
     }
-    result
+    // XML-form fallback: <cc-title>TEXT</cc-title>, last marker wins.
+    if result.is_none() {
+        const XOPEN: &str = "<cc-title>";
+        const XCLOSE: &str = "</cc-title>";
+        let mut rest = text;
+        while let Some(i) = rest.find(XOPEN) {
+            let after = &rest[i + XOPEN.len()..];
+            match after.find(XCLOSE) {
+                Some(end) => {
+                    result = Some(after[..end].to_string());
+                    rest = &after[end + XCLOSE.len()..];
+                }
+                None => break,
+            }
+        }
+    }
+    result.map(|t| clean_title_capture(&t))
+}
+
+/// Strips a trailing XML close tag (`</cc-title>`, or the partial `</cc-title`
+/// left when the colon-form `>` delimiter consumed the real `>`) from a captured
+/// title, then trims.
+fn clean_title_capture(t: &str) -> String {
+    let t = t.trim();
+    let t = t.strip_suffix("</cc-title>").unwrap_or(t);
+    let t = t.strip_suffix("</cc-title").unwrap_or(t);
+    t.trim().to_string()
 }
 
 /// True for a *real* user turn: a non-meta `user` message carrying actual text
@@ -358,6 +388,25 @@ mod tests {
         assert_eq!(extract_cc_title("a <cc-title:One> b <cc-title:Two>").as_deref(), Some("Two"));
         assert_eq!(extract_cc_title("no marker here"), None);
         assert_eq!(extract_cc_title("<cc-title:unterminated"), None);
+    }
+
+    #[test]
+    fn extract_cc_title_strips_xml_close_variants() {
+        // Mixed colon-open + XML-close — the bug that leaked `</cc-title`.
+        assert_eq!(
+            extract_cc_title("body <cc-title:My Title</cc-title>").as_deref(),
+            Some("My Title"),
+        );
+        // Pure XML form.
+        assert_eq!(
+            extract_cc_title("x <cc-title>Pure XML</cc-title> y").as_deref(),
+            Some("Pure XML"),
+        );
+        // Last XML marker wins.
+        assert_eq!(
+            extract_cc_title("<cc-title>One</cc-title> <cc-title>Two</cc-title>").as_deref(),
+            Some("Two"),
+        );
     }
 
     #[test]
