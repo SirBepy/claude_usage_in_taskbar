@@ -4,14 +4,24 @@ import { getSettings, setSettings } from "../../../../shared/state";
 import { api } from "../../../../shared/api";
 import { escapeHtml } from "../../../../shared/escape-html";
 import {
-  MODELS,
   EFFORTS,
   type Preset,
-  isModel,
   isEffort,
   readPresets,
+  readModels,
+  readDefaultFlags,
 } from "../../../../shared/effort-presets";
 import "./presets.css";
+
+/** Parse a comma-separated models string into a trimmed, deduped, non-empty list. */
+function parseModels(raw: string): string[] {
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const t = part.trim();
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
 
 interface LegacyGlobals {
   navigateTo(name: string): Promise<void>;
@@ -21,9 +31,11 @@ function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
-function rowTemplate(p: Preset, i: number) {
-  const modelOpts = MODELS.map(
-    (m) => `<option value="${m}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`,
+function rowTemplate(p: Preset, i: number, models: string[]) {
+  // Ensure the preset's own model is selectable even if not in the current list.
+  const opts = models.includes(p.model) ? models : [p.model, ...models];
+  const modelOpts = opts.map(
+    (m) => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`,
   ).join("");
   const effortOpts = EFFORTS.map(
     (e) => `<option value="${e}"${e === p.effort ? " selected" : ""}>${escapeHtml(e)}</option>`,
@@ -37,7 +49,12 @@ function rowTemplate(p: Preset, i: number) {
   `;
 }
 
-function template(presets: Preset[], errorMsg: string | null) {
+function template(
+  presets: Preset[],
+  models: string[],
+  flags: { autoAccept: boolean; remote: boolean },
+  errorMsg: string | null,
+) {
   return html`
     <div class="view view-settings-presets">
       <div class="view-header">
@@ -47,9 +64,30 @@ function template(presets: Preset[], errorMsg: string | null) {
       </div>
       <div class="view-body">
         <div class="kit-section">
+          <label class="presets-field-label" for="presetsModels">Models</label>
+          <input
+            type="text"
+            class="presets-models-input"
+            id="presetsModels"
+            value="${models.join(", ")}"
+            placeholder="haiku, sonnet, opus"
+          >
+          <p class="presets-hint">Models offered in the New session picker, comma-separated.</p>
+        </div>
+        <div class="kit-section">
+          <label class="presets-check">
+            <input type="checkbox" id="presetsAutoAllow"${flags.autoAccept ? " checked" : ""}>
+            Auto-allow permissions by default
+          </label>
+          <label class="presets-check">
+            <input type="checkbox" id="presetsRemote"${flags.remote ? " checked" : ""}>
+            Remote chat by default
+          </label>
+        </div>
+        <div class="kit-section">
           <p class="presets-hint">Three quick-pick presets that show in the "New session" modal.</p>
           <div class="presets-list">
-            ${presets.map((p, i) => rowTemplate(p, i))}
+            ${presets.map((p, i) => rowTemplate(p, i, models))}
           </div>
           ${errorMsg ? html`<div class="presets-error">${errorMsg}</div>` : ""}
           <div class="presets-actions">
@@ -73,11 +111,11 @@ function readRows(root: HTMLElement): Preset[] {
   return out;
 }
 
-function validate(presets: Preset[]): string | null {
+function validate(presets: Preset[], models: string[]): string | null {
   for (let i = 0; i < presets.length; i++) {
     const p = presets[i]!;
     if (!p.name) return `Preset ${i + 1}: name required`;
-    if (!isModel(p.model)) return `Preset ${i + 1}: invalid model`;
+    if (!models.includes(p.model)) return `Preset ${i + 1}: invalid model`;
     if (!isEffort(p.effort)) return `Preset ${i + 1}: invalid effort`;
   }
   return null;
@@ -90,24 +128,54 @@ export async function renderPresetsView(root: HTMLElement): Promise<() => void> 
   } catch (e) {
     console.error("[presets] get_settings failed", e);
   }
-  const presets = readPresets(settings, { padWithDefaults: true });
+  let presets = readPresets(settings, { padWithDefaults: true });
+  let models = readModels(settings);
+  let flags = readDefaultFlags(settings);
+
+  function readModelsField(): string[] {
+    const raw = root.querySelector<HTMLInputElement>("#presetsModels")?.value ?? "";
+    const parsed = parseModels(raw);
+    return parsed.length > 0 ? parsed : models;
+  }
+
+  // Pull the current form state back into the source-of-truth vars so an
+  // error-path rerender preserves the user's in-progress edits.
+  function syncFromDom(): void {
+    if (!root.querySelector("#presetsModels")) return;
+    models = readModelsField();
+    presets = readRows(root);
+    flags = {
+      autoAccept: root.querySelector<HTMLInputElement>("#presetsAutoAllow")?.checked ?? flags.autoAccept,
+      remote: root.querySelector<HTMLInputElement>("#presetsRemote")?.checked ?? flags.remote,
+    };
+  }
 
   function rerender(errMsg: string | null = null) {
-    render(template(presets, errMsg), root);
+    render(template(presets, models, flags, errMsg), root);
     const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
     if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
 
     const saveBtn = root.querySelector<HTMLButtonElement>("#presetsSaveBtn");
     if (saveBtn) {
       saveBtn.onclick = async () => {
-        const fresh = readRows(root);
-        const err = validate(fresh);
+        syncFromDom();
+        const liveModels = models;
+        const fresh = presets;
+        const err = validate(fresh, liveModels);
         if (err) {
           rerender(err);
           return;
         }
+        const autoAllow = flags.autoAccept;
+        const remote = flags.remote;
         try {
-          const cur = { ...getSettings(), effortPresets: fresh };
+          const cur = {
+            ...getSettings(),
+            effortPresets: fresh,
+            models: liveModels,
+            defaultAutoAllow: autoAllow,
+            defaultRemoteControl: remote,
+          };
           setSettings(cur);
           await api.saveSettings(cur);
           const status = root.querySelector<HTMLElement>("#presetsStatus");

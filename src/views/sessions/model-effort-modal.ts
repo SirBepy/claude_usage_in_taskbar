@@ -1,13 +1,14 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import {
-  MODELS,
   EFFORTS,
   DEFAULT_PRESETS,
   type Preset as EffortPreset,
   type SessionConfig,
   readPresets,
   readLastChoice,
+  readModels,
+  readDefaultFlags,
 } from "../../shared/effort-presets";
 
 export type { SessionConfig };
@@ -25,6 +26,8 @@ export async function openModelEffortModal(
   }
 
   const presets = readPresets(settings);
+  const models = readModels(settings);
+  const defaultFlags = readDefaultFlags(settings);
   const normalPreset: EffortPreset =
     presets.find((p) => p.name === "Normal") ?? presets[1] ?? DEFAULT_PRESETS[1]!;
   const initial = readLastChoice(settings, projectPath) ?? { model: normalPreset.model, effort: normalPreset.effort };
@@ -35,9 +38,10 @@ export async function openModelEffortModal(
 
     let model = initial.model;
     let effort = initial.effort;
-    // New chats default to auto-allowing permission prompts (see CLAUDE.md
-    // "Auto allow permissions"); the user can opt out per chat via the checkbox.
-    let autoAccept = initial.autoAccept ?? true;
+    // Default flags come from settings (defaultAutoAllow / defaultRemoteControl),
+    // NOT lastChoice, which doesn't store them. Both default on.
+    let autoAccept = defaultFlags.autoAccept;
+    let remote = defaultFlags.remote;
     let activePresetIndex = -1;
 
     function syncActivePreset() {
@@ -45,7 +49,7 @@ export async function openModelEffortModal(
     }
     syncActivePreset();
 
-    function modelIdx(): number { return Math.max(0, MODELS.indexOf(model as typeof MODELS[number])); }
+    function modelIdx(): number { return Math.max(0, models.indexOf(model)); }
     function effortIdx(): number { return Math.max(0, EFFORTS.indexOf(effort as typeof EFFORTS[number])); }
 
     function renderBody() {
@@ -55,7 +59,7 @@ export async function openModelEffortModal(
         </button>
       `).join("");
 
-      const modelLabels = MODELS.map((m, i) => `
+      const modelLabels = models.map((m, i) => `
         <span class="slider-stop-label${i === modelIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(m)}</span>
       `).join("");
       const effortLabels = EFFORTS.map((e, i) => `
@@ -69,7 +73,7 @@ export async function openModelEffortModal(
 
           <div class="me-field">
             <label class="me-label">Model</label>
-            <input type="range" class="me-slider me-model-slider" min="0" max="${MODELS.length - 1}" step="1" value="${modelIdx()}">
+            <input type="range" class="me-slider me-model-slider" min="0" max="${models.length - 1}" step="1" value="${modelIdx()}">
             <div class="me-stop-labels">${modelLabels}</div>
           </div>
 
@@ -79,10 +83,17 @@ export async function openModelEffortModal(
             <div class="me-stop-labels">${effortLabels}</div>
           </div>
 
-          <label class="me-auto-accept">
-            <input type="checkbox" class="me-auto-accept-input"${autoAccept ? " checked" : ""}>
-            Auto allow permissions
-          </label>
+          <details class="me-more">
+            <summary class="me-more-summary"><i class="ph ph-caret-right"></i>More options</summary>
+            <label class="me-check">
+              <input type="checkbox" class="me-auto-accept-input"${autoAccept ? " checked" : ""}>
+              Auto allow permissions
+            </label>
+            <label class="me-check">
+              <input type="checkbox" class="me-remote-input"${remote ? " checked" : ""}>
+              Remote chat
+            </label>
+          </details>
 
           <div class="me-actions">
             <button type="button" class="me-cancel">Cancel</button>
@@ -109,7 +120,7 @@ export async function openModelEffortModal(
       const modelSlider = overlay.querySelector<HTMLInputElement>(".me-model-slider");
       modelSlider?.addEventListener("input", () => {
         const i = Number(modelSlider.value);
-        model = MODELS[i] ?? model;
+        model = models[i] ?? model;
         syncActivePreset();
         renderBody();
       });
@@ -126,9 +137,13 @@ export async function openModelEffortModal(
         autoAccept = (e.target as HTMLInputElement).checked;
       });
 
+      overlay.querySelector<HTMLInputElement>(".me-remote-input")?.addEventListener("change", (e) => {
+        remote = (e.target as HTMLInputElement).checked;
+      });
+
       overlay.querySelector<HTMLButtonElement>(".me-cancel")?.addEventListener("click", () => close(null));
       overlay.querySelector<HTMLButtonElement>(".me-confirm")?.addEventListener("click", () => {
-        void persistChoice().then(() => close({ model, effort, autoAccept }));
+        void persistChoice().then(() => close({ model, effort, autoAccept, remote }));
       });
     }
 
@@ -157,7 +172,7 @@ export async function openModelEffortModal(
         close(null);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        void persistChoice().then(() => close({ model, effort, autoAccept }));
+        void persistChoice().then(() => close({ model, effort, autoAccept, remote }));
       }
     }
 

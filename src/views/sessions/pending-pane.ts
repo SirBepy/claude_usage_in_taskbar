@@ -145,6 +145,7 @@ export async function renderPendingPane(
               prompt: promptText,
               model: config.model,
               effort: config.effort,
+              remote: config.remote !== false,
               placeholderId,
             });
             if (state.mountId !== myMount) return;

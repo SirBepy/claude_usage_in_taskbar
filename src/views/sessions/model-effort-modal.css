@@ -65,18 +65,46 @@
   accent-color: var(--color-primary, #6e8fff);
 }
 
-.model-effort-modal-card .me-auto-accept {
+.model-effort-modal-card .me-more {
+  margin: 16px 0 0;
+}
+
+.model-effort-modal-card .me-more-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #8a8a96);
+  user-select: none;
+}
+
+.model-effort-modal-card .me-more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.model-effort-modal-card .me-more-summary .ph {
+  font-size: 0.85rem;
+  transition: transform 0.15s ease;
+}
+
+.model-effort-modal-card .me-more[open] .me-more-summary .ph {
+  transform: rotate(90deg);
+}
+
+.model-effort-modal-card .me-check {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 16px 0 0;
+  margin: 10px 0 0;
   font-size: 0.82rem;
   color: var(--color-text, #e8e8ee);
   cursor: pointer;
   user-select: none;
 }
 
-.model-effort-modal-card .me-auto-accept input[type="checkbox"] {
+.model-effort-modal-card .me-check input[type="checkbox"] {
   accent-color: var(--color-primary, #6e8fff);
   cursor: pointer;
 }
