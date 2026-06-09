@@ -68,10 +68,48 @@ function styleAttr(htmlStyle: Record<string, string> | undefined): string {
   return css ? ` style="${escapeHtml(css)}"` : "";
 }
 
+/**
+ * Serialize text pieces (shiki tokens, or one plain piece) to spans,
+ * splitting pieces at emphasis-range boundaries so changed words get a
+ * .diff-emph wrapper without nesting span soup: each emitted span carries
+ * both the token style and (when in range) the emph class.
+ */
+function piecesToHtml(
+  pieces: { content: string; htmlStyle?: Record<string, string> }[],
+  ranges: [number, number][] | undefined,
+): string {
+  if (!ranges?.length) {
+    return pieces
+      .map((p) => `<span${styleAttr(p.htmlStyle)}>${escapeHtml(p.content)}</span>`)
+      .join("");
+  }
+  let html = "";
+  let off = 0;
+  for (const p of pieces) {
+    const start = off;
+    const end = off + p.content.length;
+    const cuts = new Set<number>([start, end]);
+    for (const [a, b] of ranges) {
+      if (a > start && a < end) cuts.add(a);
+      if (b > start && b < end) cuts.add(b);
+    }
+    const sorted = [...cuts].sort((x, y) => x - y);
+    for (let i = 0; i + 1 < sorted.length; i++) {
+      const a = sorted[i]!;
+      const b = sorted[i + 1]!;
+      const seg = p.content.slice(a - start, b - start);
+      if (!seg) continue;
+      const inEmph = ranges.some(([ra, rb]) => a >= ra && b <= rb);
+      html += `<span${inEmph ? ' class="diff-emph"' : ""}${styleAttr(p.htmlStyle)}>${escapeHtml(seg)}</span>`;
+    }
+    off = end;
+  }
+  return html;
+}
+
 function rowHtml(row: DiffRow, tokens: TokenLine | undefined): string {
-  const body = tokens
-    ? tokens.map((t) => `<span${styleAttr(t.htmlStyle)}>${escapeHtml(t.content)}</span>`).join("")
-    : escapeHtml(row.text);
+  const pieces = tokens ?? (row.text ? [{ content: row.text }] : []);
+  const body = piecesToHtml(pieces, row.emph);
   // Zero-width space keeps empty rows from collapsing to zero height.
   return `<div class="diff-line diff-line--${row.kind}">${body || "&#8203;"}</div>`;
 }

@@ -759,3 +759,7 @@
  * .copy-btn chrome; shown on hunk hover like .copyable-block does. */
 .diff-copy-btn { opacity: 0; }
 .edit-window-hunk[data-enhanced]:hover .diff-copy-btn { opacity: 1; }
+
+/* Word-level emphasis: the exact changed words inside a replaced line pair. */
+.diff-line--add .diff-emph { background: rgba(63, 185, 80, 0.4); border-radius: 2px; }
+.diff-line--del .diff-emph { background: rgba(248, 81, 73, 0.4); border-radius: 2px; }

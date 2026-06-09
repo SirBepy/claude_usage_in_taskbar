@@ -55,3 +55,43 @@ describe("buildDiffRows", () => {
     expect(buildDiffRows(oldText, newText)).toBeNull();
   });
 });
+
+describe("buildDiffRows - word-level emphasis", () => {
+  it("marks only the changed word in a replaced line pair", () => {
+    const rows = buildDiffRows("const a = 1;", "const b = 1;");
+    const del = rows.find((r) => r.kind === "del");
+    const add = rows.find((r) => r.kind === "add");
+    expect(del.emph).toEqual([[6, 7]]);
+    expect(add.emph).toEqual([[6, 7]]);
+  });
+
+  it("pairs line i of the del run with line i of the add run", () => {
+    const rows = buildDiffRows("foo(1)\nbar(2)", "foo(9)\nbar(8)");
+    const dels = rows.filter((r) => r.kind === "del");
+    const adds = rows.filter((r) => r.kind === "add");
+    expect(dels[0].emph).toEqual([[4, 5]]);
+    expect(adds[0].emph).toEqual([[4, 5]]);
+    expect(dels[1].emph).toEqual([[4, 5]]);
+    expect(adds[1].emph).toEqual([[4, 5]]);
+  });
+
+  it("skips emphasis when the paired lines share nothing", () => {
+    const rows = buildDiffRows("alpha beta", "gamma delta");
+    expect(rows.find((r) => r.kind === "del").emph).toBeUndefined();
+    expect(rows.find((r) => r.kind === "add").emph).toBeUndefined();
+  });
+
+  it("leaves context rows and unpaired adds unemphasised", () => {
+    const rows = buildDiffRows("keep\nold", "keep\nold\nnew");
+    expect(rows.every((r) => r.kind !== "ctx" || r.emph === undefined)).toBe(true);
+    // "new" is a pure insertion (no del run before it) - no emph.
+    expect(rows.find((r) => r.text === "new").emph).toBeUndefined();
+  });
+
+  it("skips emphasis for runs longer than 20 lines", () => {
+    const oldText = Array.from({ length: 25 }, (_, i) => `line ${i} old`).join("\n");
+    const newText = Array.from({ length: 25 }, (_, i) => `line ${i} new`).join("\n");
+    const rows = buildDiffRows(oldText, newText);
+    expect(rows.every((r) => r.emph === undefined)).toBe(true);
+  });
+});
