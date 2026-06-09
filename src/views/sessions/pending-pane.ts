@@ -287,7 +287,8 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   if (cancelBtn) {
     const fresh = cancelBtn.cloneNode(true) as HTMLButtonElement;
     cancelBtn.replaceWith(fresh);
-    fresh.removeAttribute("hidden");
+    // Visibility is driven by busy state (see updateThinkingBar): the cancel
+    // button only shows mid-turn, never while drafting the next message.
     fresh.addEventListener("click", async () => {
       try {
         await invoke<void>("cancel_turn", { sessionId });

@@ -101,6 +101,10 @@ export function updateThinkingBar(): void {
   const bar = pane.querySelector<HTMLElement>(".session-thinking");
   if (!bar) return;
   const busy = isCurrentSessionBusy();
+  // The header cancel button (pending pane) only belongs mid-turn; hide it while
+  // drafting so "Cancel turn" never shows when there's no turn to cancel.
+  const cancelBtn = pane.querySelector<HTMLButtonElement>(".cancel-btn");
+  if (cancelBtn) cancelBtn.toggleAttribute("hidden", !busy);
   if (!busy) {
     bar.setAttribute("hidden", "");
     _activeActivity = null;
