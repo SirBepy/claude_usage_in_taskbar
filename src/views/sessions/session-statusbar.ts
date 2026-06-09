@@ -231,7 +231,9 @@ export class SessionStatusbar {
           console.warn("[ctx-100] context pinned at 100% (daemon)", { occupancy: String(c.occupancy), window: String(c.window), model: c.model, confidence: c.confidence });
         }
         const pctNum = raw < 1 && raw > 0 ? "<1" : String(Math.min(100, Math.round(raw)));
-        const pctStr = `${estimated ? "~" : ""}${pctNum}`;
+        // No "~" prefix: the rough number is good enough to show plainly. The
+        // estimated state still surfaces via the "(estimated)" tooltip note.
+        const pctStr = pctNum;
         const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
         const occ = Number(c.occupancy).toLocaleString();
         const win = Number(c.window).toLocaleString();
