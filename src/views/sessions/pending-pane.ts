@@ -70,6 +70,10 @@ export async function renderPendingPane(
       renderer.onMetaUpdate = (meta) => {
         if (state.statusbar === sbForRenderer) sbForRenderer.updateMeta(meta);
       };
+      renderer.onToolTally = (t) => {
+        if (state.statusbar === sbForRenderer) sbForRenderer.updateToolTally(t);
+      };
+      sbForRenderer.updateToolTally(renderer.toolTally);
     }
     // Must attach BEFORE the first invoke so the placeholder channel is
     // subscribed before Rust mirrors SessionStarted onto it.

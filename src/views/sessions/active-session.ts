@@ -238,6 +238,11 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       renderer.onMetaUpdate = (meta) => {
         if (state.statusbar === sbForRenderer) sbForRenderer.updateMeta(meta);
       };
+      renderer.onToolTally = (t) => {
+        if (state.statusbar === sbForRenderer) sbForRenderer.updateToolTally(t);
+      };
+      // Reopened chat: surface its already-accrued tool counts immediately.
+      sbForRenderer.updateToolTally(renderer.toolTally);
     }
     // Mount the all-changes panel + wire renderer callbacks. Panel listens
     // for file mutations; activity feed routes to the thinking bar.

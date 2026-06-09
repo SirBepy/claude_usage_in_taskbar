@@ -1,5 +1,8 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
+import { basename } from "../../shared/path-utils";
+import { openLightbox } from "../../shared/chat/lightbox";
+import { toolSummary, type ToolTally } from "../../shared/chat/tool-meta";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
@@ -28,6 +31,21 @@ export {
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
 
+// Friendly verbs for the tool-tally chips. Falls back to the raw tool name.
+const TALLY_LABELS: Record<string, string> = {
+  Read: "Read",
+  Edit: "Edited",
+  MultiEdit: "Edited",
+  Write: "Wrote",
+  NotebookEdit: "Edited",
+  Grep: "Grep",
+  Glob: "Glob",
+  Bash: "Ran",
+  PowerShell: "Ran",
+  Task: "Subagent",
+  Agent: "Subagent",
+};
+
 export class SessionStatusbar {
   private container: HTMLElement;
   private fields: string[];
@@ -51,6 +69,13 @@ export class SessionStatusbar {
   private effortPopoverOpen = false;
   private modelPopoverOpen = false;
   private animatedKeys = new Set<string>();
+  private toolTally: ToolTally = { byType: [], files: [], images: [] };
+  // Cumulative tool tally row + its Files|Media popover. The row lives outside
+  // the field-driven chip list (it's always-on when tools have run, not a
+  // configurable statusline field). Popover state mirrors the effort/model ones.
+  private tallyPopoverEl: HTMLElement | null = null;
+  private tallyPopoverCleanup: (() => void) | null = null;
+  private tallyTab: "files" | "media" = "files";
 
   constructor(container: HTMLElement, startedAt: string | null, fields: string[], opts: StatusbarOptions = {}) {
     this.container = container;
@@ -141,6 +166,19 @@ export class SessionStatusbar {
     this.render();
   }
 
+  // Cumulative tool tally for this session (Read/Edit/Bash/... counts + the
+  // distinct file/image targets behind the Files|Media popover). Re-renders the
+  // row; an open popover is rebuilt so its lists stay in sync.
+  updateToolTally(t: ToolTally): void {
+    this.toolTally = t;
+    const wasOpen = this.tallyPopoverEl !== null;
+    this.render();
+    if (wasOpen) {
+      if (t.byType.length === 0) this.closeTallyPopover();
+      else this.openTallyPopover();
+    }
+  }
+
   setSessionId(id: string): void {
     this.sessionId = id;
     const cached = countsCache.get(id);
@@ -159,6 +197,113 @@ export class SessionStatusbar {
 
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
+    this.closeTallyPopover();
+  }
+
+  private toggleTallyPopover(): void {
+    if (this.tallyPopoverEl) this.closeTallyPopover();
+    else this.openTallyPopover();
+  }
+
+  private closeTallyPopover(): void {
+    this.tallyPopoverCleanup?.();
+    this.tallyPopoverCleanup = null;
+    this.tallyPopoverEl?.remove();
+    this.tallyPopoverEl = null;
+  }
+
+  // Files|Media popover. Mirrors openMoreMenu in active-session.ts: a
+  // body-appended fixed element positioned off the anchor, dismissed on outside
+  // click, cleaned up on close/destroy. Rebuilt in place when already open.
+  private openTallyPopover(): void {
+    const anchor = this.container.querySelector<HTMLElement>(".sb-tally-row");
+    if (!anchor) return;
+    // Preserve scroll-free rebuild: drop the old element, keep the active tab.
+    this.tallyPopoverCleanup?.();
+    this.tallyPopoverCleanup = null;
+    this.tallyPopoverEl?.remove();
+
+    const pop = document.createElement("div");
+    pop.className = "sb-tally-popover";
+    pop.innerHTML = `
+      <div class="sb-tally-tabs">
+        <button class="sb-tally-tab${this.tallyTab === "files" ? " active" : ""}" data-tab="files"><i class="ph ph-file"></i>Files</button>
+        <button class="sb-tally-tab${this.tallyTab === "media" ? " active" : ""}" data-tab="media"><i class="ph ph-image"></i>Media</button>
+      </div>
+      <div class="sb-tally-list">${this.tallyTab === "files" ? this.renderFilesTab() : this.renderMediaTab()}</div>
+    `;
+    document.body.appendChild(pop);
+    this.tallyPopoverEl = pop;
+
+    const rect = anchor.getBoundingClientRect();
+    pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+    pop.style.left = `${rect.left}px`;
+
+    pop.querySelectorAll<HTMLButtonElement>(".sb-tally-tab").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const tab = btn.dataset.tab === "media" ? "media" : "files";
+        if (tab === this.tallyTab) return;
+        this.tallyTab = tab;
+        this.openTallyPopover();
+      });
+    });
+
+    if (this.tallyTab === "files") {
+      pop.querySelectorAll<HTMLElement>(".sb-tally-file").forEach((row) => {
+        row.addEventListener("click", () => {
+          const path = row.dataset.path;
+          if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[statusbar] open_in_editor failed", err));
+        });
+      });
+    } else {
+      pop.querySelectorAll<HTMLElement>(".sb-tally-media").forEach((row) => {
+        const path = row.dataset.path;
+        const filename = row.dataset.filename ?? "";
+        const imgEl = row.querySelector<HTMLImageElement>("img");
+        if (path && imgEl) {
+          void invoke<{ mime: string; base64: string }>("read_image_file", { path })
+            .then((res) => { imgEl.src = `data:${res.mime};base64,${res.base64}`; })
+            .catch(() => { row.classList.add("sb-tally-media-error"); });
+        }
+        row.addEventListener("click", () => {
+          if (!path) return;
+          void invoke<{ mime: string; base64: string }>("read_image_file", { path })
+            .then((res) => openLightbox({ type: "image", mime: res.mime, base64: res.base64, filename }))
+            .catch((err) => console.error("[statusbar] read_image_file failed", err));
+        });
+      });
+    }
+
+    const onOutside = (e: MouseEvent) => {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+        this.closeTallyPopover();
+      }
+    };
+    setTimeout(() => document.addEventListener("click", onOutside), 0);
+    this.tallyPopoverCleanup = () => document.removeEventListener("click", onOutside);
+  }
+
+  private renderFilesTab(): string {
+    const files = this.toolTally.files;
+    if (files.length === 0) return `<div class="sb-tally-empty">No files</div>`;
+    return files.map((f) => {
+      const base = basename(f.path) || f.path;
+      const count = f.count > 1 ? ` <span class="sb-tally-count">x${f.count}</span>` : "";
+      const pathEsc = escapeHtml(f.path);
+      return `<div class="sb-tally-file" role="button" title="${pathEsc}" data-path="${pathEsc}"><i class="ph ph-file"></i><span class="sb-tally-name">${escapeHtml(base)}</span><span class="sb-tally-path">${pathEsc}</span>${count}</div>`;
+    }).join("");
+  }
+
+  private renderMediaTab(): string {
+    const images = this.toolTally.images;
+    if (images.length === 0) return `<div class="sb-tally-empty">No images</div>`;
+    return images.map((im) => {
+      const count = im.count > 1 ? ` <span class="sb-tally-count">x${im.count}</span>` : "";
+      const pathEsc = escapeHtml(im.path);
+      const nameEsc = escapeHtml(im.filename);
+      return `<div class="sb-tally-media" role="button" title="${pathEsc}" data-path="${pathEsc}" data-filename="${nameEsc}"><span class="sb-tally-thumb"><img alt="${nameEsc}"><i class="ph ph-image sb-tally-thumb-ph"></i></span><span class="sb-tally-name">${nameEsc}</span>${count}</div>`;
+    }).join("");
   }
 
   private tickDuration(): void {
@@ -278,11 +423,23 @@ export class SessionStatusbar {
       }
     }
 
+    // Cumulative tool-tally chips (Read x4, Edited x6, ...). Always-on group,
+    // not gated on `fields`. Clicking any chip opens the Files|Media popover.
+    const tallyChips = this.toolTally.byType.map((t) => {
+      const { icon } = toolSummary(t.tool, {});
+      const label = TALLY_LABELS[t.tool] ?? t.tool;
+      return `<span class="sb-tally-chip" role="button" tabindex="0"><i class="ph ${icon}"></i>${escapeHtml(label)} x${t.count}</span>`;
+    });
+
     const allChips: string[] = [];
     for (const group of [gitChips, claudeChips, countChips]) {
       if (group.length === 0) continue;
       if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
       allChips.push(...group);
+    }
+    if (tallyChips.length > 0) {
+      if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
+      allChips.push(`<span class="sb-tally-row" role="button" title="Files & media touched this session">${tallyChips.join("")}</span>`);
     }
 
     const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
@@ -313,6 +470,11 @@ export class SessionStatusbar {
       if (this.cwd) {
         void invoke<void>("open_in_explorer", { path: this.cwd });
       }
+    });
+
+    this.container.querySelector<HTMLElement>(".sb-tally-row")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggleTallyPopover();
     });
 
     this.container.querySelector<HTMLElement>(".sb-model-btn")?.addEventListener("click", (e) => {
