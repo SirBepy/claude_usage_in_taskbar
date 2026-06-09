@@ -95,6 +95,16 @@ export function installPermissionModalListener(): void {
     console.info("[perm-relay] frontend received permission-requested", { tool: payload.tool_name, session: payload.session_id, ...gateDiag() });
     if (!isForSelectedSession(payload.session_id)) {
       if (payload.session_id) {
+        // Auto-accept is on for this backgrounded chat: allow NOW rather than
+        // parking, so no "needs attention" dot appears for a prompt that will
+        // never need the user. (Questions still park - never auto-answered.)
+        if (isAutoAccept(payload.session_id) && extractQuestions(payload.input) === null) {
+          console.debug("[auto-accept] background allow", payload.tool_name, "for", payload.session_id);
+          void invoke("respond_permission", {
+            id: payload.id, behavior: "allow", updatedInput: payload.input ?? {}, message: null,
+          }).catch((e) => console.warn("[auto-accept] background respond_permission failed:", e));
+          return;
+        }
         // Switched-away busy chat: park the prompt and mark the row so the
         // daemon oneshot isn't left hanging. Replayed on selectSession.
         storePendingPrompt(payload.session_id, { kind: "permission", payload });
@@ -153,6 +163,27 @@ export function installPermissionModalListener(): void {
  * Called from selectSession AFTER the pane is mounted so the card anchors over
  * the right composer.
  */
+/**
+ * Drain a parked permission prompt for a session that just had auto-accept
+ * toggled ON: allow it immediately and clear the sidebar attention dot. A
+ * parked question (never auto-answered) is left in place. No-op if nothing is
+ * parked. Called from the auto-accept toggle so flipping it on retroactively
+ * clears an already-waiting prompt instead of leaving the dot until switch-back.
+ */
+export function autoAcceptParked(sessionId: string): void {
+  const pending = takePendingPrompt(sessionId);
+  if (!pending) return;
+  if (pending.kind === "permission" && extractQuestions(pending.payload.input) === null) {
+    void invoke("respond_permission", {
+      id: pending.payload.id, behavior: "allow", updatedInput: pending.payload.input ?? {}, message: null,
+    }).catch((e) => console.warn("[auto-accept] flush respond_permission failed:", e));
+    rerenderSidebar();
+    return;
+  }
+  // Can't auto-answer (question / AskUserQuestion-shaped): leave it parked.
+  storePendingPrompt(sessionId, pending);
+}
+
 export function replayPendingPrompt(sessionId: string): void {
   const pending = takePendingPrompt(sessionId);
   if (!pending) return;

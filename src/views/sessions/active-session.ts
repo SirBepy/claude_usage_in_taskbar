@@ -20,6 +20,7 @@ import {
   removeBackgroundSession,
   isAutoAccept,
   setAutoAccept,
+  autoAcceptParked,
   replayPendingPrompt,
 } from "./permission-modal";
 import { closeChat } from "./close-chat";
@@ -75,6 +76,9 @@ function openMoreMenu(btn: HTMLButtonElement, sessionId: string, readOnly: boole
           setAutoAccept(sessionId, next);
           const moreBtnEl = document.querySelector<HTMLButtonElement>(".session-header .more-btn");
           if (moreBtnEl) moreBtnEl.classList.toggle("has-indicator", next);
+          // Turning it ON should clear an already-parked prompt (and its sidebar
+          // dot) right away, not wait for a switch-away/back.
+          if (next) autoAcceptParked(sessionId);
           break;
         }
         case "terminal":
