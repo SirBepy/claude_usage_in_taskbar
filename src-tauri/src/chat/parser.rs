@@ -65,11 +65,13 @@ impl ParserContext {
             } else if let Some(result_events) = self.parse_result_line(&line_str) {
                 events.extend(result_events);
             } else if self.live && is_full_assistant_line(&line_str) {
-                // Redundant in a live stream: deltas already showed the text and
-                // the `result` line finalizes it + carries authoritative usage.
-                // Suppress to avoid duplicate messages / TurnUsage (ai_todo 47).
-                // Tool calls are unaffected: tool_use blocks are not renderable
-                // ContentBlocks, so an assistant line never carried them here.
+                // Redundant text/usage in a live stream: deltas already showed the
+                // text and the `result` line finalizes it + carries authoritative
+                // usage (ai_todo 47). BUT the full `assistant` line is the only
+                // carrier of complete `tool_use` blocks (stream_event deltas never
+                // emit a finished tool_use), so salvage those before dropping the
+                // rest - without this the "changes" panel and tool rows stay empty.
+                events.extend(tool_use_from_assistant_line(&line_str));
                 continue;
             } else {
                 events.extend(parse_line(&line_str));
@@ -290,6 +292,11 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                 });
             }
 
+            // Emit a ToolUse for each tool_use block so the chat shows tool rows
+            // and the "changes" panel collects file edits. (History replay path;
+            // the live path salvages these in feed() since the line is suppressed.)
+            evs.extend(tool_use_events(content_val, ts));
+
             // JSONL assistant lines carry model + usage on the message object.
             // Always emit TurnUsage when present so the statusbar ctx% reflects
             // every turn's input tokens (including tool-use-only turns).
@@ -358,6 +365,38 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         }
         _ => vec![],
     }
+}
+
+/// Emit a `ChatEvent::ToolUse` for each `tool_use` block in an assistant
+/// message's `content` array. tool_use blocks are not renderable `ContentBlock`s
+/// (so `extract_content_blocks` drops them), yet the frontend needs them to show
+/// tool rows and populate the changes panel with file edits.
+fn tool_use_events(content_val: &Value, ts: i64) -> Vec<ChatEvent> {
+    let Some(arr) = content_val.as_array() else { return vec![]; };
+    arr.iter()
+        .filter_map(|b| {
+            if b.get("type")?.as_str()? != "tool_use" {
+                return None;
+            }
+            let id = b.get("id")?.as_str()?.to_string();
+            Some(ChatEvent::ToolUse {
+                tool_name: b.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                input: b.get("input").cloned().unwrap_or(Value::Null),
+                id,
+                timestamp: ts,
+            })
+        })
+        .collect()
+}
+
+/// Parse a full `assistant` JSONL line and return only its `ToolUse` events.
+/// Used by live-mode `feed()`, where the line is otherwise suppressed but is the
+/// sole carrier of complete tool_use blocks.
+fn tool_use_from_assistant_line(line: &str) -> Vec<ChatEvent> {
+    let Ok(v) = serde_json::from_str::<Value>(line) else { return vec![]; };
+    let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+    let Some(content) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
+    tool_use_events(content, ts)
 }
 
 fn extract_content_blocks(v: &Value) -> Vec<ContentBlock> {
@@ -502,6 +541,40 @@ mod tests {
         // Bare parse_line on an assistant line is unchanged.
         let line = r#"{"type":"assistant","timestamp":2,"message":{"role":"assistant","model":"m","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"text","text":"hi"}]}}"#;
         let evs = parse_line(line);
+        assert!(evs.iter().any(|e| matches!(e, ChatEvent::TurnUsage { .. })));
+    }
+
+    #[test]
+    fn live_mode_emits_tool_use_from_suppressed_assistant_line() {
+        // The full assistant line is suppressed in live mode, but its tool_use
+        // blocks must still surface so the changes panel / tool rows populate.
+        let lines = [
+            r#"{"type":"assistant","timestamp":0,"message":{"role":"assistant","stop_reason":"tool_use","usage":null,"content":[{"type":"text","text":"editing"},{"type":"tool_use","id":"toolu_1","name":"Edit","input":{"file_path":"/a.rs","old_string":"x","new_string":"y"}}]}}"#,
+            r#"{"type":"result","subtype":"success","timestamp":1,"result":"done","total_cost_usd":0.0,"duration_ms":1,"usage":{"input_tokens":1,"output_tokens":1}}"#,
+        ]
+        .join("\n")
+            + "\n";
+        let mut ctx = ParserContext::new_live();
+        let events = ctx.feed(lines.as_bytes());
+        let tool_uses: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                ChatEvent::ToolUse { tool_name, id, .. } => Some((tool_name.as_str(), id.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_uses, vec![("Edit", "toolu_1")], "one ToolUse salvaged from the suppressed assistant line");
+    }
+
+    #[test]
+    fn history_mode_emits_tool_use_from_assistant_line() {
+        let line = r#"{"type":"assistant","timestamp":2,"message":{"role":"assistant","model":"m","stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_2","name":"Write","input":{"file_path":"/b.rs","content":"hi"}}]}}"#;
+        let evs = parse_line(line);
+        assert!(
+            evs.iter().any(|e| matches!(e, ChatEvent::ToolUse { id, .. } if id == "toolu_2")),
+            "history replay emits ToolUse for tool_use-only assistant lines"
+        );
+        // tool_use-only turn still reports usage (context window must update).
         assert!(evs.iter().any(|e| matches!(e, ChatEvent::TurnUsage { .. })));
     }
 
