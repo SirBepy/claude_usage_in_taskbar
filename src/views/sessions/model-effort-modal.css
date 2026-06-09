@@ -62,6 +62,7 @@
 
 .model-effort-modal-card .me-slider {
   width: 100%;
+  accent-color: var(--color-primary, #6e8fff);
 }
 
 .model-effort-modal-card .me-stop-labels {
