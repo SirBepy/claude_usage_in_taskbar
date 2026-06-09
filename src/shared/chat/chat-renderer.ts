@@ -310,6 +310,11 @@ export class ChatRenderer {
 
   handleEvent(ev: ChatEvent, opts: HandleEventOpts = {}): void {
     const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
+    // Capture before mutating: if the user had scrolled up to read history, we
+    // preserve their position instead of yanking them to the bottom on a live
+    // update. Sending a user_message leaves them at the bottom anyway, so the
+    // gate naturally re-engages auto-scroll for their own messages.
+    const wasAtBottom = this.isNearBottom();
     let touched = false;
     switch (ev.type) {
       case "session_started":
@@ -438,7 +443,7 @@ export class ChatRenderer {
     if (!touched) return;
     if (!opts.silent) {
       this.flushRender();
-      if (!opts.skipScroll) this.scrollToBottom();
+      if (!opts.skipScroll && wasAtBottom) this.scrollToBottom();
     }
   }
 
@@ -501,6 +506,18 @@ export class ChatRenderer {
       void hydrateAttachments(el);
     }
     return el;
+  }
+
+  /** Distance (px) from the bottom within which we still treat the user as "at the bottom". */
+  private static readonly SCROLL_BOTTOM_THRESHOLD = 64;
+
+  /**
+   * True when the scroll position is at (or within SCROLL_BOTTOM_THRESHOLD px of)
+   * the bottom of the container, so a live update should keep following along.
+   */
+  private isNearBottom(): boolean {
+    const el = this.container;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= ChatRenderer.SCROLL_BOTTOM_THRESHOLD;
   }
 
   private scrollToBottom(): void {
