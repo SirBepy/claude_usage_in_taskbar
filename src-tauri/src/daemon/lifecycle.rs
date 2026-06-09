@@ -243,9 +243,23 @@ pub async fn cancel_turn(map: &SessionMap, session_id: &str) -> Result<(), Lifec
     let session = map.get(session_id)
         .ok_or_else(|| LifecycleError::NotFound(session_id.to_string()))?
         .clone();
-    crate::channels::kill::kill_tree(session.pid);
-    // Pump task observes stdout EOF and removes from map. No further
-    // bookkeeping needed here; client must call start_session to respawn.
+    // Interrupt only the in-flight turn, keeping the process alive. The claude
+    // process is long-lived (one `claude -p --input-format=stream-json` per
+    // session, turns fed via stdin), so killing it (the old behavior) ended the
+    // whole session: the pump saw stdout EOF, marked it ProcessGone, the pane
+    // tore down, and the next message had to --resume respawn (looked like a
+    // closed chat). The stream-json control protocol stops the current turn
+    // without that teardown; the trailing `result` line clears busy as usual.
+    let msg = serde_json::json!({
+        "type": "control_request",
+        "request_id": format!("interrupt-{}", uuid::Uuid::new_v4()),
+        "request": { "subtype": "interrupt" }
+    });
+    let mut line = serde_json::to_vec(&msg).expect("serialize");
+    line.push(b'\n');
+    let mut stdin = session.stdin.lock().await;
+    stdin.write_all(&line).await?;
+    stdin.flush().await?;
     Ok(())
 }
 
