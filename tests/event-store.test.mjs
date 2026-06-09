@@ -123,6 +123,29 @@ describe("SessionEventStore pagination", () => {
     expect(events.map((e) => e.content[0].text)).toEqual(["u1", "live-during"]);
   });
 
+  it("dedups an attachment message whose synthetic push carries <file:> tokens (doubled-bubble fix)", () => {
+    const sid = "sess-attach-dedup";
+    // Synthetic optimistic push: composer appends each attachment as its own
+    // text block, so the joined text carries the <file:...> tokens.
+    sessionEvents.pushSynthetic(sid, {
+      type: "user_message",
+      content: [
+        { type: "text", text: "look at this" },
+        { type: "text", text: "<file:C:\\\\imgs\\\\a.png::image.png>" },
+      ],
+      timestamp: Date.now(),
+    });
+    // File-watcher delivery of the JSONL transcript: the attachment is stored as
+    // a separate image block, so the text-only content is just the typed text.
+    sessionEvents.pushSynthetic(sid, {
+      type: "user_message",
+      content: [{ type: "text", text: "look at this" }],
+      timestamp: Date.now(),
+    });
+    const users = sessionEvents.events(sid).filter((e) => e.type === "user_message");
+    expect(users).toHaveLength(1);
+  });
+
   it("loadOlder returns null when hasMore is false", async () => {
     invokeMock.mockResolvedValueOnce({
       events: [userEvent("u1", 1)],

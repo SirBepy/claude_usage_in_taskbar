@@ -33,6 +33,11 @@ const OLDER_PAGE_SIZE = 10;
 // are minutes apart and fall outside the window. See ai_todo 77.
 const DEDUP_WINDOW_MS = 10_000;
 
+// Attachment tokens (<file:path> / <file:path::name>) the composer appends as
+// their own text blocks. Stripped from the dedup signature only — see the
+// user_message case in sigOf for why.
+const FILE_TOKEN_SIG_RE = /<file:[^>]*>/g;
+
 interface RecentSig {
   /** Dedup key: type + content/id. */
   sig: string;
@@ -248,8 +253,15 @@ class SessionEventStore {
         // JSONL transcript (with <command-name>/<command-args> scaffolding) while
         // the synthetic push carries only the raw typed text. Without normalization
         // the sigs differ and the dedup misses, producing a duplicate bubble.
+        //
+        // Also strip <file:path::name> attachment tokens (sig only, never the
+        // rendered text): the synthetic push carries each attachment as its own
+        // text-block token, but the JSONL transcript stores the attachment as a
+        // separate image block, so the text-only content differs by exactly
+        // those tokens. Without this, every message WITH an attachment doubled.
         const raw = this.contentText(ev) ?? "";
-        return `u:${normalizeUserMessageText(raw)}`;
+        const sig = normalizeUserMessageText(raw).replace(FILE_TOKEN_SIG_RE, "").trim();
+        return `u:${sig}`;
       }
       case "tool_use":
         return `tu:${ev.id}`;
