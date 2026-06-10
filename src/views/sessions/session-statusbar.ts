@@ -1,7 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
-import { openLightbox } from "../../shared/chat/lightbox";
-import { toolSummary, toolLabel, type ToolTally } from "../../shared/chat/tool-meta";
+import { type ToolTally } from "../../shared/chat/tool-meta";
+import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
@@ -61,14 +61,10 @@ export class SessionStatusbar {
   private animatedKeys = new Set<string>();
   private toolTally: ToolTally = { byType: [] };
   // Cumulative tool tally row: one chip per tool type, each its OWN drill-down
-  // popover listing that tool's distinct targets (files open in the editor,
-  // images open a lightbox, Grep/Bash targets are plain text). The row is
-  // always-on when tools have run, not a configurable statusline field.
-  private tallyPopoverEl: HTMLElement | null = null;
-  private tallyPopoverCleanup: (() => void) | null = null;
-  // Which tool's popover is open (null = none); kept so updateToolTally can
-  // rebuild it in place as more calls of that type stream in.
-  private tallyOpenTool: string | null = null;
+  // popover listing that tool's distinct targets. The chip-row build, popover,
+  // open/close/toggle and outside-click cleanup live in the ToolTallyRow
+  // controller; this class owns only the toolTally + tallyHiddenTools state.
+  private tally: ToolTallyRow;
 
   constructor(container: HTMLElement, startedAt: string | null, fields: string[], opts: StatusbarOptions = {}) {
     this.container = container;
@@ -81,6 +77,7 @@ export class SessionStatusbar {
     this.readOnlyEffort = opts.readOnly ?? false;
     this.tallyHiddenTools = opts.tallyHiddenTools ?? [];
     this.container.className = "session-statusbar";
+    this.tally = new ToolTallyRow(this.container);
 
     if (this.cwd) {
       const cached = gitInfoCache.get(this.cwd);
@@ -165,13 +162,8 @@ export class SessionStatusbar {
   // row; an open popover is rebuilt so its lists stay in sync.
   updateToolTally(t: ToolTally): void {
     this.toolTally = t;
-    const openTool = this.tallyPopoverEl !== null ? this.tallyOpenTool : null;
     this.render();
-    if (openTool && t.byType.some((b) => b.tool === openTool)) {
-      this.openToolPopover(openTool);
-    } else {
-      this.closeTallyPopover();
-    }
+    this.tally.update(t);
   }
 
   setSessionId(id: string): void {
@@ -198,107 +190,7 @@ export class SessionStatusbar {
 
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
-    this.closeTallyPopover();
-  }
-
-  private toggleToolPopover(tool: string): void {
-    if (this.tallyPopoverEl && this.tallyOpenTool === tool) this.closeTallyPopover();
-    else this.openToolPopover(tool);
-  }
-
-  private closeTallyPopover(): void {
-    this.tallyPopoverCleanup?.();
-    this.tallyPopoverCleanup = null;
-    this.tallyPopoverEl?.remove();
-    this.tallyPopoverEl = null;
-    this.tallyOpenTool = null;
-  }
-
-  // Per-tool drill-down popover, anchored to that tool's chip. Mirrors
-  // openMoreMenu in active-session.ts: a body-appended fixed element positioned
-  // off the anchor, dismissed on outside click, cleaned up on close/destroy.
-  // Rebuilt in place (same tool) as more calls of that type stream in.
-  private openToolPopover(tool: string): void {
-    const anchor = [...this.container.querySelectorAll<HTMLElement>(".sb-tally-chip")]
-      .find((c) => c.dataset.tool === tool);
-    if (!anchor) return;
-    this.tallyPopoverCleanup?.();
-    this.tallyPopoverCleanup = null;
-    this.tallyPopoverEl?.remove();
-    this.tallyOpenTool = tool;
-
-    const pop = document.createElement("div");
-    pop.className = "sb-tally-popover";
-    pop.innerHTML = `<div class="sb-tally-list">${this.renderToolItems(tool)}</div>`;
-    document.body.appendChild(pop);
-    this.tallyPopoverEl = pop;
-
-    const rect = anchor.getBoundingClientRect();
-    // Clamp horizontally so the fixed-width dropdown never spills off either
-    // edge: left-align to the chip, but pull back when it would overflow the
-    // right side, and never go past an 8px left margin.
-    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
-    pop.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
-    // Open downward off the chip; only flip above when there isn't room below
-    // (and there's more room above) so it never clips off-screen.
-    const below = window.innerHeight - rect.bottom;
-    if (below >= pop.offsetHeight + 8 || below >= rect.top) {
-      pop.style.top = `${rect.bottom + 4}px`;
-    } else {
-      pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-    }
-
-    pop.querySelectorAll<HTMLElement>(".sb-tally-file").forEach((row) => {
-      row.addEventListener("click", () => {
-        const path = row.dataset.path;
-        if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[statusbar] open_in_editor failed", err));
-      });
-    });
-
-    pop.querySelectorAll<HTMLElement>(".sb-tally-media").forEach((row) => {
-      const path = row.dataset.path;
-      const filename = row.dataset.filename ?? "";
-      const imgEl = row.querySelector<HTMLImageElement>("img");
-      if (path && imgEl) {
-        void invoke<{ mime: string; base64: string }>("read_image_file", { path })
-          .then((res) => { imgEl.src = `data:${res.mime};base64,${res.base64}`; })
-          .catch(() => { row.classList.add("sb-tally-media-error"); });
-      }
-      row.addEventListener("click", () => {
-        if (!path) return;
-        void invoke<{ mime: string; base64: string }>("read_image_file", { path })
-          .then((res) => openLightbox({ type: "image", mime: res.mime, base64: res.base64, filename }))
-          .catch((err) => console.error("[statusbar] read_image_file failed", err));
-      });
-    });
-
-    const onOutside = (e: MouseEvent) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
-        this.closeTallyPopover();
-      }
-    };
-    setTimeout(() => document.addEventListener("click", onOutside), 0);
-    this.tallyPopoverCleanup = () => document.removeEventListener("click", onOutside);
-  }
-
-  private renderToolItems(tool: string): string {
-    const entry = this.toolTally.byType.find((b) => b.tool === tool);
-    const items = entry?.items ?? [];
-    if (items.length === 0) return `<div class="sb-tally-empty">No targets</div>`;
-    return items.map((it) => {
-      const count = it.count > 1 ? ` <span class="sb-tally-count">x${it.count}</span>` : "";
-      if (it.kind === "image" && it.path) {
-        const pathEsc = escapeHtml(it.path);
-        const nameEsc = escapeHtml(it.filename ?? it.label);
-        return `<div class="sb-tally-media" role="button" title="${pathEsc}" data-path="${pathEsc}" data-filename="${nameEsc}"><span class="sb-tally-thumb"><img alt="${nameEsc}"><i class="ph ph-image sb-tally-thumb-ph"></i></span><span class="sb-tally-name">${nameEsc}</span>${count}</div>`;
-      }
-      if (it.kind === "file" && it.path) {
-        const pathEsc = escapeHtml(it.path);
-        return `<div class="sb-tally-file" role="button" title="${pathEsc}" data-path="${pathEsc}"><i class="ph ph-file"></i><span class="sb-tally-name">${escapeHtml(it.label)}</span><span class="sb-tally-path">${pathEsc}</span>${count}</div>`;
-      }
-      const labelEsc = escapeHtml(it.label);
-      return `<div class="sb-tally-text" title="${labelEsc}"><i class="ph ${toolSummary(tool, {}).icon}"></i><span class="sb-tally-name">${labelEsc}</span>${count}</div>`;
-    }).join("");
+    this.tally.destroy();
   }
 
   private tickDuration(): void {
@@ -423,14 +315,8 @@ export class SessionStatusbar {
     }
 
     // Cumulative tool-tally chips (Read x4, Edited x6, ...). Always-on group,
-    // not gated on `fields`. Each chip opens its OWN drill-down popover.
-    const tallyChips = this.toolTally.byType
-      .filter((t) => !this.tallyHiddenTools.includes(t.tool))
-      .map((t) => {
-        const { icon } = toolSummary(t.tool, {});
-        const label = toolLabel(t.tool);
-        return `<span class="sb-tally-chip" role="button" tabindex="0" data-tool="${escapeHtml(t.tool)}" title="${escapeHtml(label)} targets"><i class="ph ${icon}"></i>${escapeHtml(label)} x${t.count}</span>`;
-      });
+    // not gated on `fields`. Built + wired by the ToolTallyRow controller.
+    const tallyRowHtml = this.tally.renderChips(this.toolTally, this.tallyHiddenTools);
 
     const allChips: string[] = [];
     for (const group of [gitChips, claudeChips, countChips]) {
@@ -438,9 +324,9 @@ export class SessionStatusbar {
       if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
       allChips.push(...group);
     }
-    if (tallyChips.length > 0) {
+    if (tallyRowHtml) {
       if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
-      allChips.push(`<span class="sb-tally-row">${tallyChips.join("")}</span>`);
+      allChips.push(tallyRowHtml);
     }
 
     const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
@@ -474,13 +360,7 @@ export class SessionStatusbar {
       }
     });
 
-    this.container.querySelectorAll<HTMLElement>(".sb-tally-chip").forEach((chip) => {
-      chip.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const tool = chip.dataset.tool;
-        if (tool) this.toggleToolPopover(tool);
-      });
-    });
+    this.tally.wireChips();
 
     this.container.querySelector<HTMLElement>(".sb-model-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
