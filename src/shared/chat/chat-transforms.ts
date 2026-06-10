@@ -13,6 +13,17 @@ const md = new MarkdownIt({
   typographer: false,
 });
 
+// User messages: render single newlines as hard breaks so a multi-line message
+// the user typed (Shift+Enter) keeps its line breaks instead of collapsing into
+// one paragraph. Assistant/tool output keeps the default `md` (no forced breaks)
+// so Claude's own markdown paragraphing renders normally.
+const mdBreaks = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: false,
+  breaks: true,
+});
+
 // Matches <file:PATH> or <file:PATH::DISPLAYNAME> tokens in user message text.
 // Group 1 = path, group 2 = display name (optional).
 const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
@@ -72,14 +83,14 @@ export function detectStatusToken(text: string): "done" | "question" | null {
   return matches[matches.length - 1]![1]!.toLowerCase() as "done" | "question";
 }
 
-function renderTextBlock(rawText: string): string {
+function renderTextBlock(rawText: string, breaks = false): string {
   const text = stripStatusToken(rawText);
   // First peel off any <pasted-log> blocks into chips; render the surrounding
   // text (which may still carry <file:> tokens) through the file-token path.
   PASTED_LOG_RE.lastIndex = 0;
   if (!PASTED_LOG_RE.test(text)) {
     PASTED_LOG_RE.lastIndex = 0;
-    return renderFileSegments(text);
+    return renderFileSegments(text, breaks);
   }
   PASTED_LOG_RE.lastIndex = 0;
   const parts: string[] = [];
@@ -88,7 +99,7 @@ function renderTextBlock(rawText: string): string {
   while ((match = PASTED_LOG_RE.exec(text)) !== null) {
     if (match.index > last) {
       const seg = text.slice(last, match.index);
-      if (seg.trim()) parts.push(renderFileSegments(seg));
+      if (seg.trim()) parts.push(renderFileSegments(seg, breaks));
     }
     const chipName = match[2] ?? match[4] ?? "pasted_log.txt";
     const chipBody = match[3] ?? match[5] ?? "";
@@ -96,17 +107,17 @@ function renderTextBlock(rawText: string): string {
     last = match.index + match[0].length;
   }
   const tail = text.slice(last);
-  if (tail.trim()) parts.push(renderFileSegments(tail));
+  if (tail.trim()) parts.push(renderFileSegments(tail, breaks));
   return parts.join("");
 }
 
 // Renders a text segment, turning any <file:> tokens into attachment chips and
 // the rest into markdown.
-function renderFileSegments(text: string): string {
+function renderFileSegments(text: string, breaks = false): string {
   FILE_TOKEN_RE.lastIndex = 0;
   if (!FILE_TOKEN_RE.test(text)) {
     FILE_TOKEN_RE.lastIndex = 0;
-    return `<div class="block text">${renderMarkdown(text)}</div>`;
+    return `<div class="block text">${renderMarkdown(text, breaks)}</div>`;
   }
   FILE_TOKEN_RE.lastIndex = 0;
   const parts: string[] = [];
@@ -115,7 +126,7 @@ function renderFileSegments(text: string): string {
   while ((match = FILE_TOKEN_RE.exec(text)) !== null) {
     if (match.index > last) {
       const seg = text.slice(last, match.index).trim();
-      if (seg) parts.push(`<div class="block text">${renderMarkdown(seg)}</div>`);
+      if (seg) parts.push(`<div class="block text">${renderMarkdown(seg, breaks)}</div>`);
     }
     const path = match[1] ?? "";
     const name = match[2] ?? basename(path);
@@ -123,7 +134,7 @@ function renderFileSegments(text: string): string {
     last = match.index + match[0].length;
   }
   const tail = text.slice(last).trim();
-  if (tail) parts.push(`<div class="block text">${renderMarkdown(tail)}</div>`);
+  if (tail) parts.push(`<div class="block text">${renderMarkdown(tail, breaks)}</div>`);
   return parts.join("");
 }
 
@@ -175,12 +186,12 @@ export interface RenderedMessage {
   ts: number;
 }
 
-export function renderBlocks(blocks: ContentBlock[]): string {
+export function renderBlocks(blocks: ContentBlock[], breaks = false): string {
   return blocks
     .map((b) => {
       switch (b.type) {
         case "text":
-          return renderTextBlock(b.text);
+          return renderTextBlock(b.text, breaks);
         case "image":
           return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
         default:
@@ -195,7 +206,7 @@ export function renderMessage(m: RenderedMessage): string {
     case "system":
       return `<div class="msg system">${escapeHtml(m.text ?? "")}</div>`;
     case "user":
-      return `<div class="msg user">${renderBlocks(m.content ?? [])}</div>`;
+      return `<div class="msg user">${renderBlocks(m.content ?? [], true)}</div>`;
     case "assistant":
       return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(m.content ?? [])}</div>`;
     case "tool_use": {
@@ -213,8 +224,8 @@ export function renderMessage(m: RenderedMessage): string {
   }
 }
 
-function renderMarkdown(text: string): string {
-  return highlightSlashMentions(md.render(text));
+function renderMarkdown(text: string, breaks = false): string {
+  return highlightSlashMentions((breaks ? mdBreaks : md).render(text));
 }
 
 // Claude Code wraps slash-command prompts with internal tags like
@@ -303,6 +314,25 @@ export function highlightSlashMentions(html: string): string {
     });
   }
   return parts.join("");
+}
+
+/**
+ * Highlight known `/slash` tokens in RAW composer text (not markdown) for the
+ * composer's highlight backdrop. Escapes HTML and wraps registered commands in
+ * a COLOR-ONLY span; unknown names stay plain. The span must not change font,
+ * padding, or border - the backdrop sits glyph-for-glyph behind a transparent
+ * textarea, so any box change would knock the text out of alignment.
+ */
+export function highlightComposerInput(text: string): string {
+  const escaped = escapeHtml(text);
+  const withSpans = escaped.replace(SLASH_MENTION_RE, (_match, pre: string, raw: string) => {
+    const hit = lookupSlash(raw);
+    if (!hit) return `${pre}/${raw}`;
+    return `${pre}<span class="cm-slash cm-slash-${slashKindClass(hit.source)}">/${raw}</span>`;
+  });
+  // pre-wrap drops a trailing newline; pad it so the backdrop height (and thus
+  // scroll position) tracks the textarea exactly.
+  return withSpans.endsWith("\n") ? withSpans + " " : withSpans;
 }
 
 export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {

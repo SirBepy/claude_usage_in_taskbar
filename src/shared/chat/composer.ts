@@ -12,6 +12,7 @@ import { FileProvider } from "./caret-popup/providers/file";
 import type { SuggestProvider } from "./caret-popup/types";
 import type { ChatRenderer } from "./chat-renderer";
 import { parseBuiltin, HANDLERS, type BuiltinContext } from "./builtins";
+import { highlightComposerInput } from "./chat-transforms";
 import "./builtins/register";
 import "./caret-popup/popup.css";
 import { openLightbox } from "./lightbox";
@@ -55,6 +56,7 @@ export class Composer {
   private sessionId: string | null = null;
   private disabled = false;
   private textarea: HTMLTextAreaElement | null = null;
+  private highlightEl: HTMLElement | null = null;
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private slash: SlashProvider | null = null;
@@ -92,7 +94,8 @@ export class Composer {
       this.root.style.position = "relative";
     }
     this.slash = new SlashProvider();
-    void this.slash.start(opts.projectDir ?? null);
+    // Repaint once the registry lands so already-typed /commands colorize.
+    void this.slash.start(opts.projectDir ?? null).then(() => this.updateHighlight());
     this.file = new FileProvider();
     this.file.start(opts.projectDir ?? null);
     this.render();
@@ -139,6 +142,7 @@ export class Composer {
     if (this.textarea && restored) {
       this.textarea.value = restored;
       this.autoResize();
+      this.updateHighlight();
       if (stored && !inMemoryDraft) saveDraft(id, stored);
     }
     // Refresh DOM so any in-memory attachments are visible in the rebuilt
@@ -190,13 +194,17 @@ export class Composer {
     this.root.innerHTML = `
       <div class="composer-attachments"></div>
       <div class="composer-row">
-        <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
+        <div class="composer-input-wrap">
+          <div class="composer-highlight" aria-hidden="true"></div>
+          <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
+        </div>
         <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
           <i class="ph ph-paper-plane-right"></i>
         </button>
       </div>
     `;
     this.textarea = this.root.querySelector<HTMLTextAreaElement>(".composer-textarea");
+    this.highlightEl = this.root.querySelector<HTMLElement>(".composer-highlight");
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
 
@@ -214,8 +222,12 @@ export class Composer {
       this.textarea.addEventListener("paste", this.onPaste.bind(this));
       this.textarea.addEventListener("input", () => {
         this.autoResize();
+        this.updateHighlight();
         this.popup?.handleInput();
         this.persistDraft();
+      });
+      this.textarea.addEventListener("scroll", () => {
+        if (this.highlightEl && this.textarea) this.highlightEl.scrollTop = this.textarea.scrollTop;
       });
       this.sendBtn?.addEventListener("click", () => void this.send());
       this.root.classList.add("composer-root");
@@ -224,6 +236,7 @@ export class Composer {
       this.root.addEventListener("drop", this.onDrop);
     }
     this.autoResize();
+    this.updateHighlight();
   }
 
   private autoResize(): void {
@@ -231,6 +244,14 @@ export class Composer {
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${ta.scrollHeight}px`;
+  }
+
+  // Repaint the highlight backdrop (colors known /slash commands) behind the
+  // transparent-text textarea, and keep it scroll-aligned.
+  private updateHighlight(): void {
+    if (!this.highlightEl || !this.textarea) return;
+    this.highlightEl.innerHTML = highlightComposerInput(this.textarea.value);
+    this.highlightEl.scrollTop = this.textarea.scrollTop;
   }
 
   private async onKey(e: KeyboardEvent): Promise<void> {
@@ -413,6 +434,7 @@ export class Composer {
       }
       if (this.textarea) this.textarea.value = "";
       this.autoResize();
+      this.updateHighlight();
       this.attachments = [];
       this.pastedBlocks = [];
       this.renderAttachments();
@@ -448,6 +470,7 @@ export class Composer {
 
     if (this.textarea) this.textarea.value = "";
     this.autoResize();
+    this.updateHighlight();
     this.attachments = [];
     this.pastedBlocks = [];
     this.renderAttachments();

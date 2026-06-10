@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { renderBlocks, renderMessage, cleanUserBlocks, base64ToUtf8, detectStatusToken } from "../src/shared/chat/chat-transforms.ts";
+import { renderBlocks, renderMessage, cleanUserBlocks, base64ToUtf8, detectStatusToken, highlightComposerInput } from "../src/shared/chat/chat-transforms.ts";
+import { setSlashEntries } from "../src/shared/chat/slash-registry.ts";
 
 describe("renderBlocks — file token handling", () => {
   it("converts a standalone <file:path::name> token to an attachment-chip", () => {
@@ -195,5 +196,43 @@ describe("cleanUserBlocks — strips background-task notifications", () => {
     expect(out[0].text).toContain("hey after");
     expect(out[0].text).not.toContain("task-notification");
     expect(out[0].text).not.toContain("status");
+  });
+});
+
+describe("renderMessage — user newlines render as hard breaks", () => {
+  it("turns single newlines in a user message into <br> (preserves multi-line input)", () => {
+    const html = renderMessage({ kind: "user", content: [{ type: "text", text: "line one\nline two\nline three" }], ts: 0 });
+    expect((html.match(/<br\s*\/?>/g) ?? []).length).toBe(2);
+    expect(html).toContain("line one");
+    expect(html).toContain("line three");
+  });
+
+  it("does NOT hard-break assistant messages (Claude's own paragraphing wins)", () => {
+    const html = renderMessage({ kind: "assistant", content: [{ type: "text", text: "line one\nline two" }], ts: 0 });
+    expect(html).not.toContain("<br");
+  });
+});
+
+describe("highlightComposerInput — live /slash coloring", () => {
+  it("wraps a known skill in a color-only span, leaves unknown plain", () => {
+    setSlashEntries([{ name: "commit", source: { kind: "user-skill" } }]);
+    const known = highlightComposerInput("/commit go");
+    expect(known).toContain('<span class="cm-slash cm-slash-user-skill">/commit</span>');
+    const unknown = highlightComposerInput("/asdasdasd nope");
+    expect(unknown).not.toContain("cm-slash");
+    expect(unknown).toContain("/asdasdasd");
+  });
+
+  it("escapes HTML so raw input can't inject markup", () => {
+    setSlashEntries([]);
+    const out = highlightComposerInput("<b>hi</b> & stuff");
+    expect(out).toContain("&lt;b&gt;");
+    expect(out).toContain("&amp;");
+    expect(out).not.toContain("<b>");
+  });
+
+  it("pads a trailing newline so backdrop height tracks the textarea", () => {
+    setSlashEntries([]);
+    expect(highlightComposerInput("hello\n")).toBe("hello\n ");
   });
 });

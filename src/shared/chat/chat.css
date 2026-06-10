@@ -45,6 +45,16 @@
   border-color: rgba(199, 148, 245, 0.55);
 }
 
+/* Composer highlight-backdrop slash coloring. COLOR ONLY (no font/padding/border
+ * changes) so the backdrop stays glyph-aligned with the textarea. Mirrors the
+ * sent-message .slash-mention palette so the live preview matches the result. */
+.cm-slash-builtin { color: #7cb6ff; }
+.cm-slash-user-command,
+.cm-slash-project-command { color: #6ed6c8; }
+.cm-slash-plugin-command { color: #f0b67f; }
+.cm-slash-user-skill,
+.cm-slash-plugin-skill { color: #c794f5; }
+
 .msg {
   margin-bottom: 12px;
   padding: 8px 12px;
@@ -428,14 +438,50 @@
   gap: 8px;
 }
 
-.composer-textarea {
+/* Input wrap holds the highlight backdrop + the transparent-text textarea on
+ * top of it, glyph-for-glyph aligned. The surface/rounding lives on the wrap
+ * so the textarea can be transparent and let the colored backdrop show. */
+.composer-input-wrap {
+  position: relative;
   flex: 1;
+  min-width: 0;
+  display: flex;
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+.composer-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  pointer-events: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* MUST match .composer-textarea box + type metrics exactly. */
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  color: var(--color-text);
+  z-index: 0;
+}
+
+.composer-textarea {
+  position: relative;
+  z-index: 1;
+  width: 100%;
   resize: none;
   box-sizing: border-box;
   max-height: 200px;
   overflow-y: auto;
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-text);
   border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 8px;
