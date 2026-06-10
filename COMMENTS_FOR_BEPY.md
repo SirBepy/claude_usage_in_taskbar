@@ -193,3 +193,27 @@ Revisit: no
   - Extracted 4 pure engine fns behavior-preserving (all_sessions_idle, waiting_on_ids, next_countdown, close_turn_complete) so the phase-machine logic is actually exercised
   - Parse-checked the 3 modified e2e specs (all valid)
   - Remaining lever NOT pulled (Joe's call): trait-inject the daemon client + terminal action to enable a full task-level integration test - that's a structural change to shipped code, didn't do it unprompted
+
+---
+
+## 2026-06-11 00:45 - /autopilot ai_todos sweep
+
+Task: grind any actionable ai_todos. Triaged all 11. Only 1 was cleanly actionable without a live test or WIP conflict.
+
+Decision needed: which todos to action vs park.
+Resolved via: direct judgment + one Explore subagent for triage + one Explore subagent to verify 37's intent.
+Picked:
+- ai_todo 43 (extract statusbar tally subsystem): IMPLEMENTED. session-statusbar.ts 539 -> 385 lines; new session-tally.ts (ToolTallyRow controller) + session-tally.css. Pure refactor, behavior identical, tsc clean, vitest 277 pass (6 tally tests green). Commit 86d38fe. ai_todo deleted.
+- ai_todo 37 (hide Bash from statusline tally): CLOSED AS REDUNDANT, no code written. The feature already exists: Settings > Statusline > "Tool activity chips" already lists "Ran (shell)" (key "Bash") as an untickable checkbox (statusline.ts:121-127 -> tallyHiddenTools). Unticking it filters ONLY the statusline tally render (session-statusbar.ts:428), never the in-chat transcript rows. That is exactly what 37 asked for. Implementing a separate tallyHideBash boolean would duplicate it. ai_todo deleted.
+  - Revisit: ONLY if you wanted a MORE prominent/dedicated toggle than the generic per-tool chip list. The functional ask is already met. Re-add a todo if you want dedicated UI.
+
+Parked (not actionable this run):
+- ai_todo 31 (collapse context-window heuristic to 1 source): BLOCKED. Its precondition is that ai_todo 30's BEPY_TODO confirms the chip reads the daemon value correctly post-relaunch. ai_todo 30 is still in BEPY_TODOS NEEDS-RELAUNCH pending, and the daemon value is itself a heuristic (no definitive Opus 200K-vs-1M signal). Removing the frontend modelContextWindow fallback now is a live-test gate I cannot clear. Left as-is.
+- 32 (when-done integration test), 35 (in-app file viewer), 36 (AskUserQuestion dropped answers), 40 (auto-query models - OAuth /v1/models gating unknown), 45 (msg-count + unsent queue): all need a live app/daemon, a live repro, or Joe's credentials. Parked.
+- 42 (filter body tool groups) + 44 (transcript accordion): SKIPPED to avoid clobbering the uncommitted WIP already in the tree (chat-renderer.ts, turn-collapse.ts, chat.css, chat-renderer-activity.test.mjs) - that WIP is in-flight work on 44. See note below.
+- 33 (HotS laugh extraction): needs local game CASC + manual audio curation on your machine. Parked.
+
+NOTE on uncommitted WIP: at session start the tree already had modified chat-renderer.ts / chat.css / turn-collapse.ts / chat-renderer-activity.test.mjs (in-flight on ai_todo 44, predates this session). Tests pass WITH it (277 green) but I did NOT commit it - can't attribute another agent's half-state, and concurrent-autopilot rules say never sweep up files I didn't author. Left untouched/unstaged. Also left unstaged: the ` D` deletion of ai_todo 41's md file (41 was resolved in commit 48b593e; its md just wasn't deleted then - your call whether to clean it up).
+
+Where: src/views/sessions/ (statusbar tally)
+Revisit: 37 only (see above); rest are parked with reasons.
