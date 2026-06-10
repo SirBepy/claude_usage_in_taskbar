@@ -497,13 +497,13 @@
   gap: 6px;
 }
 
-/* ── Turn-steps collapsible group ───────────────────────────────────────── */
+/* ── Per-type tool group (Read x4, Grep x5, ...) ─────────────────────────── */
 
-.turn-steps {
-  margin-bottom: 10px;
+.tool-group {
+  margin-bottom: 6px;
 }
 
-.turn-steps-summary {
+.tool-group-summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -517,22 +517,35 @@
   padding: 3px 10px;
   user-select: none;
   transition: color 0.12s, background 0.12s;
-  margin-bottom: 0;
 }
 
-.turn-steps-summary::-webkit-details-marker { display: none; }
+.tool-group-summary::-webkit-details-marker { display: none; }
 
-.turn-steps-summary:hover {
+.tool-group-summary:hover {
   color: var(--color-text);
   background: color-mix(in srgb, var(--color-border) 60%, var(--color-surface-alt));
 }
 
-.turn-steps-summary i {
-  font-size: 0.75rem;
+.tool-group-summary i {
+  font-size: 0.85rem;
 }
 
-.turn-steps[open] > .turn-steps-summary {
+.tool-group-name {
+  font-weight: 600;
+}
+
+.tool-group-count {
+  color: var(--color-text-muted);
+  opacity: 0.8;
+}
+
+.tool-group[open] > .tool-group-summary {
   margin-bottom: 8px;
+}
+
+/* Nested rows inside an open group: indent + de-emphasize the rail. */
+.tool-group[open] > .msg.tool-row {
+  margin-left: 10px;
 }
 
 /* Working messages: dimmed during active turn and inside open details. */

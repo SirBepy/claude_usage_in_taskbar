@@ -12,7 +12,7 @@ import {
   loadUnreadSet,
   saveUnreadSet,
 } from "./sessions-helpers";
-import { SessionStatusbar, loadStatuslineFields, fetchGitInfo } from "./session-statusbar";
+import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import {
@@ -198,6 +198,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
     const fields = await loadStatuslineFields();
+    const tallyHiddenTools = await loadTallyHiddenTools();
     let effortDisplay = sess.effort ?? "";
     if (!effortDisplay && sess.kind === "external" && sess.cwd) {
       try {
@@ -213,6 +214,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       sessionId: sess.session_id,
       readOnly: sess.kind === "external",
       sessionModel: sess.model || null,
+      tallyHiddenTools,
     });
     state.statusbar = sb;
     // Fetch git info async (cache-first; instantly populated by constructor

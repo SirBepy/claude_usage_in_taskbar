@@ -87,8 +87,8 @@ describe("ChatRenderer — activity pinning", () => {
   });
 });
 
-describe("ChatRenderer — turn-steps pill", () => {
-  it("summary counts all intermediate steps, not just tool calls", () => {
+describe("ChatRenderer — per-type tool groups", () => {
+  it("folds a turn's tool call into a per-type group counting tool_use only", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const r = new ChatRenderer(container);
@@ -101,9 +101,60 @@ describe("ChatRenderer — turn-steps pill", () => {
     r.handleEvent(finalEvent("done"));
     r.handleEvent(turnUsage());
 
-    const summary = container.querySelector(".turn-steps-summary");
-    expect(summary).not.toBeNull();
-    // Intermediate = tool_use + tool_result = 2 (final answer stays outside).
-    expect(summary.textContent).toContain("2 steps");
+    expect(container.querySelector(".turn-steps")).toBeNull();
+    const group = container.querySelector('.tool-group[data-tool="Bash"]');
+    expect(group).not.toBeNull();
+    // tool_use counts, tool_result does not.
+    expect(group.querySelector(".tool-group-count").textContent).toBe("x1");
+    // Both the tool_use row and its result live inside the group.
+    expect(group.querySelectorAll(".tool-row").length).toBe(2);
+    // The final answer stays outside the group.
+    expect(group.contains(container.querySelector(".msg.assistant"))).toBe(false);
+  });
+
+  it("folds repeated calls of the same type into one growing count, live", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("search"));
+    r.handleEvent(toolUse("Grep", { pattern: "a" }, "g1"));
+    let group = container.querySelector('.tool-group[data-tool="Grep"]');
+    expect(group.querySelector(".tool-group-count").textContent).toBe("x1");
+    r.handleEvent(toolUse("Grep", { pattern: "b" }, "g2"));
+    r.handleEvent(toolUse("Grep", { pattern: "c" }, "g3"));
+    group = container.querySelector('.tool-group[data-tool="Grep"]');
+    // One group, count grew to 3.
+    expect(container.querySelectorAll('.tool-group[data-tool="Grep"]').length).toBe(1);
+    expect(group.querySelector(".tool-group-count").textContent).toBe("x3");
+  });
+
+  it("keeps distinct tool types in separate groups", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("go"));
+    r.handleEvent(toolUse("Grep", { pattern: "a" }, "g1"));
+    r.handleEvent(toolUse("Read", { file_path: "/a/x.ts" }, "r1"));
+    r.handleEvent(toolUse("Grep", { pattern: "b" }, "g2"));
+
+    expect(container.querySelector('.tool-group[data-tool="Grep"] .tool-group-count').textContent).toBe("x2");
+    expect(container.querySelector('.tool-group[data-tool="Read"] .tool-group-count').textContent).toBe("x1");
+  });
+
+  it("does NOT fold rich edit cards into a group", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("edit"));
+    r.handleEvent(toolUse("Edit", { file_path: "/a/x.ts", old_string: "a", new_string: "b" }, "e1"));
+
+    expect(container.querySelector('.tool-group[data-tool="Edit"]')).toBeNull();
+    expect(container.querySelector(".tool-use--file")).not.toBeNull();
   });
 });

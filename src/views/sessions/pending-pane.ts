@@ -10,7 +10,7 @@ import { renderSidebar, refreshSessions } from "./sidebar";
 import type { SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
 import { closeChat } from "./close-chat";
-import { SessionStatusbar, loadStatuslineFields, fetchGitInfo } from "./session-statusbar";
+import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
 import { savePendingSession, clearPendingSession } from "./pending-draft-storage";
 
 function rebuildSidebar(): void {
@@ -47,12 +47,14 @@ export async function renderPendingPane(
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
     const fields = await loadStatuslineFields();
+    const tallyHiddenTools = await loadTallyHiddenTools();
     const sb = new SessionStatusbar(sbHost, null, fields, {
       cwd: project.path,
       effort: config.effort,
       sessionId: placeholderId,
       readOnly: true,
       sessionModel: config.model || null,
+      tallyHiddenTools,
     });
     state.statusbar = sb;
     fetchGitInfo(project.path)

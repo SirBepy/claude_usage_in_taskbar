@@ -11,7 +11,8 @@
   padding: 4px 0;
 }
 
-.view-settings-statusline .sl-field-row {
+.view-settings-statusline .sl-field-row,
+.view-settings-statusline .sl-tally-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -25,11 +26,13 @@
   transition: background 0.12s;
 }
 
-.view-settings-statusline .sl-field-row:hover {
+.view-settings-statusline .sl-field-row:hover,
+.view-settings-statusline .sl-tally-row:hover {
   background: var(--color-surface-alt);
 }
 
-.view-settings-statusline .sl-field-row input[type=checkbox] {
+.view-settings-statusline .sl-field-row input[type=checkbox],
+.view-settings-statusline .sl-tally-row input[type=checkbox] {
   accent-color: var(--color-primary);
   cursor: pointer;
 }

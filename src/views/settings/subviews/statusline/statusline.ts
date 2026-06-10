@@ -4,6 +4,10 @@ import {
   DEFAULT_STATUSLINE_FIELDS,
   loadStatuslineFields,
   saveStatuslineFields,
+  TALLY_TOOL_OPTIONS,
+  DEFAULT_TALLY_HIDDEN_TOOLS,
+  loadTallyHiddenTools,
+  saveTallyHiddenTools,
 } from "../../../sessions/session-statusbar-helpers";
 import { modelLabel as shortModelName } from "../../../../shared/model-name";
 import "../../settings.css";
@@ -71,7 +75,7 @@ function previewChips(fields: string[]): string {
   return out.join("");
 }
 
-function template(fields: string[]) {
+function template(fields: string[], hiddenTools: string[]) {
   return html`
     <div class="view view-settings-statusline">
       <div class="view-header">
@@ -108,6 +112,21 @@ function template(fields: string[]) {
           </div>
         </div>
 
+        <div class="kit-section sl-section">
+          <div class="kit-section-title">Tool activity chips</div>
+          <div class="kit-section-hint" style="margin-bottom:8px;font-size:0.78rem;opacity:0.7;">
+            Which tool counters (Read, Grep, ...) appear in the activity row. Untick to hide.
+          </div>
+          <div class="sl-fields">
+            ${TALLY_TOOL_OPTIONS.map(({ key, label }) => html`
+              <label class="sl-tally-row">
+                <input type="checkbox" data-tool="${key}" ?checked=${!hiddenTools.includes(key)}>
+                ${label}
+              </label>
+            `)}
+          </div>
+        </div>
+
         <div class="kit-section">
           <button class="btn-secondary" id="slResetBtn" style="font-size:0.8rem;">Reset to defaults</button>
         </div>
@@ -118,14 +137,11 @@ function template(fields: string[]) {
 }
 
 export async function renderStatuslineView(root: HTMLElement): Promise<() => void> {
-  let fields = await loadStatuslineFields();
+  const fields = await loadStatuslineFields();
+  const hiddenTools = await loadTallyHiddenTools();
 
-  function rerender(): void {
-    render(template(fields), root);
-    wire(root);
-  }
-
-  rerender();
+  render(template(fields, hiddenTools), root);
+  wire(root);
 
   return () => {};
 }
@@ -152,8 +168,21 @@ function wire(root: HTMLElement): void {
     });
   });
 
+  root.querySelectorAll<HTMLInputElement>(".sl-tally-row input").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const hidden = Array.from(root.querySelectorAll<HTMLInputElement>(".sl-tally-row input"))
+        .filter((c) => !c.checked)
+        .map((c) => c.dataset.tool!);
+      void saveTallyHiddenTools(hidden);
+    });
+  });
+
   root.querySelector<HTMLButtonElement>("#slResetBtn")?.addEventListener("click", async () => {
     await saveStatuslineFields([...DEFAULT_STATUSLINE_FIELDS]);
+    await saveTallyHiddenTools([...DEFAULT_TALLY_HIDDEN_TOOLS]);
+    root.querySelectorAll<HTMLInputElement>(".sl-tally-row input").forEach((cb) => {
+      cb.checked = !DEFAULT_TALLY_HIDDEN_TOOLS.includes(cb.dataset.tool!);
+    });
     root.querySelectorAll<HTMLInputElement>(".sl-field-row input").forEach((cb) => {
       cb.checked = DEFAULT_STATUSLINE_FIELDS.includes(cb.dataset.key!);
     });

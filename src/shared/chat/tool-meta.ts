@@ -93,11 +93,56 @@ export function classifyTarget(
   }
 }
 
+/** One distinct target behind a tool chip's drill-down popover. */
+export interface TallyItem {
+  /** display text: basename for files, pattern for Grep/Glob, desc/command for Bash */
+  label: string;
+  kind: "file" | "image" | "text";
+  /** absolute path for openable file/image targets */
+  path?: string;
+  /** filename when kind === "image" */
+  filename?: string;
+  /** repeat count for identical targets */
+  count: number;
+}
+
 export interface ToolTally {
-  /** insertion order = first-seen order */
-  byType: { tool: string; count: number }[];
-  /** non-image Read/Edit/Write/MultiEdit/NotebookEdit targets, distinct, with repeat counts */
-  files: { path: string; count: number }[];
-  /** image-extension targets, distinct, with repeat counts */
-  images: { path: string; filename: string; count: number }[];
+  /** insertion order = first-seen order; each type carries its distinct targets */
+  byType: { tool: string; count: number; items: TallyItem[] }[];
+}
+
+/**
+ * Per-call detail for a tool chip's drill-down: what to show in the popover and,
+ * for files/images, how to open it. `key` dedups identical targets. Returns null
+ * for tools with nothing worth listing (e.g. unknown tools, Agent/Task).
+ */
+export function tallyDetail(
+  tool: string,
+  input: unknown,
+): (Omit<TallyItem, "count"> & { key: string }) | null {
+  const cls = classifyTarget(tool, input);
+  if (cls.kind === "image" && cls.path) {
+    return { key: cls.path, kind: "image", path: cls.path, filename: basename(cls.path), label: basename(cls.path) };
+  }
+  if (cls.kind === "file" && cls.path) {
+    return { key: cls.path, kind: "file", path: cls.path, label: basename(cls.path) };
+  }
+  const obj = asObj(input);
+  switch (tool) {
+    case "Grep": {
+      const p = strField(obj, "pattern");
+      return p ? { key: "grep:" + p, kind: "text", label: capTarget(p) } : null;
+    }
+    case "Glob": {
+      const p = strField(obj, "pattern");
+      return p ? { key: "glob:" + p, kind: "text", label: capTarget(p) } : null;
+    }
+    case "Bash":
+    case "PowerShell": {
+      const label = strField(obj, "description") || strField(obj, "command");
+      return label ? { key: "cmd:" + label, kind: "text", label: capTarget(label) } : null;
+    }
+    default:
+      return null;
+  }
 }

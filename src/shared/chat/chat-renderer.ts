@@ -5,10 +5,9 @@ import { highlightCodeBlocks } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
-import { basename } from "../path-utils";
-import { toolSummary, classifyTarget, type ToolTally } from "./tool-meta";
+import { toolSummary, tallyDetail, type ToolTally, type TallyItem } from "./tool-meta";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
-import { applyTurnCollapse, clampUserMessages } from "./turn-collapse";
+import { applyTurnCollapse, groupToolRange, clampUserMessages } from "./turn-collapse";
 import { ChatPaginator } from "./chat-pagination";
 
 export interface SessionMeta {
@@ -51,15 +50,16 @@ export class ChatRenderer {
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
   private activeTurnStart: number | null = null;
+  // Per-type tool-group elements for the turn in progress (key = tool name), so
+  // repeated calls fold into one growing "Grep x5" row. Cleared at each turn end.
+  private activeToolGroups = new Map<string, HTMLElement>();
   private closeTurnQueue: { start: number; end: number }[] = [];
   private fileEdits: FileEditView[] = [];
   private lastActivity: string | null = null;
   // By-type tool tally. Maps preserve insertion (first-seen) order; the public
   // ToolTally clone reflects that order. `_talliedIds` dedups by tool_use id so
   // re-delivery/pagination can't double-count a tool_use.
-  private _byType = new Map<string, number>();
-  private _files = new Map<string, number>();
-  private _images = new Map<string, number>();
+  private _tools = new Map<string, { count: number; items: Map<string, TallyItem> }>();
   private _talliedIds = new Set<string>();
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
@@ -124,6 +124,7 @@ export class ChatRenderer {
     this._cumulative = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
     this.fileEdits = [];
     this.lastActivity = null;
+    this.activeToolGroups.clear();
     this.resetToolTally();
     this.onFileEditsChanged?.([]);
     this.onToolTally?.(this.buildToolTally());
@@ -164,6 +165,7 @@ export class ChatRenderer {
     this.streamingIndex = null;
     this.dirtyIndices.clear();
     this.activeTurnStart = null;
+    this.activeToolGroups.clear();
     this.closeTurnQueue = [];
     this.setActivity(null);
     this.sessionId = null;
@@ -207,31 +209,39 @@ export class ChatRenderer {
 
   private buildToolTally(): ToolTally {
     return {
-      byType: [...this._byType].map(([tool, count]) => ({ tool, count })),
-      files: [...this._files].map(([path, count]) => ({ path, count })),
-      images: [...this._images].map(([path, count]) => ({ path, filename: basename(path), count })),
+      byType: [...this._tools].map(([tool, e]) => ({
+        tool,
+        count: e.count,
+        items: [...e.items.values()].map((it) => ({ ...it })),
+      })),
     };
   }
 
   private resetToolTally(): void {
-    this._byType.clear();
-    this._files.clear();
-    this._images.clear();
+    this._tools.clear();
     this._talliedIds.clear();
   }
 
-  /** Counts a tool_use exactly once (dedup by id) and fires onToolTally. */
+  /** Counts a tool_use exactly once (dedup by id), records its target, fires onToolTally. */
   private tallyToolUse(tool: string, input: unknown, id: string | undefined): void {
     if (id !== undefined) {
       if (this._talliedIds.has(id)) return;
       this._talliedIds.add(id);
     }
-    this._byType.set(tool, (this._byType.get(tool) ?? 0) + 1);
-    const cls = classifyTarget(tool, input);
-    if (cls.kind === "image" && cls.path) {
-      this._images.set(cls.path, (this._images.get(cls.path) ?? 0) + 1);
-    } else if (cls.kind === "file" && cls.path) {
-      this._files.set(cls.path, (this._files.get(cls.path) ?? 0) + 1);
+    let entry = this._tools.get(tool);
+    if (!entry) {
+      entry = { count: 0, items: new Map() };
+      this._tools.set(tool, entry);
+    }
+    entry.count += 1;
+    const d = tallyDetail(tool, input);
+    if (d) {
+      const existing = entry.items.get(d.key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        entry.items.set(d.key, { label: d.label, kind: d.kind, path: d.path, filename: d.filename, count: 1 });
+      }
     }
     this.onToolTally?.(this.buildToolTally());
   }
@@ -286,6 +296,7 @@ export class ChatRenderer {
     this.streamingIndex = null;
     this.fileEdits = [];
     this.lastActivity = null;
+    this.activeToolGroups.clear();
     this.resetToolTally();
     this.onFileEditsChanged?.([]);
     this.onToolTally?.(this.buildToolTally());
@@ -482,12 +493,18 @@ export class ChatRenderer {
       }
     }
     this.processTurnCloseQueue();
+    if (this.activeTurnStart !== null) {
+      groupToolRange(this.messages, this.messageEls, this.activeTurnStart, this.messages.length, this.activeToolGroups);
+    }
     void highlightCodeBlocks(this.container);
     wrapBlockquotes(this.container);
     clampUserMessages(this.messages, this.messageEls);
   }
 
   private enqueueTurnClose(): void {
+    // The next turn folds into fresh groups; closed-turn rows already carry
+    // data-tool-grouped, so processTurnCloseQueue won't re-fold them.
+    this.activeToolGroups.clear();
     if (this.activeTurnStart === null) return;
     this.closeTurnQueue.push({ start: this.activeTurnStart, end: this.messages.length });
     this.activeTurnStart = null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toolSummary, classifyTarget, IMAGE_EXTS } from "../src/shared/chat/tool-meta.ts";
+import { toolSummary, classifyTarget, tallyDetail, IMAGE_EXTS } from "../src/shared/chat/tool-meta.ts";
 
 describe("toolSummary — target + icon", () => {
   it("Read → basename target, ph-file", () => {
@@ -89,5 +89,36 @@ describe("classifyTarget — file vs image vs none", () => {
     for (const ext of IMAGE_EXTS) {
       expect(classifyTarget("Read", { file_path: `/a/pic${ext}` }).kind).toBe("image");
     }
+  });
+});
+
+describe("tallyDetail — per-chip drill-down item", () => {
+  it("Read of a code file → file item keyed by path, basename label", () => {
+    expect(tallyDetail("Read", { file_path: "/a/b/foo.ts" })).toEqual({
+      key: "/a/b/foo.ts", kind: "file", path: "/a/b/foo.ts", label: "foo.ts",
+    });
+  });
+
+  it("Read of an image → image item with filename", () => {
+    expect(tallyDetail("Read", { file_path: "/a/shot.PNG" })).toEqual({
+      key: "/a/shot.PNG", kind: "image", path: "/a/shot.PNG", filename: "shot.PNG", label: "shot.PNG",
+    });
+  });
+
+  it("Grep / Glob → text item keyed distinctly by pattern", () => {
+    expect(tallyDetail("Grep", { pattern: "foo.*" })).toEqual({ key: "grep:foo.*", kind: "text", label: "foo.*" });
+    expect(tallyDetail("Glob", { pattern: "**/*.ts" })).toEqual({ key: "glob:**/*.ts", kind: "text", label: "**/*.ts" });
+  });
+
+  it("Bash → text item, description preferred over command", () => {
+    expect(tallyDetail("Bash", { description: "List", command: "ls" })).toEqual({ key: "cmd:List", kind: "text", label: "List" });
+    expect(tallyDetail("Bash", { command: "ls -la" })).toEqual({ key: "cmd:ls -la", kind: "text", label: "ls -la" });
+  });
+
+  it("returns null for tools / inputs with nothing to list", () => {
+    expect(tallyDetail("Agent", { prompt: "x" })).toBeNull();
+    expect(tallyDetail("Read", {})).toBeNull();
+    expect(tallyDetail("Grep", { pattern: "" })).toBeNull();
+    expect(tallyDetail("Frobnicate", { a: 1 })).toBeNull();
   });
 });

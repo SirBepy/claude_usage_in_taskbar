@@ -36,6 +36,46 @@ export async function saveStatuslineFields(fields: string[]): Promise<void> {
   }
 }
 
+// Tool-activity chips the user can show/hide in the statusbar tally row. Keys are
+// raw tool names (what the chips group by); a tool not listed here always shows.
+export const TALLY_TOOL_OPTIONS = [
+  { key: "Read",            label: "Read" },
+  { key: "Edit",            label: "Edit" },
+  { key: "MultiEdit",       label: "Multi-edit" },
+  { key: "Write",           label: "Write" },
+  { key: "NotebookEdit",    label: "Notebook edit" },
+  { key: "Grep",            label: "Grep" },
+  { key: "Glob",            label: "Glob" },
+  { key: "Bash",            label: "Bash / shell" },
+  { key: "Task",            label: "Subagent" },
+  { key: "TodoWrite",       label: "Todo updates" },
+  { key: "AskUserQuestion", label: "Ask-user questions" },
+  { key: "WebFetch",        label: "Web fetch" },
+  { key: "WebSearch",       label: "Web search" },
+];
+
+// Denylist (raw tool names) hidden from the tally row by default. Noise the user
+// rarely cares to scan: question prompts and todo bookkeeping.
+export const DEFAULT_TALLY_HIDDEN_TOOLS = ["AskUserQuestion", "TodoWrite"];
+
+export async function loadTallyHiddenTools(): Promise<string[]> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    const v = s["tallyHiddenTools"];
+    if (Array.isArray(v)) return v as string[];
+  } catch { /* ignore */ }
+  return [...DEFAULT_TALLY_HIDDEN_TOOLS];
+}
+
+export async function saveTallyHiddenTools(tools: string[]): Promise<void> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    await invoke("save_settings", { updated: { ...s, tallyHiddenTools: tools } });
+  } catch (e) {
+    console.error("[statusbar] save tally tools failed", e);
+  }
+}
+
 export function modelContextWindow(model: string | null): number {
   // claude-3-opus family is 200K; all other/future opus (opus-4, opus-5, ...) default to 1M.
   // Blocklist approach: adding a new opus version never requires updating this function.
@@ -94,4 +134,6 @@ export interface StatusbarOptions {
   sessionId?: string | null;
   readOnly?: boolean;
   sessionModel?: string | null;
+  /** Raw tool names hidden from the tally row (see loadTallyHiddenTools). */
+  tallyHiddenTools?: string[];
 }

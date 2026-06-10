@@ -187,7 +187,6 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  cursor: pointer;
   min-width: 0;
   overflow: hidden;
 }
@@ -204,6 +203,7 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid transparent;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .sb-tally-chip i {
@@ -211,7 +211,7 @@
   opacity: 0.7;
 }
 
-.sb-tally-row:hover .sb-tally-chip {
+.sb-tally-chip:hover {
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.08);
   border-color: var(--color-border);
@@ -229,39 +229,6 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
-.sb-tally-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-
-.sb-tally-tab {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: 1;
-  justify-content: center;
-  padding: 5px 8px;
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.sb-tally-tab:hover {
-  background: var(--color-surface-alt);
-  color: var(--color-text);
-}
-
-.sb-tally-tab.active {
-  color: var(--color-primary);
-  border-color: rgba(157, 125, 252, 0.4);
-  background: rgba(157, 125, 252, 0.08);
-}
-
 .sb-tally-list {
   max-height: 280px;
   overflow-y: auto;
@@ -271,16 +238,21 @@
 }
 
 .sb-tally-file,
-.sb-tally-media {
+.sb-tally-media,
+.sb-tally-text {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
   border-radius: 6px;
-  cursor: pointer;
   color: var(--color-text);
   font-size: 0.8rem;
   min-width: 0;
+}
+
+.sb-tally-file,
+.sb-tally-media {
+  cursor: pointer;
 }
 
 .sb-tally-file:hover,
@@ -288,10 +260,20 @@
   background: var(--color-surface-alt);
 }
 
-.sb-tally-file i {
+.sb-tally-file i,
+.sb-tally-text i {
   font-size: 1rem;
   color: var(--color-text-muted);
   flex-shrink: 0;
+}
+
+/* Grep/Bash targets are not openable; let the full text wrap instead of clip. */
+.sb-tally-text .sb-tally-name {
+  white-space: normal;
+  max-width: none;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.74rem;
+  word-break: break-word;
 }
 
 .sb-tally-name {

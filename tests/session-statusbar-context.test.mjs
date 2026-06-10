@@ -77,12 +77,13 @@ describe("context chip - daemon source of truth", () => {
     expect(c.className).toContain("danger");
   });
 
-  it("prefixes a ~ when confidence is heuristic", async () => {
+  it("marks heuristic confidence via the title, not a ~ prefix", async () => {
     ipcMock.impl = async () => makeCtx({ pct_used: 45, confidence: "heuristic" });
     const { el } = mount();
     await flush();
     const c = chip(el);
-    expect(c.textContent).toContain("~45%");
+    expect(c.textContent).toContain("45%");
+    expect(c.textContent).not.toContain("~");
     expect(c.getAttribute("title")).toContain("(estimated)");
     expect(c.className).not.toContain("warn");
   });
