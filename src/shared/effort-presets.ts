@@ -24,10 +24,6 @@ export const DEFAULT_PRESETS: Preset[] = [
   { name: "Heavy", model: "opus", effort: "max" },
 ];
 
-export function isModel(v: unknown): v is typeof MODELS[number] {
-  return typeof v === "string" && (MODELS as readonly string[]).includes(v);
-}
-
 export function isEffort(v: unknown): v is typeof EFFORTS[number] {
   return typeof v === "string" && (EFFORTS as readonly string[]).includes(v);
 }
