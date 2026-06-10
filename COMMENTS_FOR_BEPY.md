@@ -1,5 +1,40 @@
 # Comments for Bepy
 
+## 2026-06-10 - Remote-chat flag + configurable new-session modal
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Rust: per-chat `remote` flag threaded -> claude --remote-control -> cargo build green -> d56b254
+- Frontend: More-options disclosure (Auto-allow + Remote checkboxes), settings-configurable defaults, data-driven editable model list -> tsc + 261 vitest green -> 70546b5
+
+Decisions / notes:
+- Built A (remote flag), B (More-options disclosure), C (settings defaults), D1 (data-driven model list from settings.models, editable in Session presets). DEFERRED D2 (auto-query /v1/models at boot) to ai_todo 40 per your steer - it's the uncertain bit (OAuth token may not be accepted by the API-key-authed /v1/models endpoint).
+- Defaults: both checkboxes default ON; sourced from settings.defaultAutoAllow / settings.defaultRemoteControl (absent = on). Settings keys added: `models`, `defaultAutoAllow`, `defaultRemoteControl`.
+- Resume/respawn path passes remote=false (never registers a fresh bridge -> no duplicate Claude desktop sidebar entries, matches the existing channel rule).
+- Model validation loosened (readPresets/readLastChoice accept any non-empty model string) so user-defined models survive; effort stays strict.
+- UNVERIFIED / LOAD-BEARING: `--remote-control` + `--input-format=stream-json` on one chat process is the untested Phase-5b seam. Threaded as asked, but whether it actually works (daemon stdin vs phone bridge both driving) needs your live test - flagged in BEPY_TODOS. If it conflicts, we rethink.
+
+## 2026-06-10 - Tool-call activity surfacing (autopilot run)
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Doubled-attachment-message dedup fix -> green (vitest) -> b256448
+- Compact tool rows + per-chat tool tally + live activity label -> green -> 8bcf1d6
+- Subagent rows = "starting subagent" + 100-char target cap -> green -> 27fe9f6
+- Scroll: only auto-scroll when already at bottom -> green (jsdom test) -> 177d215
+- Rust open_in_editor + read_image_file IPC -> cargo build green -> 98ca6af
+- ccstatusline row + Files|Media popover -> (in progress)
+
+Judgment calls made without asking (all reversible):
+- Agent/Task tool rows show the literal "starting subagent" (NOT the short description), per your explicit ask. One-line revert in tool-meta.ts toolSummary if you'd rather see the description.
+- 100-char cap on ALL tool-row targets (Bash descriptions, Grep patterns, filenames).
+- Bash/PowerShell ARE counted in both the transcript rows and the ccstatusline tally; a toggle to hide them from the statusline is filed as an ai_todo (not built).
+- Tool rows use native <details>/<summary> for collapse (no JS expand-state map): survives streaming + pagination because these non-streaming message elements aren't rebuilt.
+- read_attachment is sandboxed to the chat-attachments dir, so added read_image_file for arbitrary image paths (mirrors it minus the sandbox). open_in_editor opens VS Code (cmd /C code, CREATE_NO_WINDOW) with an OS-default-open fallback. No capabilities entry needed (confirmed: existing custom commands aren't listed there either).
+
+Filed as ai_todos (not built this run):
+- In-app file/image viewer to replace the external VS Code open (your "handle it all in this app" later).
+- AskUserQuestion picker silently dropped your answers this session (you answered, I received "dismissed").
+- Optional toggle to hide Bash from the ccstatusline tally.
+
 ## 2026-06-06 - Autopilot: Re-source 1136 guillotine-cropped clips (full-length, no crop)
 
 Old "cut every clip to 2.0s" trim chopped 1136 voice lines mid-word. This run replaced them IN PLACE with FULL-length originals (same filename so character.json slots stay valid), per the corrected length rules. Character data lives OUTSIDE the git repo - only these .for_bepy bookkeeping files were committed (raw git, no /commit, per your instruction).
