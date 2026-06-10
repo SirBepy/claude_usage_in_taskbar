@@ -123,8 +123,10 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     const q = questions[qi];
     if (!q?.options?.length) return true;
     if ((freeText.get(qi) ?? "").trim()) return true;
+    // multiSelect is "select all that apply" - zero selections is a valid
+    // answer (none apply / answered via the free-text box), so never block it.
+    if (q.multiSelect) return true;
     const s = selections.get(qi);
-    if (q.multiSelect) return s instanceof Set && s.size > 0;
     return typeof s === "string";
   };
 
