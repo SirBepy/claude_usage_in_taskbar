@@ -8,8 +8,8 @@
   z-index: 100;
 }
 .builtin-help {
-  background: var(--color-surface-1, #1d1f23);
-  border: 1px solid var(--color-border-1, #333);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   width: min(640px, 90vw);
   max-height: 80vh;
@@ -21,7 +21,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border-1, #333);
+  border-bottom: 1px solid var(--color-border);
 }
 .builtin-help .close-x {
   background: transparent;
@@ -40,7 +40,7 @@
 }
 .builtin-help li {
   padding: 8px 0;
-  border-bottom: 1px solid var(--color-border-2, rgba(255, 255, 255, 0.05));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 30%, transparent);
 }
 .builtin-help li:last-child {
   border-bottom: none;
