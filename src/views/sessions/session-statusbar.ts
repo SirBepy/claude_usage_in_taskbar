@@ -191,10 +191,16 @@ export class SessionStatusbar {
 
   setSessionId(id: string): void {
     this.sessionId = id;
+    // Reset per-session state so a prior session's counts/context never linger
+    // on screen, then re-seed from cache (stale-while-revalidate) and re-render.
+    this.counts = null;
+    this.countsLoaded = false;
+    this.ctxStatus = null;
     const cached = countsCache.get(id);
     if (cached) { this.counts = cached; this.countsLoaded = true; }
     const cachedCtx = ctxStatusCache.get(id);
     if (cachedCtx) this.ctxStatus = cachedCtx;
+    this.render();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
   }
@@ -243,7 +249,11 @@ export class SessionStatusbar {
     this.tallyPopoverEl = pop;
 
     const rect = anchor.getBoundingClientRect();
-    pop.style.left = `${rect.left}px`;
+    // Clamp horizontally so the fixed-width dropdown never spills off either
+    // edge: left-align to the chip, but pull back when it would overflow the
+    // right side, and never go past an 8px left margin.
+    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
+    pop.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
     // Open downward off the chip; only flip above when there isn't room below
     // (and there's more room above) so it never clips off-screen.
     const below = window.innerHeight - rect.bottom;
@@ -352,8 +362,12 @@ export class SessionStatusbar {
 
     const claudeChips: string[] = [];
     if (f.includes("model")) {
-      if (this.meta.model) {
-        claudeChips.push(`<span class="sb-chip sb-model sb-model-btn${this.animClass("model")}" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(this.meta.model))}</span>`);
+      // Prefer the live meta model, but fall back to the session's known model
+      // (passed at construction) so the chip shows instantly on first open
+      // instead of a skeleton until the first meta event streams in.
+      const model = this.meta.model ?? this.sessionModel;
+      if (model) {
+        claudeChips.push(`<span class="sb-chip sb-model sb-model-btn${this.animClass("model")}" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(model))}</span>`);
       } else if (!this.metaLoaded) {
         claudeChips.push(this.skeletonChip("model", "sb-model", "ph-robot", "70px"));
       }
@@ -455,9 +469,10 @@ export class SessionStatusbar {
       </div>
     ` : "";
 
-    const modelPopoverHtml = this.modelPopoverOpen && this.meta.model ? `
+    const popoverModel = this.meta.model ?? this.sessionModel;
+    const modelPopoverHtml = this.modelPopoverOpen && popoverModel ? `
       <div class="sb-model-popover">
-        <div class="sb-model-popover-name">${escapeHtml(this.meta.model)}</div>
+        <div class="sb-model-popover-name">${escapeHtml(popoverModel)}</div>
         <div class="sb-model-popover-hint">Locked for this session. Start a new session to change.</div>
       </div>
     ` : "";

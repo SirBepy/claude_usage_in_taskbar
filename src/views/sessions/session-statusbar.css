@@ -224,14 +224,17 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 6px;
-  min-width: 260px;
-  max-width: 420px;
+  /* Fixed width so the dropdown is always the same size regardless of content;
+     long item text is clipped with an ellipsis (full string on hover title). */
+  width: 320px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .sb-tally-list {
   max-height: 280px;
   overflow-y: auto;
+  /* Never a horizontal scrollbar - long rows ellipsis instead of scrolling. */
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -267,13 +270,18 @@
   flex-shrink: 0;
 }
 
-/* Grep/Bash targets are not openable; let the full text wrap instead of clip. */
+/* Grep/Bash targets aren't openable; clip long text with an ellipsis (the full
+   string shows on hover via the row's title attribute) so the dropdown keeps a
+   stable size and never overflows horizontally. */
 .sb-tally-text .sb-tally-name {
-  white-space: normal;
+  flex: 1;
+  min-width: 0;
   max-width: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: 'Fira Code', monospace;
   font-size: 0.74rem;
-  word-break: break-word;
 }
 
 .sb-tally-name {
