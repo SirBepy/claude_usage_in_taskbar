@@ -20,6 +20,7 @@ import { invoke } from "../../../shared/ipc";
 import { extractQuestions, renderQuestionUI } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
 import {
+  allowPermission,
   autoAllowIfRemembered,
   isAutoAccept,
   isForSelectedSession,
@@ -100,9 +101,7 @@ export function installPermissionModalListener(): void {
         // never need the user. (Questions still park - never auto-answered.)
         if (isAutoAccept(payload.session_id) && extractQuestions(payload.input) === null) {
           console.debug("[auto-accept] background allow", payload.tool_name, "for", payload.session_id);
-          void invoke("respond_permission", {
-            id: payload.id, behavior: "allow", updatedInput: payload.input ?? {}, message: null,
-          }).catch((e) => console.warn("[auto-accept] background respond_permission failed:", e));
+          allowPermission(payload, "background respond_permission");
           return;
         }
         // Switched-away busy chat: park the prompt and mark the row so the
@@ -122,12 +121,7 @@ export function installPermissionModalListener(): void {
       && extractQuestions(payload.input) === null
     ) {
       console.debug("[auto-accept] allowing", payload.tool_name, "for", payload.session_id);
-      void invoke("respond_permission", {
-        id: payload.id,
-        behavior: "allow",
-        updatedInput: payload.input ?? {},
-        message: null,
-      }).catch((e) => console.warn("[auto-accept] respond_permission failed:", e));
+      allowPermission(payload, "respond_permission");
       return;
     }
 
@@ -174,9 +168,7 @@ export function autoAcceptParked(sessionId: string): void {
   const pending = takePendingPrompt(sessionId);
   if (!pending) return;
   if (pending.kind === "permission" && extractQuestions(pending.payload.input) === null) {
-    void invoke("respond_permission", {
-      id: pending.payload.id, behavior: "allow", updatedInput: pending.payload.input ?? {}, message: null,
-    }).catch((e) => console.warn("[auto-accept] flush respond_permission failed:", e));
+    allowPermission(pending.payload, "flush respond_permission");
     rerenderSidebar();
     return;
   }
@@ -198,12 +190,7 @@ export function replayPendingPrompt(sessionId: string): void {
     && isAutoAccept(payload.session_id)
     && extractQuestions(payload.input) === null
   ) {
-    void invoke("respond_permission", {
-      id: payload.id,
-      behavior: "allow",
-      updatedInput: payload.input ?? {},
-      message: null,
-    }).catch((e) => console.warn("[auto-accept] replay respond_permission failed:", e));
+    allowPermission(payload, "replay respond_permission");
     return;
   }
   void (async () => {

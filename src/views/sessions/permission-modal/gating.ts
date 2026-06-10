@@ -123,6 +123,12 @@ export function resolveCwdForSession(sessionId: string | undefined): string | nu
   return null;
 }
 
+export function allowPermission(payload: { id: string; input?: unknown }, logTag: string): void {
+  void invoke("respond_permission", {
+    id: payload.id, behavior: "allow", updatedInput: payload.input ?? {}, message: null,
+  }).catch((e) => console.warn(`[auto-accept] ${logTag} failed:`, e));
+}
+
 export async function autoAllowIfRemembered(
   payload: PermissionRequestedPayload,
 ): Promise<boolean> {
