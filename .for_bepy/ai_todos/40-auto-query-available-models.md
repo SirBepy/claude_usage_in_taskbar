@@ -8,16 +8,24 @@ At app boot, discover the models the signed-in account can actually use and refr
 
 Shipped 2026-06-10: the New-session model slider + presets dropdown are now data-driven from `settings.models` (seeded with `["haiku","sonnet","opus"]`), editable in Settings > Session presets (`src/views/settings/subviews/presets/presets.ts`, helper `readModels` in `src/shared/effort-presets.ts`). That's the manual foundation. Joe explicitly deferred the *auto-query* part to a todo because it's the uncertain bit.
 
-The uncertainty: the natural source is Anthropic's `GET /v1/models`, but the chat hub is subscription/OAuth (no API key), and `/v1/models` is normally API-key-authed. The OAuth access token lives at `~/.claude/.credentials.json` (`.claudeAiOauth.accessToken`). There is NO clean `claude` CLI "list models" command. The backend already uses `reqwest` (see `src-tauri/src/news/scraper.rs` OnceCell client pattern, `src-tauri/src/auth/`); custom IPC commands need no capabilities entry (confirmed this session).
+FEASIBILITY: CONFIRMED 2026-06-11 (autopilot). `GET https://api.anthropic.com/v1/models` with `Authorization: Bearer <claudeAiOauth.accessToken>` + `anthropic-version: 2023-06-01` + `anthropic-beta: oauth-2025-04-20` returns **HTTP 200** with the consumer Max-subscription token (scopes: user:file_upload, user:inference, user:mcp_servers, user:profile, user:sessions:claude_code). No API key needed. The earlier "likely rejected" guess was WRONG - it works. The OAuth access token lives at `~/.claude/.credentials.json` (`.claudeAiOauth.accessToken`). The backend already uses `reqwest` (see `src-tauri/src/news/scraper.rs` OnceCell client pattern, `src-tauri/src/auth/`); custom IPC commands need no capabilities entry.
 
-## Approach
+The endpoint returns 11 model ids today (full/dated, NOT clean aliases):
+`claude-fable-5, claude-opus-4-8, claude-opus-4-7, claude-sonnet-4-6, claude-opus-4-6, claude-opus-4-5-20251101, claude-haiku-4-5-20251001, claude-sonnet-4-5-20250929, claude-opus-4-1-20250805, claude-opus-4-20250514, claude-sonnet-4-20250514`.
 
-1. FIRST verify feasibility (this is the gating unknown): hit `GET https://api.anthropic.com/v1/models` with `Authorization: Bearer <accessToken>` + `anthropic-version: 2023-06-01` (+ try the oauth beta header). If the OAuth token is rejected (likely), this whole approach is dead - fall back to keeping the manual list and close this todo as "not feasible without an API key".
-2. If it works: add a Rust IPC `fetch_available_models() -> Result<Vec<String>, String>` (reqwest, reads the OAuth token, parses the model ids). Call it once at boot from `src/shared/boot.ts` after settings load; merge/overwrite `settings.models` (preserve the user's manual order where possible, append new). Fall back silently to the existing list on any failure (offline, 401).
-3. Cache the result so a boot offline still shows the last-known list.
+## OPEN DECISION (Joe's call before building - this is now the real gate, not feasibility)
+
+The current `settings.models` is a clean curated alias list (`["haiku","sonnet","opus"]`). `/v1/models` returns 11 full/dated ids including legacy snapshots (opus-4-1, sonnet-4, opus-4-5-dated). Auto-overwriting would dump all 11 dated ids onto the slider and break the clean-alias UX. So decide:
+1. CURATION: show all 11, or filter (e.g. drop dated snapshots + legacy <4.6, map to friendly aliases)?
+2. OVERWRITE vs MERGE vs SUGGEST: replace the manual list, append-new-only, or just surface "N new models available" without touching the user's list?
+3. The models list was JUST made deliberately manual/data-driven (2026-06-10). Confirm auto-query is still wanted before reversing that.
+
+## Approach (once the decision above is made)
+
+1. Add a Rust IPC `fetch_available_models() -> Result<Vec<String>, String>` (reqwest, reads the OAuth token + sends the 3 headers above, parses `data[].id`). Call once at boot from `src/shared/boot.ts` after settings load; apply per the chosen overwrite/merge/suggest policy. Fall back silently to the existing list on any failure (offline, 401, expired token - refresh is NOT handled here).
+2. Cache the result so a boot offline still shows the last-known list.
 
 ## Acceptance
 
-- Either: the model list auto-refreshes from the account at boot (verified the token is accepted), OR this todo is closed with a one-line "not feasible: /v1/models rejects the subscription OAuth token, needs an API key."
-- Manual editing of the list still works regardless.
+- The model list reflects the account per the chosen curation+merge policy at boot; manual editing still works.
 - Failure is silent (no broken slider when offline).
