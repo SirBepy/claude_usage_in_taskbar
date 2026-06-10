@@ -1,27 +1,45 @@
 import type { RenderedMessage } from "./chat-transforms";
 import { toolSummary, canonicalTool, toolLabel } from "./tool-meta";
 
+/** Per-tool-type state for one turn's strip. */
+export interface ToolGroup {
+  chip: HTMLElement;
+  bucket: HTMLElement;
+  strip: HTMLElement;
+  panel: HTMLElement;
+}
+
 /**
- * Fold a turn's compact tool rows (Read/Grep/Bash/...) into one collapsible
- * group per tool type, so a turn that ran the same tool many times shows a
- * single "Grep x5" element instead of five separate rows. Rich inline edit
- * cards (`.tool-use--file`) and assistant text stay where they are.
+ * Fold a turn's compact tool rows into ONE inline strip of chips (one chip per
+ * tool type). Clicking a chip opens an accordion panel with that type's rows.
  *
- * Idempotent: rows already moved into a group carry `data-tool-grouped` and are
- * skipped, so the live path can call this every flush to grow the count. The
- * `groups` map (keyed by tool name) holds the group element per type; pass a
- * persistent map for the active turn and a fresh one for a closed range.
+ * Structure inserted into the container:
+ *   <div class="tool-strip">
+ *     <button class="tool-chip" data-tool="Bash">…Ran x3</button>
+ *     …
+ *   </div>
+ *   <div class="tool-strip-panel" hidden>
+ *     <div class="tool-strip-group" data-tool="Bash" hidden>…rows…</div>
+ *     …
+ *   </div>
+ *
+ * Idempotent: rows already moved into a bucket carry `data-tool-grouped` and
+ * are skipped, so the live path can call this every flush to grow the count.
+ * Rich inline edit cards (.tool-use--file) stay where they are.
+ *
+ * The `groups` map (keyed by canonical tool name) persists for the active turn;
+ * pass a fresh map for closed ranges.
  */
 export function groupToolRange(
   messages: RenderedMessage[],
   messageEls: HTMLElement[],
   start: number,
   end: number,
-  groups: Map<string, HTMLElement>,
+  groups: Map<string, ToolGroup>,
 ): void {
   if (end <= start) return;
 
-  // Compact tool_use id -> tool name, so a tool_result lands in its tool's group.
+  // Build id -> tool name map so tool_result rows land in their tool's bucket.
   const idTool = new Map<string, string>();
   for (let i = start; i < end; i++) {
     const m = messages[i];
@@ -30,6 +48,15 @@ export function groupToolRange(
     if (m.kind === "tool_use" && m.id && el.classList.contains("tool-row")) {
       idTool.set(m.id, m.tool ?? "");
     }
+  }
+
+  // If groups already has entries, recover strip/panel from the first entry.
+  let strip: HTMLElement | null = null;
+  let panel: HTMLElement | null = null;
+  if (groups.size > 0) {
+    const first = groups.values().next().value!;
+    strip = first.strip;
+    panel = first.panel;
   }
 
   for (let i = start; i < end; i++) {
@@ -50,42 +77,65 @@ export function groupToolRange(
     }
     if (!tool) continue;
 
-    // Bucket by canonical tool so PowerShell folds into Ran and the edit family
-    // into one Edited group, matching the statusbar tally.
     const key = canonicalTool(tool);
+
+    // Create strip and panel before the first tool row, once per turn.
+    if (!strip) {
+      strip = document.createElement("div");
+      strip.className = "tool-strip";
+      panel = document.createElement("div");
+      panel.className = "tool-strip-panel";
+      panel.hidden = true;
+      el.parentElement?.insertBefore(strip, el);
+      strip.after(panel);
+    }
+
     let group = groups.get(key);
     if (!group) {
-      group = createToolGroup(key);
+      const { icon } = toolSummary(key, {});
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "tool-chip";
+      chip.dataset.tool = key;
+      chip.dataset.count = "0";
+      const iconEl = document.createElement("i");
+      iconEl.className = `ph ${icon}`;
+      const labelEl = document.createElement("span");
+      labelEl.className = "tool-chip-label";
+      labelEl.textContent = toolLabel(key);
+      const countEl = document.createElement("span");
+      countEl.className = "tool-chip-count";
+      countEl.textContent = "x0";
+      chip.appendChild(iconEl);
+      chip.appendChild(labelEl);
+      chip.appendChild(countEl);
+      strip.appendChild(chip);
+
+      const bucket = document.createElement("div");
+      bucket.className = "tool-strip-group";
+      bucket.dataset.tool = key;
+      bucket.hidden = true;
+      panel!.appendChild(bucket);
+
+      group = { chip, bucket, strip: strip!, panel: panel! };
       groups.set(key, group);
-      // Anchor the group where this type first appeared; later rows jump up into it.
-      el.parentElement?.insertBefore(group, el);
     }
-    group.appendChild(el);
+
+    group.bucket.appendChild(el);
     el.dataset.toolGrouped = "1";
 
     if (isUse) {
-      const n = Number(group.dataset.count ?? "0") + 1;
-      group.dataset.count = String(n);
-      const countEl = group.querySelector(".tool-group-count");
+      const n = Number(group.chip.dataset.count ?? "0") + 1;
+      group.chip.dataset.count = String(n);
+      const countEl = group.chip.querySelector(".tool-chip-count");
       if (countEl) countEl.textContent = `x${n}`;
+
+      // Briefly highlight the chip whose count just incremented.
+      group.chip.classList.remove("tool-chip--highlight");
+      void (group.chip as HTMLElement & { offsetWidth: number }).offsetWidth;
+      group.chip.classList.add("tool-chip--highlight");
     }
   }
-}
-
-function createToolGroup(tool: string): HTMLElement {
-  const { icon } = toolSummary(tool, {});
-  const details = document.createElement("details");
-  details.className = "tool-group";
-  details.dataset.tool = tool;
-  details.dataset.count = "0";
-  const summary = document.createElement("summary");
-  summary.className = "tool-group-summary";
-  summary.innerHTML = `<i class="ph ${icon}"></i><span class="tool-group-name"></span><span class="tool-group-count">x0</span>`;
-  // textContent for the name keeps arbitrary tool ids (mcp__server__tool) inert.
-  const nameEl = summary.querySelector(".tool-group-name");
-  if (nameEl) nameEl.textContent = toolLabel(tool);
-  details.appendChild(summary);
-  return details;
 }
 
 /**
@@ -108,7 +158,7 @@ export function applyTurnCollapse(
     }
   }
 
-  groupToolRange(messages, messageEls, start, end, new Map());
+  groupToolRange(messages, messageEls, start, end, new Map<string, ToolGroup>());
 }
 
 /** Clamp over-long user messages behind a "Show more" toggle. Idempotent via data-clamp-checked. */

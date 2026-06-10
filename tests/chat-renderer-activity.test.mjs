@@ -87,8 +87,8 @@ describe("ChatRenderer — activity pinning", () => {
   });
 });
 
-describe("ChatRenderer — per-type tool groups", () => {
-  it("folds a turn's tool call into a per-type group counting tool_use only", () => {
+describe("ChatRenderer — per-type tool chips (inline strip)", () => {
+  it("folds a turn's tool call into a chip counting tool_use only", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const r = new ChatRenderer(container);
@@ -101,15 +101,16 @@ describe("ChatRenderer — per-type tool groups", () => {
     r.handleEvent(finalEvent("done"));
     r.handleEvent(turnUsage());
 
-    expect(container.querySelector(".turn-steps")).toBeNull();
-    const group = container.querySelector('.tool-group[data-tool="Bash"]');
-    expect(group).not.toBeNull();
+    const chip = container.querySelector('.tool-chip[data-tool="Bash"]');
+    expect(chip).not.toBeNull();
     // tool_use counts, tool_result does not.
-    expect(group.querySelector(".tool-group-count").textContent).toBe("x1");
-    // Both the tool_use row and its result live inside the group.
-    expect(group.querySelectorAll(".tool-row").length).toBe(2);
-    // The final answer stays outside the group.
-    expect(group.contains(container.querySelector(".msg.assistant"))).toBe(false);
+    expect(chip.querySelector(".tool-chip-count").textContent).toBe("x1");
+    // Both the tool_use row and its result live inside the bucket.
+    const bucket = container.querySelector('.tool-strip-group[data-tool="Bash"]');
+    expect(bucket.querySelectorAll(".tool-row").length).toBe(2);
+    // The final answer stays outside the panel.
+    const panel = container.querySelector(".tool-strip-panel");
+    expect(panel.contains(container.querySelector(".msg.assistant"))).toBe(false);
   });
 
   it("folds repeated calls of the same type into one growing count, live", () => {
@@ -120,17 +121,17 @@ describe("ChatRenderer — per-type tool groups", () => {
     r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
     r.handleEvent(userEvent("search"));
     r.handleEvent(toolUse("Grep", { pattern: "a" }, "g1"));
-    let group = container.querySelector('.tool-group[data-tool="Grep"]');
-    expect(group.querySelector(".tool-group-count").textContent).toBe("x1");
+    let chip = container.querySelector('.tool-chip[data-tool="Grep"]');
+    expect(chip.querySelector(".tool-chip-count").textContent).toBe("x1");
     r.handleEvent(toolUse("Grep", { pattern: "b" }, "g2"));
     r.handleEvent(toolUse("Grep", { pattern: "c" }, "g3"));
-    group = container.querySelector('.tool-group[data-tool="Grep"]');
-    // One group, count grew to 3.
-    expect(container.querySelectorAll('.tool-group[data-tool="Grep"]').length).toBe(1);
-    expect(group.querySelector(".tool-group-count").textContent).toBe("x3");
+    chip = container.querySelector('.tool-chip[data-tool="Grep"]');
+    // One chip, count grew to 3.
+    expect(container.querySelectorAll('.tool-chip[data-tool="Grep"]').length).toBe(1);
+    expect(chip.querySelector(".tool-chip-count").textContent).toBe("x3");
   });
 
-  it("keeps distinct tool types in separate groups", () => {
+  it("keeps distinct tool types in separate chips on one strip", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const r = new ChatRenderer(container);
@@ -141,11 +142,13 @@ describe("ChatRenderer — per-type tool groups", () => {
     r.handleEvent(toolUse("Read", { file_path: "/a/x.ts" }, "r1"));
     r.handleEvent(toolUse("Grep", { pattern: "b" }, "g2"));
 
-    expect(container.querySelector('.tool-group[data-tool="Grep"] .tool-group-count').textContent).toBe("x2");
-    expect(container.querySelector('.tool-group[data-tool="Read"] .tool-group-count').textContent).toBe("x1");
+    expect(container.querySelector('.tool-chip[data-tool="Grep"] .tool-chip-count').textContent).toBe("x2");
+    expect(container.querySelector('.tool-chip[data-tool="Read"] .tool-chip-count').textContent).toBe("x1");
+    // Both chips are on the same strip.
+    expect(container.querySelectorAll(".tool-strip").length).toBe(1);
   });
 
-  it("does NOT fold rich edit cards into a group", () => {
+  it("does NOT fold rich edit cards into a chip", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const r = new ChatRenderer(container);
@@ -154,7 +157,33 @@ describe("ChatRenderer — per-type tool groups", () => {
     r.handleEvent(userEvent("edit"));
     r.handleEvent(toolUse("Edit", { file_path: "/a/x.ts", old_string: "a", new_string: "b" }, "e1"));
 
-    expect(container.querySelector('.tool-group[data-tool="Edit"]')).toBeNull();
+    expect(container.querySelector('.tool-chip[data-tool="Edit"]')).toBeNull();
     expect(container.querySelector(".tool-use--file")).not.toBeNull();
+    // No strip created when only rich cards are present.
+    expect(container.querySelector(".tool-strip")).toBeNull();
+  });
+
+  it("persists chips after a second bulkLoadEvents call (reload)", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    const events = [
+      { type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 },
+      userEvent("do it"),
+      toolUse("Bash", { command: "ls" }, "t1"),
+      { type: "tool_result", tool_use_id: "t1", output: "file.txt", is_error: false },
+      finalEvent("done"),
+      turnUsage(),
+    ];
+
+    // First load (initial open)
+    await r.loadHistory(events);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
+
+    // Second load (simulate switching away and back)
+    await r.loadHistory(events);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
+    expect(container.querySelector('.tool-chip[data-tool="Bash"] .tool-chip-count').textContent).toBe("x1");
   });
 });

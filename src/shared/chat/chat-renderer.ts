@@ -7,7 +7,7 @@ import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
 import { toolSummary, tallyDetail, canonicalTool, type ToolTally, type TallyItem } from "./tool-meta";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
-import { applyTurnCollapse, groupToolRange, clampUserMessages } from "./turn-collapse";
+import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { ChatPaginator } from "./chat-pagination";
 
 export interface SessionMeta {
@@ -50,9 +50,9 @@ export class ChatRenderer {
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
   private activeTurnStart: number | null = null;
-  // Per-type tool-group elements for the turn in progress (key = tool name), so
-  // repeated calls fold into one growing "Grep x5" row. Cleared at each turn end.
-  private activeToolGroups = new Map<string, HTMLElement>();
+  // Per-type tool-group elements for the turn in progress (key = canonical tool
+  // name). Cleared at each turn end; re-populated by groupToolRange each flush.
+  private activeToolGroups = new Map<string, ToolGroup>();
   private closeTurnQueue: { start: number; end: number }[] = [];
   private fileEdits: FileEditView[] = [];
   private lastActivity: string | null = null;
@@ -87,6 +87,7 @@ export class ChatRenderer {
     this.container.addEventListener("click", handleSlashClick);
     this.container.addEventListener("click", handleAttachmentClick);
     this.container.addEventListener("click", handlePastedLogClick);
+    this.container.addEventListener("click", this.handleToolChipClick);
     this.paginator = new ChatPaginator(container, {
       getSessionId: () => this.sessionId,
       getMessages: () => this.messages,
@@ -521,6 +522,32 @@ export class ChatRenderer {
     }
     this.closeTurnQueue = [];
   }
+
+  private handleToolChipClick = (e: MouseEvent): void => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>(".tool-chip");
+    if (!chip) return;
+    const strip = chip.closest<HTMLElement>(".tool-strip");
+    const panel = strip?.nextElementSibling as HTMLElement | null;
+    if (!panel?.classList.contains("tool-strip-panel")) return;
+
+    const tool = chip.dataset.tool;
+    const wasActive = chip.classList.contains("tool-chip--active");
+
+    strip?.querySelectorAll<HTMLElement>(".tool-chip").forEach(c => c.classList.remove("tool-chip--active"));
+    for (const grp of panel.querySelectorAll<HTMLElement>(".tool-strip-group")) {
+      grp.hidden = true;
+    }
+
+    if (!wasActive && tool) {
+      chip.classList.add("tool-chip--active");
+      for (const grp of panel.querySelectorAll<HTMLElement>(".tool-strip-group")) {
+        grp.hidden = grp.dataset.tool !== tool;
+      }
+      panel.hidden = false;
+    } else {
+      panel.hidden = true;
+    }
+  };
 
   private buildMessageEl(m: RenderedMessage): HTMLElement {
     const wrap = document.createElement("div");
