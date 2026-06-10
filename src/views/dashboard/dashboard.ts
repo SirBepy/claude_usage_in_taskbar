@@ -18,6 +18,28 @@ import {
 
 let refreshBusy = false;
 let lastAutoPollMs = 0;
+let aiPollTimer: number | null = null;
+
+async function tickAiPoll(): Promise<void> {
+  try {
+    const instances = await api.listInstances();
+    if (instances.length === 0) {
+      if (aiPollTimer !== null) {
+        window.clearInterval(aiPollTimer);
+        aiPollTimer = null;
+      }
+      return;
+    }
+    await api.pollNow();
+  } catch (err) {
+    console.error("[dashboard] ai-running poll failed", err);
+  }
+}
+
+function ensureAiPollRunning(): void {
+  if (aiPollTimer !== null) return;
+  aiPollTimer = window.setInterval(() => void tickAiPoll(), 60_000);
+}
 
 function getHistory(): UsageRecord[] | null {
   return getUsageHistory() as UsageRecord[] | null;
@@ -78,11 +100,20 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   void maybeAutoPoll("crossover");
   const crossoverTimer = window.setInterval(() => void maybeAutoPoll("crossover"), 60_000);
 
+  // Start AI-running poll if any instances are live right now.
+  void api.listInstances().then((list) => { if (list.length > 0) ensureAiPollRunning(); });
+
+  const unlistenInstances = api.onInstancesChanged((list) => {
+    if (Array.isArray(list) && list.length > 0) ensureAiPollRunning();
+  });
+
   return () => {
     try { unlisten(); } catch { /* ignore */ }
+    try { unlistenInstances(); } catch { /* ignore */ }
     window.removeEventListener("refresh-dashboard-home", onRefreshEvent);
     document.removeEventListener("visibilitychange", onVisibility);
     window.clearInterval(crossoverTimer);
+    if (aiPollTimer !== null) { window.clearInterval(aiPollTimer); aiPollTimer = null; }
   };
 }
 
