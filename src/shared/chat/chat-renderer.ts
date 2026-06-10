@@ -5,7 +5,7 @@ import { highlightCodeBlocks } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
-import { toolSummary, tallyDetail, type ToolTally, type TallyItem } from "./tool-meta";
+import { toolSummary, tallyDetail, canonicalTool, type ToolTally, type TallyItem } from "./tool-meta";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { applyTurnCollapse, groupToolRange, clampUserMessages } from "./turn-collapse";
 import { ChatPaginator } from "./chat-pagination";
@@ -228,10 +228,14 @@ export class ChatRenderer {
       if (this._talliedIds.has(id)) return;
       this._talliedIds.add(id);
     }
-    let entry = this._tools.get(tool);
+    // Bucket under the canonical tool (PowerShell -> Bash, edit family -> Edit)
+    // so the chip/tally shows one count per concept; the raw tool still drives
+    // target classification below.
+    const key = canonicalTool(tool);
+    let entry = this._tools.get(key);
     if (!entry) {
       entry = { count: 0, items: new Map() };
-      this._tools.set(tool, entry);
+      this._tools.set(key, entry);
     }
     entry.count += 1;
     const d = tallyDetail(tool, input);

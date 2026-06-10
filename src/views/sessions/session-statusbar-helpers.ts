@@ -38,15 +38,15 @@ export async function saveStatuslineFields(fields: string[]): Promise<void> {
 
 // Tool-activity chips the user can show/hide in the statusbar tally row. Keys are
 // raw tool names (what the chips group by); a tool not listed here always shows.
+// Keys are CANONICAL tool buckets (see canonicalTool): Edit covers the whole
+// edit family (Edit/MultiEdit/NotebookEdit), Bash covers Bash + PowerShell.
 export const TALLY_TOOL_OPTIONS = [
   { key: "Read",            label: "Read" },
-  { key: "Edit",            label: "Edit" },
-  { key: "MultiEdit",       label: "Multi-edit" },
-  { key: "Write",           label: "Write" },
-  { key: "NotebookEdit",    label: "Notebook edit" },
+  { key: "Edit",            label: "Edited" },
+  { key: "Write",           label: "Wrote" },
   { key: "Grep",            label: "Grep" },
   { key: "Glob",            label: "Glob" },
-  { key: "Bash",            label: "Bash / shell" },
+  { key: "Bash",            label: "Ran (shell)" },
   { key: "Task",            label: "Subagent" },
   { key: "TodoWrite",       label: "Todo updates" },
   { key: "AskUserQuestion", label: "Ask-user questions" },

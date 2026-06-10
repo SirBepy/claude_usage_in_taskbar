@@ -1,7 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { openLightbox } from "../../shared/chat/lightbox";
-import { toolSummary, type ToolTally } from "../../shared/chat/tool-meta";
+import { toolSummary, toolLabel, type ToolTally } from "../../shared/chat/tool-meta";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
@@ -33,21 +33,6 @@ export {
 } from "./session-statusbar-helpers";
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
-
-// Friendly verbs for the tool-tally chips. Falls back to the raw tool name.
-const TALLY_LABELS: Record<string, string> = {
-  Read: "Read",
-  Edit: "Edited",
-  MultiEdit: "Edited",
-  Write: "Wrote",
-  NotebookEdit: "Edited",
-  Grep: "Grep",
-  Glob: "Glob",
-  Bash: "Ran",
-  PowerShell: "Ran",
-  Task: "Subagent",
-  Agent: "Subagent",
-};
 
 export class SessionStatusbar {
   private container: HTMLElement;
@@ -443,7 +428,7 @@ export class SessionStatusbar {
       .filter((t) => !this.tallyHiddenTools.includes(t.tool))
       .map((t) => {
         const { icon } = toolSummary(t.tool, {});
-        const label = TALLY_LABELS[t.tool] ?? t.tool;
+        const label = toolLabel(t.tool);
         return `<span class="sb-tally-chip" role="button" tabindex="0" data-tool="${escapeHtml(t.tool)}" title="${escapeHtml(label)} targets"><i class="ph ${icon}"></i>${escapeHtml(label)} x${t.count}</span>`;
       });
 

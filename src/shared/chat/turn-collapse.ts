@@ -1,5 +1,5 @@
 import type { RenderedMessage } from "./chat-transforms";
-import { toolSummary } from "./tool-meta";
+import { toolSummary, canonicalTool, toolLabel } from "./tool-meta";
 
 /**
  * Fold a turn's compact tool rows (Read/Grep/Bash/...) into one collapsible
@@ -50,10 +50,13 @@ export function groupToolRange(
     }
     if (!tool) continue;
 
-    let group = groups.get(tool);
+    // Bucket by canonical tool so PowerShell folds into Ran and the edit family
+    // into one Edited group, matching the statusbar tally.
+    const key = canonicalTool(tool);
+    let group = groups.get(key);
     if (!group) {
-      group = createToolGroup(tool);
-      groups.set(tool, group);
+      group = createToolGroup(key);
+      groups.set(key, group);
       // Anchor the group where this type first appeared; later rows jump up into it.
       el.parentElement?.insertBefore(group, el);
     }
@@ -80,7 +83,7 @@ function createToolGroup(tool: string): HTMLElement {
   summary.innerHTML = `<i class="ph ${icon}"></i><span class="tool-group-name"></span><span class="tool-group-count">x0</span>`;
   // textContent for the name keeps arbitrary tool ids (mcp__server__tool) inert.
   const nameEl = summary.querySelector(".tool-group-name");
-  if (nameEl) nameEl.textContent = tool;
+  if (nameEl) nameEl.textContent = toolLabel(tool);
   details.appendChild(summary);
   return details;
 }
