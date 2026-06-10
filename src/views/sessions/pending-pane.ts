@@ -12,6 +12,8 @@ import { isAutoAccept, setAutoAccept } from "./permission-modal";
 import { closeChat } from "./close-chat";
 import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
 import { savePendingSession, clearPendingSession } from "./pending-draft-storage";
+import { ChangesPanel, dedupeByPath } from "./changes-panel";
+import { openMoreMenu } from "./more-menu";
 
 function rebuildSidebar(): void {
   const listEl = document.querySelector<HTMLElement>("#sessions-list");
@@ -232,87 +234,48 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
   if (meta && sess) meta.textContent = projectName(sess);
   pane.querySelector(".session-pending-hint")?.remove();
 
-  if (!header.querySelector(".auto-accept-btn")) {
-    const detachBtnEl = header.querySelector(".detach-btn");
-    const cancelBtn = header.querySelector(".cancel-btn");
-    const on = isAutoAccept(sessionId);
-    const autoBtn = document.createElement("button");
-    autoBtn.className = "icon-btn auto-accept-btn" + (on ? " is-on" : "");
-    autoBtn.title = on
-      ? "Auto-accepting tool permissions. Click to disable."
-      : "Auto-accept tool permissions for this session";
-    autoBtn.setAttribute("aria-pressed", on ? "true" : "false");
-    autoBtn.innerHTML = '<i class="ph ph-shield-check"></i>';
-    autoBtn.addEventListener("click", () => {
-      const next = !isAutoAccept(sessionId);
-      setAutoAccept(sessionId, next);
-      autoBtn.classList.toggle("is-on", next);
-      autoBtn.setAttribute("aria-pressed", next ? "true" : "false");
-      autoBtn.title = next
-        ? "Auto-accepting tool permissions. Click to disable."
-        : "Auto-accept tool permissions for this session";
-    });
-    const anchor = detachBtnEl ?? cancelBtn;
-    if (anchor) header.insertBefore(autoBtn, anchor);
-    else header.appendChild(autoBtn);
-  }
+  // Swap the pending placeholder buttons (close + cancel) for the same header a
+  // normal active session shows: a changes button + the ⋮ more-options menu
+  // (which holds auto-accept / terminal / detach / stop / close). This keeps a
+  // freshly-started chat visually identical to a reopened one instead of a row
+  // of five separate icon buttons.
+  header.querySelectorAll(".icon-btn").forEach((b) => b.remove());
 
-  if (!header.querySelector(".open-terminal-btn")) {
-    const cancelBtn = header.querySelector(".cancel-btn");
-    const detachBtnExisting = header.querySelector(".detach-btn");
-    const termBtn = document.createElement("button");
-    termBtn.className = "icon-btn open-terminal-btn";
-    termBtn.title = "Open this chat in an external terminal (survives app restart)";
-    termBtn.innerHTML = '<i class="ph ph-terminal-window"></i>';
-    termBtn.addEventListener("click", async () => {
-      try {
-        await invoke<void>("open_session_in_terminal", { sessionId });
-      } catch (err) {
-        console.error("[sessions] open_session_in_terminal failed", err);
-        alert(`Failed to open terminal: ${err}`);
-      }
-    });
-    const anchor = detachBtnExisting ?? cancelBtn;
-    if (anchor) header.insertBefore(termBtn, anchor);
-    else header.appendChild(termBtn);
-  }
+  const changesBtn = document.createElement("button");
+  changesBtn.className = "icon-btn changes-btn";
+  changesBtn.title = "Show all file changes in this chat";
+  changesBtn.innerHTML = '<i class="ph ph-git-diff"></i><span class="changes-count" hidden></span>';
+  header.appendChild(changesBtn);
 
-  if (!header.querySelector(".detach-btn")) {
-    const cancelBtn = header.querySelector(".cancel-btn");
-    const detachBtn = document.createElement("button");
-    detachBtn.className = "icon-btn detach-btn";
-    detachBtn.title = "Detach";
-    detachBtn.innerHTML = '<i class="ph ph-arrow-square-out"></i>';
-    detachBtn.addEventListener("click", async () => {
-      try {
-        await invoke<void>("detach_window", { sessionId });
-      } catch (err) {
-        console.warn("[sessions] detach_window unavailable", err);
-      }
-    });
-    if (cancelBtn) header.insertBefore(detachBtn, cancelBtn);
-    else header.appendChild(detachBtn);
-  }
+  const moreBtn = document.createElement("button");
+  moreBtn.className = "icon-btn more-btn" + (isAutoAccept(sessionId) ? " has-indicator" : "");
+  moreBtn.title = "More options";
+  moreBtn.innerHTML = '<i class="ph ph-dots-three-vertical"></i>';
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openMoreMenu(moreBtn, sessionId, false);
+  });
+  header.appendChild(moreBtn);
 
-  const cancelBtn = header.querySelector<HTMLButtonElement>(".cancel-btn");
-  if (cancelBtn) {
-    const fresh = cancelBtn.cloneNode(true) as HTMLButtonElement;
-    cancelBtn.replaceWith(fresh);
-    // Visibility is driven by busy state (see updateThinkingBar): the cancel
-    // button only shows mid-turn, never while drafting the next message.
-    fresh.addEventListener("click", async () => {
-      try {
-        await invoke<void>("cancel_turn", { sessionId });
-      } catch (err) {
-        console.error("[sessions] cancel_turn failed", err);
-      }
-    });
-  }
-
-  const closeBtn = header.querySelector<HTMLButtonElement>(".close-session-btn");
-  if (closeBtn) {
-    const fresh = closeBtn.cloneNode(true) as HTMLButtonElement;
-    closeBtn.replaceWith(fresh);
-    fresh.addEventListener("click", () => { void closeChat(sessionId); });
+  // Mount the all-changes panel and wire the renderer's file-edit feed so the
+  // changes badge + panel behave exactly like a reopened session's.
+  const messagesEl = pane.querySelector<HTMLElement>(".session-messages");
+  const renderer = state.renderer;
+  if (messagesEl && renderer) {
+    state.changesPanel?.unmount();
+    const panel = new ChangesPanel();
+    panel.mount(pane, messagesEl);
+    state.changesPanel = panel;
+    const syncBadge = (edits: ReturnType<typeof renderer.getFileEdits>) => {
+      const n = dedupeByPath(edits).length;
+      const badge = changesBtn.querySelector<HTMLElement>(".changes-count");
+      if (badge) { badge.textContent = String(n); badge.toggleAttribute("hidden", n === 0); }
+    };
+    renderer.onFileEditsChanged = (edits) => { panel.onUpdate(edits); syncBadge(edits); };
+    // Seed with any edits already accrued during the first turn.
+    const seeded = renderer.getFileEdits();
+    panel.onUpdate(seeded);
+    syncBadge(seeded);
+    changesBtn.addEventListener("click", () => panel.toggle());
   }
 }
