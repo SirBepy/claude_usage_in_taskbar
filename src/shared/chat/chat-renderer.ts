@@ -5,7 +5,8 @@ import { highlightCodeBlocks } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
-import { toolSummary, tallyDetail, canonicalTool, type ToolTally, type TallyItem } from "./tool-meta";
+import { toolSummary, type ToolTally } from "./tool-meta";
+import { ToolTallyState } from "./tool-tally-state";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { ChatPaginator } from "./chat-pagination";
@@ -56,11 +57,9 @@ export class ChatRenderer {
   private closeTurnQueue: { start: number; end: number }[] = [];
   private fileEdits: FileEditView[] = [];
   private lastActivity: string | null = null;
-  // By-type tool tally. Maps preserve insertion (first-seen) order; the public
-  // ToolTally clone reflects that order. `_talliedIds` dedups by tool_use id so
-  // re-delivery/pagination can't double-count a tool_use.
-  private _tools = new Map<string, { count: number; items: Map<string, TallyItem> }>();
-  private _talliedIds = new Set<string>();
+  // By-type cumulative tool tally state (counts + per-target details, dedup by
+  // tool_use id). Owns the data behind the statusline `Read x4 · ...` tally.
+  private tallyState = new ToolTallyState();
   public onMetaUpdate: ((meta: SessionMeta) => void) | null = null;
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
   public onToolTally: ((t: ToolTally) => void) | null = null;
@@ -126,9 +125,9 @@ export class ChatRenderer {
     this.fileEdits = [];
     this.lastActivity = null;
     this.activeToolGroups.clear();
-    this.resetToolTally();
+    this.tallyState.reset();
     this.onFileEditsChanged?.([]);
-    this.onToolTally?.(this.buildToolTally());
+    this.onToolTally?.(this.tallyState.build());
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
     this.activeTurnStart = null;
@@ -205,50 +204,7 @@ export class ChatRenderer {
 
   /** Clone of the by-type tool tally (no internal refs leaked). */
   get toolTally(): ToolTally {
-    return this.buildToolTally();
-  }
-
-  private buildToolTally(): ToolTally {
-    return {
-      byType: [...this._tools].map(([tool, e]) => ({
-        tool,
-        count: e.count,
-        items: [...e.items.values()].map((it) => ({ ...it })),
-      })),
-    };
-  }
-
-  private resetToolTally(): void {
-    this._tools.clear();
-    this._talliedIds.clear();
-  }
-
-  /** Counts a tool_use exactly once (dedup by id), records its target, fires onToolTally. */
-  private tallyToolUse(tool: string, input: unknown, id: string | undefined): void {
-    if (id !== undefined) {
-      if (this._talliedIds.has(id)) return;
-      this._talliedIds.add(id);
-    }
-    // Bucket under the canonical tool (PowerShell -> Bash, edit family -> Edit)
-    // so the chip/tally shows one count per concept; the raw tool still drives
-    // target classification below.
-    const key = canonicalTool(tool);
-    let entry = this._tools.get(key);
-    if (!entry) {
-      entry = { count: 0, items: new Map() };
-      this._tools.set(key, entry);
-    }
-    entry.count += 1;
-    const d = tallyDetail(tool, input);
-    if (d) {
-      const existing = entry.items.get(d.key);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        entry.items.set(d.key, { label: d.label, kind: d.kind, path: d.path, filename: d.filename, count: 1 });
-      }
-    }
-    this.onToolTally?.(this.buildToolTally());
+    return this.tallyState.build();
   }
 
   private describeActivity(toolName: string, input: unknown): string {
@@ -302,9 +258,9 @@ export class ChatRenderer {
     this.fileEdits = [];
     this.lastActivity = null;
     this.activeToolGroups.clear();
-    this.resetToolTally();
+    this.tallyState.reset();
     this.onFileEditsChanged?.([]);
-    this.onToolTally?.(this.buildToolTally());
+    this.onToolTally?.(this.tallyState.build());
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
     const CHUNK = 8;
@@ -407,7 +363,10 @@ export class ChatRenderer {
           this.fileEdits.push(view);
           this.onFileEditsChanged?.(this.getFileEdits());
         }
-        this.tallyToolUse(ev.tool_name, ev.input, ev.id);
+        {
+          const t = this.tallyState.tallyToolUse(ev.tool_name, ev.input, ev.id);
+          if (t) this.onToolTally?.(t);
+        }
         this.setActivity(this.describeActivity(ev.tool_name, ev.input));
         touched = true;
         break;
