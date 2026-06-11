@@ -195,6 +195,106 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     expect(ungrouped.length).toBe(0);
   });
 
+  it("nests child tool calls under the parent Subagent chip", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("go"));
+
+    // Agent dispatch (main-agent, no parent)
+    r.handleEvent(toolUse("Task", { description: "x", prompt: "y" }, "agent1"));
+    r.handleEvent({ type: "tool_result", tool_use_id: "agent1", output: "done", is_error: false });
+
+    // Child tool_use events (parentToolUseId = "agent1")
+    const childGrep1 = { type: "tool_use", tool_name: "Grep", input: { pattern: "foo" }, id: "c1", parent_tool_use_id: "agent1" };
+    const childGrep1Result = { type: "tool_result", tool_use_id: "c1", output: "hit", is_error: false };
+    const childGrep2 = { type: "tool_use", tool_name: "Grep", input: { pattern: "bar" }, id: "c2", parent_tool_use_id: "agent1" };
+    const childGrep2Result = { type: "tool_result", tool_use_id: "c2", output: "hit2", is_error: false };
+    const childRead = { type: "tool_use", tool_name: "Read", input: { file_path: "/a/b.ts" }, id: "c3", parent_tool_use_id: "agent1" };
+    const childReadResult = { type: "tool_result", tool_use_id: "c3", output: "content", is_error: false };
+
+    r.handleEvent(childGrep1);
+    r.handleEvent(childGrep1Result);
+    r.handleEvent(childGrep2);
+    r.handleEvent(childGrep2Result);
+    r.handleEvent(childRead);
+    r.handleEvent(childReadResult);
+
+    // Main-agent Bash (no parent)
+    r.handleEvent(toolUse("Bash", { command: "echo hi" }, "m1"));
+    r.handleEvent({ type: "tool_result", tool_use_id: "m1", output: "hi", is_error: false });
+
+    r.handleEvent(finalEvent("done"));
+    r.handleEvent(turnUsage());
+
+    // --- main strip assertions ---
+    // Exactly one main .tool-strip (not inside a .tool-strip-group)
+    const allStrips = Array.from(container.querySelectorAll(".tool-strip"));
+    const mainStrips = allStrips.filter(s => !s.closest(".tool-strip-group"));
+    expect(mainStrips.length).toBe(1);
+    const mainStrip = mainStrips[0];
+
+    // Main strip has Subagent chip (x1) and Bash chip (x1), NO Grep/Read chips
+    const subagentChip = mainStrip.querySelector('.tool-chip[data-tool="Task"]') ||
+                         mainStrip.querySelector('.tool-chip[data-tool="Agent"]');
+    expect(subagentChip).not.toBeNull();
+    expect(subagentChip.querySelector(".tool-chip-count").textContent).toBe("x1");
+
+    const bashChip = mainStrip.querySelector('.tool-chip[data-tool="Bash"]');
+    expect(bashChip).not.toBeNull();
+    expect(bashChip.querySelector(".tool-chip-count").textContent).toBe("x1");
+
+    expect(mainStrip.querySelector('.tool-chip[data-tool="Grep"]')).toBeNull();
+    expect(mainStrip.querySelector('.tool-chip[data-tool="Read"]')).toBeNull();
+
+    // --- nested strip assertions ---
+    // The Subagent chip's bucket must contain a nested .tool-strip
+    const mainPanel = mainStrip.nextElementSibling;
+    const subagentKey = subagentChip.dataset.tool; // "Task" or "Agent"
+    const agentBucket = mainPanel.querySelector(`.tool-strip-group[data-tool="${subagentKey}"]`);
+    expect(agentBucket).not.toBeNull();
+
+    const nestedStrip = agentBucket.querySelector(":scope > .tool-strip");
+    expect(nestedStrip).not.toBeNull();
+
+    // Nested strip has Grep x2 and Read x1
+    const nestedGrepChip = nestedStrip.querySelector('.tool-chip[data-tool="Grep"]');
+    expect(nestedGrepChip).not.toBeNull();
+    expect(nestedGrepChip.querySelector(".tool-chip-count").textContent).toBe("x2");
+
+    const nestedReadChip = nestedStrip.querySelector('.tool-chip[data-tool="Read"]');
+    expect(nestedReadChip).not.toBeNull();
+    expect(nestedReadChip.querySelector(".tool-chip-count").textContent).toBe("x1");
+
+    // --- no ungrouped rows ---
+    const ungrouped = Array.from(container.querySelectorAll(".tool-row"))
+      .filter((el) => el.dataset.toolGrouped !== "1");
+    expect(ungrouped.length).toBe(0);
+  });
+
+  it("turn without subagent still produces exactly one main strip (no regression)", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("go"));
+    r.handleEvent(toolUse("Read", { file_path: "/a/b.ts" }, "r1"));
+    r.handleEvent({ type: "tool_result", tool_use_id: "r1", output: "content", is_error: false });
+    r.handleEvent(toolUse("Bash", { command: "ls" }, "b1"));
+    r.handleEvent({ type: "tool_result", tool_use_id: "b1", output: "ok", is_error: false });
+    r.handleEvent(finalEvent("done"));
+    r.handleEvent(turnUsage());
+
+    const allStrips = Array.from(container.querySelectorAll(".tool-strip"));
+    const mainStrips = allStrips.filter(s => !s.closest(".tool-strip-group"));
+    expect(mainStrips.length).toBe(1);
+    expect(mainStrips[0].querySelector('.tool-chip[data-tool="Read"]')).not.toBeNull();
+    expect(mainStrips[0].querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
+  });
+
   it("persists chips after a second bulkLoadEvents call (reload)", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

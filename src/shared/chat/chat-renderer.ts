@@ -357,6 +357,7 @@ export class ChatRenderer {
           input: ev.input,
           id: ev.id,
           ts,
+          parentToolUseId: ev.parent_tool_use_id ?? null,
         });
         const view = parseFileEdit(ev.tool_name, ev.input);
         if (view) {

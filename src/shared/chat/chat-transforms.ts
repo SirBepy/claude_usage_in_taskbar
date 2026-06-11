@@ -184,6 +184,10 @@ export interface RenderedMessage {
   is_error?: boolean;
   streaming?: boolean;
   ts: number;
+  /** Set on tool_use events that are child calls dispatched by a subagent.
+   *  Equals the tool_use id of the parent Agent/Task dispatch. Null for
+   *  main-agent tool calls. */
+  parentToolUseId?: string | null;
 }
 
 export function renderBlocks(blocks: ContentBlock[], breaks = false): string {
@@ -351,7 +355,7 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
     case "assistant_message":
       return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
     case "tool_use":
-      return { kind: "tool_use", tool: ev.tool_name, input: ev.input, id: ev.id, ts };
+      return { kind: "tool_use", tool: ev.tool_name, input: ev.input, id: ev.id, ts, parentToolUseId: ev.parent_tool_use_id ?? null };
     case "tool_result":
       return { kind: "tool_result", tool_use_id: ev.tool_use_id, output: ev.output, is_error: ev.is_error, ts };
     case "notification":

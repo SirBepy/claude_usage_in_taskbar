@@ -63,6 +63,7 @@ if (import.meta.env.DEV) {
       input,
       id: `e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       timestamp: BigInt(Date.now()),
+      parent_tool_use_id: null,
     };
     sessionEvents.pushSynthetic(sessionId, ev);
   };
