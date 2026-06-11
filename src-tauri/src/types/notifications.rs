@@ -51,13 +51,6 @@ impl<'de> Deserialize<'de> for AutoUpdateMode {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
-#[ts(export_to = "../../src/types/ipc.generated.ts")]
-pub struct AudioOutputDevice {
-    pub name: String,
-    pub is_default: bool,
-}
-
 /// User-configurable app settings.
 ///
 /// The dashboard owns a LOT of UI state (theme, project aliases + blacklist,

@@ -167,6 +167,7 @@ export async function renderSettingsView(
 
   const navVisuals = root.querySelector<HTMLElement>("#nav-visuals");
   const navThemes = root.querySelector<HTMLElement>("#nav-themes");
+  const navSound = root.querySelector<HTMLElement>("#nav-sound");
   const navNotifs = root.querySelector<HTMLElement>("#nav-notifications");
   const navPresets = root.querySelector<HTMLElement>("#nav-presets");
   const navPermissions = root.querySelector<HTMLElement>("#nav-permissions");
@@ -174,6 +175,7 @@ export async function renderSettingsView(
   const navStatusline = root.querySelector<HTMLElement>("#nav-statusline");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
   if (navThemes) navThemes.onclick = () => g().navigateTo("settings-themes");
+  if (navSound) navSound.onclick = () => g().navigateTo("settings-sound");
   if (navNotifs) navNotifs.onclick = () => g().navigateTo("settings-notifications");
   if (navPresets) navPresets.onclick = () => g().navigateTo("settings-presets");
   if (navPermissions) navPermissions.onclick = () => g().navigateTo("settings-permissions");
@@ -231,6 +233,10 @@ function template() {
 
         <div class="kit-section">
           <div class="kit-section-title">System</div>
+          <div class="kit-row kit-nav-row" id="nav-sound">
+            <span class="kit-row-label">Sound</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
           <div class="kit-row kit-nav-row" id="nav-notifications">
             <span class="kit-row-label">Notifications</span>
             <span class="kit-nav-arrow">›</span>

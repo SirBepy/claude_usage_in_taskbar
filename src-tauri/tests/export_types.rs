@@ -17,6 +17,7 @@ use claude_usage_tauri_lib::slash::{SlashEntry, SlashSource};
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
 use claude_usage_tauri_lib::when_done::{ProtocolPhase, ProtocolState, TerminalAction};
+use tauri_kit_audio::AudioOutputDevice;
 use std::fs;
 use std::path::PathBuf;
 use ts_rs::TS;

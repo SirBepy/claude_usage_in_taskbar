@@ -244,34 +244,6 @@ async function populateVoicePreview(): Promise<void> {
     : `<option value="">No projects yet</option>`;
 }
 
-async function populateAudioDevicePicker(): Promise<void> {
-  const sel = $("audioOutputDevice") as HTMLSelectElement | null;
-  if (!sel) return;
-  const s = getSettings();
-  const current = (s.audioOutputDevice as string | null) || "";
-
-  const devices = await api.listAudioOutputDevices();
-
-  const opts = ['<option value="">System default</option>'];
-  for (const d of devices) {
-    const suffix = d.is_default ? " (current)" : "";
-    const selected = d.name === current ? " selected" : "";
-    opts.push(`<option value="${d.name}"${selected}>${d.name}${suffix}</option>`);
-  }
-  sel.innerHTML = opts.join("");
-
-  if (current && !devices.find((d) => d.name === current)) {
-    const missing = document.createElement("option");
-    missing.value = current;
-    missing.textContent = `${current} (not found)`;
-    missing.selected = true;
-    sel.prepend(missing);
-  }
-
-  sel.removeEventListener("change", saveSettings);
-  sel.addEventListener("change", saveSettings);
-}
-
 async function hydrateNotifications(): Promise<void> {
   const s = getSettings();
   const muteAllSwitch = $("muteAllSwitch") as HTMLInputElement | null;
@@ -288,14 +260,6 @@ async function hydrateNotifications(): Promise<void> {
   muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
   muteSoundsSwitch.addEventListener("change", saveSettings);
 
-  // Meeting pause: default on when the key is absent.
-  const pauseInMeetingSwitch = $("pauseInMeetingSwitch") as HTMLInputElement | null;
-  if (pauseInMeetingSwitch) {
-    pauseInMeetingSwitch.checked = s.pauseInMeeting !== false;
-    pauseInMeetingSwitch.addEventListener("change", saveSettings);
-  }
-
-  await populateAudioDevicePicker();
   buildNotifCards();
   const notifs = (s.notifications as Record<string, Record<string, unknown>>) || {};
   await Promise.all(NOTIF_TYPES.map((t) => renderNotifCard(t.key, notifs[t.key] || {})));
@@ -332,15 +296,6 @@ function template() {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
-        <div class="kit-section">
-          <div class="kit-section-title">Audio output</div>
-          <div class="kit-row">
-            <span class="kit-row-label">Output device</span>
-            <select id="audioOutputDevice">
-              <option value="">System default</option>
-            </select>
-          </div>
-        </div>
         <div class="kit-section" id="muteSection">
           <div class="kit-section-title">Mute</div>
           <div class="kit-row">
@@ -364,17 +319,6 @@ function template() {
               <span class="kit-toggle-track"></span>
             </label>
           </div>
-        </div>
-        <div class="kit-section" id="meetingSection">
-          <div class="kit-section-title">Meetings</div>
-          <div class="kit-row">
-            <span class="kit-row-label">Pause notifications during meetings</span>
-            <label class="kit-toggle">
-              <input type="checkbox" id="pauseInMeetingSwitch">
-              <span class="kit-toggle-track"></span>
-            </label>
-          </div>
-          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Silences sounds and voice while your camera or mic is in use, or a meeting app (Teams, Zoom, Discord...) is in a call. Windows only.</div>
         </div>
         <template id="notifCardTemplate">
           <div class="kit-section notif-card">

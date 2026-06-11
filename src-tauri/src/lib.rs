@@ -304,6 +304,33 @@ pub fn run() {
             crate::slash::watcher::spawn(app.handle().clone());
             crate::meeting::start(app.handle().clone());
 
+            // Make a "System default" audio-output preference follow live OS
+            // default-device changes. Opt-in watcher from the kit; reads the
+            // current pref and re-binds the held stream when the OS default
+            // shifts while no explicit device is selected.
+            {
+                use tauri::Manager;
+                let pref_app = app.handle().clone();
+                let reinit_app = app.handle().clone();
+                tauri_kit_audio::spawn_default_follow(
+                    move || {
+                        pref_app
+                            .state::<crate::state::AppState>()
+                            .settings
+                            .lock()
+                            .unwrap()
+                            .audio_output_device
+                            .clone()
+                    },
+                    move |dev| {
+                        reinit_app
+                            .state::<crate::state::AppState>()
+                            .audio_stream
+                            .reinit(dev.as_deref());
+                    },
+                );
+            }
+
             // Auto-backfill token history once, off the main thread. Keeps
             // the stats page populated on first launch / after new sessions.
             {

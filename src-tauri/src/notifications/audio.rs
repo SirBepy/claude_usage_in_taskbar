@@ -1,157 +1,39 @@
-//! Audio playback queue. One consumer thread, 200ms gap between entries so
-//! back-to-back notifications don't overlap.
+//! App-specific audio playback built on the reusable `tauri_kit_audio` crate.
 //!
-//! A single `OutputStream` is held on a dedicated background thread per device.
-//! Both `AudioCtx` and `PreviewCtx` share the `OutputStreamHandle` via
-//! `Arc<Mutex<...>>` so a hot-swap (device change or failure recovery) is
-//! visible to both without restarting the worker threads.
+//! The kit owns device enumeration, the `OutputStream` controller (open /
+//! hot-swap / recovery), decode+play helpers, and the follow-OS-default
+//! watcher. This module keeps only the *app* policy: a notification playback
+//! queue (200 ms gap so back-to-back pings don't overlap) and a single-file
+//! preview player that emits a Tauri completion event for the character view.
+//!
+//! Muting and meeting-pause are enforced upstream in `notifications::rules`,
+//! before any function here is called, so the queue stays unconditional.
 
-use anyhow::{Context, Result};
-use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::Sink;
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
+use tauri_kit_audio::{load_source, play_blocking, try_recover_handle, SharedHandle};
+
+// Re-export the kit primitives the rest of the app refers to via this module,
+// so call sites (`state.rs`, `ipc::audio`) don't need to know they moved.
+pub use tauri_kit_audio::{list_audio_output_devices, AudioOutputDevice, AudioStreamCtrl};
+
 const GAP: Duration = Duration::from_millis(200);
-
-// ── Device opening helpers ────────────────────────────────────────────────────
-
-/// Open a named output device, or the OS default if `name` is None.
-/// Falls back to `try_default()` if the named device is not found or fails.
-fn open_device(name: Option<&str>) -> Option<(OutputStream, OutputStreamHandle)> {
-    if let Some(name) = name {
-        let host = cpal::default_host();
-        if let Ok(mut devs) = host.output_devices() {
-            if let Some(dev) = devs.find(|d| d.name().ok().as_deref() == Some(name)) {
-                if let Ok(pair) = OutputStream::try_from_device(&dev) {
-                    return Some(pair);
-                }
-                log::warn!("audio: failed to open device {name:?}, falling back to default");
-            } else {
-                log::warn!("audio: device {name:?} not found, falling back to default");
-            }
-        }
-    }
-    OutputStream::try_default().ok()
-}
-
-/// Spawn a background thread that keeps an `OutputStream` alive.
-/// The thread blocks on `shutdown_rx` and exits (dropping the stream) when signaled.
-/// Returns (handle, shutdown_tx) on success, None if the device can't be opened within 500 ms.
-fn spawn_stream_thread(
-    device_name: Option<String>,
-) -> Option<(Arc<OutputStreamHandle>, mpsc::SyncSender<()>)> {
-    let (result_tx, result_rx) = mpsc::sync_channel::<Option<OutputStreamHandle>>(1);
-    let (shutdown_tx, shutdown_rx) = mpsc::sync_channel::<()>(1);
-
-    std::thread::spawn(move || {
-        match open_device(device_name.as_deref()) {
-            Some((_stream, handle)) => {
-                let _ = result_tx.send(Some(handle));
-                let _ = shutdown_rx.recv(); // block; _stream drops when thread exits
-            }
-            None => {
-                log::warn!("audio: failed to open output stream");
-                let _ = result_tx.send(None);
-            }
-        }
-    });
-
-    result_rx
-        .recv_timeout(Duration::from_millis(500))
-        .ok()
-        .flatten()
-        .map(|h| (Arc::new(h), shutdown_tx))
-}
-
-// ── AudioStreamCtrl ───────────────────────────────────────────────────────────
-
-/// Owns the lifetime of the `OutputStream` background thread and exposes a
-/// shared handle reference that `AudioCtx` and `PreviewCtx` read from.
-pub struct AudioStreamCtrl {
-    handle: Arc<Mutex<Option<Arc<OutputStreamHandle>>>>,
-    shutdown_tx: Mutex<Option<mpsc::SyncSender<()>>>,
-}
-
-impl AudioStreamCtrl {
-    /// Initialize with the named device or OS default.
-    pub fn init(device_name: Option<&str>) -> Self {
-        let shared = Arc::new(Mutex::new(None::<Arc<OutputStreamHandle>>));
-        let shutdown = Mutex::new(None::<mpsc::SyncSender<()>>);
-        let ctrl = Self { handle: shared, shutdown_tx: shutdown };
-        if let Some((h, tx)) = spawn_stream_thread(device_name.map(|s| s.to_string())) {
-            *ctrl.handle.lock().unwrap() = Some(h);
-            *ctrl.shutdown_tx.lock().unwrap() = Some(tx);
-        }
-        ctrl
-    }
-
-    /// Hot-swap to a different device. Signals the old thread to exit cleanly,
-    /// then starts a new thread. Falls back to OS default if the device can't be opened.
-    pub fn reinit(&self, device_name: Option<&str>) {
-        // Signal old thread to exit (drops old OutputStream and releases WASAPI client).
-        if let Some(tx) = self.shutdown_tx.lock().unwrap().take() {
-            let _ = tx.send(());
-        }
-        match spawn_stream_thread(device_name.map(|s| s.to_string())) {
-            Some((h, tx)) => {
-                *self.handle.lock().unwrap() = Some(h);
-                *self.shutdown_tx.lock().unwrap() = Some(tx);
-            }
-            None => {
-                *self.handle.lock().unwrap() = None;
-                log::warn!("audio: reinit failed, audio disabled until next restart");
-            }
-        }
-    }
-
-    /// Clone of the shared handle reference for use by `AudioCtx` / `PreviewCtx`.
-    pub fn handle_arc(&self) -> Arc<Mutex<Option<Arc<OutputStreamHandle>>>> {
-        Arc::clone(&self.handle)
-    }
-}
-
-// ── Failure recovery ──────────────────────────────────────────────────────────
-
-/// On Sink failure (device disappeared), try to recover by opening the OS default.
-/// Swaps the shared handle on success. The old OutputStream thread (for the gone device)
-/// is left dormant - Windows releases the WASAPI client when the device disconnects.
-fn try_recover_handle(shared: &Arc<Mutex<Option<Arc<OutputStreamHandle>>>>) {
-    let (result_tx, result_rx) = mpsc::sync_channel::<Option<OutputStreamHandle>>(1);
-    std::thread::spawn(move || {
-        match OutputStream::try_default() {
-            Ok((_stream, handle)) => {
-                let _ = result_tx.send(Some(handle));
-                // Keep _stream alive. Recovery is rare; thread count is bounded by device-disconnect events.
-                std::thread::park();
-            }
-            Err(e) => {
-                log::warn!("audio: fallback reinit failed: {e}");
-                let _ = result_tx.send(None);
-            }
-        }
-    });
-    if let Ok(Some(h)) = result_rx.recv_timeout(Duration::from_millis(500)) {
-        *shared.lock().unwrap() = Some(Arc::new(h));
-        log::info!("audio: recovered to OS default device");
-    }
-}
 
 // ── Notification playback queue ───────────────────────────────────────────────
 
 pub struct AudioCtx {
     queue: Arc<Mutex<VecDeque<PathBuf>>>,
     worker_started: Arc<Mutex<bool>>,
-    handle: Arc<Mutex<Option<Arc<OutputStreamHandle>>>>,
+    handle: SharedHandle,
 }
 
 impl AudioCtx {
-    pub fn new(handle: Arc<Mutex<Option<Arc<OutputStreamHandle>>>>) -> Self {
+    pub fn new(handle: SharedHandle) -> Self {
         Self {
             queue: Arc::new(Mutex::new(VecDeque::new())),
             worker_started: Arc::new(Mutex::new(false)),
@@ -225,7 +107,7 @@ pub struct PreviewCtx {
 }
 
 impl PreviewCtx {
-    pub fn new(handle: Arc<Mutex<Option<Arc<OutputStreamHandle>>>>) -> Self {
+    pub fn new(handle: SharedHandle) -> Self {
         let (tx, rx) = mpsc::sync_channel::<PreviewMsg>(4);
         std::thread::spawn(move || {
             let mut active: Option<(Sink, AppHandle)> = None;
@@ -279,19 +161,7 @@ impl PreviewCtx {
 
 impl Default for PreviewCtx { fn default() -> Self { Self::new(Arc::new(Mutex::new(None))) } }
 
-fn load_source(path: &Path) -> Result<Decoder<BufReader<File>>> {
-    let file = File::open(path).with_context(|| format!("open {path:?}"))?;
-    Decoder::new(BufReader::new(file)).context("decode")
-}
-
-fn play_blocking(handle: &OutputStreamHandle, path: &Path) -> Result<()> {
-    let file = File::open(path).with_context(|| format!("open {path:?}"))?;
-    let source = Decoder::new(BufReader::new(file)).context("decode")?;
-    let sink = Sink::try_new(handle).context("sink")?;
-    sink.append(source);
-    sink.sleep_until_end();
-    Ok(())
-}
+// ── Shared playback entry points ──────────────────────────────────────────────
 
 /// Shared entry point: enqueue a resolved absolute path for playback.
 fn play_file_internal(app: &AppHandle, path: &Path) {
@@ -329,45 +199,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn audio_stream_ctrl_handle_arc_is_shared() {
-        // Works even when no audio device exists (CI). Tests that both arcs
-        // point to the same allocation, not just equal values.
-        let ctrl = AudioStreamCtrl::init(None);
-        let arc1 = ctrl.handle_arc();
-        let arc2 = ctrl.handle_arc();
-        assert!(Arc::ptr_eq(&arc1, &arc2));
-    }
-
-    #[test]
     fn audio_ctx_skips_play_when_handle_is_none() {
         // No panic when handle is None and play_file is called.
         let ctx = AudioCtx::default();
         ctx.play_file(std::path::Path::new("/nonexistent/path.mp3"));
         // Worker was not started because handle was None.
         assert!(!*ctx.worker_started.lock().unwrap());
-    }
-
-    #[test]
-    fn decodes_ogg_vorbis() {
-        // Regression: rodio was built without the vorbis feature, so every .ogg
-        // character clip (HotS, SSB) decoded to silence. This fixture is a real
-        // trimmed HotS Ogg Vorbis clip; it must decode through the same
-        // rodio::Decoder the playback paths use, on every platform.
-        use rodio::Source;
-        use std::io::Cursor;
-        let bytes: &[u8] = include_bytes!("../../tests/fixtures/vorbis-sample.ogg");
-        assert_eq!(&bytes[..4], b"OggS", "fixture is not an Ogg container");
-        let decoder = Decoder::new(Cursor::new(bytes))
-            .expect("Ogg Vorbis must decode (rodio needs the `vorbis` feature)");
-        assert!(decoder.channels() >= 1, "decoded source has no channels");
-        let sample_count = decoder.take(1000).count();
-        assert!(sample_count > 0, "Ogg Vorbis decoder yielded zero samples");
-    }
-
-    #[test]
-    fn open_device_unknown_name_falls_back_to_default() {
-        // Should not panic; may return None in headless CI.
-        let _result = open_device(Some("__nonexistent_device_xyz__"));
-        // No assertion on result - just verify it doesn't panic.
     }
 }
