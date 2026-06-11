@@ -217,3 +217,14 @@ NOTE on uncommitted WIP: at session start the tree already had modified chat-ren
 
 Where: src/views/sessions/ (statusbar tally)
 Revisit: 37 only (see above); rest are parked with reasons.
+
+## 2026-06-11 23:46 - Subagent tool-call nesting (under /autopilot)
+Decision needed: how to render a subagent's nested tool calls (inline vs side-panel)
+Resolved via: direct judgment (dev said "i dont mind"; reversible + matches existing chip UX)
+Picked: inline nested chip-strip inside the Subagent chip's expansion   Reason: consistent with the existing chip pattern, least disruptive, reuses the delegated click handler   Where: turn-collapse.ts groupToolRange
+Revisit: no
+RUN_LEDGER:
+- Chunk A (Rust: capture parent_tool_use_id in chat/parser.rs + ChatEvent::ToolUse, ts-rs regen, 3 parser tests) -> 73ae5e8
+- Chunk B (frontend: plumb parentToolUseId to RenderedMessage + nest children under the Subagent chip as a nested chip-strip, 2 new jsdom tests) -> 98ca6fe
+Deferred (separable): cold-reload-from-transcript nesting - subagent calls are NOT in the main .jsonl, they live only in the subagents/ file + the live stream, so after an app restart they would not nest (or appear) without also merging the subagents file. nested-strip-on-reload-straddle edge case is untested.
+Pending LIVE confirm (cannot verify statically): that the live stream actually populates parent_tool_use_id - a debug log was added in chat/parser.rs; Joe must run one real subagent turn and confirm. See BEPY_TODOS.
