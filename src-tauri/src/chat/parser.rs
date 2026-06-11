@@ -295,7 +295,10 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
             // Emit a ToolUse for each tool_use block so the chat shows tool rows
             // and the "changes" panel collects file edits. (History replay path;
             // the live path salvages these in feed() since the line is suppressed.)
-            evs.extend(tool_use_events(content_val, ts));
+            // Thread the envelope-level parent_tool_use_id so subagent calls can
+            // later be nested under their parent Task in the UI.
+            let parent_tool_use_id = v.get("parent_tool_use_id").and_then(|x| x.as_str()).map(String::from);
+            evs.extend(tool_use_events(content_val, ts, parent_tool_use_id));
 
             // JSONL assistant lines carry model + usage on the message object.
             // Always emit TurnUsage when present so the statusbar ctx% reflects
@@ -337,6 +340,8 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                 input: v.get("input").cloned().unwrap_or(Value::Null),
                 id: id.to_string(),
                 timestamp: ts,
+                // Bare tool_use content blocks carry no envelope; parent is unknown.
+                parent_tool_use_id: None,
             }]
         }
         "tool_result" => vec![ChatEvent::ToolResult {
@@ -371,7 +376,11 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
 /// message's `content` array. tool_use blocks are not renderable `ContentBlock`s
 /// (so `extract_content_blocks` drops them), yet the frontend needs them to show
 /// tool rows and populate the changes panel with file edits.
-fn tool_use_events(content_val: &Value, ts: i64) -> Vec<ChatEvent> {
+///
+/// `parent_tool_use_id` is the envelope-level field from the enclosing `assistant`
+/// line. It is `Some` for subagent (Task/Agent) tool calls and `None` for
+/// main-agent calls.
+fn tool_use_events(content_val: &Value, ts: i64, parent_tool_use_id: Option<String>) -> Vec<ChatEvent> {
     let Some(arr) = content_val.as_array() else { return vec![]; };
     arr.iter()
         .filter_map(|b| {
@@ -379,11 +388,15 @@ fn tool_use_events(content_val: &Value, ts: i64) -> Vec<ChatEvent> {
                 return None;
             }
             let id = b.get("id")?.as_str()?.to_string();
+            if let Some(ref parent) = parent_tool_use_id {
+                log::debug!("chat: tool_use {} parent_tool_use_id={:?}", id, parent);
+            }
             Some(ChatEvent::ToolUse {
                 tool_name: b.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                 input: b.get("input").cloned().unwrap_or(Value::Null),
                 id,
                 timestamp: ts,
+                parent_tool_use_id: parent_tool_use_id.clone(),
             })
         })
         .collect()
@@ -391,12 +404,15 @@ fn tool_use_events(content_val: &Value, ts: i64) -> Vec<ChatEvent> {
 
 /// Parse a full `assistant` JSONL line and return only its `ToolUse` events.
 /// Used by live-mode `feed()`, where the line is otherwise suppressed but is the
-/// sole carrier of complete tool_use blocks.
+/// sole carrier of complete tool_use blocks. The envelope-level
+/// `parent_tool_use_id` field (present on subagent lines) is threaded through so
+/// the UI can later nest subagent calls under their parent Task.
 fn tool_use_from_assistant_line(line: &str) -> Vec<ChatEvent> {
     let Ok(v) = serde_json::from_str::<Value>(line) else { return vec![]; };
     let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+    let parent_tool_use_id = v.get("parent_tool_use_id").and_then(|x| x.as_str()).map(String::from);
     let Some(content) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
-    tool_use_events(content, ts)
+    tool_use_events(content, ts, parent_tool_use_id)
 }
 
 fn extract_content_blocks(v: &Value) -> Vec<ContentBlock> {
@@ -867,6 +883,44 @@ mod tests {
             Some(ChatEvent::TurnUsage { awaiting, .. }) => assert!(awaiting.is_none()),
             _ => panic!("expected TurnUsage"),
         }
+    }
+
+    #[test]
+    fn assistant_line_with_parent_tool_use_id_propagates_to_tool_use() {
+        // Live path: envelope carries parent_tool_use_id for a subagent line.
+        let line = r#"{"type":"assistant","parent_tool_use_id":"toolu_PARENT","timestamp":5,"message":{"role":"assistant","stop_reason":"tool_use","usage":null,"content":[{"type":"tool_use","id":"toolu_CHILD","name":"Read","input":{"file_path":"/x.rs"}}]}}"#;
+        let mut ctx = ParserContext::new_live();
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let tool_use = events.iter().find_map(|e| match e {
+            ChatEvent::ToolUse { id, parent_tool_use_id, .. } if id == "toolu_CHILD" => Some(parent_tool_use_id.clone()),
+            _ => None,
+        });
+        assert_eq!(tool_use, Some(Some("toolu_PARENT".to_string())), "parent_tool_use_id must propagate from envelope to ToolUse");
+    }
+
+    #[test]
+    fn assistant_line_without_parent_tool_use_id_yields_none() {
+        // Main-agent line: no parent_tool_use_id on envelope.
+        let line = r#"{"type":"assistant","timestamp":5,"message":{"role":"assistant","stop_reason":"tool_use","usage":null,"content":[{"type":"tool_use","id":"toolu_MAIN","name":"Read","input":{"file_path":"/y.rs"}}]}}"#;
+        let mut ctx = ParserContext::new_live();
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let tool_use = events.iter().find_map(|e| match e {
+            ChatEvent::ToolUse { id, parent_tool_use_id, .. } if id == "toolu_MAIN" => Some(parent_tool_use_id.clone()),
+            _ => None,
+        });
+        assert_eq!(tool_use, Some(None), "absent parent_tool_use_id must yield None");
+    }
+
+    #[test]
+    fn history_mode_assistant_line_with_parent_tool_use_id_propagates() {
+        // History replay path (parse_line): same envelope field must propagate.
+        let line = r#"{"type":"assistant","parent_tool_use_id":"toolu_P2","timestamp":3,"message":{"role":"assistant","model":"m","stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1},"content":[{"type":"tool_use","id":"toolu_C2","name":"Write","input":{"file_path":"/z.rs","content":""}}]}}"#;
+        let evs = parse_line(line);
+        let parent = evs.iter().find_map(|e| match e {
+            ChatEvent::ToolUse { id, parent_tool_use_id, .. } if id == "toolu_C2" => Some(parent_tool_use_id.clone()),
+            _ => None,
+        });
+        assert_eq!(parent, Some(Some("toolu_P2".to_string())), "history-path parent_tool_use_id must propagate");
     }
 
     #[test]

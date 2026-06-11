@@ -33,6 +33,8 @@ pub enum ChatEvent {
         input: serde_json::Value,
         id: String,
         timestamp: i64,
+        #[serde(default)]
+        parent_tool_use_id: Option<String>,
     },
     ToolResult {
         tool_use_id: String,
