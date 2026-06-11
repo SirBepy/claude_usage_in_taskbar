@@ -162,6 +162,12 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
     let resets = resets.with_timezone(&Utc);
     match style {
         TimeStyle::Relative => {
+            // Round to nearest 10-min boundary before computing delta so the
+            // countdown matches the dashboard (`roundToNearest10Min` in shared/formatters.ts).
+            const TEN_MIN_MS: i64 = 10 * 60 * 1000;
+            let ms = resets.timestamp_millis();
+            let rounded_ms = ((ms + TEN_MIN_MS / 2) / TEN_MIN_MS) * TEN_MIN_MS;
+            let resets = DateTime::<Utc>::from_timestamp_millis(rounded_ms).unwrap_or(resets);
             let delta = resets - now;
             if delta <= Duration::zero() { return "resets now".into(); }
             let h = delta.num_hours();
@@ -170,11 +176,12 @@ fn format_reset(resets_at: &str, style: TimeStyle, now: DateTime<Utc>) -> String
         }
         TimeStyle::Absolute => {
             use chrono::Timelike;
-            // Round UP to the next 10-minute boundary so the tooltip matches
-            // the dashboard (`roundUpTo10Min` in shared/formatters.ts).
+            // Round to nearest 10-min boundary so the tooltip matches the
+            // dashboard (`roundToNearest10Min` in shared/formatters.ts).
+            // ceil caused times like 3:50:01 to show as 4:00 instead of 3:50.
             const TEN_MIN_MS: i64 = 10 * 60 * 1000;
             let ms = resets.timestamp_millis();
-            let rounded_ms = ((ms + TEN_MIN_MS - 1) / TEN_MIN_MS) * TEN_MIN_MS;
+            let rounded_ms = ((ms + TEN_MIN_MS / 2) / TEN_MIN_MS) * TEN_MIN_MS;
             let resets = DateTime::<Utc>::from_timestamp_millis(rounded_ms).unwrap_or(resets);
             let local = resets.with_timezone(&chrono::Local);
             let h24 = local.hour();
