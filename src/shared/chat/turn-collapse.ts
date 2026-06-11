@@ -139,9 +139,39 @@ export function groupToolRange(
 }
 
 /**
+ * Rebuild the per-tool-type group map from a strip already present in the DOM
+ * for this range. When a turn straddles a bulk-load flush boundary, its first
+ * tool rows were grouped into a strip on the earlier flush; recovering that
+ * strip here lets the close pass extend it instead of spawning a SECOND strip
+ * for the same turn (the reload "chips split into rows" bug).
+ */
+function recoverGroupsFromDom(
+  messageEls: HTMLElement[],
+  start: number,
+  end: number,
+): Map<string, ToolGroup> {
+  const groups = new Map<string, ToolGroup>();
+  for (let i = start; i < end; i++) {
+    const el = messageEls[i];
+    if (!el || el.dataset.toolGrouped !== "1") continue;
+    const bucket = el.closest<HTMLElement>(".tool-strip-group");
+    const panel = (bucket?.closest<HTMLElement>(".tool-strip-panel")) ?? null;
+    const strip = (panel?.previousElementSibling as HTMLElement | null) ?? null;
+    const key = bucket?.dataset.tool;
+    if (!bucket || !panel || !strip || !strip.classList.contains("tool-strip") || !key) continue;
+    if (groups.has(key)) continue;
+    const chip = strip.querySelector<HTMLElement>(`.tool-chip[data-tool="${key}"]`);
+    if (!chip) continue;
+    groups.set(key, { chip, bucket, strip, panel });
+  }
+  return groups;
+}
+
+/**
  * Finalize a closed turn: drop the working shimmer from its final answer and
  * fold any not-yet-grouped tool rows (covers bulk replay where multiple turns
- * close inside one render flush). A fresh map scopes groups to this turn.
+ * close inside one render flush). Reuses an existing strip for this turn (if a
+ * prior flush already started one) so a chunk-straddling turn stays ONE strip.
  */
 export function applyTurnCollapse(
   messages: RenderedMessage[],
@@ -158,7 +188,7 @@ export function applyTurnCollapse(
     }
   }
 
-  groupToolRange(messages, messageEls, start, end, new Map<string, ToolGroup>());
+  groupToolRange(messages, messageEls, start, end, recoverGroupsFromDom(messageEls, start, end));
 }
 
 /** Clamp over-long user messages behind a "Show more" toggle. Idempotent via data-clamp-checked. */

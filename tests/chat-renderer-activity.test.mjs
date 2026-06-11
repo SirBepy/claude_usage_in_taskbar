@@ -163,6 +163,38 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     expect(container.querySelector(".tool-strip")).toBeNull();
   });
 
+  it("groups a turn whose tools span a bulk-load chunk boundary into ONE strip (reload)", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    // 5 Bash calls = 10 tool events; with the user/session/final/turn_usage
+    // events the turn spans more than one CHUNK (8) in bulkLoadEvents, so the
+    // turn straddles a flush boundary on reload - the real-world case the
+    // 6-event test never hit.
+    const events = [
+      { type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 },
+      userEvent("do it"),
+    ];
+    for (let i = 1; i <= 5; i++) {
+      events.push(toolUse("Bash", { command: `cmd${i}` }, `t${i}`));
+      events.push({ type: "tool_result", tool_use_id: `t${i}`, output: "ok", is_error: false });
+    }
+    events.push(finalEvent("done"));
+    events.push(turnUsage());
+
+    await r.loadHistory(events);
+
+    // All five calls must fold into a SINGLE strip with one Bash chip at x5,
+    // and no tool row may be left ungrouped (rendered as a bare row).
+    expect(container.querySelectorAll(".tool-strip").length).toBe(1);
+    expect(container.querySelectorAll('.tool-chip[data-tool="Bash"]').length).toBe(1);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"] .tool-chip-count').textContent).toBe("x5");
+    const ungrouped = Array.from(container.querySelectorAll(".tool-row"))
+      .filter((el) => el.dataset.toolGrouped !== "1");
+    expect(ungrouped.length).toBe(0);
+  });
+
   it("persists chips after a second bulkLoadEvents call (reload)", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
