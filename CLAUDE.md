@@ -25,4 +25,3 @@ Deploy: GitHub Releases (NSIS / DMG / DEB + AppImage via CI)
 - No auto-restart on channel exit - would register a fresh bridge with Claude desktop each time, creating duplicate entries in the Code sidebar. Spawn once, stay dead until manual Restart.
 - Linux: chat hub works but channel automation (Plan C) unavailable (`SpawnError::NonWindows`).
 - New IPC command requires a matching entry in `src-tauri/capabilities/default.json` or it silently fails.
-- When writing something Joe is meant to copy-paste, use a **fenced code block** for commands/code/config (gets syntax highlighting + copy button) or a **blockquote** for prose he'll paste elsewhere (e.g. a message draft). Plain text gets no copy button. Never use a blockquote for technical content - it loses syntax highlighting.
