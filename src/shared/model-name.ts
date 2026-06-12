@@ -4,6 +4,7 @@ export function modelFamily(model: string): string {
   if (s.includes("opus")) return "opus";
   if (s.includes("sonnet")) return "sonnet";
   if (s.includes("haiku")) return "haiku";
+  if (s.includes("fable")) return "fable";
   return model;
 }
 

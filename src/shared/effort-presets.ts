@@ -15,7 +15,7 @@ export interface SessionConfig {
   remote?: boolean;
 }
 
-export const MODELS = ["haiku", "sonnet", "opus"] as const;
+export const MODELS = ["haiku", "sonnet", "opus", "fable"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export const DEFAULT_PRESETS: Preset[] = [
