@@ -364,10 +364,19 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     listEl.classList.toggle("kbd-hint-active", held);
   });
 
-  // Initial load
-  await refreshSessions();
+  // Show setup indicator immediately (daemonConnected = null → spinner row)
   renderSidebar(listEl);
-  updateThinkingBar();
+
+  // Initial load - fetch sessions and daemon status in parallel
+  const [, connected] = await Promise.all([
+    refreshSessions(),
+    invoke<boolean>("is_daemon_connected").catch(() => null),
+  ]);
+  if (state.mountId === myMount) {
+    state.daemonConnected = connected ?? null;
+    renderSidebar(listEl);
+    updateThinkingBar();
+  }
 
   // If a new chat was queued (e.g. project-detail "+"), launch it now. Takes
   // precedence over history-resume / last-selected restore.
@@ -396,7 +405,14 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
   // Subscribe to live registry updates
   const ev = window.__TAURI__?.event;
+  let unlistenDaemonStatus: (() => void) | null = null;
   if (ev?.listen) {
+    unlistenDaemonStatus = await ev.listen<{ connected: boolean }>("daemon-status-changed", (e) => {
+      if (state.mountId !== myMount) return;
+      state.daemonConnected = e.payload.connected;
+      renderSidebar(listEl);
+    });
+
     state.unlistenInstances = await ev.listen("instances-changed", async () => {
       if (state.mountId !== myMount) return;
       await refreshSessions();
@@ -621,6 +637,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     closeViewMoreMenu();
     unsubWhenDone();
     unlistenWhenDone();
+    if (unlistenDaemonStatus) { try { unlistenDaemonStatus(); } catch { /* ignore */ } unlistenDaemonStatus = null; }
     teardownState();
   };
 }

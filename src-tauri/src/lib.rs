@@ -205,6 +205,7 @@ pub fn run() {
             ipc::confirm_legacy_obsidian_import,
             ipc::list_instances,
             ipc::list_instances_for_project,
+            ipc::is_daemon_connected,
             ipc::phone_link,
             ipc::instance_token_stats,
             ipc::get_hook_registration_state,

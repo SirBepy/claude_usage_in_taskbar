@@ -338,6 +338,11 @@ pub fn list_instances(state: State<AppState>) -> Vec<crate::types::Instance> {
 }
 
 #[tauri::command]
+pub async fn is_daemon_connected(state: State<'_, AppState>) -> Result<bool, ()> {
+    Ok(state.daemon_client.lock().await.is_some())
+}
+
+#[tauri::command]
 pub fn list_instances_for_project(
     project_id: String,
     state: State<AppState>,

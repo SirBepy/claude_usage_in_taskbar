@@ -298,6 +298,28 @@
   font-size: 0.95rem;
 }
 
+.sessions-empty-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px !important;
+  color: var(--color-text-muted) !important;
+  font-size: 0.85rem !important;
+  font-style: italic;
+  cursor: default !important;
+  pointer-events: none;
+  border-bottom: none !important;
+}
+
+.sessions-empty-row i {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.sessions-setup-row {
+  opacity: 0.7;
+}
+
 .session-pending-hint {
   margin: auto;
   text-align: center;

@@ -183,6 +183,21 @@ export function renderSidebar(listEl: HTMLElement): void {
     });
   }
 
+  if (entries.length === 0) {
+    const connected = state.daemonConnected;
+    if (connected === true) {
+      entries.push({
+        key: "__empty__",
+        html: `<li class="sessions-empty-row"><i class="ph ph-chat-circle-dots"></i>No active sessions</li>`,
+      });
+    } else {
+      entries.push({
+        key: "__loading__",
+        html: `<li class="sessions-empty-row sessions-setup-row"><i class="ph ph-spinner spinning"></i>Setting up...</li>`,
+      });
+    }
+  }
+
   reconcileList(listEl, entries, loadAnimEnabled());
 }
 

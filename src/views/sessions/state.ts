@@ -64,6 +64,9 @@ export interface SessionsState {
    * via get_when_done_state and kept fresh by the `when-done-state` event.
    * Null until first hydration. In-memory only (the daemon owns the truth). */
   whenDone: ProtocolState | null;
+  /** Whether the daemon process is currently connected. Null = not yet known
+   * (hydrated async on mount via is_daemon_connected IPC). */
+  daemonConnected: boolean | null;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -83,6 +86,7 @@ export function createInitialState(mountId: number): SessionsState {
     sortedSessionIds: [],
     questionSessions: new Set(),
     whenDone: null,
+    daemonConnected: null,
   };
 }
 
