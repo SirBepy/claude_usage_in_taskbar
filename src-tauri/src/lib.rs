@@ -182,6 +182,7 @@ pub fn run() {
             ipc::get_platform,
             ipc::get_app_version,
             ipc::pick_folder,
+            ipc::create_folder,
             ipc::open_external,
             ipc::check_for_updates,
             ipc::download_and_install_update,

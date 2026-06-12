@@ -9,6 +9,7 @@ import "./sessions.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";
+import "./new-project-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
