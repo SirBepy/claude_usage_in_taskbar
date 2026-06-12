@@ -17,7 +17,7 @@
  */
 
 import { invoke } from "../../../shared/ipc";
-import { extractQuestions, renderQuestionUI } from "./question-ui";
+import { dismissQuestionCard, extractQuestions, renderQuestionUI } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
 import {
   allowPermission,
@@ -63,6 +63,7 @@ function showQuestionCard(payload: QuestionRequestedPayload): void {
     : [payload.questions];
 
   renderQuestionUI({
+    id: payload.id,
     questions,
     titleIcon: "ph-chat-circle-dots",
     titleText: "Claude is asking",
@@ -145,6 +146,14 @@ export function installPermissionModalListener(): void {
       return;
     }
     showQuestionCard(payload);
+  });
+
+  // A prompt closed on the daemon (timed out, or answered elsewhere). Remove its
+  // card if it's the one on screen. Emitted by the reliable pending-prompt poll
+  // (daemon_link.rs), so it survives the lossy broadcast.
+  ev.listen<{ id: string }>("prompt-resolved", (event) => {
+    const id = event.payload?.id;
+    if (id) dismissQuestionCard(id);
   });
 }
 

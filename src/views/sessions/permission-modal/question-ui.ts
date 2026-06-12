@@ -55,6 +55,22 @@ export function extractQuestions(input: unknown): Question[] | null {
   return out;
 }
 
+// The currently-shown question card, so a daemon "prompt-resolved" / expiry
+// event can dismiss it from outside (e.g. it timed out, or was answered on
+// another device). Only one card shows at a time.
+let activeCard: { id: string; teardown: () => void } | null = null;
+
+/**
+ * Dismiss the live question card if it matches `id` (or unconditionally when no
+ * id is given). No-op if nothing matches - safe to call for an already-closed
+ * or different card. Does NOT fire onCancel (the prompt already resolved).
+ */
+export function dismissQuestionCard(id?: string): void {
+  if (!activeCard) return;
+  if (id && activeCard.id !== id) return;
+  activeCard.teardown();
+}
+
 export function renderQuestionUI(opts: QuestionUIOpts): void {
   const { host } = ensureHost();
   const { questions } = opts;
@@ -85,7 +101,9 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
       messagesEl.style.paddingBottom = savedPaddingBottom;
       messagesEl.scrollTop = savedScrollTop;
     }
+    if (activeCard?.teardown === teardown) activeCard = null;
   };
+  if (opts.id) activeCard = { id: opts.id, teardown };
 
   const escHandler = (e: KeyboardEvent) => {
     if (e.key === "Escape") {

@@ -26,6 +26,8 @@ export interface QuestionRequestedPayload {
 export type Answers = Record<string, string | string[]>;
 
 export interface QuestionUIOpts {
+  /** Prompt id, so the card can be torn down externally (expiry / resolved elsewhere). */
+  id?: string;
   questions: Question[];
   titleIcon: string;
   titleText: string;

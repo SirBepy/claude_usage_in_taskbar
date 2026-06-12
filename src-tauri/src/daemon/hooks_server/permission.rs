@@ -132,7 +132,7 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     let id = uuid::Uuid::new_v4().to_string();
-    let payload = json!({ "id": id, "questions": questions, "session_id": session_id });
+    let payload = json!({ "id": id, "questions": questions, "session_id": session_id.clone() });
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     ctx.state.pending.lock().await.insert(id.clone(), tx);
     // Reliable delivery: record the prompt so the app's poll surfaces it even if
@@ -140,14 +140,26 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     ctx.state.add_prompt(&id, "question-requested", payload.clone()).await;
     ctx.state.notifier.publish("question_request", payload);
 
+    // `answers`: an object (possibly empty) iff the user actually responded;
+    // Null iff the prompt timed out with no response. The distinction matters -
+    // format_answers tells the agent "no answer yet" on timeout vs "dismissed"
+    // on an empty Skip, so an AFK user isn't read as a refusal.
+    let mut timed_out = false;
     let answers = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
         Ok(Ok(val)) => val.get("answers").cloned().unwrap_or(Value::Null),
         _ => {
             ctx.state.pending.lock().await.remove(&id);
+            timed_out = true;
             Value::Null
         }
     };
     ctx.state.remove_prompt(&id).await;
+    if timed_out {
+        // Tell the app to hide the now-dead card + notify the user it expired.
+        ctx.state
+            .notifier
+            .publish("question_expired", json!({ "id": id, "session_id": session_id }));
+    }
     deny_decision(&format_answers(&questions, &answers))
 }
 
@@ -167,6 +179,11 @@ fn deny_decision(reason: &str) -> Value {
 /// Render the structured `{question: answer}` map as plain-text feedback.
 /// Mirrors the frontend `formatAnswersAsMessage`.
 fn format_answers(questions: &Value, answers: &Value) -> String {
+    // Null = timed out with no response (user likely away), NOT a refusal.
+    if answers.is_null() {
+        return "No answer yet - the question timed out without a response (the user may be away). Re-ask if you still need an answer; do not treat this as a refusal.".to_string();
+    }
+    // Empty object = the user actively dismissed/skipped the prompt.
     let empty = answers.as_object().map(|o| o.is_empty()).unwrap_or(true);
     if empty {
         return "The user dismissed the question without answering. Ask again in plain text if you still need an answer.".to_string();
@@ -193,13 +210,31 @@ fn format_answers(questions: &Value, answers: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ask_question_decision, HookCtx};
+    use super::{ask_question_decision, format_answers, HookCtx};
     use crate::daemon::session::new_session_map;
     use crate::daemon::settings_cache::SettingsCache;
     use crate::daemon::state::DaemonState;
     use crate::types::Settings;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::sync::Arc;
+
+    #[test]
+    fn format_answers_distinguishes_timeout_from_dismiss_from_answer() {
+        let questions = json!([{ "question": "Tabs or spaces?" }]);
+
+        // Null = timed out (no response). Must NOT read as a refusal.
+        let timed_out = format_answers(&questions, &Value::Null);
+        assert!(timed_out.contains("timed out"), "timeout message: {timed_out}");
+        assert!(!timed_out.contains("dismissed"), "timeout must not say dismissed");
+
+        // Empty object = the user actively skipped.
+        let dismissed = format_answers(&questions, &json!({}));
+        assert!(dismissed.contains("dismissed"), "dismiss message: {dismissed}");
+
+        // Real answer = echoed back.
+        let answered = format_answers(&questions, &json!({ "Tabs or spaces?": "Tabs" }));
+        assert!(answered.contains("Tabs"), "answer echoed: {answered}");
+    }
 
     /// The AskUserQuestion hook publishes a `question_request`, waits for the
     /// answer that the chat card posts back via `respond_question`, and returns

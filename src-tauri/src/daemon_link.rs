@@ -92,15 +92,24 @@ fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
     tokio::spawn(async move {
         let state = app_handle.state::<crate::state::AppState>();
         let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut was_connected = false;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            let prompts = {
+            let (prompts, connected) = {
                 let guard = state.daemon_client.lock().await;
                 match guard.as_ref() {
-                    Some(c) => c.list_pending_prompts().await.ok(),
-                    None => None,
+                    Some(c) => (c.list_pending_prompts().await.ok(), true),
+                    None => (None, false),
                 }
             };
+            // Reconnected after being offline: forget what we'd "emitted" so any
+            // STILL-pending prompt re-surfaces (its card vanished when the app was
+            // away). Without this the id stays in `emitted` and never re-shows -
+            // the "my question card was gone when I came back" bug.
+            if connected && !was_connected {
+                emitted.clear();
+            }
+            was_connected = connected;
             let Some(prompts) = prompts else { continue };
             let arr = match prompts.as_array() {
                 Some(a) => a.clone(),
@@ -122,8 +131,12 @@ fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
                     emitted.insert(id.to_string());
                 }
             }
-            // Forget prompts that closed (answered/timed out) so a later reuse of
-            // the id (shouldn't happen - uuids) would re-emit.
+            // A prompt we'd shown is no longer pending (answered or timed out):
+            // tell the UI to remove its card via the RELIABLE poll channel (the
+            // lossy broadcast can't be trusted to deliver a removal).
+            for id in emitted.iter().filter(|id| !present.contains(*id)) {
+                let _ = app_handle.emit("prompt-resolved", serde_json::json!({ "id": id }));
+            }
             emitted.retain(|id| present.contains(id));
         }
     });
@@ -236,6 +249,18 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
                 crate::notifications::NotifKind::QuestionAsked,
                 crate::notifications::NotifContext { name, percent: None },
                 cwd.as_deref(),
+            );
+        }
+        // A question's prompt timed out with no answer. The card is removed via
+        // the reliable `prompt-resolved` poll path; here we just notify the user
+        // they missed it (best-effort - a dropped broadcast frame only costs the
+        // notification, not the cleanup).
+        "question_expired" => {
+            crate::notifications::fire(
+                app,
+                crate::notifications::NotifKind::QuestionAsked,
+                crate::notifications::NotifContext { name: None, percent: None },
+                None,
             );
         }
         "quit_requested" => {
