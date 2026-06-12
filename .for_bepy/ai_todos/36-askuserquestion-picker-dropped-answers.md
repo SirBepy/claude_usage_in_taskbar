@@ -29,3 +29,22 @@ Run `cargo tauri dev`, open a chat, trigger an `AskUserQuestion`, then capture: 
 
 - Answering an in-app `AskUserQuestion` (incl. multi-question) delivers the selected options to the model; it does NOT see "dismissed".
 - A regression test at whichever seam the logs implicate (gating/session-match or the poll-replay of questions), not a GUI test.
+
+## Update 2026-06-12 (live observation in an in-app chat)
+
+AUQ now RENDERS and DELIVERS answers in an established (already-selected) session - Joe answered a 4-question and a 2-question picker successfully. So the "always dropped" framing is stale; it is INTERMITTENT. Two distinct failure modes were captured live this session:
+
+1. **`MCP error -32000: Connection closed`** when the AUQ tool was called while the **app window was OFF**. The builtin `AskUserQuestion` is serviced through the app's MCP server (`cc_companion`), so app-off => tool errors immediately. Corrects the old memory that said the relay is purely a PreToolUse curl hook - for the BUILTIN tool there is an MCP path that dies with the app. (App back on => next call worked.)
+2. **Expiry / "user did not respond in time"** when Joe was AFK - this is the 300s oneshot timeout firing, NOT a drop. Mitigated 2026-06-12: bumped to 1h via `PROMPT_TIMEOUT_SECS` in `hooks_server/permission.rs` (commit on master). The pending-pane gating race (section above) is still the prime suspect for the brand-new-session case.
+
+## New UX requirements (Joe, 2026-06-12) - make AUQ robust
+
+- **Longer timeout: DONE** (1h, see above).
+- **Hide on expire**: when the prompt times out, the question card must be REMOVED from the UI (today it lingers). Daemon should emit a `question-expired { id, session_id }` event on timeout; frontend removes the matching card + clears any sidebar flag.
+- **Notify on expire**: fire an OS notification ("A question expired without an answer") when the timeout fires, so Joe knows he missed it. Reuse the `notifications::fire` path (`NotifKind`).
+- **Remote-dismiss / cross-device sync**: Joe sometimes answers on his PHONE (remote-control). When answered (or expired) anywhere, the DESKTOP card for that `id` must clear. Needs the daemon to broadcast a `question-resolved { id }` to ALL clients (not just the answering one) + frontend removes the card on receipt. Design Q: which relay carries the phone's answer back, and does it already hit `respond_question`? Confirm before building.
+
+## Acceptance (additions)
+
+- Prompt timeout removes the card AND fires an OS notification.
+- Answering on one device (phone) clears the same question card on the desktop.
