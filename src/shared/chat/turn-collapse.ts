@@ -35,15 +35,25 @@ function makeChip(key: string, opts?: { label?: string; icon?: string; agent?: b
   return chip;
 }
 
-/** Create a tool-strip + tool-strip-panel pair, insert before `anchorEl`. */
-function makeStripPair(anchorEl: HTMLElement): { strip: HTMLElement; panel: HTMLElement } {
+/**
+ * Create a tool-strip + tool-strip-panel pair. When `host` is given (the
+ * turn's footer) the pair is APPENDED there - after the meta chips row, so
+ * the strip is the footer's second row. Without a host it falls back to the
+ * legacy placement before `anchorEl` (first tool row).
+ */
+function makeStripPair(anchorEl: HTMLElement, host?: HTMLElement | null): { strip: HTMLElement; panel: HTMLElement } {
   const strip = document.createElement("div");
   strip.className = "tool-strip";
   const panel = document.createElement("div");
   panel.className = "tool-strip-panel";
   panel.hidden = true;
-  anchorEl.parentElement?.insertBefore(strip, anchorEl);
-  strip.after(panel);
+  if (host) {
+    host.appendChild(strip);
+    host.appendChild(panel);
+  } else {
+    anchorEl.parentElement?.insertBefore(strip, anchorEl);
+    strip.after(panel);
+  }
   return { strip, panel };
 }
 
@@ -177,6 +187,7 @@ export function groupToolRange(
   start: number,
   end: number,
   groups: Map<string, ToolGroup>,
+  stripHost?: HTMLElement | null,
 ): void {
   if (end <= start) return;
 
@@ -258,10 +269,10 @@ export function groupToolRange(
     const key = canonicalTool(tool);
 
     // ------------------------------------------------------------------
-    // Ensure main strip exists (created before the first tool row)
+    // Ensure main strip exists (inside the turn footer when provided)
     // ------------------------------------------------------------------
     if (!strip) {
-      const pair = makeStripPair(el);
+      const pair = makeStripPair(el, stripHost);
       strip = pair.strip;
       panel = pair.panel;
     }
@@ -425,6 +436,7 @@ export function applyTurnCollapse(
   messageEls: HTMLElement[],
   start: number,
   end: number,
+  stripHost?: HTMLElement | null,
 ): void {
   if (end <= start) return;
 
@@ -435,7 +447,7 @@ export function applyTurnCollapse(
     }
   }
 
-  groupToolRange(messages, messageEls, start, end, recoverGroupsFromDom(messageEls, start, end));
+  groupToolRange(messages, messageEls, start, end, recoverGroupsFromDom(messageEls, start, end), stripHost);
 }
 
 /** Clamp over-long user messages behind a "Show more" toggle. Idempotent via data-clamp-checked. */

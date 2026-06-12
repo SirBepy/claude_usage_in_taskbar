@@ -921,3 +921,68 @@
 /* Word-level emphasis: the exact changed words inside a replaced line pair. */
 .diff-line--add .diff-emph { background: rgba(63, 185, 80, 0.4); border-radius: 2px; }
 .diff-line--del .diff-emph { background: rgba(248, 81, 73, 0.4); border-radius: 2px; }
+
+/* ── Per-turn footer: meta row (tokens + time) above the tool chip strip ── */
+
+.turn-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 14px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* A turn with no usage and no tools leaves its footer empty - hide the box. */
+.turn-footer:empty {
+  display: none;
+}
+
+/* The footer's flex gap owns the spacing between its DIRECT rows (nested
+   subagent strips keep their own .tool-strip-group styling). */
+.turn-footer > .tool-strip {
+  margin: 0;
+  padding: 0;
+}
+
+.turn-footer > .tool-strip-panel {
+  margin: 0;
+}
+
+.turn-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.turn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 0.70rem;
+  font-family: inherit;
+  user-select: none;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.turn-chip i {
+  font-size: 0.80rem;
+  opacity: 0.75;
+}
+
+.turn-chip--hidden {
+  display: none;
+}
+
+/* Tooltip on hover for the chip row (full breakdown). */
+.turn-meta-chips[title]:hover {
+  cursor: help;
+}

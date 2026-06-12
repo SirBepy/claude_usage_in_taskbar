@@ -10,6 +10,7 @@ import { ToolTallyState } from "./tool-tally-state";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { ChatPaginator } from "./chat-pagination";
+import { TurnFooterRegistry, type TurnChipKey, type TurnUsageTotals } from "./turn-chips";
 
 export interface SessionMeta {
   model: string | null;
@@ -56,10 +57,41 @@ export class ChatRenderer {
   // turn, so a later usage event (history replays one per assistant line) does
   // not orphan the turn's remaining tool rows. Reset when the next turn opens.
   private activeTurnSettled = false;
+  // Per-renderer footer registry (instance state - chip keys are a local
+  // sequence, a shared registry would collide across renderer instances).
+  private turnFooters = new TurnFooterRegistry();
+  // Key for the current turn's footer (created on user_message, frozen on
+  // close). Null when no turn is in progress.
+  private activeTurnChipKey: TurnChipKey | null = null;
+  // Monotonically-increasing counter for chip keys. Using a counter instead of
+  // Date.now() ensures uniqueness even when tests freeze system time.
+  private _chipKeySeq = 0;
+  // Accumulated streamed assistant text for the current turn (for live token
+  // estimate). Reset at each new turn.
+  private activeTurnStreamedText = "";
+  // Wall-clock ms when the active turn's user message arrived. Drives the
+  // live elapsed display (NEVER derive elapsed from the key - it's a counter).
+  private activeTurnStartedAtMs = 0;
+  // Combined usage for the active turn. History replays one turn_usage per
+  // assistant line, so output/cache/cost SUM across events; input is the
+  // latest (context-size semantics); durationMs is the max seen (live's
+  // single result event carries the real one, history carries none).
+  private activeTurnUsage: TurnUsageTotals | null = null;
+  // First/last real event timestamps of the active turn - the duration
+  // fallback for history, where duration_ms is absent. Live events all carry
+  // timestamp 0, so the span stays 0 there (live has real duration_ms).
+  private activeTurnFirstTs = 0;
+  private activeTurnLastTs = 0;
   // Per-type tool-group elements for the turn in progress (key = canonical tool
   // name). Cleared at each turn end; re-populated by groupToolRange each flush.
   private activeToolGroups = new Map<string, ToolGroup>();
-  private closeTurnQueue: { start: number; end: number }[] = [];
+  private closeTurnQueue: {
+    start: number;
+    end: number;
+    chipKey: TurnChipKey | null;
+    usage: TurnUsageTotals | null;
+    tsSpanMs: number;
+  }[] = [];
   private fileEdits: FileEditView[] = [];
   private lastActivity: string | null = null;
   // By-type cumulative tool tally state (counts + per-target details, dedup by
@@ -109,9 +141,10 @@ export class ChatRenderer {
         }
         if (this.activeTurnStart !== null) this.activeTurnStart += n;
         if (this.closeTurnQueue.length > 0) {
-          this.closeTurnQueue = this.closeTurnQueue.map(({ start, end }) => ({
-            start: start + n,
-            end: end + n,
+          this.closeTurnQueue = this.closeTurnQueue.map((entry) => ({
+            ...entry,
+            start: entry.start + n,
+            end: entry.end + n,
           }));
         }
       },
@@ -136,6 +169,8 @@ export class ChatRenderer {
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
     this.activeTurnStart = null;
+    this.resetActiveTurnMeta();
+    this.turnFooters.clear();
     this.closeTurnQueue = [];
     this.unsubscribe = sessionEvents.subscribe(sessionId, (ev) => {
       this.handleLive(ev);
@@ -170,6 +205,8 @@ export class ChatRenderer {
     this.streamingIndex = null;
     this.dirtyIndices.clear();
     this.activeTurnStart = null;
+    this.resetActiveTurnMeta();
+    this.turnFooters.clear();
     this.activeToolGroups.clear();
     this.closeTurnQueue = [];
     this.setActivity(null);
@@ -263,6 +300,10 @@ export class ChatRenderer {
     this.fileEdits = [];
     this.lastActivity = null;
     this.activeToolGroups.clear();
+    this.activeTurnStart = null;
+    this.resetActiveTurnMeta();
+    this.turnFooters.clear();
+    this.closeTurnQueue = [];
     this.tallyState.reset();
     this.onFileEditsChanged?.([]);
     this.onToolTally?.(this.tallyState.build());
@@ -280,6 +321,16 @@ export class ChatRenderer {
       }
     }
     if (this._bulkGen !== myGen) { this.liveBuffer = null; return; }
+    // The final turn of the load never gets a closing user_message: settle its
+    // meta row from whatever usage accumulated (re-settleable if the session
+    // is live and more usage streams in after this).
+    if (this.activeTurnChipKey !== null && this.activeTurnUsage) {
+      const u = this.activeTurnUsage;
+      this.turnFooters.settleMetaRow(this.activeTurnChipKey, {
+        ...u,
+        durationMs: u.durationMs > 0 ? u.durationMs : this.activeTurnTsSpan(),
+      });
+    }
     this.scrollToBottom();
     const buffered = this.liveBuffer;
     this.liveBuffer = null;
@@ -311,6 +362,15 @@ export class ChatRenderer {
         this.enqueueTurnClose();
         this.setActivity(null);
         this.setTurnStatus(null);
+        // Open a new turn footer. The key is a sequence counter (unique even
+        // when tests freeze system time); the wall-clock start drives the
+        // live elapsed display.
+        this.activeTurnChipKey = ++this._chipKeySeq;
+        this.activeTurnStreamedText = "";
+        this.activeTurnStartedAtMs = Date.now();
+        this.activeTurnUsage = null;
+        this.activeTurnFirstTs = ts > 0 ? ts : 0;
+        this.activeTurnLastTs = this.activeTurnFirstTs;
         if (isCompactUserMessage(ev.content)) {
           this.messages.push({ kind: "system", text: "Conversation compacted", ts });
           this.activeTurnStart = this.messages.length;
@@ -351,6 +411,12 @@ export class ChatRenderer {
         if (!ev.streaming) {
           const joined = ev.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
           this.setTurnStatus(detectStatusToken(joined));
+        }
+        // Update live token estimate from accumulated streamed assistant text
+        if (this.activeTurnChipKey !== null) {
+          const joined = ev.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          this.activeTurnStreamedText = joined;
+          this.turnFooters.updateLiveTokenEstimate(this.activeTurnChipKey, joined);
         }
         touched = true;
         break;
@@ -421,6 +487,34 @@ export class ChatRenderer {
         // here would orphan the turn's remaining tool rows on reload (the "chips
         // vanish when I reopen the chat" bug).
         this.activeTurnSettled = true;
+        // Accumulate the turn's COMBINED usage. History replays one usage
+        // event per assistant line: output/cache/cost sum, input is the
+        // latest (context size), duration keeps the max (only live's single
+        // result event carries a real one). The meta row freezes from these
+        // totals - at turn close for history, right here for live.
+        if (this.activeTurnChipKey !== null) {
+          const u = this.activeTurnUsage ?? {
+            durationMs: 0, outputTokens: 0, inputTokens: 0,
+            cacheCreate: 0, cacheRead: 0, costUsd: 0,
+          };
+          u.outputTokens += Number(ev.output_tokens) || 0;
+          u.inputTokens = Number(ev.input_tokens) || u.inputTokens;
+          u.cacheCreate += Number(ev.cache_creation_input_tokens) || 0;
+          u.cacheRead += Number(ev.cache_read_input_tokens) || 0;
+          u.costUsd += Number(ev.total_cost_usd) || 0;
+          u.durationMs = Math.max(u.durationMs, Number(ev.duration_ms) || 0);
+          this.activeTurnUsage = u;
+          // Live path: settle immediately so the row stops ticking the moment
+          // usage lands. Watched external sessions stream one usage per
+          // assistant line; each re-settle overwrites with the bigger sums.
+          if (!opts.silent) {
+            this.ensureActiveTurnFooter();
+            this.turnFooters.settleMetaRow(this.activeTurnChipKey, {
+              ...u,
+              durationMs: u.durationMs > 0 ? u.durationMs : this.activeTurnTsSpan(),
+            });
+          }
+        }
         if (!opts.silent) {
           this.flushRender();
         }
@@ -430,6 +524,12 @@ export class ChatRenderer {
         break;
     }
     if (!touched) return;
+    // Track the turn's timestamp span (history duration fallback). Live
+    // events carry timestamp 0 and never move these.
+    if (ts > 0 && this.activeTurnChipKey !== null) {
+      if (this.activeTurnFirstTs === 0) this.activeTurnFirstTs = ts;
+      if (ts > this.activeTurnLastTs) this.activeTurnLastTs = ts;
+    }
     if (!opts.silent) {
       this.flushRender();
       if (!opts.skipScroll && wasAtBottom) this.scrollToBottom();
@@ -470,12 +570,43 @@ export class ChatRenderer {
       }
     }
     this.processTurnCloseQueue();
+    this.ensureActiveTurnFooter();
     if (this.activeTurnStart !== null) {
-      groupToolRange(this.messages, this.messageEls, this.activeTurnStart, this.messages.length, this.activeToolGroups);
+      const footer = this.activeTurnChipKey !== null ? this.turnFooters.getOrCreateFooter(this.activeTurnChipKey) : null;
+      groupToolRange(this.messages, this.messageEls, this.activeTurnStart, this.messages.length, this.activeToolGroups, footer);
     }
     void highlightCodeBlocks(this.container);
     wrapBlockquotes(this.container);
     clampUserMessages(this.messages, this.messageEls);
+  }
+
+  /** The active turn's history-timestamp span (duration fallback), or 0. */
+  private activeTurnTsSpan(): number {
+    if (this.activeTurnFirstTs <= 0 || this.activeTurnLastTs <= this.activeTurnFirstTs) return 0;
+    const span = this.activeTurnLastTs - this.activeTurnFirstTs;
+    // Distrust spans over 24h: mixed/garbage timestamps, hide the chip instead.
+    return span <= 24 * 3600 * 1000 ? span : 0;
+  }
+
+  /**
+   * Ensure the active turn's footer exists and is the LAST child of the
+   * container, so it always sits below everything the turn has rendered.
+   * Once the turn closes the footer stays pinned where it is (the next user
+   * message renders after it). Live turns also get the ticking meta row;
+   * bulk loads skip it (their rows settle from real totals at close).
+   */
+  private ensureActiveTurnFooter(): void {
+    if (this.activeTurnChipKey === null) return;
+    const footer = this.turnFooters.getOrCreateFooter(this.activeTurnChipKey);
+    if (footer !== this.container.lastElementChild) {
+      this.container.appendChild(footer);
+    }
+    if (this.liveBuffer === null) {
+      this.turnFooters.ensureLiveMetaRow(this.activeTurnChipKey, this.activeTurnStartedAtMs || Date.now());
+      if (this.activeTurnStreamedText) {
+        this.turnFooters.updateLiveTokenEstimate(this.activeTurnChipKey, this.activeTurnStreamedText);
+      }
+    }
   }
 
   private enqueueTurnClose(): void {
@@ -483,15 +614,56 @@ export class ChatRenderer {
     // data-tool-grouped, so processTurnCloseQueue won't re-fold them.
     this.activeToolGroups.clear();
     this.activeTurnSettled = false;
-    if (this.activeTurnStart === null) return;
-    this.closeTurnQueue.push({ start: this.activeTurnStart, end: this.messages.length });
+    if (this.activeTurnChipKey !== null) {
+      this.closeTurnQueue.push({
+        start: this.activeTurnStart ?? this.messages.length,
+        end: this.messages.length,
+        chipKey: this.activeTurnChipKey,
+        usage: this.activeTurnUsage,
+        tsSpanMs: this.activeTurnTsSpan(),
+      });
+    }
+    this.resetActiveTurnMeta();
     this.activeTurnStart = null;
+  }
+
+  /** Clear all per-turn meta tracking (key, usage, timestamps, streamed text). */
+  private resetActiveTurnMeta(): void {
+    this.activeTurnChipKey = null;
+    this.activeTurnStreamedText = "";
+    this.activeTurnStartedAtMs = 0;
+    this.activeTurnUsage = null;
+    this.activeTurnFirstTs = 0;
+    this.activeTurnLastTs = 0;
   }
 
   private processTurnCloseQueue(): void {
     if (this.closeTurnQueue.length === 0) return;
-    for (const { start, end } of this.closeTurnQueue) {
-      applyTurnCollapse(this.messages, this.messageEls, start, end);
+    for (const { start, end, chipKey, usage, tsSpanMs } of this.closeTurnQueue) {
+      let footer: HTMLElement | null = null;
+      if (chipKey !== null) {
+        footer = this.turnFooters.getOrCreateFooter(chipKey);
+        // Pin the footer at the turn's bottom: right before the next turn's
+        // first element (always a direct container child), else at the end.
+        const anchor = this.messageEls[end] ?? null;
+        if (anchor && anchor.parentElement === this.container) {
+          this.container.insertBefore(footer, anchor);
+        } else if (footer.parentElement !== this.container) {
+          this.container.appendChild(footer);
+        }
+        if (usage) {
+          // History turns have no duration_ms; fall back to the ts span.
+          this.turnFooters.settleMetaRow(chipKey, {
+            ...usage,
+            durationMs: usage.durationMs > 0 ? usage.durationMs : tsSpanMs,
+          });
+        } else {
+          // No usage ever arrived (interrupted live turn): freeze the live
+          // row at its last elapsed/estimate. No-op when no row exists.
+          this.turnFooters.cancelMetaRow(chipKey);
+        }
+      }
+      applyTurnCollapse(this.messages, this.messageEls, start, end, footer);
     }
     this.closeTurnQueue = [];
   }
