@@ -2,7 +2,7 @@ import { html, render } from "lit-html";
 import { invoke } from "../../shared/ipc";
 import { ensureModalHost, closeModal } from "../../shared/modal";
 import type { ProjectGroup } from "../../types/ipc.generated";
-import { openNewProjectModal } from "./new-project-modal";
+import { openNewProjectModal, isNewProjectModalOpen } from "./new-project-modal";
 
 export type SortChoice = "name" | "recent";
 export const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
@@ -203,8 +203,14 @@ export function openProjectPickerModal(
             <button
               class="btn btn-secondary btn-new-folder"
               @click=${async () => {
+                if (isNewProjectModalOpen()) return;
+                host.classList.remove("open");
                 const result = await openNewProjectModal();
-                if (!result) return;
+                if (!result) {
+                  host.classList.add("open");
+                  renderModal();
+                  return;
+                }
                 finish(result);
               }}
             >

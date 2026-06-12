@@ -1,6 +1,10 @@
 import { invoke } from "../../shared/ipc";
+import { escapeHtml } from "../../shared/escape-html";
 
 const LAST_PARENT_KEY = "newProjectLastParent";
+
+let _isOpen = false;
+export function isNewProjectModalOpen(): boolean { return _isOpen; }
 
 async function readLastParent(): Promise<string> {
   try {
@@ -19,6 +23,9 @@ async function saveLastParent(path: string): Promise<void> {
 }
 
 export function openNewProjectModal(): Promise<{ path: string; name: string } | null> {
+  if (_isOpen) return Promise.resolve(null);
+  _isOpen = true;
+
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "new-project-overlay";
@@ -31,18 +38,18 @@ export function openNewProjectModal(): Promise<{ path: string; name: string } | 
     const finish = (val: { path: string; name: string } | null) => {
       if (resolved) return;
       resolved = true;
+      _isOpen = false;
       overlay.remove();
       document.removeEventListener("keydown", onKey);
       resolve(val);
     };
 
-    const render = () => {
+    // Full DOM rebuild — called on init and when parentFolder changes.
+    const buildHtml = () => {
       const nameTrimmed = projectName.trim();
       const canCreate = nameTrimmed.length > 0 && parentFolder.length > 0;
       const sep = parentFolder.includes("\\") ? "\\" : "/";
-      const preview = parentFolder && nameTrimmed
-        ? `${parentFolder}${sep}${nameTrimmed}`
-        : "";
+      const preview = parentFolder && nameTrimmed ? `${parentFolder}${sep}${nameTrimmed}` : "";
 
       overlay.innerHTML = `
         <div class="new-project-backdrop"></div>
@@ -56,7 +63,7 @@ export function openNewProjectModal(): Promise<{ path: string; name: string } | 
               type="text"
               autocomplete="off"
               placeholder="my-project"
-              value="${escapeAttr(projectName)}"
+              value="${escapeHtml(projectName)}"
             />
           </div>
           <div class="new-project-field">
@@ -78,27 +85,53 @@ export function openNewProjectModal(): Promise<{ path: string; name: string } | 
         </div>
       `;
 
+      wireEvents();
+      setTimeout(() => overlay.querySelector<HTMLInputElement>("#new-project-name")?.focus(), 0);
+    };
+
+    // Patches only the button state and preview without touching the input element.
+    // Called on every keystroke so cursor position is preserved naturally.
+    const patchDynamic = () => {
+      const nameTrimmed = projectName.trim();
+      const canCreate = nameTrimmed.length > 0 && parentFolder.length > 0;
+      const sep = parentFolder.includes("\\") ? "\\" : "/";
+      const preview = parentFolder && nameTrimmed ? `${parentFolder}${sep}${nameTrimmed}` : "";
+
+      const btn = overlay.querySelector<HTMLButtonElement>("#new-project-create");
+      if (btn) btn.disabled = !canCreate;
+
+      let previewEl = overlay.querySelector<HTMLElement>(".new-project-preview");
+      if (preview) {
+        if (!previewEl) {
+          previewEl = document.createElement("div");
+          previewEl.className = "new-project-preview";
+          overlay.querySelector(".new-project-actions")?.before(previewEl);
+        }
+        previewEl.textContent = preview;
+      } else {
+        previewEl?.remove();
+      }
+
+      // Refresh Enter handler so it sees updated canCreate.
+      const nameInput = overlay.querySelector<HTMLInputElement>("#new-project-name");
+      if (nameInput) nameInput.onkeydown = (e) => { if (e.key === "Enter" && canCreate) void submit(); };
+    };
+
+    const wireEvents = () => {
       const nameInput = overlay.querySelector<HTMLInputElement>("#new-project-name");
       if (nameInput) {
         nameInput.addEventListener("input", (e) => {
           projectName = (e.target as HTMLInputElement).value;
-          render();
+          patchDynamic();
         });
-        nameInput.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && canCreate) void submit();
-        });
-        // Focus on first render only (when active element isn't already inside overlay).
-        const active = document.activeElement;
-        if (!active || !overlay.contains(active)) {
-          setTimeout(() => nameInput.focus(), 0);
-        }
+        patchDynamic(); // set initial onkeydown
       }
 
       overlay.querySelector("#new-project-browse")?.addEventListener("click", async () => {
         const picked = await invoke<string | null>("pick_folder");
         if (picked) {
           parentFolder = picked;
-          render();
+          buildHtml();
         }
       });
 
@@ -127,18 +160,9 @@ export function openNewProjectModal(): Promise<{ path: string; name: string } | 
     }
     document.addEventListener("keydown", onKey);
 
-    // Pre-fill last parent, then render.
     readLastParent().then((last) => {
       parentFolder = last;
-      render();
+      buildHtml();
     });
   });
-}
-
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
