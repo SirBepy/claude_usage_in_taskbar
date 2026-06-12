@@ -17,7 +17,9 @@ import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
-import type { TerminalAction } from "../../types/ipc.generated";
+import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
+import { sessionEvents } from "../../shared/chat/event-store";
+import type { TerminalAction, ContentBlock, ChatEvent } from "../../types/ipc.generated";
 import {
   initWhenDone,
   subscribeWhenDone,
@@ -321,6 +323,24 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   }
 
   _pane = pane;
+
+  // Mount the global rate-limit banner (top of the Chats window) and wire its
+  // auto-continue to re-send "continue" to each interrupted chat on reset.
+  const rlHost = root.querySelector<HTMLElement>("#rate-limit-banner-host");
+  if (rlHost) rateLimitBanner.mount(rlHost);
+  sessionEvents.setRateLimitHandler((sid, body) => rateLimitBanner.report(sid, body));
+  rateLimitBanner.setSendContinue((sid) => {
+    const sess = state.sessions.find((s) => s.session_id === sid);
+    const blocks: ContentBlock[] = [{ type: "text", text: "continue" }];
+    sessionEvents.pushSynthetic(sid, {
+      type: "user_message",
+      content: blocks,
+      timestamp: BigInt(Date.now()),
+    } as ChatEvent);
+    void invoke<void>("send_message", { sessionId: sid, cwd: String(sess?.cwd ?? "."), blocks })
+      .catch((err) => console.error("[rate-limit] auto-continue send failed", sid, err));
+  });
+
   if (_pendingOpenPicker) {
     _pendingOpenPicker = false;
     void startNewSession(pane);

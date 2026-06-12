@@ -65,6 +65,13 @@ interface CacheEntry {
 
 class SessionEventStore {
   private cache = new Map<string, CacheEntry>();
+  /** Routes rate-limit rejections to the global banner instead of the transcript. */
+  private rateLimitHandler: ((sessionId: string, body: string) => void) | null = null;
+
+  /** Register the global rate-limit-rejection sink (the banner controller). */
+  setRateLimitHandler(fn: (sessionId: string, body: string) => void): void {
+    this.rateLimitHandler = fn;
+  }
 
   events(sessionId: string): ChatEvent[] {
     return this.cache.get(sessionId)?.events.slice() ?? [];
@@ -224,6 +231,13 @@ class SessionEventStore {
    * JSONL pages directly and reconcile against live events by object identity.
    */
   private deliver(sessionId: string, ev: ChatEvent): void {
+    // Rate-limit rejections drive the global banner, not a transcript row.
+    // Route them out before the entry/dedup path so they surface for ANY
+    // session the app is attached to, selected or not.
+    if (ev.type === "notification" && (ev as { kind?: string }).kind === "rate_limit") {
+      this.rateLimitHandler?.(sessionId, (ev as { body: string }).body);
+      return;
+    }
     const entry = this.cache.get(sessionId);
     if (!entry) return;
     if (this.isLiveDuplicate(entry, ev)) return;

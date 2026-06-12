@@ -637,6 +637,67 @@
   background: rgba(251, 191, 36, 0.4);
 }
 
+/* ── Global rate-limit banner (top of the Chats window) ─────────────────── */
+.rate-limit-banner-host[hidden] {
+  display: none;
+}
+
+.rate-limit-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
+.rate-limit-banner .rlb-icon {
+  font-size: 1.4rem;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.rate-limit-banner .rlb-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.rate-limit-banner .rlb-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.rate-limit-banner .rlb-time {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.rate-limit-banner .rlb-countdown {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.rate-limit-banner .rlb-auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.rate-limit-banner .rlb-auto input {
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
 
 .session-messages {
   flex: 1;

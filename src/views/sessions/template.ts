@@ -54,6 +54,7 @@ export function template() {
           <i class="ph ph-clock-counter-clockwise"></i>History
         </button>
       </div>
+      <div id="rate-limit-banner-host" class="rate-limit-banner-host" hidden></div>
       <div class="view-body sessions-layout">
         <aside class="sessions-sidebar">
           <ul id="sessions-list" class="sessions-list"></ul>
