@@ -26,10 +26,11 @@ import { openMoreMenu } from "./more-menu";
 import { setThinkingActivity } from "./sessions";
 
 function isCloseCommand(blocks: ContentBlock[]): boolean {
-  if (blocks.length !== 1) return false;
-  const b = blocks[0];
-  if (!b || b.type !== "text") return false;
-  return b.text.trim() === "/close";
+  const text = blocks
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  return text.includes("/close");
 }
 
 let _watchedId: string | null = null;
