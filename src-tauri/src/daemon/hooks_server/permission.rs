@@ -1,7 +1,7 @@
 //! Permission/question endpoints: `/permissions/request` + `/questions/request`.
 //! Each inserts a oneshot into `state.pending`, emits a notifier event, and
 //! blocks the HTTP response until the app responds (via the daemon-side RPC
-//! `respond_*` in methods.rs) or a 5-minute timeout fires.
+//! `respond_*` in methods.rs) or the prompt timeout fires.
 
 use super::HookCtx;
 use axum::{extract::State as AxState, http::StatusCode, response::IntoResponse, Json};
@@ -9,6 +9,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// How long a permission/question prompt waits for the user before giving up.
+/// Generous (1h) because the user is often AFK and answers later, sometimes
+/// from their phone. Until it fires the turn just blocks, harmlessly.
+const PROMPT_TIMEOUT_SECS: u64 = 3600;
 
 #[derive(Deserialize)]
 pub(super) struct PermRequestBody {
@@ -45,7 +50,7 @@ pub(super) async fn on_permission_request(
         "[perm-relay] published permission_request id={} tool={} session={:?} -> {} subscriber(s)",
         body.id, body.tool_name, body.session_id, subs
     );
-    let result = match tokio::time::timeout(Duration::from_secs(300), rx).await {
+    let result = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
         Ok(Ok(val)) => (StatusCode::OK, Json(val)),
         _ => {
             ctx.state.pending.lock().await.remove(&body.id);
@@ -78,7 +83,7 @@ pub(super) async fn on_question_request(
         "[perm-relay] published question_request id={} session={:?} -> {} subscriber(s)",
         body.id, body.session_id, subs
     );
-    let result = match tokio::time::timeout(Duration::from_secs(300), rx).await {
+    let result = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
         Ok(Ok(val)) => (StatusCode::OK, Json(val)),
         _ => {
             ctx.state.pending.lock().await.remove(&body.id);
@@ -135,7 +140,7 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     ctx.state.add_prompt(&id, "question-requested", payload.clone()).await;
     ctx.state.notifier.publish("question_request", payload);
 
-    let answers = match tokio::time::timeout(Duration::from_secs(300), rx).await {
+    let answers = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
         Ok(Ok(val)) => val.get("answers").cloned().unwrap_or(Value::Null),
         _ => {
             ctx.state.pending.lock().await.remove(&id);
