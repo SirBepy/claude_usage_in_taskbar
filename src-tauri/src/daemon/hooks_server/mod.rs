@@ -17,7 +17,6 @@ mod stop;
 
 use crate::daemon::state::DaemonState;
 use crate::settings::paths;
-use anyhow::Result;
 use axum::{
     extract::State as AxState,
     http::StatusCode,
@@ -29,6 +28,26 @@ use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+
+/// Why the hook server could not bind its port. `run_daemon_main` exits
+/// quietly on `HealthyDaemonExists` (normal duplicate-spawn race) and loudly
+/// on `ZombiePort` (the 2026-06-12 incident: a killed daemon's children held
+/// an inherited copy of the listen socket, so every new daemon died on bind
+/// until the orphans were killed).
+#[derive(Debug, thiserror::Error)]
+pub enum HookBindError {
+    #[error("another healthy daemon already serves 127.0.0.1:{0}")]
+    HealthyDaemonExists(u16),
+    #[error(
+        "port 127.0.0.1:{0} is bound but no daemon answers /health on it. \
+         Likely orphaned children of a dead daemon are holding an inherited \
+         copy of the listen socket: look for claude.exe / claude-usage-tauri.exe \
+         processes whose parent is gone and kill them to free the port"
+    )]
+    ZombiePort(u16),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
 
 #[derive(Clone)]
 pub(crate) struct HookCtx {
@@ -43,7 +62,52 @@ async fn health_endpoint(AxState(_ctx): AxState<Arc<HookCtx>>) -> impl IntoRespo
 /// scripts at `~/.claude/aiusage-hook.{ps1,sh}`. Pinned; do not change.
 pub const HOOK_PORT: u16 = 27182;
 
-pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
+/// Bind the hook listener and mark it non-inheritable. The daemon spawns
+/// children with piped stdio, which on Windows forces `bInheritHandles=TRUE`:
+/// every inheritable handle in this process leaks into every child (chat
+/// `claude -p` processes, pty channels, and their MCP grandchildren). If this
+/// listener leaks, killing the daemon leaves the port bound by its surviving
+/// children and no new daemon can ever bind it. Stripping the inherit flag
+/// right at creation - before any child can be spawned - closes that whole
+/// class of failure.
+pub async fn bind_hook_listener(port: u16) -> std::io::Result<TcpListener> {
+    let listener = TcpListener::bind(("127.0.0.1", port)).await?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawSocket;
+        use windows::Win32::Foundation::{
+            SetHandleInformation, HANDLE, HANDLE_FLAGS, HANDLE_FLAG_INHERIT,
+        };
+        // SAFETY: the raw socket is owned by `listener`, which outlives the call.
+        let _ = unsafe {
+            SetHandleInformation(
+                HANDLE(listener.as_raw_socket() as _),
+                HANDLE_FLAG_INHERIT.0,
+                HANDLE_FLAGS(0),
+            )
+        };
+    }
+    Ok(listener)
+}
+
+/// True if a healthy daemon answers `/health` on the port. Used to classify a
+/// bind failure: address-in-use can be a live daemon (normal race - exit
+/// quietly) or a zombie socket held open by orphans of a dead daemon (nothing
+/// accepts, the probe times out).
+async fn healthy_daemon_at(port: u16) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    else {
+        return false;
+    };
+    match client.get(format!("http://127.0.0.1:{port}/health")).send().await {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+pub async fn spawn(state: Arc<DaemonState>) -> Result<u16, HookBindError> {
     // A test instance (CC_DAEMON_INSTANCE set) binds an ephemeral port instead
     // of the fixed HOOK_PORT so it never fights the production daemon for 27182,
     // and writes its port to a SUFFIXED file (e.g. hooks_port-test-hooks.txt) so
@@ -51,7 +115,17 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
     // discover the port (ai_todo 71).
     let suffix = crate::daemon::instance::instance_suffix();
     let bind_port = if suffix.is_empty() { HOOK_PORT } else { 0 };
-    let listener = TcpListener::bind(("127.0.0.1", bind_port)).await?;
+    let listener = match bind_hook_listener(bind_port).await {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            return Err(if healthy_daemon_at(bind_port).await {
+                HookBindError::HealthyDaemonExists(bind_port)
+            } else {
+                HookBindError::ZombiePort(bind_port)
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
     let port = listener.local_addr()?.port();
     log::info!("daemon hook server listening on 127.0.0.1:{port}");
 
@@ -91,4 +165,40 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16> {
     });
 
     Ok(port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::healthy_daemon_at;
+
+    #[tokio::test]
+    async fn probe_is_false_when_nothing_listens() {
+        // Bind+drop an ephemeral port so we know nothing listens on it.
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        drop(l);
+        assert!(!healthy_daemon_at(port).await);
+    }
+
+    #[tokio::test]
+    async fn probe_is_true_for_responding_health_endpoint() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let router = axum::Router::new().route("/health", axum::routing::get(|| async { "ok" }));
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        assert!(healthy_daemon_at(port).await);
+    }
+
+    #[tokio::test]
+    async fn probe_is_false_for_zombie_socket_that_never_answers() {
+        // Bound socket whose owner never accepts: connects land in the backlog
+        // but no HTTP response ever comes - the incident's exact signature.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let healthy = healthy_daemon_at(port).await;
+        drop(listener);
+        assert!(!healthy);
+    }
 }

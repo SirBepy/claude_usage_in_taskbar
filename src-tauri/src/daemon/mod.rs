@@ -76,7 +76,17 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
 
     // Bind hook server BEFORE the RPC accept loop so in-flight claude
     // processes can re-discover the port the moment we're up.
-    let _hook_port = hooks_server::spawn(state.clone()).await?;
+    let _hook_port = match hooks_server::spawn(state.clone()).await {
+        Ok(port) => port,
+        // Another healthy daemon already owns the port: the normal outcome of
+        // a duplicate-spawn race (two apps calling ensure_daemon at once).
+        // Exit quietly - the caller's connect retry will reach the winner.
+        Err(hooks_server::HookBindError::HealthyDaemonExists(port)) => {
+            log::info!("daemon: a healthy daemon already serves port {port}; exiting (duplicate-spawn race)");
+            return Ok(());
+        }
+        Err(e) => return Err(e.into()),
+    };
     detector_task::spawn(state.clone());
 
     // Restore Interactive (in-app) chats persisted before the last shutdown.
