@@ -51,6 +51,11 @@ export class ChatRenderer {
   private meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   private _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
   private activeTurnStart: number | null = null;
+  // True once the active turn has produced its end-of-turn usage (live: the
+  // single `result` TurnUsage). Stops the working shimmer WITHOUT closing the
+  // turn, so a later usage event (history replays one per assistant line) does
+  // not orphan the turn's remaining tool rows. Reset when the next turn opens.
+  private activeTurnSettled = false;
   // Per-type tool-group elements for the turn in progress (key = canonical tool
   // name). Cleared at each turn end; re-populated by groupToolRange each flush.
   private activeToolGroups = new Map<string, ToolGroup>();
@@ -410,7 +415,12 @@ export class ChatRenderer {
         this._cumulative.costUsd += Number(ev.total_cost_usd) || 0;
         this._cumulative.turns += 1;
         this.onMetaUpdate?.(this.getMeta());
-        this.enqueueTurnClose();
+        // A turn boundary is the next USER message, not this usage event - so we
+        // settle the turn (stop the shimmer) but keep it OPEN. Live emits one
+        // usage at turn end; history emits one per assistant line, and closing
+        // here would orphan the turn's remaining tool rows on reload (the "chips
+        // vanish when I reopen the chat" bug).
+        this.activeTurnSettled = true;
         if (!opts.silent) {
           this.flushRender();
         }
@@ -453,7 +463,9 @@ export class ChatRenderer {
         const el = this.messageEls[i];
         const msg = this.messages[i];
         if (el && msg && msg.kind !== "user") {
-          el.classList.add("msg--working");
+          // Shimmer while the turn is in flight; drop it once the turn settles
+          // (its end-of-turn usage arrived) even though the turn stays open.
+          el.classList.toggle("msg--working", !this.activeTurnSettled);
         }
       }
     }
@@ -470,6 +482,7 @@ export class ChatRenderer {
     // The next turn folds into fresh groups; closed-turn rows already carry
     // data-tool-grouped, so processTurnCloseQueue won't re-fold them.
     this.activeToolGroups.clear();
+    this.activeTurnSettled = false;
     if (this.activeTurnStart === null) return;
     this.closeTurnQueue.push({ start: this.activeTurnStart, end: this.messages.length });
     this.activeTurnStart = null;

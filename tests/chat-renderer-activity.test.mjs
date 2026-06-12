@@ -383,4 +383,39 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
     expect(container.querySelector('.tool-chip[data-tool="Bash"] .tool-chip-count').textContent).toBe("x1");
   });
+
+  it("groups ALL tools of a turn into one strip on reload despite per-assistant-line usage", async () => {
+    // History (reload) replays a turn as the parser emits it: ONE turn_usage per
+    // assistant line, with tool calls between them. The first usage used to close
+    // the turn and orphan every later tool row (chips vanished on reopen). Now a
+    // turn is bounded by the next USER message, so the whole turn folds into one
+    // strip.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    const events = [
+      { type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 },
+      userEvent("go"),
+      toolUse("Bash", { command: "ls" }, "b1"),
+      { type: "tool_result", tool_use_id: "b1", output: "ok", is_error: false },
+      finalEvent("step one"),
+      turnUsage(), // assistant-line 1 usage — previously closed the turn here
+      toolUse("Read", { file_path: "/a.ts" }, "r1"),
+      { type: "tool_result", tool_use_id: "r1", output: "...", is_error: false },
+      toolUse("Read", { file_path: "/b.ts" }, "r2"),
+      { type: "tool_result", tool_use_id: "r2", output: "...", is_error: false },
+      finalEvent("done"),
+      turnUsage(), // assistant-line 2 usage
+    ];
+
+    await r.loadHistory(events);
+
+    const mainStrips = Array.from(container.querySelectorAll(".tool-strip")).filter((s) => !s.closest(".tool-strip-group"));
+    expect(mainStrips.length).toBe(1);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"] .tool-chip-count').textContent).toBe("x1");
+    expect(container.querySelector('.tool-chip[data-tool="Read"] .tool-chip-count').textContent).toBe("x2");
+    const ungrouped = Array.from(container.querySelectorAll(".tool-row")).filter((el) => el.dataset.toolGrouped !== "1");
+    expect(ungrouped.length).toBe(0);
+  });
 });
