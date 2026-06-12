@@ -357,10 +357,12 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         "result" => vec![],
         "rate_limit_event" => {
             let info = v.get("rate_limit_info").cloned().unwrap_or(Value::Null);
-            // status:"allowed" is the steady-state heartbeat claude -p emits
-            // every turn. Surface only the actual rate-limit failures.
+            // claude -p emits these every turn: "allowed" is the steady-state
+            // heartbeat and "allowed_warning" is an approaching-limit nudge the
+            // user explicitly does NOT want surfaced. Only "rejected" (the turn
+            // was actually blocked) drives the rate-limit banner.
             let status = info.get("status").and_then(|s| s.as_str()).unwrap_or("");
-            if status == "allowed" {
+            if status != "rejected" {
                 return vec![];
             }
             vec![ChatEvent::Notification {
@@ -453,6 +455,39 @@ mod tests {
                 assert_eq!(cwd, "/tmp/x");
             }
             _ => panic!("expected SessionStarted"),
+        }
+    }
+
+    #[test]
+    fn rate_limit_allowed_and_warning_are_suppressed() {
+        // Only an actually-blocked turn (status:"rejected") should surface; the
+        // steady-state "allowed" heartbeat and the "allowed_warning" nudge are
+        // both dropped (the user does not want approaching-limit notifications).
+        let mut ctx = ParserContext::new();
+        for status in ["allowed", "allowed_warning"] {
+            let line = format!(
+                r#"{{"type":"rate_limit_event","rate_limit_info":{{"status":"{}","rateLimitType":"five_hour","resetsAt":1781274600,"utilization":0.98}}}}"#,
+                status
+            );
+            let events = ctx.feed(format!("{}\n", line).as_bytes());
+            assert!(events.is_empty(), "status {} must be suppressed", status);
+        }
+    }
+
+    #[test]
+    fn rate_limit_rejected_surfaces_notification_with_reset_info() {
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","resetsAt":1781274600,"overageStatus":"rejected"}}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ChatEvent::Notification { kind, body } => {
+                assert_eq!(kind, "rate_limit");
+                assert!(body.contains("\"rejected\""), "body keeps status");
+                assert!(body.contains("resetsAt"), "body keeps resetsAt");
+                assert!(body.contains("five_hour"), "body keeps rateLimitType");
+            }
+            _ => panic!("expected Notification"),
         }
     }
 
