@@ -493,14 +493,16 @@ export class ChatRenderer {
     const tool = chip.dataset.tool;
     const wasActive = chip.classList.contains("tool-chip--active");
 
-    strip?.querySelectorAll<HTMLElement>(".tool-chip").forEach(c => c.classList.remove("tool-chip--active"));
-    for (const grp of panel.querySelectorAll<HTMLElement>(".tool-strip-group")) {
+    // Scope to DIRECT-child chips/groups so a click at one nesting level never
+    // toggles a deeper level's chips/buckets (3-level: Subagent > subagent > tool).
+    strip?.querySelectorAll<HTMLElement>(":scope > .tool-chip").forEach(c => c.classList.remove("tool-chip--active"));
+    for (const grp of panel.querySelectorAll<HTMLElement>(":scope > .tool-strip-group")) {
       grp.hidden = true;
     }
 
     if (!wasActive && tool) {
       chip.classList.add("tool-chip--active");
-      for (const grp of panel.querySelectorAll<HTMLElement>(".tool-strip-group")) {
+      for (const grp of panel.querySelectorAll<HTMLElement>(":scope > .tool-strip-group")) {
         grp.hidden = grp.dataset.tool !== tool;
       }
       panel.hidden = false;

@@ -249,28 +249,93 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     expect(mainStrip.querySelector('.tool-chip[data-tool="Grep"]')).toBeNull();
     expect(mainStrip.querySelector('.tool-chip[data-tool="Read"]')).toBeNull();
 
-    // --- nested strip assertions ---
-    // The Subagent chip's bucket must contain a nested .tool-strip
+    // --- nested strip assertions (3 levels: Subagent > subagent > tool-type) ---
     const mainPanel = mainStrip.nextElementSibling;
     const subagentKey = subagentChip.dataset.tool; // "Task" or "Agent"
-    const agentBucket = mainPanel.querySelector(`.tool-strip-group[data-tool="${subagentKey}"]`);
+    const agentBucket = mainPanel.querySelector(`:scope > .tool-strip-group[data-tool="${subagentKey}"]`);
     expect(agentBucket).not.toBeNull();
 
-    const nestedStrip = agentBucket.querySelector(":scope > .tool-strip");
-    expect(nestedStrip).not.toBeNull();
+    // Level 1: the agent bucket holds a per-subagent strip with ONE chip,
+    // labeled by the Task description ("x"), counting all its child calls (3).
+    const subStrip = agentBucket.querySelector(":scope > .tool-strip");
+    expect(subStrip).not.toBeNull();
+    const subChip = subStrip.querySelector('.tool-chip[data-tool="agent1"]');
+    expect(subChip).not.toBeNull();
+    expect(subChip.querySelector(".tool-chip-label").textContent).toBe("x");
+    expect(subChip.querySelector(".tool-chip-count").textContent).toBe("x3");
 
-    // Nested strip has Grep x2 and Read x1
-    const nestedGrepChip = nestedStrip.querySelector('.tool-chip[data-tool="Grep"]');
+    // Level 2: inside the subagent's bucket, tool-type chips Grep x2 + Read x1.
+    const subPanel = subStrip.nextElementSibling;
+    const subBucket = subPanel.querySelector(':scope > .tool-strip-group[data-tool="agent1"]');
+    expect(subBucket).not.toBeNull();
+    const toolStrip = subBucket.querySelector(":scope > .tool-strip");
+    expect(toolStrip).not.toBeNull();
+    const nestedGrepChip = toolStrip.querySelector('.tool-chip[data-tool="Grep"]');
     expect(nestedGrepChip).not.toBeNull();
     expect(nestedGrepChip.querySelector(".tool-chip-count").textContent).toBe("x2");
 
-    const nestedReadChip = nestedStrip.querySelector('.tool-chip[data-tool="Read"]');
+    const nestedReadChip = toolStrip.querySelector('.tool-chip[data-tool="Read"]');
     expect(nestedReadChip).not.toBeNull();
     expect(nestedReadChip.querySelector(".tool-chip-count").textContent).toBe("x1");
+
+    // The main Subagent chip must NOT contain tool-type chips directly.
+    expect(agentBucket.querySelector(':scope > .tool-strip > .tool-chip[data-tool="Grep"]')).toBeNull();
 
     // --- no ungrouped rows ---
     const ungrouped = Array.from(container.querySelectorAll(".tool-row"))
       .filter((el) => el.dataset.toolGrouped !== "1");
+    expect(ungrouped.length).toBe(0);
+  });
+
+  it("lists multiple subagents as separate chips, each with its own tool-type chips", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("go"));
+
+    // Two subagents dispatched (different descriptions).
+    r.handleEvent(toolUse("Task", { description: "Find the bug", prompt: "p" }, "a1"));
+    r.handleEvent(toolUse("Task", { description: "Write the fix", prompt: "p" }, "a2"));
+
+    // a1's children: 2 Reads.
+    r.handleEvent({ type: "tool_use", tool_name: "Read", input: { file_path: "/a.ts" }, id: "a1c1", parent_tool_use_id: "a1" });
+    r.handleEvent({ type: "tool_use", tool_name: "Read", input: { file_path: "/b.ts" }, id: "a1c2", parent_tool_use_id: "a1" });
+    // a2's children: 1 Bash.
+    r.handleEvent({ type: "tool_use", tool_name: "Bash", input: { command: "ls" }, id: "a2c1", parent_tool_use_id: "a2" });
+
+    r.handleEvent(finalEvent("done"));
+    r.handleEvent(turnUsage());
+
+    const mainStrips = Array.from(container.querySelectorAll(".tool-strip")).filter(s => !s.closest(".tool-strip-group"));
+    expect(mainStrips.length).toBe(1);
+    const mainStrip = mainStrips[0];
+
+    // Main Subagent chip counts both dispatches.
+    const subagentChip = mainStrip.querySelector('.tool-chip[data-tool="Task"]');
+    expect(subagentChip.querySelector(".tool-chip-count").textContent).toBe("x2");
+
+    // Level-1 strip has two subagent chips with the right labels + counts.
+    const agentBucket = mainStrip.nextElementSibling.querySelector(':scope > .tool-strip-group[data-tool="Task"]');
+    const subStrip = agentBucket.querySelector(":scope > .tool-strip");
+    const chip1 = subStrip.querySelector('.tool-chip[data-tool="a1"]');
+    const chip2 = subStrip.querySelector('.tool-chip[data-tool="a2"]');
+    expect(chip1.querySelector(".tool-chip-label").textContent).toBe("Find the bug");
+    expect(chip1.querySelector(".tool-chip-count").textContent).toBe("x2");
+    expect(chip2.querySelector(".tool-chip-label").textContent).toBe("Write the fix");
+    expect(chip2.querySelector(".tool-chip-count").textContent).toBe("x1");
+
+    // Each subagent's tools are isolated to its own bucket.
+    const subPanel = subStrip.nextElementSibling;
+    const bucket1 = subPanel.querySelector(':scope > .tool-strip-group[data-tool="a1"]');
+    const bucket2 = subPanel.querySelector(':scope > .tool-strip-group[data-tool="a2"]');
+    expect(bucket1.querySelector(':scope > .tool-strip > .tool-chip[data-tool="Read"] .tool-chip-count').textContent).toBe("x2");
+    expect(bucket1.querySelector(':scope > .tool-strip > .tool-chip[data-tool="Bash"]')).toBeNull();
+    expect(bucket2.querySelector(':scope > .tool-strip > .tool-chip[data-tool="Bash"] .tool-chip-count').textContent).toBe("x1");
+    expect(bucket2.querySelector(':scope > .tool-strip > .tool-chip[data-tool="Read"]')).toBeNull();
+
+    const ungrouped = Array.from(container.querySelectorAll(".tool-row")).filter((el) => el.dataset.toolGrouped !== "1");
     expect(ungrouped.length).toBe(0);
   });
 

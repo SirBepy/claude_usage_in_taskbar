@@ -14,18 +14,18 @@ export interface ToolGroup {
 // ---------------------------------------------------------------------------
 
 /** Create a tool-chip button (without appending anywhere). */
-function makeChip(key: string): HTMLElement {
-  const { icon } = toolSummary(key, {});
+function makeChip(key: string, opts?: { label?: string; icon?: string; agent?: boolean }): HTMLElement {
+  const icon = opts?.icon ?? toolSummary(key, {}).icon;
   const chip = document.createElement("button");
   chip.type = "button";
-  chip.className = "tool-chip";
+  chip.className = opts?.agent ? "tool-chip tool-chip--agent" : "tool-chip";
   chip.dataset.tool = key;
   chip.dataset.count = "0";
   const iconEl = document.createElement("i");
   iconEl.className = `ph ${icon}`;
   const labelEl = document.createElement("span");
   labelEl.className = "tool-chip-label";
-  labelEl.textContent = toolLabel(key);
+  labelEl.textContent = opts?.label ?? toolLabel(key);
   const countEl = document.createElement("span");
   countEl.className = "tool-chip-count";
   countEl.textContent = "x0";
@@ -52,8 +52,9 @@ function addGroupToStrip(
   key: string,
   strip: HTMLElement,
   panel: HTMLElement,
+  opts?: { label?: string; icon?: string; agent?: boolean },
 ): ToolGroup {
-  const chip = makeChip(key);
+  const chip = makeChip(key, opts);
   strip.appendChild(chip);
 
   const bucket = document.createElement("div");
@@ -74,6 +75,15 @@ function bumpChip(chip: HTMLElement): void {
   chip.classList.remove("tool-chip--highlight");
   void (chip as HTMLElement & { offsetWidth: number }).offsetWidth;
   chip.classList.add("tool-chip--highlight");
+}
+
+/** Human label for a subagent chip: its Task description (or subagent_type), capped. */
+function descOf(input: unknown): string {
+  const obj = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const d = typeof obj.description === "string" ? obj.description : "";
+  const t = typeof obj.subagent_type === "string" ? obj.subagent_type : "";
+  const label = (d || t || "Subagent").trim();
+  return label.length > 60 ? label.slice(0, 60) + "…" : label;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +186,7 @@ export function groupToolRange(
   // ------------------------------------------------------------------
   const idTool = new Map<string, string>();
   const idParent = new Map<string, string>(); // tool_use id -> parentToolUseId (if child)
+  const idDescription = new Map<string, string>(); // agent tool_use id -> subagent label
   for (let i = start; i < end; i++) {
     const m = messages[i];
     const el = messageEls[i];
@@ -183,50 +194,31 @@ export function groupToolRange(
     if (m.kind === "tool_use" && m.id && el.classList.contains("tool-row")) {
       idTool.set(m.id, m.tool ?? "");
       if (m.parentToolUseId) idParent.set(m.id, m.parentToolUseId);
+      if (m.tool === "Task" || m.tool === "Agent") idDescription.set(m.id, descOf(m.input));
     }
   }
 
-  // Map from agent tool_use id -> its main-strip ToolGroup (Task/Agent bucket).
-  // Used to route child rows into the right nested strip.
+  // Map from agent tool_use id -> the single main-strip Task/Agent ToolGroup
+  // (the bucket that holds the per-subagent strip). Pre-populated from grouped
+  // Task/Agent rows folded on a prior flush.
   const agentGroupById = new Map<string, ToolGroup>();
-
-  // Pre-populate agentGroupById from already-existing groups (prior flush).
-  // We do this by scanning grouped rows in the range whose tool is Task/Agent.
   for (let i = start; i < end; i++) {
     const m = messages[i];
     const el = messageEls[i];
     if (!m || !el || el.dataset.toolGrouped !== "1") continue;
     if (m.kind === "tool_use" && m.id && (m.tool === "Task" || m.tool === "Agent")) {
-      const key = canonicalTool(m.tool);
-      // Find which specific bucket this id belongs to (the bucket containing el).
-      // For Agent/Task there's only ONE main-strip bucket per canonical key, so
-      // the map entry is the same for all ids that resolve to that key.
-      const grp = groups.get(key);
+      const grp = groups.get(canonicalTool(m.tool));
       if (grp) agentGroupById.set(m.id, grp);
     }
   }
 
-  // Per-agent-id nested group maps (child chips inside each agent bucket).
-  // Key = agent tool_use id, value = map<canonical tool -> ToolGroup (nested)>.
-  const nestedGroupsByAgentId = new Map<string, Map<string, ToolGroup>>();
-
-  // Recover nested maps from DOM for any agent already in agentGroupById.
-  for (const [agentId, agentGrp] of agentGroupById) {
-    const nestedGroups = new Map<string, ToolGroup>();
-    const existingNested = agentGrp.bucket.querySelector<HTMLElement>(":scope > .tool-strip");
-    if (existingNested) {
-      const nestedPanel = existingNested.nextElementSibling as HTMLElement | null;
-      if (nestedPanel?.classList.contains("tool-strip-panel")) {
-        for (const chip of existingNested.querySelectorAll<HTMLElement>(".tool-chip[data-tool]")) {
-          const k = chip.dataset.tool!;
-          if (nestedGroups.has(k)) continue;
-          const bkt = nestedPanel.querySelector<HTMLElement>(`.tool-strip-group[data-tool="${k}"]`);
-          if (bkt) nestedGroups.set(k, { chip, bucket: bkt, strip: existingNested, panel: nestedPanel });
-        }
-      }
-    }
-    nestedGroupsByAgentId.set(agentId, nestedGroups);
-  }
+  // Level-1 (per-subagent) chip groups, keyed by agent tool_use id. All
+  // subagents share ONE level-1 strip inside the single Task/Agent bucket.
+  // Repopulated lazily from the DOM by getOrCreateNestedStripInBucket on the
+  // first child routed this flush.
+  const subagentGroups = new Map<string, ToolGroup>();
+  // Level-2 (per-tool-type) chip groups, keyed by agent id -> canonical tool.
+  const toolGroupsBySub = new Map<string, Map<string, ToolGroup>>();
 
   // If groups already has entries, recover strip/panel from the first entry.
   let strip: HTMLElement | null = null;
@@ -324,26 +316,40 @@ export function groupToolRange(
       }
 
       if (parentId && agentGrp) {
-        // Get or init the nested groups map for this agent.
-        let nestedGroups = nestedGroupsByAgentId.get(parentId);
-        if (!nestedGroups) {
-          nestedGroups = new Map();
-          nestedGroupsByAgentId.set(parentId, nestedGroups);
+        // Level 1: per-subagent chip (labeled by description) inside the single
+        // Task/Agent bucket. All subagents of the turn share this one strip.
+        const { nestedStrip: subStrip, nestedPanel: subPanel } =
+          getOrCreateNestedStripInBucket(agentGrp.bucket, subagentGroups);
+        let subGrp = subagentGroups.get(parentId);
+        if (!subGrp) {
+          subGrp = addGroupToStrip(parentId, subStrip, subPanel, {
+            label: idDescription.get(parentId) ?? "Subagent",
+            icon: "ph-robot",
+            agent: true,
+          });
+          subagentGroups.set(parentId, subGrp);
         }
 
-        const { nestedStrip, nestedPanel } = getOrCreateNestedStripInBucket(agentGrp.bucket, nestedGroups);
-
-        let nestedGrp = nestedGroups.get(key);
-        if (!nestedGrp) {
-          nestedGrp = addGroupToStrip(key, nestedStrip, nestedPanel);
-          nestedGroups.set(key, nestedGrp);
+        // Level 2: per-tool-type chip inside this subagent's bucket.
+        let toolGroups = toolGroupsBySub.get(parentId);
+        if (!toolGroups) {
+          toolGroups = new Map();
+          toolGroupsBySub.set(parentId, toolGroups);
+        }
+        const { nestedStrip: tStrip, nestedPanel: tPanel } =
+          getOrCreateNestedStripInBucket(subGrp.bucket, toolGroups);
+        let tGrp = toolGroups.get(key);
+        if (!tGrp) {
+          tGrp = addGroupToStrip(key, tStrip, tPanel);
+          toolGroups.set(key, tGrp);
         }
 
-        nestedGrp.bucket.appendChild(el);
+        tGrp.bucket.appendChild(el);
         el.dataset.toolGrouped = "1";
 
         if (isUse) {
-          bumpChip(nestedGrp.chip);
+          bumpChip(tGrp.chip);   // tool-type count (Read x4)
+          bumpChip(subGrp.chip); // subagent total-calls count
         }
         continue; // done with this child row
       }
@@ -362,9 +368,6 @@ export function groupToolRange(
     // If this is an Agent/Task tool_use, register it so later children find it.
     if (isUse && (tool === "Task" || tool === "Agent") && m.kind === "tool_use" && m.id) {
       agentGroupById.set(m.id, group);
-      if (!nestedGroupsByAgentId.has(m.id)) {
-        nestedGroupsByAgentId.set(m.id, new Map());
-      }
     }
 
     group.bucket.appendChild(el);

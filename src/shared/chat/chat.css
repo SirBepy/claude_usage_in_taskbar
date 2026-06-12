@@ -611,6 +611,26 @@
   border-bottom: none;
 }
 
+/* Nested drill-down strips (Subagent > per-subagent > tool-type). A faint
+   tinted band + padding visually separates each deeper control row. */
+.tool-strip-group .tool-strip {
+  padding: 5px 7px;
+  margin: 0;
+  background: color-mix(in srgb, var(--color-border) 16%, transparent);
+}
+.tool-strip-group .tool-strip-panel {
+  margin: 0 7px 7px;
+}
+
+/* Per-subagent chip: descriptions can be long, so cap + ellipsize the label
+   and lead with the robot icon so it reads as "a subagent", not a tool. */
+.tool-chip--agent .tool-chip-label {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Working messages: dimmed during active turn and inside open details. */
 .msg--working {
   opacity: 0.55;
