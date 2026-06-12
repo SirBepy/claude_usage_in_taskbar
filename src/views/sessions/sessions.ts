@@ -56,6 +56,33 @@ export function queueNewChat(project: { path: string; name: string }, config: Se
   _pendingNewChat = { project, config };
 }
 
+// ── Daemon setup stall detection ──────────────────────────────────────────────
+
+// If the daemon hasn't connected within this window, the sidebar's
+// "Setting up..." spinner swaps to a visible warning (state.daemonSetupStalled)
+// instead of spinning forever. The app's reconnect loop keeps retrying
+// underneath; this is purely a surface so the user knows something is wrong.
+const SETUP_STALL_MS = 15_000;
+let _setupStallTimer: ReturnType<typeof setTimeout> | null = null;
+
+function armSetupStallTimer(listEl: HTMLElement, myMount: number): void {
+  if (_setupStallTimer !== null) clearTimeout(_setupStallTimer);
+  _setupStallTimer = setTimeout(() => {
+    _setupStallTimer = null;
+    if (state.mountId !== myMount) return;
+    if (state.daemonConnected === true) return;
+    state.daemonSetupStalled = true;
+    renderSidebar(listEl);
+  }, SETUP_STALL_MS);
+}
+
+function disarmSetupStallTimer(): void {
+  if (_setupStallTimer !== null) {
+    clearTimeout(_setupStallTimer);
+    _setupStallTimer = null;
+  }
+}
+
 // ── Thinking indicator ────────────────────────────────────────────────────────
 
 const THINKING_VERBS = [
@@ -386,6 +413,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
   // Show setup indicator immediately (daemonConnected = null → spinner row)
   renderSidebar(listEl);
+  armSetupStallTimer(listEl, myMount);
 
   // Initial load - fetch sessions and daemon status in parallel
   const [, connected] = await Promise.all([
@@ -394,6 +422,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   ]);
   if (state.mountId === myMount) {
     state.daemonConnected = connected ?? null;
+    if (connected === true) {
+      state.daemonSetupStalled = false;
+      disarmSetupStallTimer();
+    }
     renderSidebar(listEl);
     updateThinkingBar();
   }
@@ -430,6 +462,12 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     unlistenDaemonStatus = await ev.listen<{ connected: boolean }>("daemon-status-changed", (e) => {
       if (state.mountId !== myMount) return;
       state.daemonConnected = e.payload.connected;
+      if (e.payload.connected) {
+        state.daemonSetupStalled = false;
+        disarmSetupStallTimer();
+      } else {
+        armSetupStallTimer(listEl, myMount);
+      }
       renderSidebar(listEl);
     });
 
@@ -658,6 +696,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     unsubWhenDone();
     unlistenWhenDone();
     if (unlistenDaemonStatus) { try { unlistenDaemonStatus(); } catch { /* ignore */ } unlistenDaemonStatus = null; }
+    disarmSetupStallTimer();
     teardownState();
   };
 }

@@ -5,6 +5,11 @@ export function loadAnimEnabled(): boolean {
 }
 
 function keyOf(li: HTMLLIElement): string {
+  // Explicit key for keyed non-session rows (empty/setting-up/stalled).
+  // Without it these rows have no identity: the reconciler can't match,
+  // exit, or replace them, so every re-render appends a fresh copy and the
+  // stale ones pile up ("two Setting up... rows plus No active sessions").
+  if (li.dataset.rowKey) return li.dataset.rowKey;
   if (li.dataset.sessionId) return `s:${li.dataset.sessionId}`;
   if (li.dataset.placeholderId) return `p:${li.dataset.placeholderId}`;
   if (li.classList.contains("pending")) return "pending";

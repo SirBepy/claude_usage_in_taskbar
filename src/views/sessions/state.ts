@@ -67,6 +67,11 @@ export interface SessionsState {
   /** Whether the daemon process is currently connected. Null = not yet known
    * (hydrated async on mount via is_daemon_connected IPC). */
   daemonConnected: boolean | null;
+  /** True once the daemon has stayed unconnected past the stall threshold.
+   * Swaps the sidebar's "Setting up..." spinner for a visible warning instead
+   * of spinning forever (2026-06-12 incident: daemon crash-looped on a hostage
+   * port and the UI gave no hint anything was wrong). Cleared on connect. */
+  daemonSetupStalled: boolean;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -87,6 +92,7 @@ export function createInitialState(mountId: number): SessionsState {
     questionSessions: new Set(),
     whenDone: null,
     daemonConnected: null,
+    daemonSetupStalled: false,
   };
 }
 

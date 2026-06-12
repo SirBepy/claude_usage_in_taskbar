@@ -320,6 +320,14 @@
   opacity: 0.7;
 }
 
+/* Daemon stayed unreachable past the stall threshold: amber warning instead
+   of the eternal spinner. Same amber as the "answer me" sidebar flag. */
+.sessions-setup-stalled {
+  color: #f59e0b !important;
+  opacity: 1;
+  font-style: normal;
+}
+
 .session-pending-hint {
   margin: auto;
   text-align: center;
