@@ -5,6 +5,7 @@ import {
   readDefaultFlags,
   readPresets,
   readLastChoice,
+  sortByImpressiveness,
 } from "../src/shared/effort-presets.ts";
 
 describe("readModels", () => {
@@ -34,6 +35,31 @@ describe("readModels", () => {
     const a = readModels({});
     a.push("extra");
     expect(readModels({})).toEqual([...MODELS]);
+  });
+});
+
+describe("sortByImpressiveness", () => {
+  it("orders families least-impressive-first (haiku, sonnet, opus, fable)", () => {
+    const apiOrder = [
+      "claude-fable-5",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5-20251001",
+    ];
+    expect(sortByImpressiveness(apiOrder)).toEqual([
+      "claude-haiku-4-5-20251001",
+      "claude-sonnet-4-6",
+      "claude-opus-4-8",
+      "claude-fable-5",
+    ]);
+  });
+
+  it("pushes unknown families to the end, preserving their relative order", () => {
+    expect(sortByImpressiveness(["glm-4.6", "claude-opus-4-8", "kimi-k2"])).toEqual([
+      "claude-opus-4-8",
+      "glm-4.6",
+      "kimi-k2",
+    ]);
   });
 });
 

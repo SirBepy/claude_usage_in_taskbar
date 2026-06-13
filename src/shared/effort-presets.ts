@@ -53,6 +53,23 @@ function modelFamilyFromId(id: string): string {
   return id;
 }
 
+/**
+ * Sort model ids least-impressive-first (Haiku, Sonnet, Opus, Fable), the order
+ * Joe wants in the picker. The /v1/models API delivers newest-first, which puts
+ * Fable on the left; this flips it. Rank comes from the MODELS seed order;
+ * unknown families (user-added exotic models) sort to the end, stably.
+ */
+export function sortByImpressiveness(models: string[]): string[] {
+  const rank = (m: string): number => {
+    const i = MODELS.indexOf(modelFamilyFromId(m) as typeof MODELS[number]);
+    return i === -1 ? MODELS.length : i;
+  };
+  return models
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => rank(a.m) - rank(b.m) || a.i - b.i)
+    .map((x) => x.m);
+}
+
 export const DEFAULT_PRESETS: Preset[] = [
   { name: "Light", model: "sonnet", effort: "low" },
   { name: "Normal", model: "opus", effort: "high" },
@@ -78,7 +95,8 @@ export function readModels(settings: Record<string, unknown>): string[] {
   if (_apiModels && _apiModels.length > 0) {
     const apiFamilies = new Set(_apiModels.map(modelFamilyFromId));
     const extras = userModels.filter(m => !apiFamilies.has(modelFamilyFromId(m)));
-    return extras.length > 0 ? [..._apiModels, ...extras] : [..._apiModels];
+    const sorted = sortByImpressiveness([..._apiModels]);
+    return extras.length > 0 ? [...sorted, ...extras] : sorted;
   }
   return userModels.length > 0 ? userModels : [...MODELS];
 }
