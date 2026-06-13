@@ -412,6 +412,32 @@ describe("Turn footer DOM integration", () => {
     expect(row.title).toContain("$0.0025");
   });
 
+  it("does NOT split the footer on invisible user lines (tool results)", async () => {
+    // In real streams every tool result comes back as a user-role line whose
+    // blocks the parser drops (content: []). Those are NOT turn boundaries:
+    // everything between two REAL user messages is ONE footer with ONE
+    // combined meta row - this was the "tokens split up per answer" bug.
+    const { renderer, container } = await createRenderer();
+
+    renderer.handleEvent(makeUserMessage("go"));
+    renderer.handleEvent(makeAssistantMessage("step 1"));
+    renderer.handleEvent(makeToolUse("t1"));
+    renderer.handleEvent({ type: "user_message", content: [], timestamp: BigInt(0) });
+    renderer.handleEvent(makeToolResult("t1"));
+    renderer.handleEvent(makeAssistantMessage("step 2"));
+    renderer.handleEvent(makeTurnUsage({ durationMs: 0, outputTokens: 1000 }));
+    renderer.handleEvent({ type: "user_message", content: [], timestamp: BigInt(0) });
+    renderer.handleEvent(makeAssistantMessage("step 3"));
+    renderer.handleEvent(makeTurnUsage({ durationMs: 0, outputTokens: 1500 }));
+
+    expect(container.querySelectorAll(".turn-footer").length).toBe(1);
+    expect(container.querySelectorAll(".turn-meta-chips").length).toBe(1);
+    // Tokens combined across the whole msg-to-msg span.
+    expect(container.querySelector(".turn-chip--tokens").textContent).toContain("2.5k");
+    // One strip, not one per tool cycle.
+    expect(container.querySelectorAll(".tool-strip").length).toBe(1);
+  });
+
   it("interrupted turn freezes at its last estimate instead of ticking forever", async () => {
     const { renderer, container } = await createRenderer();
 

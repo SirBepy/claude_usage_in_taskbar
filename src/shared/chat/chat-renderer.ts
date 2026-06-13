@@ -359,6 +359,14 @@ export class ChatRenderer {
         touched = true;
         break;
       case "user_message": {
+        // Only a message the USER actually sent (or a compaction) is a turn
+        // boundary. Real streams deliver every tool result as a user-role
+        // line whose blocks the parser drops (content empty) - rotating the
+        // turn for those split the footer per tool cycle ("tokens split up
+        // per answer"). Decide visibility FIRST, rotate after.
+        const isCompact = isCompactUserMessage(ev.content);
+        const cleaned = isCompact ? [] : cleanUserBlocks(ev.content);
+        if (!isCompact && cleaned.length === 0) break;
         this.enqueueTurnClose();
         this.setActivity(null);
         this.setTurnStatus(null);
@@ -371,15 +379,11 @@ export class ChatRenderer {
         this.activeTurnUsage = null;
         this.activeTurnFirstTs = ts > 0 ? ts : 0;
         this.activeTurnLastTs = this.activeTurnFirstTs;
-        if (isCompactUserMessage(ev.content)) {
+        if (isCompact) {
           this.messages.push({ kind: "system", text: "Conversation compacted", ts });
-          this.activeTurnStart = this.messages.length;
-          touched = true;
-          break;
+        } else {
+          this.messages.push({ kind: "user", content: cleaned, ts });
         }
-        const cleaned = cleanUserBlocks(ev.content);
-        if (cleaned.length === 0) break;
-        this.messages.push({ kind: "user", content: cleaned, ts });
         this.activeTurnStart = this.messages.length;
         touched = true;
         break;

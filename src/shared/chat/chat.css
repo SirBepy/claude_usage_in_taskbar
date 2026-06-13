@@ -924,15 +924,13 @@
 
 /* ── Per-turn footer: meta row (tokens + time) above the tool chip strip ── */
 
+/* Plain two-row block, no card chrome (user explicitly does not want a box):
+   row 1 = meta chips (tokens + time), row 2 = the clickable tool strip. */
 .turn-footer {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin: 4px 0 14px;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
 }
 
 /* A turn with no usage and no tools leaves its footer empty - hide the box. */
