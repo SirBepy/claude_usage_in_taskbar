@@ -1,4 +1,4 @@
-import { render } from "lit-html";
+﻿import { render } from "lit-html";
 import { showView } from "../../shared/navigation";
 import { template, detachedTemplate } from "./template";
 import { invoke } from "../../shared/ipc";
@@ -15,7 +15,7 @@ import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/compo
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
-import { loadSort, LS_SORT, projectName, sessionSubtitle } from "./sessions-helpers";
+import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { sessionEvents } from "../../shared/chat/event-store";
@@ -65,7 +65,17 @@ export function queueNewChat(project: { path: string; name: string }, config: Se
 const SETUP_STALL_MS = 15_000;
 let _setupStallTimer: ReturnType<typeof setTimeout> | null = null;
 
-function armSetupStallTimer(listEl: HTMLElement, myMount: number): void {
+/**
+ * Re-render the pane's empty state (the centered "Setting up..." /
+ * "Select or create a session" block) to match the current daemon state.
+ * No-op while a session or draft occupies the pane.
+ */
+function refreshPaneEmptyState(pane: HTMLElement): void {
+  if (!pane.querySelector(".session-empty")) return;
+  pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
+}
+
+function armSetupStallTimer(listEl: HTMLElement, pane: HTMLElement, myMount: number): void {
   if (_setupStallTimer !== null) clearTimeout(_setupStallTimer);
   _setupStallTimer = setTimeout(() => {
     _setupStallTimer = null;
@@ -73,6 +83,7 @@ function armSetupStallTimer(listEl: HTMLElement, myMount: number): void {
     if (state.daemonConnected === true) return;
     state.daemonSetupStalled = true;
     renderSidebar(listEl);
+    refreshPaneEmptyState(pane);
   }, SETUP_STALL_MS);
 }
 
@@ -411,9 +422,11 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     listEl.classList.toggle("kbd-hint-active", held);
   });
 
-  // Show setup indicator immediately (daemonConnected = null → spinner row)
+  // Show setup indicator immediately (daemonConnected = null → centered
+  // "Setting up..." in the pane; the sidebar stays blank until connected).
   renderSidebar(listEl);
-  armSetupStallTimer(listEl, myMount);
+  refreshPaneEmptyState(pane);
+  armSetupStallTimer(listEl, pane, myMount);
 
   // Initial load - fetch sessions and daemon status in parallel
   const [, connected] = await Promise.all([
@@ -427,32 +440,41 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       disarmSetupStallTimer();
     }
     renderSidebar(listEl);
+    refreshPaneEmptyState(pane);
     updateThinkingBar();
   }
 
-  // If a new chat was queued (e.g. project-detail "+"), launch it now. Takes
-  // precedence over history-resume / last-selected restore.
-  if (_pendingNewChat) {
-    const { project, config } = _pendingNewChat;
-    _pendingNewChat = null;
-    await launchNewSession(pane, project, config);
-    updateThinkingBar();
-  } else if (_pendingHistoryResume) {
-    const sid = _pendingHistoryResume;
-    _pendingHistoryResume = null;
-    if (state.sessions.find(s => s.session_id === sid)) {
-      await selectSession(sid, pane);
+  // Queued-chat / restore-selection flow. MUST NOT abort the mount: the click
+  // and event listeners below are registered after this block, so an exception
+  // here would leave the sidebar rendered but permanently unclickable (the
+  // "I can't click any of the chats" failure). Restore is best-effort.
+  try {
+    // If a new chat was queued (e.g. project-detail "+"), launch it now. Takes
+    // precedence over history-resume / last-selected restore.
+    if (_pendingNewChat) {
+      const { project, config } = _pendingNewChat;
+      _pendingNewChat = null;
+      await launchNewSession(pane, project, config);
       updateThinkingBar();
+    } else if (_pendingHistoryResume) {
+      const sid = _pendingHistoryResume;
+      _pendingHistoryResume = null;
+      if (state.sessions.find(s => s.session_id === sid)) {
+        await selectSession(sid, pane);
+        updateThinkingBar();
+      }
+    } else if (!state.pendingNewSession && !state.selectedId) {
+      // Restore the last-viewed session across reloads. Skipped when a pending
+      // draft was just restored (it owns the active pane) or when history-resume
+      // already picked one above.
+      const lastId = loadLastSelectedSession();
+      if (lastId && state.sessions.find(s => s.session_id === lastId)) {
+        await selectSession(lastId, pane);
+        updateThinkingBar();
+      }
     }
-  } else if (!state.pendingNewSession && !state.selectedId) {
-    // Restore the last-viewed session across reloads. Skipped when a pending
-    // draft was just restored (it owns the active pane) or when history-resume
-    // already picked one above.
-    const lastId = loadLastSelectedSession();
-    if (lastId && state.sessions.find(s => s.session_id === lastId)) {
-      await selectSession(lastId, pane);
-      updateThinkingBar();
-    }
+  } catch (err) {
+    console.error("[sessions] restore-selection failed; continuing mount", err);
   }
 
   // Subscribe to live registry updates
@@ -466,9 +488,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
         state.daemonSetupStalled = false;
         disarmSetupStallTimer();
       } else {
-        armSetupStallTimer(listEl, myMount);
+        armSetupStallTimer(listEl, pane, myMount);
       }
       renderSidebar(listEl);
+      refreshPaneEmptyState(pane);
     });
 
     state.unlistenInstances = await ev.listen("instances-changed", async () => {
@@ -503,7 +526,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
         state.composer?.destroy();
         state.composer = null;
         setActiveSession(null);
-        pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+        pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
       }
       // If the selected session's kind changed (e.g. Interactive -> External
       // after "Open in Terminal"), the pane must re-render to show the correct
@@ -642,7 +665,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     const li = (e.target as HTMLElement).closest<HTMLLIElement>("li[data-session-id]");
     if (!li) return;
     const id = li.dataset.sessionId;
-    if (id) void (async () => { await selectSession(id, pane); updateThinkingBar(); })();
+    if (id) {
+      void (async () => { await selectSession(id, pane); updateThinkingBar(); })()
+        .catch((err) => console.error(`[sessions] selectSession(${id}) failed`, err));
+    }
   });
 
   const onViewDragOver = (e: DragEvent) => {
@@ -675,7 +701,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     state.composer?.destroy();
     state.composer = null;
     setActiveSession(null);
-    pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+    pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
   };
   document.addEventListener("cc:session-closed", onSessionClosed);
 
