@@ -39,7 +39,13 @@ function leadingVisual(
   // doesn't flash broken when the row is rebuilt. data-hydrated makes the
   // post-render hydrate pass a no-op for already-filled images.
   const preload = url ? ` src="${escapeHtml(url)}" data-hydrated="${id}"` : "";
+  // Two layers share the same src so the single hydrate pass fills both:
+  //  - backdrop: same art blurred + scaled to cover, fills the strip edge to
+  //    edge so a transparent (hexagonal) portrait's corners reveal blurred hero
+  //    colours instead of the row background — no hexagon silhouette.
+  //  - foreground: the sharp portrait on top.
   return `<span class="session-avatar ${st}">
+          <img class="char-avatar session-char-backdrop" data-character-id="${id}"${preload} alt="" aria-hidden="true">
           <img class="char-avatar session-char-img" data-character-id="${id}"${preload} alt="${id}">
         </span>`;
 }
