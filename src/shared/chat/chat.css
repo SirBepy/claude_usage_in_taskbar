@@ -611,6 +611,20 @@
   border-bottom: none;
 }
 
+/* File-edit cards folded into a chip bucket: drop the inline-chat margins so
+   they sit flush like the compact rows, separated by the same hairline. */
+.tool-strip-group .tool-use--file {
+  margin: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+.tool-strip-group .tool-use--file:last-child {
+  border-bottom: none;
+}
+.tool-strip-group .tool-use--file .edit-window {
+  margin: 0;
+}
+
 /* Nested drill-down strips (Subagent > per-subagent > tool-type). A faint
    tinted band + padding visually separates each deeper control row. */
 .tool-strip-group .tool-strip {

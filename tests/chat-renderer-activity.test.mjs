@@ -148,7 +148,7 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     expect(container.querySelectorAll(".tool-strip").length).toBe(1);
   });
 
-  it("does NOT fold rich edit cards into a chip", () => {
+  it("folds rich edit cards into the Edit chip's bucket (not inline)", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const r = new ChatRenderer(container);
@@ -156,11 +156,25 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
     r.handleEvent(userEvent("edit"));
     r.handleEvent(toolUse("Edit", { file_path: "/a/x.ts", old_string: "a", new_string: "b" }, "e1"));
+    r.handleEvent(toolUse("Write", { file_path: "/a/y.ts", content: "hi" }, "w1"));
+    r.handleEvent(toolUse("Edit", { file_path: "/a/z.ts", old_string: "c", new_string: "d" }, "e2"));
 
-    expect(container.querySelector('.tool-chip[data-tool="Edit"]')).toBeNull();
-    expect(container.querySelector(".tool-use--file")).not.toBeNull();
-    // No strip created when only rich cards are present.
-    expect(container.querySelector(".tool-strip")).toBeNull();
+    // Edit chip exists (MultiEdit/Edit canonicalize together) counting tool_uses.
+    const editChip = container.querySelector('.tool-chip[data-tool="Edit"]');
+    expect(editChip).not.toBeNull();
+    expect(editChip.querySelector(".tool-chip-count").textContent).toBe("x2");
+    // Write is its own bucket.
+    expect(container.querySelector('.tool-chip[data-tool="Write"]')).not.toBeNull();
+
+    // The rich card still exists but lives INSIDE the Edit bucket, not loose in
+    // the chat flow.
+    const editBucket = container.querySelector('.tool-strip-group[data-tool="Edit"]');
+    expect(editBucket).not.toBeNull();
+    expect(editBucket.querySelectorAll(".tool-use--file").length).toBe(2);
+    // No edit card is a direct flow child (every one is folded into a bucket).
+    const looseCards = [...container.querySelectorAll(".tool-use--file")]
+      .filter((el) => !el.closest(".tool-strip-group"));
+    expect(looseCards.length).toBe(0);
   });
 
   it("groups a turn whose tools span a bulk-load chunk boundary into ONE strip (reload)", async () => {

@@ -87,6 +87,17 @@ function bumpChip(chip: HTMLElement): void {
   chip.classList.add("tool-chip--highlight");
 }
 
+/**
+ * Elements that fold into a chip bucket. Compact tool rows (.tool-row) AND
+ * rich file-edit cards (.tool-use--file): the edit card keeps its inline diff
+ * view, it just lives inside the Edit/Write chip's panel instead of loose in
+ * the chat flow (so a turn that touched 8 files shows one "Edited x8" chip,
+ * not 8 stacked diff cards).
+ */
+function isFoldableToolEl(el: HTMLElement): boolean {
+  return el.classList.contains("tool-row") || el.classList.contains("tool-use--file");
+}
+
 /** Human label for a subagent chip: its Task description (or subagent_type), capped. */
 function descOf(input: unknown): string {
   const obj = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
@@ -202,7 +213,7 @@ export function groupToolRange(
     const m = messages[i];
     const el = messageEls[i];
     if (!m || !el) continue;
-    if (m.kind === "tool_use" && m.id && el.classList.contains("tool-row")) {
+    if (m.kind === "tool_use" && m.id && isFoldableToolEl(el)) {
       idTool.set(m.id, m.tool ?? "");
       if (m.parentToolUseId) idParent.set(m.id, m.parentToolUseId);
       if (m.tool === "Task" || m.tool === "Agent") idDescription.set(m.id, descOf(m.input));
@@ -248,8 +259,8 @@ export function groupToolRange(
     const el = messageEls[i];
     if (!m || !el) continue;
     if (el.dataset.toolGrouped === "1") continue;
-    // Only compact rows fold; rich edit cards (.tool-use--file) stay inline.
-    if (!el.classList.contains("tool-row")) continue;
+    // Compact rows AND rich file-edit cards fold; everything else stays inline.
+    if (!isFoldableToolEl(el)) continue;
 
     let tool: string | null = null;
     let isUse = false;
