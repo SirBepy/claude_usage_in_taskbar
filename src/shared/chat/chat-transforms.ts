@@ -190,6 +190,19 @@ export interface RenderedMessage {
   parentToolUseId?: string | null;
 }
 
+/**
+ * A turn boundary row: a real user message or a compaction marker. These open
+ * a turn, so the tool/assistant rows that follow belong to it. Single source
+ * of truth for "what starts a turn", shared by the renderer (folding the
+ * window's leading partial turn at initial load) and the paginator (folding
+ * prepended ranges). Mirrors the user_message gate in ChatRenderer.handleEvent:
+ * a tool-result-only user line renders to empty content and is dropped (never
+ * becomes a kind:"user" row), so checking kind here is sufficient.
+ */
+export function isBoundaryMessage(m: RenderedMessage): boolean {
+  return m.kind === "user" || (m.kind === "system" && m.text === "Conversation compacted");
+}
+
 export function renderBlocks(blocks: ContentBlock[], breaks = false): string {
   return blocks
     .map((b) => {

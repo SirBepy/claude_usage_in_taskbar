@@ -1,9 +1,13 @@
 // Paginated-in (scroll-up) history must fold exactly like the initial load:
 // tool rows group into the turn footer's chip strip and the meta row settles
 // from the turn's combined usage. Before this, prependEvents built raw rows -
-// every old chat showed flat Skill/Bash/... cards once you scrolled up, and
-// the initial window's leading partial turn (cut mid-turn by the page size)
-// stayed flat forever.
+// every old chat showed flat Skill/Bash/... cards once you scrolled up.
+//
+// The initial window is cut mid-turn by the page size, so its LEADING rows
+// (before the first user message) have no turn to group into. bulkLoadEvents
+// now folds that leading partial turn at load instead of leaving raw cards on
+// screen until the user scrolled up; scrolling up later just adds the meta row
+// once the opening user message (and its usage) prepend in.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { JSDOM } from "jsdom";
@@ -107,7 +111,7 @@ describe("pagination folds prepended turns", () => {
     expect(footer.querySelector(".turn-chip--time").textContent).toContain("11s");
   });
 
-  it("heals the initial window's leading partial turn once its user message arrives", async () => {
+  it("folds the initial window's leading partial turn at load (no scroll needed)", async () => {
     invokeMock
       .mockResolvedValueOnce({
         // Initial window cut MID-turn: tool rows with no opening user message.
@@ -133,13 +137,15 @@ describe("pagination folds prepended turns", () => {
 
     const { renderer, container } = await makeRenderer();
 
-    // Before pagination the leading rows are flat (no boundary seen yet).
+    // The leading rows fold at INITIAL load - no scroll-up required. This is
+    // the bug fix: previously they stayed flat until pagination healed them.
     let flat = [...container.querySelectorAll(".tool-row")].filter((el) => el.dataset.toolGrouped !== "1");
-    expect(flat.length).toBeGreaterThan(0);
+    expect(flat.length).toBe(0);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
 
+    // Scrolling up brings the opening user message; the turn stays folded.
     await renderer.fetchOlder();
 
-    // The opening user message healed the turn: rows folded into a strip.
     flat = [...container.querySelectorAll(".tool-row")].filter((el) => el.dataset.toolGrouped !== "1");
     expect(flat.length).toBe(0);
     expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();

@@ -10,6 +10,7 @@
 
 ### Visual QA
 
+- Chat transcript leading-turn fold (frontend-only, just relaunch the webview): open a chat with enough history that it loads cut mid-turn. The rows above your first visible user message should already be collapsed into a tool-chip strip on open - no raw Read/Grep cards that only snap into chips when you scroll up. The leading turn's token meta row stays absent until you scroll up far enough to load its opening message (expected; the usage lives below the loaded window).
 - New-session model picker (needs `cargo tauri dev` rebuild - new Rust IPC): open the picker. Labels should read "Haiku / Sonnet / Opus / Fable" (pretty, not raw ids), sorted least-to-most impressive left-to-right. Select Fable - "Start session" should disable and a red message "Fable 5 is disabled, please choose another model" should appear (Fable is currently off on the account). Selecting any other model re-enables Start. (Until the app is rebuilt the probe IPC is missing, so it fails open and nothing disables.)
 - New project button (needs relaunch): in the project picker footer, click "New project..." - the picker should HIDE and the new-project modal should appear (not stack on top). Type a name - cursor must not jump or reverse. Pick a folder; preview updates live. Hit Create - folder is created and the flow continues. Cancel/Esc dismiss without creating. Clicking "New project..." again while the modal is open must be a no-op (no second modal).
 

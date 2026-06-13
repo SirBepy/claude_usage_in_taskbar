@@ -1,6 +1,6 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import type { RenderedMessage } from "./chat-transforms";
-import { eventToRenderedMessage } from "./chat-transforms";
+import { eventToRenderedMessage, isBoundaryMessage } from "./chat-transforms";
 import { sessionEvents } from "./event-store";
 import { highlightCodeBlocks } from "./code-highlighter";
 import type { TurnUsageTotals } from "./turn-chips";
@@ -21,11 +21,6 @@ export interface PaginatorCallbacks {
    * computes the ranges and per-turn usage out of the raw prepended events.
    */
   foldClosedRange(start: number, end: number, usage: TurnUsageTotals | null, tsSpanMs: number): void;
-}
-
-/** A turn boundary row: a real user message or a compaction marker. */
-function isBoundaryMessage(m: RenderedMessage): boolean {
-  return m.kind === "user" || (m.kind === "system" && m.text === "Conversation compacted");
 }
 
 function emptyTotals(): TurnUsageTotals {

@@ -1,6 +1,6 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, detectStatusToken } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken } from "./chat-transforms";
 import { highlightCodeBlocks } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
@@ -334,6 +334,7 @@ export class ChatRenderer {
         durationMs: u.durationMs > 0 ? u.durationMs : this.activeTurnTsSpan(),
       });
     }
+    this.foldLeadingPartialTurn();
     this.scrollToBottom();
     const buffered = this.liveBuffer;
     this.liveBuffer = null;
@@ -614,6 +615,33 @@ export class ChatRenderer {
         this.turnFooters.updateLiveTokenEstimate(this.activeTurnChipKey, this.activeTurnStreamedText);
       }
     }
+  }
+
+  /**
+   * Fold the loaded window's LEADING partial turn at initial load.
+   *
+   * `read_page` cuts the window by assistant-reply count, so it almost always
+   * begins MID-turn: the rows before the first real boundary (the turn's
+   * opening user message lives below the window) were rendered flat, because no
+   * turn was open to group them when they streamed through bulkLoadEvents. That
+   * left raw Read/Grep/... cards on screen until the user scrolled up far enough
+   * for pagination to prepend the older batch and heal them.
+   *
+   * Run that same heal once here, at load: fold those leading rows into a chip
+   * strip immediately. We have no usage for the turn (its turn_usage events
+   * arrived before any turn was open and were dropped), so the meta row stays
+   * absent until pagination brings the opening message - strictly better than
+   * the flat cards shown before. No-op when the window already starts at a
+   * boundary (no leading partial turn) or is empty.
+   */
+  private foldLeadingPartialTurn(): void {
+    if (this.messages.length === 0) return;
+    if (isBoundaryMessage(this.messages[0]!)) return;
+    let end = this.messages.length;
+    for (let i = 0; i < this.messages.length; i++) {
+      if (isBoundaryMessage(this.messages[i]!)) { end = i; break; }
+    }
+    this.foldClosedRange(0, end, null, 0);
   }
 
   /**
