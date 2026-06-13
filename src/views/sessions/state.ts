@@ -1,6 +1,7 @@
 import type { Instance, ProtocolState } from "../../types/ipc.generated";
 import type { ChatRenderer } from "../../shared/chat/chat-renderer";
 import type { Composer } from "../../shared/chat/composer";
+import type { HeldMessages } from "../../shared/chat/held-messages";
 import { setSelectedSessionId } from "./permission-modal";
 import type { SessionStatusbar } from "./session-statusbar";
 import type { SessionConfig } from "./model-effort-modal";
@@ -49,6 +50,10 @@ export interface SessionsState {
   filter: string;
   renderer: ChatRenderer | null;
   composer: Composer | null;
+  /** Singleton controller for messages typed while Claude is busy (staged and
+   * bundled into one send). Per-session held set survives session switches;
+   * re-attached to the active pane on every mount. In-memory only. */
+  heldMessages: HeldMessages | null;
   unlistenInstances: (() => void) | null;
   pendingNewSession: PendingNewSession | null;
   parkedDrafts: ParkedDraft[];
@@ -82,6 +87,7 @@ export function createInitialState(mountId: number): SessionsState {
     filter: "",
     renderer: null,
     composer: null,
+    heldMessages: null,
     unlistenInstances: null,
     pendingNewSession: null,
     parkedDrafts: [],

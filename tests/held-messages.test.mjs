@@ -1,0 +1,194 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { JSDOM } from "jsdom";
+
+const { HeldMessages, bundleHeld } = await import("../src/shared/chat/held-messages.ts");
+
+function textBlocks(s) {
+  return [{ type: "text", text: s }];
+}
+
+/** Build a controller wired to a jsdom-backed pane with spyable callbacks.
+ * onChange re-renders the chip, mirroring updateThinkingBar in the real app. */
+function makeHarness(overrides = {}) {
+  const anchor = document.createElement("div");
+  anchor.className = "session-thinking";
+  const chipSlot = document.createElement("span");
+  chipSlot.className = "held-chip-slot";
+  anchor.appendChild(chipSlot);
+  document.body.appendChild(anchor);
+
+  const send = vi.fn(async () => {});
+  const interrupt = vi.fn(async () => {});
+  const state = {
+    draftBlocks: [],
+    draftEmpty: true,
+    composing: false,
+    busy: true,
+  };
+  const held = new HeldMessages();
+  const attach = {
+    sessionId: "sess-A",
+    chipSlot,
+    anchor,
+    send,
+    interrupt,
+    getDraftBlocks: () => state.draftBlocks,
+    isDraftEmpty: () => state.draftEmpty,
+    isComposing: () => state.composing,
+    clearComposer: vi.fn(),
+    getIsBusy: () => state.busy,
+    onChange: () => held.renderChip(),
+    ...overrides,
+  };
+  held.attach(attach);
+  return { held, attach, send, interrupt, state, anchor, chipSlot };
+}
+
+beforeEach(() => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.Node = dom.window.Node;
+});
+
+describe("bundleHeld", () => {
+  it("joins each message's text with a blank line, in order", () => {
+    const out = bundleHeld([textBlocks("first"), textBlocks("second"), textBlocks("third")]);
+    expect(out).toEqual([{ type: "text", text: "first\n\nsecond\n\nthird" }]);
+  });
+
+  it("appends the trailing draft as the final message", () => {
+    const out = bundleHeld([textBlocks("a")], textBlocks("draft"));
+    expect(out).toEqual([{ type: "text", text: "a\n\ndraft" }]);
+  });
+
+  it("skips empty groups and returns [] when nothing has text", () => {
+    expect(bundleHeld([textBlocks("   "), textBlocks("")])).toEqual([]);
+  });
+});
+
+describe("HeldMessages — staging + chip", () => {
+  it("stages messages and renders a pluralised count chip", () => {
+    const { held, chipSlot } = makeHarness();
+    expect(held.hasItemsForActive()).toBe(false);
+
+    held.stage(textBlocks("one"));
+    expect(held.hasItemsForActive()).toBe(true);
+    held.renderChip();
+    expect(chipSlot.querySelector(".held-count").textContent).toBe("1");
+    expect(chipSlot.textContent).toContain("message waiting");
+
+    held.stage(textBlocks("two"));
+    held.renderChip();
+    expect(chipSlot.querySelector(".held-count").textContent).toBe("2");
+    expect(chipSlot.textContent).toContain("messages waiting");
+  });
+
+  it("keeps held sets separate per session", () => {
+    const { held, attach } = makeHarness();
+    held.stage(textBlocks("for-A"));
+    // Re-attach as a different session: A's set must not leak into B.
+    held.attach({ ...attach, sessionId: "sess-B" });
+    expect(held.hasItemsForActive()).toBe(false);
+  });
+});
+
+describe("HeldMessages — flush triggers", () => {
+  it("auto-flushes a clean completion as one bundled message", () => {
+    const { held, send } = makeHarness();
+    held.stage(textBlocks("alpha"));
+    held.stage(textBlocks("beta"));
+
+    held.onCompletion("sess-A", /* isQuestion */ false);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "alpha\n\nbeta" }]);
+    expect(held.hasItemsForActive()).toBe(false);
+  });
+
+  it("does NOT auto-flush while Claude is asking a question", () => {
+    const { held, send } = makeHarness();
+    held.stage(textBlocks("alpha"));
+
+    held.onCompletion("sess-A", /* isQuestion */ true);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(held.hasItemsForActive()).toBe(true);
+  });
+
+  it("defers auto-flush while the user is composing, then fires when idle", () => {
+    const { held, send, state } = makeHarness();
+    held.stage(textBlocks("alpha"));
+    state.composing = true;
+
+    held.onCompletion("sess-A", false);
+    expect(send).not.toHaveBeenCalled();
+
+    // User stops typing and the session is idle -> deferred flush fires.
+    state.composing = false;
+    state.busy = false;
+    held.notifyDraftActivity();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "alpha" }]);
+  });
+
+  it("Send now interrupts the turn, then sends held + draft as one", async () => {
+    const { held, send, interrupt, state } = makeHarness();
+    held.stage(textBlocks("queued"));
+    state.draftEmpty = false;
+    state.draftBlocks = textBlocks("half-typed");
+
+    await held.sendNow();
+
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "queued\n\nhalf-typed" }]);
+    expect(held.hasItemsForActive()).toBe(false);
+  });
+
+  it("flushHeldWithDraft bundles the existing set with the draft", async () => {
+    const { held, send } = makeHarness();
+    held.stage(textBlocks("a"));
+    held.stage(textBlocks("b"));
+
+    await held.flushHeldWithDraft(textBlocks("c"));
+
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "a\n\nb\n\nc" }]);
+    expect(held.hasItemsForActive()).toBe(false);
+  });
+});
+
+describe("HeldMessages — editable dropdown rows", () => {
+  it("drops a message when its row is cleared to empty and blurred", () => {
+    const { held, chipSlot, anchor } = makeHarness();
+    held.stage(textBlocks("keep"));
+    held.stage(textBlocks("remove-me"));
+    held.renderChip();
+
+    // Expand the dropdown.
+    chipSlot.querySelector(".held-chip").dispatchEvent(new window.Event("click"));
+    const rows = anchor.querySelectorAll(".held-row");
+    expect(rows.length).toBe(2);
+
+    // Clear the second row and blur it -> the item is removed.
+    rows[1].textContent = "";
+    rows[1].dispatchEvent(new window.Event("blur"));
+
+    expect(held.hasItemsForActive()).toBe(true);
+    expect(chipSlot.querySelector(".held-count").textContent).toBe("1");
+  });
+
+  it("editing a row updates the text that gets bundled", () => {
+    const { held, send, chipSlot, anchor } = makeHarness();
+    held.stage(textBlocks("original"));
+    held.renderChip();
+    chipSlot.querySelector(".held-chip").dispatchEvent(new window.Event("click"));
+
+    const row = anchor.querySelector(".held-row");
+    row.textContent = "edited";
+    row.dispatchEvent(new window.Event("input"));
+
+    held.onCompletion("sess-A", false);
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "edited" }]);
+  });
+});

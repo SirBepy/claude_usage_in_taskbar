@@ -74,11 +74,18 @@ export async function refreshSessions(): Promise<void> {
     }
 
     // Mark unread for sessions that just finished a busy turn (busy true->false)
-    // and are not currently open/selected
+    // and are not currently open/selected. For the ACTIVE session, the same
+    // transition is the auto-flush trigger for any held messages (unless Claude
+    // stopped to ask, in which case the held set waits for the answer).
     for (const s of next) {
       const wasBusy = state.prevBusyMap.get(s.session_id);
-      if (wasBusy === true && !s.busy && s.session_id !== state.selectedId) {
-        unread.add(s.session_id);
+      if (wasBusy === true && !s.busy) {
+        if (s.session_id !== state.selectedId) {
+          unread.add(s.session_id);
+        } else {
+          const isQuestion = !!s.awaiting || state.questionSessions.has(s.session_id);
+          state.heldMessages?.onCompletion(s.session_id, isQuestion);
+        }
       }
     }
 

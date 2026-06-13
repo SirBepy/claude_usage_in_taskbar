@@ -45,7 +45,7 @@ export async function renderPendingPane(
         <p>Type a message below to start a new session in <strong>${escapeHtml(project.name)}</strong>.</p>
       </div>
     </div>
-    <div class="session-thinking" hidden></div>
+    <div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>
     <div class="session-composer"></div>
   `;
 

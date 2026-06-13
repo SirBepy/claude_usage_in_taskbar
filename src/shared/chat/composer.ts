@@ -44,6 +44,19 @@ export interface ComposerOptions {
   onSend: (blocks: ContentBlock[]) => Promise<void> | void;
   projectDir?: string | null;
   getRenderer?: () => ChatRenderer | null;
+  /** True while the active session's turn is in flight. When busy, Enter stages
+   * the message (via onStage) instead of sending it. */
+  isBusy?: () => boolean;
+  /** Stage the built blocks as a held message (only called while busy). */
+  onStage?: (blocks: ContentBlock[]) => void;
+  /** True when a held set exists for the active session. When not busy but
+   * held items exist, a normal send bundles them via flushHeldWithDraft. */
+  hasHeld?: () => boolean;
+  /** Flush the held set together with the current draft as one message. The
+   * composer clears itself after calling. */
+  flushHeldWithDraft?: (draftBlocks: ContentBlock[]) => void;
+  /** Fired on draft input/blur so a deferred auto-flush can retry. */
+  onDraftActivity?: () => void;
 }
 
 let _composerInstanceCount = 0;
@@ -63,6 +76,9 @@ export class Composer {
   private file: FileProvider | null = null;
   private popup: CaretSuggestPopup | null = null;
   private sending = false;
+  // Wall-clock of the last keystroke; feeds isComposing() so an auto-flush
+  // doesn't fire out from under the user mid-type.
+  private lastKeyAt = 0;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -221,11 +237,14 @@ export class Composer {
       this.textarea.addEventListener("keydown", this.onKey.bind(this));
       this.textarea.addEventListener("paste", this.onPaste.bind(this));
       this.textarea.addEventListener("input", () => {
+        this.lastKeyAt = Date.now();
         this.autoResize();
         this.updateHighlight();
         this.popup?.handleInput();
         this.persistDraft();
+        this.opts.onDraftActivity?.();
       });
+      this.textarea.addEventListener("blur", () => this.opts.onDraftActivity?.());
       this.textarea.addEventListener("scroll", () => {
         if (this.highlightEl && this.textarea) this.highlightEl.scrollTop = this.textarea.scrollTop;
       });
@@ -419,11 +438,11 @@ export class Composer {
       return;
     }
     const text = (this.textarea?.value ?? "").trim();
-    if (!text && this.attachments.length === 0 && this.pastedBlocks.length === 0) return;
-    this.sending = true;
+    const empty = !text && this.attachments.length === 0 && this.pastedBlocks.length === 0;
 
-    const builtin = parseBuiltin(text);
+    const builtin = text ? parseBuiltin(text) : null;
     if (builtin) {
+      this.sending = true;
       const handler = HANDLERS[builtin.name];
       if (handler) {
         try {
@@ -432,29 +451,53 @@ export class Composer {
           console.error("[builtin]", builtin.name, e);
         }
       }
-      if (this.textarea) this.textarea.value = "";
-      this.autoResize();
-      this.updateHighlight();
-      this.attachments = [];
-      this.pastedBlocks = [];
-      this.renderAttachments();
-      this.persistDraft();
-      this.persistAttachments();
+      this.clearComposer();
       this.sending = false;
       return;
     }
 
-    // Append any held pasted-log blocks after the typed text, each wrapped in a
-    // <pasted-log> sentinel. Claude reads the full content inline; the chat
-    // renderer collapses the wrapper into a clickable chip so the user never
-    // sees the wall of text in their own message (mirrors the composer chip).
+    // While the turn is in flight: stage as a held message instead of sending.
+    // Builtins above still run immediately; only real messages are held.
+    if (this.opts.isBusy?.()) {
+      if (empty) return;
+      this.opts.onStage?.(this.buildBlocks(text));
+      this.clearComposer();
+      return;
+    }
+
+    // Not busy, but a held set exists: a normal send bundles the held messages
+    // with this draft into ONE message (handled by the held controller).
+    if (this.opts.hasHeld?.()) {
+      const draftBlocks = empty ? [] : this.buildBlocks(text);
+      this.clearComposer();
+      this.opts.flushHeldWithDraft?.(draftBlocks);
+      return;
+    }
+
+    if (empty) return;
+    this.sending = true;
+    const blocks = this.buildBlocks(text);
+    this.clearComposer();
+    try {
+      await this.opts.onSend(blocks);
+    } catch (err) {
+      console.error("[Composer] onSend failed", err);
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  /** Build the ContentBlock[] for the current draft: typed text + any held
+   * pasted-log sentinels + attachment <file:…> mentions. Pure (no clear). The
+   * <pasted-log> wrapper is collapsed into a chip by the chat renderer so the
+   * user never sees the wall of text in their own message. */
+  private buildBlocks(text: string): ContentBlock[] {
     let fullText = text;
     for (const b of this.pastedBlocks) {
       const nonce = Math.random().toString(36).slice(2, 10);
       const wrapped = `<pasted-log id="${nonce}" name="${b.name}">\n${b.text}\n</pasted-log:${nonce}>`;
       fullText += (fullText ? "\n\n" : "") + wrapped;
     }
-
     const blocks: ContentBlock[] = [];
     if (fullText) blocks.push({ type: "text", text: fullText });
     for (const a of this.attachments) {
@@ -467,7 +510,12 @@ export class Composer {
         });
       }
     }
+    return blocks;
+  }
 
+  /** Reset the input, attachments, pasted blocks and persisted draft. Public so
+   * the held-messages controller can clear after bundling the draft. */
+  clearComposer(): void {
     if (this.textarea) this.textarea.value = "";
     this.autoResize();
     this.updateHighlight();
@@ -476,14 +524,28 @@ export class Composer {
     this.renderAttachments();
     this.persistDraft();
     this.persistAttachments();
+  }
 
-    try {
-      await this.opts.onSend(blocks);
-    } catch (err) {
-      console.error("[Composer] onSend failed", err);
-    } finally {
-      this.sending = false;
-    }
+  /** Build blocks for the current draft without clearing it (for bundling). */
+  getDraftBlocks(): ContentBlock[] {
+    const text = (this.textarea?.value ?? "").trim();
+    if (this.isDraftEmpty()) return [];
+    return this.buildBlocks(text);
+  }
+
+  isDraftEmpty(): boolean {
+    const text = (this.textarea?.value ?? "").trim();
+    return !text && this.attachments.length === 0 && this.pastedBlocks.length === 0;
+  }
+
+  /** True while the user is actively composing: focused with a non-empty draft,
+   * or a keystroke within the last 2s. Gates auto-flush. */
+  isComposing(): boolean {
+    if (!this.textarea) return false;
+    const hasText = (this.textarea.value ?? "").trim().length > 0;
+    const focused = document.activeElement === this.textarea;
+    if (focused && hasText) return true;
+    return Date.now() - this.lastKeyAt < 2000;
   }
 
   private persistDraft(): void {

@@ -4,6 +4,7 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { Composer } from "../../shared/chat/composer";
+import { HeldMessages } from "../../shared/chat/held-messages";
 import type { ChatEvent, ContentBlock, Instance } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import {
@@ -28,7 +29,7 @@ import {
 } from "./permission-modal";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { openMoreMenu } from "./more-menu";
-import { setThinkingActivity } from "./sessions";
+import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./sessions";
 
 /** Status class (st-working / st-question / …) for an open session, using the
  * same classifier the sidebar rows use so the header avatar's border colour
@@ -135,7 +136,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <div class="session-statusbar-host"></div>
     ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
     <div class="session-messages"></div>
-    <div class="session-thinking" hidden></div>
+    <div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>
     <div class="session-composer"></div>
   `;
 
@@ -244,51 +245,85 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     }
   }
 
-  // Attach composer
+  // Attach composer + held-messages controller
   const composerEl = pane.querySelector<HTMLElement>(".session-composer");
   if (composerEl) {
+    // The real send-to-daemon path. Shared by the composer (normal send) and
+    // by the held-messages controller (flushing a bundled set as one message).
+    const sendBundle = async (blocks: ContentBlock[]): Promise<void> => {
+      // Optimistically push the user's message via the store; claude -p
+      // doesn't echo it back via stream-json. Cache stays consistent.
+      sessionEvents.pushSynthetic(sessionId, {
+        type: "user_message",
+        content: blocks,
+        timestamp: BigInt(Date.now()),
+      } as ChatEvent);
+
+      // `/close`: dismount the pane immediately and let the skill run in
+      // the background. AskUserQuestion modals still surface (background
+      // gate). When the turn ends, clear the session from the registry.
+      if (isCloseCommand(blocks)) {
+        const cwd = String(sess.cwd ?? ".");
+        addBackgroundSession(sessionId);
+        dismountActivePane();
+        invoke<void>("send_message", { sessionId, cwd, blocks })
+          .catch(err => console.error("[sessions] background /close send_message failed", err))
+          .finally(() => {
+            removeBackgroundSession(sessionId);
+            invoke<void>("clear_session", { sessionId }).catch(() => {});
+          });
+        return;
+      }
+
+      try {
+        await invoke<void>("send_message", {
+          sessionId,
+          cwd: String(sess.cwd ?? "."),
+          blocks,
+        });
+      } catch (err) {
+        console.error("[sessions] send_message failed", err);
+        alert(`Send failed: ${err}`);
+      }
+    };
+
     state.composer?.destroy();
-    state.composer = new Composer(composerEl, {
+    const composer = new Composer(composerEl, {
       projectDir: sess.cwd ?? null,
       getRenderer: () => state.renderer,
-      onSend: async (blocks: ContentBlock[]) => {
-        // Optimistically push the user's message via the store; claude -p
-        // doesn't echo it back via stream-json. Cache stays consistent.
-        sessionEvents.pushSynthetic(sessionId, {
-          type: "user_message",
-          content: blocks,
-          timestamp: BigInt(Date.now()),
-        } as ChatEvent);
-
-        // `/close`: dismount the pane immediately and let the skill run in
-        // the background. AskUserQuestion modals still surface (background
-        // gate). When the turn ends, clear the session from the registry.
-        if (isCloseCommand(blocks)) {
-          const cwd = String(sess.cwd ?? ".");
-          addBackgroundSession(sessionId);
-          dismountActivePane();
-          invoke<void>("send_message", { sessionId, cwd, blocks })
-            .catch(err => console.error("[sessions] background /close send_message failed", err))
-            .finally(() => {
-              removeBackgroundSession(sessionId);
-              invoke<void>("clear_session", { sessionId }).catch(() => {});
-            });
-          return;
-        }
-
-        try {
-          await invoke<void>("send_message", {
-            sessionId,
-            cwd: String(sess.cwd ?? "."),
-            blocks,
-          });
-        } catch (err) {
-          console.error("[sessions] send_message failed", err);
-          alert(`Send failed: ${err}`);
-        }
-      },
+      onSend: sendBundle,
+      // While busy, Enter stages instead of sends; when not busy but a held set
+      // exists, a normal send bundles it with the draft as one message.
+      isBusy: () => isCurrentSessionBusy(),
+      onStage: (blocks) => state.heldMessages?.stage(blocks),
+      hasHeld: () => !!state.heldMessages?.hasItemsForActive(),
+      flushHeldWithDraft: (draftBlocks) => { void state.heldMessages?.flushHeldWithDraft(draftBlocks); },
+      onDraftActivity: () => state.heldMessages?.notifyDraftActivity(),
     });
-    state.composer.setSessionId(sessionId, { readOnly });
+    state.composer = composer;
+    composer.setSessionId(sessionId, { readOnly });
+
+    // Held-messages controller is a singleton (its per-session set survives
+    // session switches); re-attach it to this freshly-mounted pane + session.
+    if (!state.heldMessages) state.heldMessages = new HeldMessages();
+    const thinkingBar = pane.querySelector<HTMLElement>(".session-thinking");
+    const chipSlot = pane.querySelector<HTMLElement>(".held-chip-slot");
+    if (thinkingBar && chipSlot) {
+      state.heldMessages.attach({
+        sessionId,
+        chipSlot,
+        anchor: thinkingBar,
+        send: sendBundle,
+        interrupt: () => invoke<void>("cancel_turn", { sessionId }),
+        getDraftBlocks: () => composer.getDraftBlocks(),
+        isDraftEmpty: () => composer.isDraftEmpty(),
+        isComposing: () => composer.isComposing(),
+        clearComposer: () => composer.clearComposer(),
+        getIsBusy: () => isCurrentSessionBusy(),
+        onChange: () => updateThinkingBar(),
+      });
+    }
+    updateThinkingBar();
   }
 
   // Wire header buttons
