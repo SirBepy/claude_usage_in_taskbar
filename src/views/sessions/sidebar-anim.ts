@@ -19,6 +19,15 @@ function keyOf(li: HTMLLIElement): string {
 // Keys already committed to exiting — filtered out of entries on every reconcile.
 const exitingKeys = new Set<string>();
 
+// The subset of exitingKeys whose exit was USER-INITIATED (click-close via
+// markSessionExiting). These stay suppressed while the backend still lists
+// the session (state changes before the session truly ends) and clear only
+// once it is absent from entries. Exits started by the reconciler itself
+// (key dropped from entries) are NOT sticky: if the key returns, the row
+// must revive - a transient empty refresh once suppressed every session
+// forever, leaving only unclickable pinned .row-exiting copies on screen.
+const stickyExitKeys = new Set<string>();
+
 // Per-node safety-removal timers. An exiting row is normally removed on its own
 // `animationend`. Because the row is taken OUT of layout flow the instant it
 // starts exiting (see beginExit), removing it can no longer reflow its
@@ -151,6 +160,7 @@ export function markSessionExiting(listEl: HTMLElement, sessionId: string): void
   const li = listEl.querySelector<HTMLLIElement>(`li[data-session-id="${CSS.escape(sessionId)}"]`);
   if (!li || li.classList.contains("row-exiting")) return;
   exitingKeys.add(key);
+  stickyExitKeys.add(key);
   // exitingKeys is cleared by reconcileList once the session is absent from
   // entries — not here — to prevent a still-live session from re-entering.
 
@@ -173,12 +183,21 @@ export function reconcileList(
   animEnabled: boolean,
 ): void {
   // Once a session is fully absent from entries the backend has confirmed it's
-  // gone — safe to stop suppressing it. While it's still in entries (state
-  // changes before the session is truly ended) keep it suppressed so it never
-  // re-enters visibleEntries and triggers an enter animation.
+  // gone — safe to stop suppressing it. A STICKY exit (click-close) that is
+  // still in entries stays suppressed so it never re-enters mid-slide-out. A
+  // reconcile-driven exit whose key RETURNS to entries revives instead: kill
+  // its pinned copy and let it render as a fresh row.
   const allKeys = new Set(entries.map(e => e.key));
   for (const k of exitingKeys) {
-    if (!allKeys.has(k)) exitingKeys.delete(k);
+    if (!allKeys.has(k)) {
+      exitingKeys.delete(k);
+      stickyExitKeys.delete(k);
+    } else if (!stickyExitKeys.has(k)) {
+      exitingKeys.delete(k);
+      for (const li of listEl.querySelectorAll<HTMLLIElement>("li.row-exiting")) {
+        if (keyOf(li) === k) removeExitNode(li);
+      }
+    }
   }
 
   // Strip rows we've already committed to animating out

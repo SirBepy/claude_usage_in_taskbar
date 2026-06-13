@@ -104,6 +104,62 @@ describe("sidebar close animation", () => {
   });
 });
 
+// Regression for "chats visible but unclickable / sidebar randomly empty":
+// a transient empty reconcile (refresh hiccup, daemon flap) made EVERY row
+// exit and enter the suppression set. exitingKeys only cleared when a key was
+// ABSENT from entries, so when the sessions came straight back they stayed
+// suppressed forever - the only thing left on screen was the pinned
+// .row-exiting copies (pointer-events: none -> unclickable), or nothing at
+// all once their timers fired. Reconcile-driven exits must REVIVE when their
+// key returns; only click-initiated closes (markSessionExiting) stay sticky.
+describe("exit suppression revival", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    vi.useFakeTimers();
+  });
+
+  it("revives rows whose keys return after a transient empty reconcile", () => {
+    const listEl = makeList();
+    reconcileList(listEl, [row("A"), row("B")], true);
+    vi.runAllTimers();
+
+    // Transient empty refresh: all rows exit + get suppressed. Do NOT advance
+    // timers - a hidden window never runs the exit animation or safety timer.
+    reconcileList(listEl, [], true);
+
+    // The sessions come straight back.
+    reconcileList(listEl, [row("A"), row("B")], true);
+    vi.runAllTimers();
+
+    const live = [...listEl.querySelectorAll("li[data-session-id]")]
+      .filter((li) => !li.classList.contains("row-exiting"))
+      .map((li) => li.dataset.sessionId);
+    expect(live).toEqual(["A", "B"]);
+    // No unclickable pinned copies may remain.
+    expect(listEl.querySelectorAll("li.row-exiting").length).toBe(0);
+  });
+
+  it("keeps a click-closed row suppressed while the backend still lists it", () => {
+    const listEl = makeList();
+    reconcileList(listEl, [row("X"), row("A")], true);
+    vi.runAllTimers();
+
+    markSessionExiting(listEl, "X");
+    // The backend snapshot still contains X for a few reconciles after the
+    // close click - X must NOT re-enter (the original sticky contract).
+    reconcileList(listEl, [row("X"), row("A")], true);
+
+    const liveX = [...listEl.querySelectorAll('li[data-session-id="X"]')]
+      .filter((li) => !li.classList.contains("row-exiting"));
+    expect(liveX.length).toBe(0);
+
+    // Once the backend confirms X gone, the suppression clears.
+    reconcileList(listEl, [row("A")], true);
+    vi.runAllTimers();
+    expect(listEl.querySelector('li[data-session-id="X"]')).toBeNull();
+  });
+});
+
 // A new chat (the pending draft row) opened WHILE a just-closed row is still
 // sliding out must appear immediately — never starved waiting for the close to
 // settle. With the out-of-flow design there is no deferral: new rows insert
