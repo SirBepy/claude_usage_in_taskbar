@@ -206,6 +206,9 @@
 .session-char-img {
   z-index: 1;
   image-rendering: pixelated;
+  /* Nudge the sharp portrait a few px left so the subject sits clear of the
+     right-edge status glow/bar; the blurred backdrop fills the exposed sliver. */
+  transform: translateX(-3px);
 }
 /* Status accent: a crisp bar on the strip's right edge plus a CONTAINED inner
    edge-glow (a right-anchored gradient inside the clipped strip). A box-shadow
