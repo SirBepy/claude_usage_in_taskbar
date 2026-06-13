@@ -197,7 +197,10 @@
       "PowerShell(gh run *)",
       "PowerShell(if \\(Test-Path \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\.for_bepy\\\\screenshots\\\\\"\\) { Get-ChildItem -File \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\\\\.for_bepy\\\\screenshots\\\\\" | ForEach-Object { $_.FullName } } else { \"folder missing\" })",
       "PowerShell(Get-ChildItem Env: | Where-Object { $_.Name -match 'ANTHROPIC|AWS_|BEDROCK|VERTEX|CLAUDE_CODE_USE' } | Select-Object Name, @{N='Value';E={ if \\($_.Value.Length -gt 12\\) { $_.Value.Substring\\(0,12\\)+'...' } else { $_.Value } }} | Format-Table -AutoSize)",
-      "PowerShell(git rev-parse --show-toplevel; \"now: $\\(Get-Date -Format 'yyyy-MM-dd HH:mm'\\)\"; \"5pm target: $\\(\\(Get-Date '17:00'\\).ToString\\('yyyy-MM-dd HH:mm'\\)\\)\"; Test-Path \"C:\\\\Users\\\\tecno\\\\.local\\\\bin\\\\claude.exe\")"
+      "PowerShell(git rev-parse --show-toplevel; \"now: $\\(Get-Date -Format 'yyyy-MM-dd HH:mm'\\)\"; \"5pm target: $\\(\\(Get-Date '17:00'\\).ToString\\('yyyy-MM-dd HH:mm'\\)\\)\"; Test-Path \"C:\\\\Users\\\\tecno\\\\.local\\\\bin\\\\claude.exe\")",
+      "Bash(rm -f __TRACKED_VAR__/commit-buildwatch-autofixed)",
+      "Bash(gh --version)",
+      "PowerShell($msg = \"FIX: modelContextWindow returns 1M for fable \\(was falling through to 200K default\\)\"; git -C \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\" commit -m $msg)"
     ]
   }
 }

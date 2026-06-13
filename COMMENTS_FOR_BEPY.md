@@ -1,5 +1,18 @@
 # Comments for Bepy
 
+## 2026-06-13 - Auto-assign HotS heroes to every project (autopilot)
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Allocator + auto-assign-on-create (both upsert paths) + one-time startup backfill migration + 10 unit tests -> cargo build + scoped cargo test (10 assign, 14 store) + tsc all green -> 76aeee9
+
+Decisions / notes:
+- You picked the three forks before /autopilot: HotS-only pool, re-roll EVERYTHING to HotS (overwrites the old acolyte/alarak manual picks - both re-pickable in the picker UI anytime), first-letter -> alphabetical-fallback matching.
+- Matching is alphabetical-first within a letter, so claude_usage -> cassia (not chromie), server_supervisor -> samuro, ObsidianVault -> orphea. Deterministic.
+- Backfill guard stored in `settings.extra["characterBackfillVersion"]` (=1), NOT a typed Settings field - deliberately avoids a ts-rs regen / ipc.generated.ts churn since the frontend never reads it. Runs once on next app launch; defers (doesn't burn the version) if no HotS characters are on disk yet.
+- Auto-assign lives in `settings::store::upsert_project_*` (the shared chokepoint for app + daemon creation paths). Best-effort: empty pool -> avatar stays None, healed by backfill/picker.
+- KNOWN LIMITATION (cosmetic, not fixed): app and daemon both persist settings, so a brand-new project created daemon-side vs app-side could momentarily pick different heroes before they reconcile. Backfill is deterministic; steady-state icons render from the app's view. Not worth solving the multi-process settings-authority question for a cosmetic feature.
+- PHASE 3 PARKED -> ai_todo 88: showing the hero icon next to each chat in the Sessions sidebar. Deferred because another AI was reworking the Sessions screen in parallel (/local-session-chat) - landing it now would merge-thrash. Data is all in place; it's a frontend-only follow-up.
+
 ## 2026-06-10 - Remote-chat flag + configurable new-session modal
 
 RUN_LEDGER (chunk -> outcome -> sha):
