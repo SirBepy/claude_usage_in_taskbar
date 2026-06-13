@@ -151,7 +151,7 @@ describe("pagination folds prepended turns", () => {
     expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
   });
 
-  it("re-pins to the bottom after async content settles on load", async () => {
+  it("holds the transcript hidden during build, then re-pins and reveals after settle", async () => {
     invokeMock.mockResolvedValueOnce({
       events: [userEvent("q", 1_000_000), assistantEvent("plain answer", 1_001_000)],
       oldest_seq: 0,
@@ -176,17 +176,21 @@ describe("pagination folds prepended turns", () => {
     await renderer.attach(`sess-settle-${++_sessSeq}`);
     await renderer.loadFromStore();
 
-    // The synchronous load pinned to the bottom.
+    // The synchronous load pinned to the bottom, but the transcript is held
+    // hidden so its ugly build (top-down paint, fold, snap) is never seen.
     expect(container.scrollTop).toBe(1000);
+    expect(container.style.opacity).toBe("0");
 
     // Async content (shiki highlight, image hydration) grows the height AFTER
     // that scroll, pushing the bottom out of view - simulate by resetting.
     container.scrollTop = 0;
 
     // The settle pass re-pins once that work flushes (highlight await + a
-    // macrotask). Without it the newest turn's chips stay cut off.
+    // macrotask), then fades the finished frame in. Without it the newest
+    // turn's chips stay cut off and the transcript stays hidden.
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(container.scrollTop).toBe(1000);
+    expect(container.style.opacity).toBe("1");
   });
 
   it("carries usage across batches for a turn that straddles them", async () => {

@@ -213,6 +213,9 @@ export class ChatRenderer {
     this.closeTurnQueue = [];
     this.setActivity(null);
     this.sessionId = null;
+    // A load aborted mid-flight (detach before its settle reveal) must never
+    // leave the transcript stuck at opacity 0 when the container is reused.
+    this.revealTranscript();
   }
 
   async swapSubscription(newSessionId: string): Promise<void> {
@@ -312,6 +315,11 @@ export class ChatRenderer {
     this.onToolTally?.(this.tallyState.build());
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
+    // Hold the transcript hidden while it assembles. The build is visibly ugly
+    // - rows paint top-down, fold into chips, the view snaps to the bottom, and
+    // shiki recolors code - all in ~100ms. We reveal the finished frame in one
+    // fade once the settle pass has folded, pinned, and highlighted it.
+    this.beginRevealHold();
     const CHUNK = 8;
     for (let i = 0; i < events.length; i += CHUNK) {
       if (this._bulkGen !== myGen) { this.liveBuffer = null; return; }
@@ -358,12 +366,43 @@ export class ChatRenderer {
    * bottom out of view, which would read as "scrolled up" and wrongly skip).
    */
   private async scrollToBottomWhenSettled(gen: number): Promise<void> {
+    // Reveal no later than this even if shiki is slow on a huge code-heavy load,
+    // so the transcript never stays blank for an awkward beat. The settle path
+    // below reveals earlier (the common, fast case) and reveal is idempotent.
+    const safety = setTimeout(() => {
+      if (this._bulkGen === gen) this.revealTranscript();
+    }, 220);
     try { await highlightCodeBlocks(this.container); } catch { /* ignore */ }
-    if (this._bulkGen !== gen || !this.sessionId) return;
+    if (this._bulkGen !== gen || !this.sessionId) { clearTimeout(safety); return; }
     this.scrollToBottom();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    clearTimeout(safety);
     if (this._bulkGen !== gen || !this.sessionId) return;
     this.scrollToBottom();
+    this.revealTranscript();
+  }
+
+  /**
+   * Hide the transcript instantly (no fade-out) so its build is invisible.
+   * Paired with revealTranscript, which fades the finished frame back in.
+   */
+  private beginRevealHold(): void {
+    this.container.style.transition = "none";
+    this.container.style.opacity = "0";
+  }
+
+  /**
+   * Fade the assembled transcript in. Idempotent: a no-op once already shown,
+   * so the settle reveal, the safety-timeout reveal, and the detach reset can
+   * all call it freely.
+   */
+  private revealTranscript(): void {
+    if (this.container.style.opacity === "" || this.container.style.opacity === "1") return;
+    // Commit the opacity:0 paint before enabling the transition, else the
+    // browser coalesces both into one frame and there is no fade.
+    void this.container.offsetHeight;
+    this.container.style.transition = "opacity 150ms ease";
+    this.container.style.opacity = "1";
   }
 
   handleEvent(ev: ChatEvent, opts: HandleEventOpts = {}): void {
