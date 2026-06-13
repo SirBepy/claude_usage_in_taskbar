@@ -31,8 +31,10 @@ export async function renderPendingPane(
   const myMount = state.mountId;
   pane.innerHTML = `
     <header class="session-header">
-      <span class="title">New chat</span>
-      <span class="meta">${escapeHtml(project.name)} - ${escapeHtml(project.path)}</span>
+      <div class="session-header-text">
+        <span class="title">New chat</span>
+        <span class="meta">${escapeHtml(project.name)} - ${escapeHtml(project.path)}</span>
+      </div>
       <button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>
       <button class="icon-btn cancel-btn" title="Cancel turn" hidden><i class="ph ph-x"></i></button>
     </header>

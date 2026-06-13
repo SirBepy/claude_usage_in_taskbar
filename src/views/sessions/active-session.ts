@@ -4,7 +4,7 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { Composer } from "../../shared/chat/composer";
-import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
+import type { ChatEvent, ContentBlock, Instance } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import {
   projectName,
@@ -12,6 +12,7 @@ import {
   loadUnreadSet,
   saveUnreadSet,
   paneEmptyStateHtml,
+  statusDotClass,
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
@@ -23,10 +24,25 @@ import {
   removeBackgroundSession,
   isAutoAccept,
   replayPendingPrompt,
+  pendingPromptSessionIds,
 } from "./permission-modal";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { openMoreMenu } from "./more-menu";
 import { setThinkingActivity } from "./sessions";
+
+/** Status class (st-working / st-question / …) for an open session, using the
+ * same classifier the sidebar rows use so the header avatar's border colour
+ * matches the sidebar strip. Exported for the live recolour on the
+ * instances-changed event. */
+export function headerStatusClass(sess: Instance): string {
+  const unread = loadUnreadSet();
+  const attention = pendingPromptSessionIds();
+  const question = new Set<string>([
+    ...state.questionSessions,
+    ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),
+  ]);
+  return statusDotClass(sess, unread, attention, question);
+}
 
 function isCloseCommand(blocks: ContentBlock[]): boolean {
   const text = blocks
@@ -101,15 +117,18 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const readOnly = sess.kind === "external" || sess.kind === "automated";
   const headerCharId = characterForSession(sess);
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
+  const headerStatus = headerStatusClass(sess);
   const headerHero = headerCharId
-    ? `<img class="char-avatar session-header-char" data-character-id="${escapeHtml(headerCharId)}"${headerIconUrl ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : ""} alt="">`
+    ? `<img class="char-avatar session-header-char ${headerStatus}" data-character-id="${escapeHtml(headerCharId)}"${headerIconUrl ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : ""} alt="">`
     : "";
 
   pane.innerHTML = `
     <header class="session-header">
       ${headerHero}
-      <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
-      <span class="meta">${escapeHtml(projectName(sess))}</span>
+      <div class="session-header-text">
+        <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
+        <span class="meta">${escapeHtml(projectName(sess))}</span>
+      </div>
       <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i><span class="changes-count" hidden></span></button>
       <button class="icon-btn more-btn${!readOnly && isAutoAccept(sess.session_id) ? " has-indicator" : ""}" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
     </header>

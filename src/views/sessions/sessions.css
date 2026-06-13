@@ -207,7 +207,30 @@
   z-index: 1;
   image-rendering: pixelated;
 }
-/* Status accent bar down the strip's right edge, with an outward glow. */
+/* Status accent: a crisp bar on the strip's right edge plus a CONTAINED inner
+   edge-glow (a right-anchored gradient inside the clipped strip). A box-shadow
+   here would be clipped on the outside by overflow:hidden and bleed only
+   leftward over the portrait, biasing it left — hence the gradient instead, so
+   the portrait stays visually centered. */
+.session-avatar { --st-color: rgba(255,255,255,0.14); --st-glow: rgba(255,255,255,0.10); }
+.session-avatar.st-question  { --st-color: #f59e0b; --st-glow: rgba(245,158,11,0.55); }
+.session-avatar.st-external  { --st-color: #60a5fa; --st-glow: rgba(96,165,250,0.50); }
+.session-avatar.st-done      { --st-color: #fbbf24; --st-glow: rgba(251,191,36,0.50); }
+.session-avatar.st-your-turn { --st-color: rgba(255,255,255,0.22); --st-glow: rgba(255,255,255,0.10); }
+.session-avatar.st-working   { --st-color: #4ade80; --st-glow: rgba(74,222,128,0.60); }
+.session-avatar.st-attention { --st-color: #ef4444; --st-glow: rgba(239,68,68,0.65); }
+
+.session-avatar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--st-glow));
+}
 .session-avatar::after {
   content: "";
   position: absolute;
@@ -215,35 +238,52 @@
   right: 0;
   bottom: 0;
   width: 2px;
-  z-index: 2;
-  background: rgba(255,255,255,0.14);
+  z-index: 3;
+  background: var(--st-color);
 }
-.session-avatar.st-question::after  { background: #f59e0b; box-shadow: 0 0 6px 1px rgba(245,158,11,0.75); }
-.session-avatar.st-external::after  { background: #60a5fa; box-shadow: 0 0 6px 1px rgba(96,165,250,0.7); }
-.session-avatar.st-done::after      { background: #fbbf24; box-shadow: 0 0 5px 1px rgba(251,191,36,0.65); }
-.session-avatar.st-your-turn::after { background: rgba(255,255,255,0.18); }
-.session-avatar.st-working::after   { background: #4ade80; animation: avatar-glow-working 1.5s ease-in-out infinite; }
-.session-avatar.st-attention::after { background: #ef4444; animation: avatar-glow-attention 1.3s ease-in-out infinite; }
-@keyframes avatar-glow-working {
-  0%, 100% { box-shadow: 0 0 4px 0   rgba(74,222,128,0.5); }
-  50%      { box-shadow: 0 0 9px 2px rgba(74,222,128,0.95); }
-}
-@keyframes avatar-glow-attention {
-  0%, 100% { box-shadow: 0 0 5px 0   rgba(239,68,68,0.6); }
-  50%      { box-shadow: 0 0 10px 2px rgba(239,68,68,1); }
-}
+.session-avatar.st-working::before,
+.session-avatar.st-attention::before { animation: avatar-edge-pulse 1.4s ease-in-out infinite; }
+@keyframes avatar-edge-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-/* Hero avatar in the open-chat header (circular, neutral border). */
+/* Hero avatar in the open-chat header: circular, with a status-coloured ring
+   matching the sidebar strip's accent colour. */
 .session-header-char {
   width: 32px;
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255,255,255,0.18);
+  border: 2px solid rgba(255,255,255,0.18);
   box-sizing: border-box;
   image-rendering: pixelated;
   flex-shrink: 0;
   background: rgba(255,255,255,0.04);
+}
+.session-header-char.st-question  { border-color: #f59e0b; box-shadow: 0 0 6px 1px rgba(245,158,11,0.55); }
+.session-header-char.st-external  { border-color: #60a5fa; box-shadow: 0 0 6px 1px rgba(96,165,250,0.5); }
+.session-header-char.st-done      { border-color: #fbbf24; box-shadow: 0 0 5px 1px rgba(251,191,36,0.5); }
+.session-header-char.st-your-turn { border-color: rgba(255,255,255,0.22); }
+.session-header-char.st-working   { border-color: #4ade80; animation: header-char-pulse 1.5s ease-in-out infinite; }
+.session-header-char.st-attention { border-color: #ef4444; animation: header-char-pulse 1.3s ease-in-out infinite; }
+@keyframes header-char-pulse {
+  0%, 100% { box-shadow: 0 0 4px 0 rgba(74,222,128,0.4); }
+  50%      { box-shadow: 0 0 9px 2px rgba(74,222,128,0.85); }
+}
+.session-header-char.st-attention {
+  animation-name: header-char-pulse-red;
+}
+@keyframes header-char-pulse-red {
+  0%, 100% { box-shadow: 0 0 4px 0 rgba(239,68,68,0.45); }
+  50%      { box-shadow: 0 0 9px 2px rgba(239,68,68,0.9); }
+}
+
+/* Stacked text column beside the header avatar: title on top (the important
+   line, white + bold), project name beneath it (muted). */
+.session-header-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 /* A chat that parked a permission/question prompt while backgrounded. Pulse
@@ -480,8 +520,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
 }
 
 .session-header .icon-btn {
