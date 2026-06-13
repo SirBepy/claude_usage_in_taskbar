@@ -32,46 +32,34 @@ function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
-function rowTemplate(p: Preset, i: number) {
-  // The <select>s are left EMPTY here and populated imperatively after render
-  // (see populateRowSelects). Production lit-html's <template>-based parser
-  // mishandles dynamic option content inside <select> — both `.innerHTML=${}`
-  // and `${opts.map(...)}` child bindings drop the whole row, leaving an empty
-  // list. This matches the app's proven pattern (notifications.ts sets
-  // `sel.innerHTML` in plain JS, never via a lit binding).
-  return html`
-    <div class="preset-row" data-idx="${i}">
-      <input type="text" class="preset-name" maxlength="20" value="${p.name}" placeholder="Name">
-      <select class="preset-model"></select>
-      <select class="preset-effort"></select>
-    </div>
-  `;
-}
-
-/** Fill each row's model/effort <select> imperatively (lit can't, inside <select>). */
-function populateRowSelects(root: HTMLElement, presets: Preset[], models: string[]) {
-  root.querySelectorAll<HTMLElement>(".preset-row").forEach((row) => {
-    const p = presets[Number(row.dataset.idx)];
-    if (!p) return;
-    const modelSel = row.querySelector<HTMLSelectElement>(".preset-model");
-    const effortSel = row.querySelector<HTMLSelectElement>(".preset-effort");
-    if (modelSel) {
-      // Keep the preset's own model selectable even if absent from the list.
-      const opts = models.includes(p.model) ? models : [p.model, ...models];
-      modelSel.innerHTML = opts
-        .map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(modelDisplayLabel(m))}</option>`)
-        .join("");
-      modelSel.value = p.model;
-    }
-    if (effortSel) {
-      effortSel.innerHTML = EFFORTS.map((e) => `<option value="${e}">${escapeHtml(e)}</option>`).join("");
-      effortSel.value = p.effort;
-    }
-  });
+/**
+ * Build a preset row as a plain HTML string. The whole rows block is injected
+ * via `listEl.innerHTML` (plain DOM) AFTER the lit render of the page — NOT as
+ * lit child templates. Production lit-html's <template>-based parser fails to
+ * render a repeated nested template containing <select>: the list comes out as
+ * just a lit marker comment with zero rows (confirmed via DOM probe). The
+ * browser's native innerHTML parser handles <select>/<option> correctly, which
+ * is why the app fills selects this way elsewhere (notifications.ts).
+ */
+function rowHtml(p: Preset, i: number, models: string[]): string {
+  // Keep the preset's own model selectable even if absent from the list.
+  const opts = models.includes(p.model) ? models : [p.model, ...models];
+  const modelOpts = opts
+    .map((m) => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(modelDisplayLabel(m))}</option>`)
+    .join("");
+  const effortOpts = EFFORTS
+    .map((e) => `<option value="${e}"${e === p.effort ? " selected" : ""}>${escapeHtml(e)}</option>`)
+    .join("");
+  return (
+    `<div class="preset-row" data-idx="${i}">` +
+    `<input type="text" class="preset-name" maxlength="20" value="${escapeHtml(p.name)}" placeholder="Name">` +
+    `<select class="preset-model">${modelOpts}</select>` +
+    `<select class="preset-effort">${effortOpts}</select>` +
+    `</div>`
+  );
 }
 
 function template(
-  presets: Preset[],
   models: string[],
   flags: { autoAccept: boolean; remote: boolean },
   errorMsg: string | null,
@@ -107,9 +95,7 @@ function template(
         </div>
         <div class="kit-section">
           <p class="presets-hint">Three quick-pick presets that show in the "New session" modal.</p>
-          <div class="presets-list">
-            ${presets.map((p, i) => rowTemplate(p, i))}
-          </div>
+          <div class="presets-list"></div>
           ${errorMsg ? html`<div class="presets-error">${errorMsg}</div>` : ""}
           <div class="presets-actions">
             <button class="btn-primary" id="presetsSaveBtn">Save</button>
@@ -172,9 +158,12 @@ export async function renderPresetsView(root: HTMLElement): Promise<() => void> 
   }
 
   function rerender(errMsg: string | null = null) {
-    render(template(presets, models, flags, errMsg), root);
-    // lit can't render <option>s inside <select>; fill them imperatively.
-    populateRowSelects(root, presets, models);
+    render(template(models, flags, errMsg), root);
+    // Inject the preset rows via plain innerHTML. lit-html can't render a
+    // repeated template containing <select> in the prod build (empty list); the
+    // native parser handles it. See rowHtml.
+    const listEl = root.querySelector<HTMLElement>(".presets-list");
+    if (listEl) listEl.innerHTML = presets.map((p, i) => rowHtml(p, i, models)).join("");
     const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
     if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
 
