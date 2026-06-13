@@ -32,22 +32,42 @@ function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
-function rowTemplate(p: Preset, i: number, models: string[]) {
-  // Ensure the preset's own model is selectable even if not in the current list.
-  const opts = models.includes(p.model) ? models : [p.model, ...models];
-  const modelOpts = opts.map(
-    (m) => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(modelDisplayLabel(m))}</option>`,
-  ).join("");
-  const effortOpts = EFFORTS.map(
-    (e) => `<option value="${e}"${e === p.effort ? " selected" : ""}>${escapeHtml(e)}</option>`,
-  ).join("");
+function rowTemplate(p: Preset, i: number) {
+  // The <select>s are left EMPTY here and populated imperatively after render
+  // (see populateRowSelects). Production lit-html's <template>-based parser
+  // mishandles dynamic option content inside <select> — both `.innerHTML=${}`
+  // and `${opts.map(...)}` child bindings drop the whole row, leaving an empty
+  // list. This matches the app's proven pattern (notifications.ts sets
+  // `sel.innerHTML` in plain JS, never via a lit binding).
   return html`
     <div class="preset-row" data-idx="${i}">
       <input type="text" class="preset-name" maxlength="20" value="${p.name}" placeholder="Name">
-      <select class="preset-model" .innerHTML=${modelOpts}></select>
-      <select class="preset-effort" .innerHTML=${effortOpts}></select>
+      <select class="preset-model"></select>
+      <select class="preset-effort"></select>
     </div>
   `;
+}
+
+/** Fill each row's model/effort <select> imperatively (lit can't, inside <select>). */
+function populateRowSelects(root: HTMLElement, presets: Preset[], models: string[]) {
+  root.querySelectorAll<HTMLElement>(".preset-row").forEach((row) => {
+    const p = presets[Number(row.dataset.idx)];
+    if (!p) return;
+    const modelSel = row.querySelector<HTMLSelectElement>(".preset-model");
+    const effortSel = row.querySelector<HTMLSelectElement>(".preset-effort");
+    if (modelSel) {
+      // Keep the preset's own model selectable even if absent from the list.
+      const opts = models.includes(p.model) ? models : [p.model, ...models];
+      modelSel.innerHTML = opts
+        .map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(modelDisplayLabel(m))}</option>`)
+        .join("");
+      modelSel.value = p.model;
+    }
+    if (effortSel) {
+      effortSel.innerHTML = EFFORTS.map((e) => `<option value="${e}">${escapeHtml(e)}</option>`).join("");
+      effortSel.value = p.effort;
+    }
+  });
 }
 
 function template(
@@ -88,7 +108,7 @@ function template(
         <div class="kit-section">
           <p class="presets-hint">Three quick-pick presets that show in the "New session" modal.</p>
           <div class="presets-list">
-            ${presets.map((p, i) => rowTemplate(p, i, models))}
+            ${presets.map((p, i) => rowTemplate(p, i))}
           </div>
           ${errorMsg ? html`<div class="presets-error">${errorMsg}</div>` : ""}
           <div class="presets-actions">
@@ -153,6 +173,8 @@ export async function renderPresetsView(root: HTMLElement): Promise<() => void> 
 
   function rerender(errMsg: string | null = null) {
     render(template(presets, models, flags, errMsg), root);
+    // lit can't render <option>s inside <select>; fill them imperatively.
+    populateRowSelects(root, presets, models);
     const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
     if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
 
