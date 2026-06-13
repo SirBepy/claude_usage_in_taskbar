@@ -43,6 +43,28 @@ fn build_chats_window(app: &AppHandle) -> Result<(), String> {
     .visible(false)
     .build()
     .map_err(|e| e.to_string())?;
+    // Hide on close instead of destroying, mirroring the main window's
+    // hide-to-tray. A destroyed window means every reopen is a cold webview
+    // boot ("Setting up..." each time); a hidden one reopens instantly with
+    // its state intact. Real quit (tray menu) sets should_quit and passes.
+    {
+        let w = window.clone();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                use std::sync::atomic::Ordering;
+                let quitting = w
+                    .app_handle()
+                    .try_state::<crate::state::AppState>()
+                    .map(|s| s.should_quit.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if quitting {
+                    return;
+                }
+                api.prevent_close();
+                let _ = w.hide();
+            }
+        });
+    }
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
