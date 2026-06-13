@@ -1,3 +1,5 @@
+import { modelLabel } from "./model-name";
+
 export interface Preset {
   name: string;
   model: string;
@@ -53,6 +55,31 @@ function modelFamilyFromId(id: string): string {
   return id;
 }
 
+function uniq(xs: string[]): string[] {
+  return [...new Set(xs)];
+}
+
+/**
+ * The newest full model id for a family (e.g. "opus" -> "claude-opus-4-8"),
+ * looked up in the API list. The API delivers newest-first per family, so the
+ * first match is the latest. Returns null when the API hasn't loaded or the
+ * family is a user-added exotic (e.g. "glm-4.6") with no API entry.
+ */
+export function latestIdForFamily(family: string): string | null {
+  if (!_apiModels) return null;
+  const fam = modelFamilyFromId(family);
+  return _apiModels.find((id) => modelFamilyFromId(id) === fam) ?? null;
+}
+
+/**
+ * Pretty, version-bearing label for a canonical (family) model value:
+ * "opus" -> "Opus 4.8" when the API is loaded, "Opus" as a fallback. The app
+ * persists families everywhere; this resolves the latest id only for display.
+ */
+export function modelDisplayLabel(model: string): string {
+  return modelLabel(latestIdForFamily(model) ?? model);
+}
+
 /**
  * Sort model ids least-impressive-first (Haiku, Sonnet, Opus, Fable), the order
  * Joe wants in the picker. The /v1/models API delivers newest-first, which puts
@@ -81,22 +108,25 @@ export function isEffort(v: unknown): v is typeof EFFORTS[number] {
 }
 
 /**
- * Models offered in the "New session" picker.
+ * Models offered in the "New session" picker, as canonical FAMILY values
+ * (haiku/sonnet/opus/fable) — never full ids. Families are what the app
+ * persists and matches on (presets, lastChoice, spawn `--model`); full ids are
+ * a display/availability detail resolved via latestIdForFamily.
  *
- * When the API fetch has completed (_apiModels is set), the base list is the
- * curated API set (latest per family). Any entry in settings.models whose
- * family is not already covered by the API set is appended as a user addition.
+ * When the API fetch has completed (_apiModels is set), the list is the API
+ * families, sorted least-to-most impressive. Any settings.models entry whose
+ * family is not covered by the API set is appended as a user addition.
  *
  * Without API data yet, falls back to settings.models if non-empty, else the
- * built-in MODELS seed.
+ * built-in MODELS seed (which is already family-shaped and ordered).
  */
 export function readModels(settings: Record<string, unknown>): string[] {
   const userModels = parseUserModels(settings);
   if (_apiModels && _apiModels.length > 0) {
-    const apiFamilies = new Set(_apiModels.map(modelFamilyFromId));
-    const extras = userModels.filter(m => !apiFamilies.has(modelFamilyFromId(m)));
-    const sorted = sortByImpressiveness([..._apiModels]);
-    return extras.length > 0 ? [...sorted, ...extras] : sorted;
+    const apiFamilies = uniq(_apiModels.map(modelFamilyFromId));
+    const apiSet = new Set(apiFamilies);
+    const extras = uniq(userModels.map(modelFamilyFromId)).filter((f) => !apiSet.has(f));
+    return sortByImpressiveness([...apiFamilies, ...extras]);
   }
   return userModels.length > 0 ? userModels : [...MODELS];
 }
@@ -139,8 +169,10 @@ export function readPresets(
       const o = p as Record<string, unknown>;
       const name = typeof o.name === "string" ? o.name : "";
       // Loosened: accept any non-empty model string so user-defined models in
-      // settings.models survive. Effort stays strict (isEffort).
-      const model = typeof o.model === "string" ? o.model.trim() : "";
+      // settings.models survive. Effort stays strict (isEffort). Normalize to a
+      // family so a full id stored during the picker window (e.g.
+      // "claude-opus-4-8") collapses to its canonical family ("opus").
+      const model = typeof o.model === "string" ? modelFamilyFromId(o.model.trim()) : "";
       const effort = isEffort(o.effort) ? o.effort : "";
       if (name && model && effort) out.push({ name, model, effort });
     }
@@ -164,7 +196,9 @@ export function readLastChoice(
   const entry = (map as Record<string, unknown>)[projectPath];
   if (!entry || typeof entry !== "object") return null;
   const e = entry as Record<string, unknown>;
-  const model = typeof e.model === "string" ? e.model.trim() : "";
+  // Normalize to a family so a full id saved during the picker window collapses
+  // to its canonical family (matches the family-based picker + presets).
+  const model = typeof e.model === "string" ? modelFamilyFromId(e.model.trim()) : "";
   const effort = typeof e.effort === "string" ? e.effort : "";
   // Loosened: any non-empty model string is accepted (user-defined models).
   // Effort stays strict.

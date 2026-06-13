@@ -10,6 +10,7 @@ import {
   readPresets,
   readModels,
   readDefaultFlags,
+  modelDisplayLabel,
 } from "../../../../shared/effort-presets";
 import "./presets.css";
 
@@ -35,7 +36,7 @@ function rowTemplate(p: Preset, i: number, models: string[]) {
   // Ensure the preset's own model is selectable even if not in the current list.
   const opts = models.includes(p.model) ? models : [p.model, ...models];
   const modelOpts = opts.map(
-    (m) => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(m)}</option>`,
+    (m) => `<option value="${escapeHtml(m)}"${m === p.model ? " selected" : ""}>${escapeHtml(modelDisplayLabel(m))}</option>`,
   ).join("");
   const effortOpts = EFFORTS.map(
     (e) => `<option value="${e}"${e === p.effort ? " selected" : ""}>${escapeHtml(e)}</option>`,

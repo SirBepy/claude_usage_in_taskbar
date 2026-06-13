@@ -1,7 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { api } from "../../shared/api";
-import { modelLabel } from "../../shared/model-name";
 import {
   EFFORTS,
   DEFAULT_PRESETS,
@@ -11,6 +10,8 @@ import {
   readLastChoice,
   readModels,
   readDefaultFlags,
+  modelDisplayLabel,
+  latestIdForFamily,
 } from "../../shared/effort-presets";
 
 export type { SessionConfig };
@@ -67,7 +68,7 @@ export async function openModelEffortModal(
       `).join("");
 
       const modelLabels = models.map((m, i) => `
-        <span class="slider-stop-label${i === modelIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(modelLabel(m))}</span>
+        <span class="slider-stop-label${i === modelIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(modelDisplayLabel(m))}</span>
       `).join("");
       const effortLabels = EFFORTS.map((e, i) => `
         <span class="slider-stop-label${i === effortIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(e)}</span>
@@ -102,7 +103,7 @@ export async function openModelEffortModal(
             </label>
           </details>
 
-          ${modelDisabled() ? `<div class="me-model-warning" role="alert">${escapeHtml(modelLabel(model))} is disabled, please choose another model</div>` : ""}
+          ${modelDisabled() ? `<div class="me-model-warning" role="alert">${escapeHtml(modelDisplayLabel(model))} is disabled, please choose another model</div>` : ""}
 
           <div class="me-actions">
             <button type="button" class="me-cancel">Cancel</button>
@@ -195,14 +196,25 @@ export async function openModelEffortModal(
     document.body.appendChild(overlay);
     renderBody();
 
-    // Probe model availability in the background (free count_tokens calls). When
-    // it resolves, re-render so a disabled model (e.g. Fable 5) blocks Start.
-    // Fails open: any probe error leaves every model selectable.
-    void api.probeModelsAvailability(models)
-      .then((results) => {
-        for (const r of results) availability[r.id] = r.available;
-        renderBody();
-      })
-      .catch(() => { /* fail open — leave all models enabled */ });
+    // Probe model availability in the background (free count_tokens calls). The
+    // probe needs full ids (count_tokens rejects bare family aliases), so map
+    // each family -> its latest id, probe those, then key results back by
+    // family. Families with no API id (exotic user models) are left selectable.
+    // When it resolves, re-render so a disabled model (e.g. Fable 5) blocks
+    // Start. Fails open: any probe error leaves every model selectable.
+    const idByFamily = new Map<string, string>();
+    for (const fam of models) {
+      const id = latestIdForFamily(fam);
+      if (id) idByFamily.set(fam, id);
+    }
+    if (idByFamily.size > 0) {
+      void api.probeModelsAvailability([...idByFamily.values()])
+        .then((results) => {
+          const byId = new Map(results.map((r) => [r.id, r.available]));
+          for (const [fam, id] of idByFamily) availability[fam] = byId.get(id) ?? true;
+          renderBody();
+        })
+        .catch(() => { /* fail open — leave all models enabled */ });
+    }
   });
 }

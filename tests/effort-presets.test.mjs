@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   MODELS,
   readModels,
@@ -6,7 +6,18 @@ import {
   readPresets,
   readLastChoice,
   sortByImpressiveness,
+  setApiModels,
+  latestIdForFamily,
+  modelDisplayLabel,
 } from "../src/shared/effort-presets.ts";
+
+// Realistic /v1/models id list (newest-first per family, as the API delivers).
+const API_IDS = [
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5-20251001",
+];
 
 describe("readModels", () => {
   it("returns the default seed when settings.models is absent", () => {
@@ -60,6 +71,68 @@ describe("sortByImpressiveness", () => {
       "glm-4.6",
       "kimi-k2",
     ]);
+  });
+});
+
+describe("family-canonical model identity (API loaded)", () => {
+  // _apiModels is module state; reset it so later describes see no API data.
+  afterEach(() => setApiModels([]));
+
+  it("readModels returns families, least-to-most impressive", () => {
+    setApiModels(API_IDS);
+    expect(readModels({})).toEqual(["haiku", "sonnet", "opus", "fable"]);
+  });
+
+  it("appends unknown user families after the API set", () => {
+    setApiModels(API_IDS);
+    expect(readModels({ models: ["glm-4.6"] })).toEqual([
+      "haiku",
+      "sonnet",
+      "opus",
+      "fable",
+      "glm-4.6",
+    ]);
+  });
+
+  it("latestIdForFamily resolves a family to its newest full id", () => {
+    setApiModels(API_IDS);
+    expect(latestIdForFamily("opus")).toBe("claude-opus-4-8");
+    expect(latestIdForFamily("fable")).toBe("claude-fable-5");
+    expect(latestIdForFamily("glm-4.6")).toBeNull();
+  });
+
+  it("modelDisplayLabel shows the latest version for a family", () => {
+    setApiModels(API_IDS);
+    expect(modelDisplayLabel("opus")).toBe("Opus 4.8");
+    expect(modelDisplayLabel("fable")).toBe("Fable 5");
+  });
+});
+
+describe("modelDisplayLabel without API data", () => {
+  it("falls back to the bare family, capitalized", () => {
+    setApiModels([]);
+    expect(modelDisplayLabel("opus")).toBe("Opus");
+    expect(latestIdForFamily("opus")).toBeNull();
+  });
+});
+
+describe("model identity migration (full id -> family)", () => {
+  it("readPresets normalizes stored full ids to families", () => {
+    const settings = {
+      effortPresets: [
+        { name: "Light", model: "claude-sonnet-4-6", effort: "low" },
+        { name: "Normal", model: "claude-opus-4-8", effort: "high" },
+        { name: "Heavy", model: "opus", effort: "max" },
+      ],
+    };
+    expect(readPresets(settings).map((p) => p.model)).toEqual(["sonnet", "opus", "opus"]);
+  });
+
+  it("readLastChoice normalizes a stored full id to its family", () => {
+    const settings = {
+      projectLastChoice: { "/proj": { model: "claude-opus-4-8", effort: "high" } },
+    };
+    expect(readLastChoice(settings, "/proj")).toEqual({ model: "opus", effort: "high" });
   });
 });
 
