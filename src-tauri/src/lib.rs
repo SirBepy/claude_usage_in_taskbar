@@ -364,6 +364,12 @@ pub fn run() {
                     migrate_hook_install_if_needed(&handle);
                 });
             }
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    backfill_project_characters_if_needed(&handle);
+                });
+            }
             // Daemon notification subscription. Replaces the old app-side
             // hook server: the daemon now binds port 27182 and owns the
             // registry; the app subscribes for `instances_changed`,
@@ -514,6 +520,46 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
         "hook install migrated to v{}",
         crate::hooks::CURRENT_INSTALL_VERSION
     );
+}
+
+/// One-time backfill: assign every project a Heroes of the Storm hero so
+/// existing installs get the per-project character feature in bulk. Guarded by
+/// `Settings.extra["characterBackfillVersion"]` so it runs once. Skips (without
+/// burning the version) when no HotS characters are on disk yet, so a slow
+/// first-run character unpack doesn't permanently miss the backfill.
+fn backfill_project_characters_if_needed(app: &tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<crate::state::AppState>();
+    let needs = {
+        let s = state.settings.lock().unwrap();
+        let cur = s
+            .extra
+            .get("characterBackfillVersion")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        cur < crate::characters::assign::CURRENT_BACKFILL_VERSION
+    };
+    if !needs {
+        return;
+    }
+    if crate::characters::assign::hots_pool().is_empty() {
+        log::warn!("character backfill deferred: no HotS characters on disk yet");
+        return;
+    }
+    let snapshot = {
+        let mut g = state.settings.lock().unwrap();
+        let n = crate::characters::assign::backfill_all_projects(&mut g);
+        g.extra.insert(
+            "characterBackfillVersion".into(),
+            serde_json::json!(crate::characters::assign::CURRENT_BACKFILL_VERSION),
+        );
+        log::info!("character backfill: assigned heroes to {n} project(s)");
+        g.clone()
+    };
+    if let Ok(path) = paths::settings_file() {
+        let _ = crate::settings::save(&path, &snapshot);
+    }
+    let _ = app.emit("settings-changed", snapshot);
 }
 
 /// Background loop that polls for new releases every 6h, doing nothing or

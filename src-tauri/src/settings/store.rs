@@ -96,11 +96,17 @@ pub fn upsert_project_for_cwd(
         .and_then(|s| s.to_str())
         .unwrap_or("(unknown)")
         .to_string();
+    // Auto-assign a Heroes of the Storm hero on creation. Best-effort: when no
+    // HotS characters are on disk this stays `None`; the startup backfill or the
+    // picker UI fills it in later.
+    let avatar = crate::characters::assign::pick_hero(&name, settings)
+        .map(crate::types::Avatar::Character)
+        .unwrap_or(crate::types::Avatar::None);
     settings.projects.push(crate::types::ProjectConfig {
         id: id.clone(),
         path: root,
         name,
-        avatar: crate::types::Avatar::None,
+        avatar,
         automation: None,
         created_at: now.to_string(),
         last_active_at: Some(now.to_string()),
@@ -131,11 +137,16 @@ pub fn upsert_project_with_id_for_cwd(
         .and_then(|s| s.to_str())
         .unwrap_or("(unknown)")
         .to_string();
+    // Auto-assign a Heroes of the Storm hero on creation (best-effort; see
+    // `upsert_project_for_cwd`).
+    let avatar = crate::characters::assign::pick_hero(&name, settings)
+        .map(crate::types::Avatar::Character)
+        .unwrap_or(crate::types::Avatar::None);
     settings.projects.push(crate::types::ProjectConfig {
         id: project_id.to_string(),
         path: root,
         name,
-        avatar: crate::types::Avatar::None,
+        avatar,
         automation: None,
         created_at: now.to_string(),
         last_active_at: Some(now.to_string()),
