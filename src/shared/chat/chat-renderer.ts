@@ -341,6 +341,29 @@ export class ChatRenderer {
     for (const ev of buffered) {
       this.handleEvent(ev);
     }
+    // The scroll above runs before async content settles: shiki code
+    // highlighting and attachment/image hydration grow the transcript height
+    // AFTER it, so the newest turn's chips ended up cut off below the fold on
+    // open. Re-pin to the bottom once that settles. Generation-guarded so a
+    // newer load/attach started in the meantime never gets yanked.
+    void this.scrollToBottomWhenSettled(myGen);
+  }
+
+  /**
+   * Re-pin to the bottom after the bulk load's async content has grown the
+   * transcript: await the code-highlight pass (it replaces each <pre> with a
+   * taller shiki block), then scroll, then scroll once more on the next
+   * macrotask to catch late attachment/image/font reflow. Initial-load pin, so
+   * it does NOT gate on isNearBottom (async growth above the fold pushes the
+   * bottom out of view, which would read as "scrolled up" and wrongly skip).
+   */
+  private async scrollToBottomWhenSettled(gen: number): Promise<void> {
+    try { await highlightCodeBlocks(this.container); } catch { /* ignore */ }
+    if (this._bulkGen !== gen || !this.sessionId) return;
+    this.scrollToBottom();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (this._bulkGen !== gen || !this.sessionId) return;
+    this.scrollToBottom();
   }
 
   handleEvent(ev: ChatEvent, opts: HandleEventOpts = {}): void {

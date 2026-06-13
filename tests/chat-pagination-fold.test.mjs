@@ -151,6 +151,44 @@ describe("pagination folds prepended turns", () => {
     expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
   });
 
+  it("re-pins to the bottom after async content settles on load", async () => {
+    invokeMock.mockResolvedValueOnce({
+      events: [userEvent("q", 1_000_000), assistantEvent("plain answer", 1_001_000)],
+      oldest_seq: 0,
+      newest_seq: 2,
+      has_more: false,
+    });
+
+    // jsdom has no layout: fake the scroll metrics. scrollTop is a real slot so
+    // we can observe the renderer writing to it.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let _top = 0;
+    Object.defineProperty(container, "scrollHeight", { configurable: true, get: () => 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, get: () => 0 });
+    Object.defineProperty(container, "scrollTop", {
+      configurable: true,
+      get: () => _top,
+      set: (v) => { _top = v; },
+    });
+
+    const renderer = new ChatRenderer(container);
+    await renderer.attach(`sess-settle-${++_sessSeq}`);
+    await renderer.loadFromStore();
+
+    // The synchronous load pinned to the bottom.
+    expect(container.scrollTop).toBe(1000);
+
+    // Async content (shiki highlight, image hydration) grows the height AFTER
+    // that scroll, pushing the bottom out of view - simulate by resetting.
+    container.scrollTop = 0;
+
+    // The settle pass re-pins once that work flushes (highlight await + a
+    // macrotask). Without it the newest turn's chips stay cut off.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(container.scrollTop).toBe(1000);
+  });
+
   it("carries usage across batches for a turn that straddles them", async () => {
     invokeMock
       .mockResolvedValueOnce({
