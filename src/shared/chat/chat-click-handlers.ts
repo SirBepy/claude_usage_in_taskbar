@@ -36,24 +36,29 @@ export function handleCopyClick(e: MouseEvent): void {
   if (!btn) return;
 
   let text = "";
-  const block = btn.closest(".copyable-block");
-  if (block) {
-    const shikiPre = block.querySelector<HTMLElement>("pre.shiki");
-    const fallbackPre = block.querySelector<HTMLElement>("pre");
-    const pre = shikiPre ?? fallbackPre;
-    if (pre) {
-      text = pre.textContent ?? "";
+  const inlineWrap = btn.closest(".inline-code-wrap");
+  if (inlineWrap) {
+    text = inlineWrap.querySelector("code")?.textContent ?? "";
+  } else {
+    const block = btn.closest(".copyable-block");
+    if (block) {
+      const shikiPre = block.querySelector<HTMLElement>("pre.shiki");
+      const fallbackPre = block.querySelector<HTMLElement>("pre");
+      const pre = shikiPre ?? fallbackPre;
+      if (pre) {
+        text = pre.textContent ?? "";
+      } else {
+        const clone = block.cloneNode(true) as HTMLElement;
+        clone.querySelector(".copy-btn")?.remove();
+        text = clone.textContent ?? "";
+      }
     } else {
-      const clone = block.cloneNode(true) as HTMLElement;
-      clone.querySelector(".copy-btn")?.remove();
+      const msg = btn.closest(".msg") as HTMLElement | null;
+      if (!msg) return;
+      const clone = msg.cloneNode(true) as HTMLElement;
+      clone.querySelector(".msg-copy-btn")?.remove();
       text = clone.textContent ?? "";
     }
-  } else {
-    const msg = btn.closest(".msg") as HTMLElement | null;
-    if (!msg) return;
-    const clone = msg.cloneNode(true) as HTMLElement;
-    clone.querySelector(".msg-copy-btn")?.remove();
-    text = clone.textContent ?? "";
   }
 
   void navigator.clipboard.writeText(text.trim()).then(() => {

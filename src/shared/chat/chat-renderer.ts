@@ -1,7 +1,7 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { sessionEvents } from "./event-store";
 import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken } from "./chat-transforms";
-import { highlightCodeBlocks } from "./code-highlighter";
+import { highlightCodeBlocks, highlightInlineCode } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
@@ -373,6 +373,7 @@ export class ChatRenderer {
       if (this._bulkGen === gen) this.revealTranscript();
     }, 220);
     try { await highlightCodeBlocks(this.container); } catch { /* ignore */ }
+    highlightInlineCode(this.container);
     if (this._bulkGen !== gen || !this.sessionId) { clearTimeout(safety); return; }
     this.scrollToBottom();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -647,6 +648,7 @@ export class ChatRenderer {
     }
     void highlightCodeBlocks(this.container);
     wrapBlockquotes(this.container);
+    highlightInlineCode(this.container);
     clampUserMessages(this.messages, this.messageEls);
   }
 

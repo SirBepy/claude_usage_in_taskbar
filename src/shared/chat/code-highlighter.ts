@@ -9,6 +9,25 @@ function extractFenceLang(className: string): string | null {
   return m ? m[1]! : null;
 }
 
+/** Wrap inline `<code>` elements (not inside `<pre>`) in a hover-copyable span. */
+export function highlightInlineCode(container: HTMLElement): void {
+  const codes = Array.from(
+    container.querySelectorAll<HTMLElement>(".msg.assistant code:not(pre > code):not([data-ic])"),
+  );
+  for (const code of codes) {
+    code.dataset.ic = "1";
+    const wrap = document.createElement("span");
+    wrap.className = "inline-code-wrap";
+    code.replaceWith(wrap);
+    wrap.appendChild(code);
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.setAttribute("aria-label", "Copy code");
+    btn.innerHTML = '<i class="ph ph-copy"></i>';
+    wrap.appendChild(btn);
+  }
+}
+
 export async function highlightCodeBlocks(container: HTMLElement): Promise<void> {
   // Two paths produce <pre><code>: (1) renderBlocks emits
   // <pre class="block code" data-lang="X"><code>...</code></pre>, and

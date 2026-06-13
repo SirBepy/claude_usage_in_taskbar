@@ -142,6 +142,10 @@
   align-self: flex-start;
   max-width: 92%;
   margin-right: 32px;
+  /* Clip any content (e.g. wide code blocks) that would overflow the bubble.
+     This also gives pre.shiki a definite containing-block width so its
+     overflow-x: auto scrollbar works instead of the pre just spilling out. */
+  overflow: hidden;
 }
 
 .msg.assistant:hover .msg-copy-btn {
@@ -233,6 +237,29 @@
 .copyable-block {
   position: relative;
   margin: 6px 0;
+}
+
+/* Inline code copy — a <span> wrapper around <code> that shows a tiny copy
+   button on hover without breaking the surrounding paragraph flow. */
+.inline-code-wrap {
+  display: inline-block;
+  position: relative;
+}
+
+.inline-code-wrap .copy-btn {
+  top: 50%;
+  right: -24px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+}
+
+.inline-code-wrap .copy-btn i {
+  font-size: 10px;
+}
+
+.inline-code-wrap:hover .copy-btn {
+  opacity: 1;
 }
 
 .card-block {

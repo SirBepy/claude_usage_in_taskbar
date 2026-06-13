@@ -2,7 +2,7 @@ import type { ChatEvent } from "../../types/ipc.generated";
 import type { RenderedMessage } from "./chat-transforms";
 import { eventToRenderedMessage, isBoundaryMessage } from "./chat-transforms";
 import { sessionEvents } from "./event-store";
-import { highlightCodeBlocks } from "./code-highlighter";
+import { highlightCodeBlocks, highlightInlineCode } from "./code-highlighter";
 import type { TurnUsageTotals } from "./turn-chips";
 
 export interface PaginatorCallbacks {
@@ -256,6 +256,7 @@ export class ChatPaginator {
     }
 
     void highlightCodeBlocks(this.container);
+    highlightInlineCode(this.container);
     this.cb.clampUserMessages();
   }
 
