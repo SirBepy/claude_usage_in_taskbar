@@ -17,8 +17,17 @@ use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-const VALID_MODELS: &[&str] = &["haiku", "sonnet", "opus"];
+const VALID_MODELS: &[&str] = &["haiku", "sonnet", "opus", "fable"];
 const VALID_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+/// Accept both bare family aliases (`opus`) and full model ids
+/// (`claude-opus-4-8`). The session model picker is now data-driven from
+/// `/v1/models`, which returns full ids; claude's `--model` flag accepts
+/// either form, so validation only needs the family to be recognizable.
+fn is_valid_model(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    VALID_MODELS.iter().any(|fam| m.contains(fam))
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StartSessionParams {
@@ -54,7 +63,7 @@ pub async fn spawn_session(
     params: StartSessionParams,
 ) -> Result<Arc<Session>, LifecycleError> {
     let map = &state.sessions;
-    if !VALID_MODELS.contains(&params.model.as_str())
+    if !is_valid_model(&params.model)
         || !VALID_EFFORTS.contains(&params.effort.as_str())
     {
         return Err(LifecycleError::InvalidConfig(params.model, params.effort));
@@ -376,6 +385,26 @@ mod tests {
         .await;
         assert!(matches!(r, Err(LifecycleError::InvalidConfig(_, _))));
         assert_eq!(state.sessions.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn full_model_id_accepted() {
+        // The data-driven picker sends full ids like `claude-opus-4-8`; the
+        // model gate must pass them through (it fails later on CwdMissing,
+        // proving it got past the InvalidConfig check).
+        let state = test_state();
+        let r = spawn_session(
+            &state,
+            StartSessionParams {
+                cwd: std::path::PathBuf::from("Z:\\does\\not\\exist"),
+                model: "claude-opus-4-8".into(),
+                effort: "high".into(),
+                resume_id: None,
+                remote: false,
+            },
+        )
+        .await;
+        assert!(matches!(r, Err(LifecycleError::CwdMissing(_))));
     }
 
     #[tokio::test]

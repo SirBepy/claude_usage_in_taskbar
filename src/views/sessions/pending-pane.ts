@@ -14,6 +14,7 @@ import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitI
 import { savePendingSession, clearPendingSession } from "./pending-draft-storage";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { openMoreMenu } from "./more-menu";
+import { showToast } from "../../shared/toast";
 
 function rebuildSidebar(): void {
   const listEl = document.querySelector<HTMLElement>("#sessions-list");
@@ -174,21 +175,31 @@ export async function renderPendingPane(
           } catch (err) {
             console.error("[sessions] start_session failed", err);
             started = false;
-            alert(`Failed to start session: ${err}`);
+            // Roll the pending row back to a draft so it doesn't hang on
+            // "starting…" forever; the user can retry from the same composer
+            // or discard it. (Native alert() routes through the dialog plugin,
+            // which is blocked by the ACL here, so use the in-app toast.)
+            if (state.pendingNewSession?.placeholderId === placeholderId) {
+              state.pendingNewSession.firstMessageSent = false;
+              state.pendingNewSession.firstMessageSentAt = null;
+              savePendingSession(state.pendingNewSession);
+            }
+            rebuildSidebar();
+            showToast(`Failed to start session: ${err}`);
           }
           return;
         }
 
         const realId = state.pendingNewSession?.realId ?? state.selectedId;
         if (!realId || realId === placeholderId) {
-          alert("Session is still starting; please wait for the first response.");
+          showToast("Session is still starting; please wait for the first response.");
           return;
         }
         try {
           await invoke<void>("send_message", { sessionId: realId, cwd: project.path, blocks });
         } catch (err) {
           console.error("[sessions] send_message failed", err);
-          alert(`Send failed: ${err}`);
+          showToast(`Send failed: ${err}`);
         }
       },
     });

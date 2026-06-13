@@ -209,7 +209,8 @@ export function assignCurrentToSlot(slot: number): void {
 function discardStuckPending(pane: HTMLElement): void {
   const pending = state.pendingNewSession;
   if (!pending) return;
-  if (!confirm("Discard this stuck session attempt?")) return;
+  // No confirm() guard: native confirm routes through the dialog plugin, which
+  // is blocked by the ACL in this window. The X is already explicit intent.
   void (async () => {
     const target = pending.realId ?? pending.placeholderId;
     try { await invoke<void>("cancel_turn", { sessionId: target }); } catch { /* best-effort */ }
