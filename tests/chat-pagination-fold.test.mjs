@@ -1,0 +1,188 @@
+// Paginated-in (scroll-up) history must fold exactly like the initial load:
+// tool rows group into the turn footer's chip strip and the meta row settles
+// from the turn's combined usage. Before this, prependEvents built raw rows -
+// every old chat showed flat Skill/Bash/... cards once you scrolled up, and
+// the initial window's leading partial turn (cut mid-turn by the page size)
+// stayed flat forever.
+
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { JSDOM } from "jsdom";
+import { userEvent, assistantEvent, toolUseEvent } from "./helpers/chat-events.mjs";
+
+const invokeMock = vi.fn();
+vi.mock("../src/shared/ipc.ts", () => ({ invoke: invokeMock }));
+
+beforeEach(() => {
+  invokeMock.mockReset();
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.Node = dom.window.Node;
+  globalThis.IntersectionObserver = class {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  };
+  globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  globalThis.window.__TAURI__ = undefined;
+});
+
+if (!globalThis.window) {
+  globalThis.window = {};
+}
+
+const { ChatRenderer } = await import("../src/shared/chat/chat-renderer.ts");
+
+function toolResultEvent(id, ts = 0) {
+  return { type: "tool_result", tool_use_id: id, output: { type: "text", text: "ok" }, is_error: false, timestamp: ts };
+}
+
+function turnUsageEvent({ outputTokens = 0, durationMs = 0 } = {}) {
+  return {
+    type: "turn_usage",
+    input_tokens: 100,
+    output_tokens: outputTokens,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    total_cost_usd: 0,
+    duration_ms: durationMs,
+    has_thinking: false,
+    model: "m",
+  };
+}
+
+// Unique session id per renderer: the event-store (sessionEvents) is a module
+// singleton that caches loaded events by session id, so a shared id leaks one
+// test's history into the next.
+let _sessSeq = 0;
+async function makeRenderer() {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const renderer = new ChatRenderer(container);
+  await renderer.attach(`sess-fold-test-${++_sessSeq}`);
+  await renderer.loadFromStore();
+  return { renderer, container };
+}
+
+describe("pagination folds prepended turns", () => {
+  it("folds a complete prepended turn into one footer with settled meta", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        // Initial window: a clean later turn.
+        events: [userEvent("later question", 2_000_000), assistantEvent("later answer", 2_001_000)],
+        oldest_seq: 10,
+        newest_seq: 12,
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        // Older page: one complete turn with tools + usage.
+        events: [
+          userEvent("old question", 1_000_000),
+          assistantEvent("old answer", 1_005_000),
+          toolUseEvent("Bash", { command: "ls" }, "t1", 1_010_000),
+          toolResultEvent("t1", 1_011_000),
+          turnUsageEvent({ outputTokens: 1200, durationMs: 0 }),
+        ],
+        oldest_seq: 0,
+        newest_seq: 9,
+        has_more: false,
+      });
+
+    const { renderer, container } = await makeRenderer();
+    await renderer.fetchOlder();
+
+    // The old turn's tool rows are folded, not flat.
+    const flat = [...container.querySelectorAll(".tool-row")].filter((el) => el.dataset.toolGrouped !== "1");
+    expect(flat.length).toBe(0);
+    const strips = container.querySelectorAll(".tool-strip");
+    expect(strips.length).toBe(1);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
+
+    // Footer sits inside the old turn with a settled meta row (combined
+    // tokens, duration from the timestamp span: 1_000_000 -> 1_011_000 = 11s).
+    const footer = container.querySelector(".turn-footer");
+    expect(footer).not.toBeNull();
+    expect(footer.querySelector(".turn-chip--tokens").textContent).toContain("1.2k");
+    expect(footer.querySelector(".turn-chip--time").textContent).toContain("11s");
+  });
+
+  it("heals the initial window's leading partial turn once its user message arrives", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        // Initial window cut MID-turn: tool rows with no opening user message.
+        events: [
+          toolUseEvent("Bash", { command: "build" }, "t9", 1_020_000),
+          toolResultEvent("t9", 1_021_000),
+          assistantEvent("done building", 1_025_000),
+          turnUsageEvent({ outputTokens: 700, durationMs: 0 }),
+          userEvent("next question", 1_100_000),
+          assistantEvent("next answer", 1_101_000),
+        ],
+        oldest_seq: 5,
+        newest_seq: 12,
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        // Older page brings the opening user message of that cut turn.
+        events: [userEvent("the original ask", 1_000_000)],
+        oldest_seq: 0,
+        newest_seq: 4,
+        has_more: false,
+      });
+
+    const { renderer, container } = await makeRenderer();
+
+    // Before pagination the leading rows are flat (no boundary seen yet).
+    let flat = [...container.querySelectorAll(".tool-row")].filter((el) => el.dataset.toolGrouped !== "1");
+    expect(flat.length).toBeGreaterThan(0);
+
+    await renderer.fetchOlder();
+
+    // The opening user message healed the turn: rows folded into a strip.
+    flat = [...container.querySelectorAll(".tool-row")].filter((el) => el.dataset.toolGrouped !== "1");
+    expect(flat.length).toBe(0);
+    expect(container.querySelector('.tool-chip[data-tool="Bash"]')).not.toBeNull();
+  });
+
+  it("carries usage across batches for a turn that straddles them", async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        // Initial window: only the NEXT turn's user message onward.
+        events: [userEvent("newest question", 2_000_000), assistantEvent("newest answer", 2_001_000)],
+        oldest_seq: 20,
+        newest_seq: 22,
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        // Batch A (newer half of the old turn): its trailing usage, NO boundary.
+        events: [
+          toolUseEvent("Read", { file_path: "/x.ts" }, "r1", 1_050_000),
+          toolResultEvent("r1", 1_051_000),
+          turnUsageEvent({ outputTokens: 2000, durationMs: 0 }),
+        ],
+        oldest_seq: 10,
+        newest_seq: 19,
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        // Batch B (older half): the opening user message.
+        events: [userEvent("the straddled ask", 1_000_000), assistantEvent("starting...", 1_001_000)],
+        oldest_seq: 0,
+        newest_seq: 9,
+        has_more: false,
+      });
+
+    const { renderer, container } = await makeRenderer();
+    await renderer.fetchOlder();
+    await renderer.fetchOlder();
+
+    // The straddling turn folded with the usage carried from batch A.
+    const flat = [...container.querySelectorAll(".tool-row")].filter((el) => el.dataset.toolGrouped !== "1");
+    expect(flat.length).toBe(0);
+    const footers = [...container.querySelectorAll(".turn-footer")];
+    const withMeta = footers.find((f) => f.querySelector(".turn-chip--tokens"));
+    expect(withMeta).not.toBeUndefined();
+    expect(withMeta.querySelector(".turn-chip--tokens").textContent).toContain("2.0k");
+  });
+});

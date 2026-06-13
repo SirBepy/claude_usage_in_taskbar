@@ -132,6 +132,7 @@ export class ChatRenderer {
       setMessageEls: (els) => { this.messageEls = els; },
       buildMessageEl: (m) => this.buildMessageEl(m),
       clampUserMessages: () => clampUserMessages(this.messages, this.messageEls),
+      foldClosedRange: (start, end, usage, tsSpanMs) => this.foldClosedRange(start, end, usage, tsSpanMs),
       onShift: (n) => {
         if (this.streamingIndex !== null) this.streamingIndex += n;
         if (this.dirtyIndices.size > 0) {
@@ -202,6 +203,7 @@ export class ChatRenderer {
       this.unsubscribe = null;
     }
     this.paginator.remove();
+    this.paginator.resetTurnCarry();
     this.streamingIndex = null;
     this.dirtyIndices.clear();
     this.activeTurnStart = null;
@@ -304,6 +306,7 @@ export class ChatRenderer {
     this.resetActiveTurnMeta();
     this.turnFooters.clear();
     this.closeTurnQueue = [];
+    this.paginator.resetTurnCarry();
     this.tallyState.reset();
     this.onFileEditsChanged?.([]);
     this.onToolTally?.(this.tallyState.build());
@@ -611,6 +614,59 @@ export class ChatRenderer {
         this.turnFooters.updateLiveTokenEstimate(this.activeTurnChipKey, this.activeTurnStreamedText);
       }
     }
+  }
+
+  /**
+   * Fold a CLOSED turn range that arrived via pagination prepend (or heal the
+   * window's leading partial turn once its opening user message arrives).
+   * Reuses the turn's existing footer when some of its rows were folded
+   * earlier (chunk straddling); otherwise creates one before the range's
+   * closing boundary element and settles its meta row from the usage the
+   * paginator accumulated out of the raw events.
+   */
+  private foldClosedRange(
+    start: number,
+    end: number,
+    usage: TurnUsageTotals | null,
+    tsSpanMs: number,
+  ): void {
+    if (end <= start) return;
+    // An existing footer for this turn: rows folded earlier live inside its
+    // strip buckets.
+    let footer: HTMLElement | null = null;
+    for (let i = start; i < end; i++) {
+      const f = this.messageEls[i]?.closest<HTMLElement>(".turn-footer");
+      if (f) { footer = f; break; }
+    }
+    const totals = usage
+      ? { ...usage, durationMs: usage.durationMs > 0 ? usage.durationMs : tsSpanMs }
+      : null;
+    if (!footer) {
+      // Skip the footer entirely for a turn with nothing to show (no usage,
+      // no foldable tool rows) - an empty box helps nobody.
+      const hasToolRows = this.messages
+        .slice(start, end)
+        .some((m) => m.kind === "tool_use" || m.kind === "tool_result");
+      if (!totals && !hasToolRows) {
+        applyTurnCollapse(this.messages, this.messageEls, start, end, null);
+        return;
+      }
+      const key = ++this._chipKeySeq;
+      footer = this.turnFooters.getOrCreateFooter(key);
+      const anchor = this.messageEls[end] ?? null;
+      if (anchor && anchor.parentElement === this.container) {
+        this.container.insertBefore(footer, anchor);
+      } else {
+        const last = this.messageEls[end - 1];
+        if (last && last.parentElement === this.container) last.after(footer);
+        else this.container.appendChild(footer);
+      }
+      if (totals) this.turnFooters.settleMetaRow(key, totals);
+    } else if (totals && !footer.querySelector(".turn-meta-chips")) {
+      const key = Number(footer.dataset.turnId);
+      if (Number.isFinite(key)) this.turnFooters.settleMetaRow(key, totals);
+    }
+    applyTurnCollapse(this.messages, this.messageEls, start, end, footer);
   }
 
   private enqueueTurnClose(): void {

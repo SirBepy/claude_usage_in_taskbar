@@ -3,6 +3,7 @@ import type { RenderedMessage } from "./chat-transforms";
 import { eventToRenderedMessage } from "./chat-transforms";
 import { sessionEvents } from "./event-store";
 import { highlightCodeBlocks } from "./code-highlighter";
+import type { TurnUsageTotals } from "./turn-chips";
 
 export interface PaginatorCallbacks {
   getSessionId(): string | null;
@@ -14,6 +15,35 @@ export interface PaginatorCallbacks {
   clampUserMessages(): void;
   /** Called after a prepend with the number of rows inserted at the front. */
   onShift(n: number): void;
+  /**
+   * Fold a closed turn range [start, end) into its footer (tool chip strip +
+   * meta row settled from `usage`). Implemented by ChatRenderer; the paginator
+   * computes the ranges and per-turn usage out of the raw prepended events.
+   */
+  foldClosedRange(start: number, end: number, usage: TurnUsageTotals | null, tsSpanMs: number): void;
+}
+
+/** A turn boundary row: a real user message or a compaction marker. */
+function isBoundaryMessage(m: RenderedMessage): boolean {
+  return m.kind === "user" || (m.kind === "system" && m.text === "Conversation compacted");
+}
+
+function emptyTotals(): TurnUsageTotals {
+  return { durationMs: 0, outputTokens: 0, inputTokens: 0, cacheCreate: 0, cacheRead: 0, costUsd: 0 };
+}
+
+/** Combine two partial usage accumulations of the SAME turn (batch straddle). */
+function mergeTotals(a: TurnUsageTotals | null, b: TurnUsageTotals | null): TurnUsageTotals | null {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    durationMs: Math.max(a.durationMs, b.durationMs),
+    outputTokens: a.outputTokens + b.outputTokens,
+    inputTokens: b.inputTokens || a.inputTokens,
+    cacheCreate: a.cacheCreate + b.cacheCreate,
+    cacheRead: a.cacheRead + b.cacheRead,
+    costUsd: a.costUsd + b.costUsd,
+  };
 }
 
 /** Walk up to the direct child of container. Used to find insertion point for prepend. */
@@ -29,6 +59,12 @@ export class ChatPaginator {
   cwdHint: string | undefined;
   private topSentinel: HTMLElement | null = null;
   private topObserver: IntersectionObserver | null = null;
+  // Usage + timestamp span carried between prepend batches for the turn that
+  // straddles them: its closing boundary (and trailing usage) arrive in one
+  // batch, its opening user message only in a LATER (older) one.
+  private carryUsage: TurnUsageTotals | null = null;
+  private carryFirstTs = 0;
+  private carryLastTs = 0;
 
   constructor(private container: HTMLElement, private cb: PaginatorCallbacks) {}
 
@@ -58,6 +94,17 @@ export class ChatPaginator {
       this.topSentinel.parentNode.removeChild(this.topSentinel);
     }
     this.topSentinel = null;
+  }
+
+  /**
+   * Forget the cross-batch turn carry. Called on session attach / reload -
+   * NOT from remove(), which install() invokes between batches of the same
+   * session (that would lose the straddling turn's usage).
+   */
+  resetTurnCarry(): void {
+    this.carryUsage = null;
+    this.carryFirstTs = 0;
+    this.carryLastTs = 0;
   }
 
   async fetchOlder(): Promise<void> {
@@ -106,16 +153,54 @@ export class ChatPaginator {
     const newEls: HTMLElement[] = [];
     const frag = document.createDocumentFragment();
 
+    // Per-turn bookkeeping: a boundary row (user message / compaction) CLOSES
+    // the turn formed by the rows before it, so the usage and timestamps
+    // accumulated up to that point belong to that turn.
+    const boundaries: Array<{
+      index: number;
+      usage: TurnUsageTotals | null;
+      firstTs: number;
+      lastTs: number;
+    }> = [];
+    let acc: TurnUsageTotals | null = null;
+    let accFirstTs = 0;
+    let accLastTs = 0;
+
     for (const ev of events) {
+      if (ev.type === "turn_usage") {
+        // Usage events render nothing; they sum into the open turn (history
+        // replays one per assistant line).
+        acc = acc ?? emptyTotals();
+        acc.outputTokens += Number(ev.output_tokens) || 0;
+        acc.inputTokens = Number(ev.input_tokens) || acc.inputTokens;
+        acc.cacheCreate += Number(ev.cache_creation_input_tokens) || 0;
+        acc.cacheRead += Number(ev.cache_read_input_tokens) || 0;
+        acc.costUsd += Number(ev.total_cost_usd) || 0;
+        acc.durationMs = Math.max(acc.durationMs, Number(ev.duration_ms) || 0);
+        continue;
+      }
       const msg = eventToRenderedMessage(ev);
       if (!msg) continue;
+      if (isBoundaryMessage(msg)) {
+        boundaries.push({ index: newMessages.length, usage: acc, firstTs: accFirstTs, lastTs: accLastTs });
+        acc = null;
+        accFirstTs = msg.ts > 0 ? msg.ts : 0;
+        accLastTs = accFirstTs;
+      } else if (msg.ts > 0) {
+        if (accFirstTs === 0) accFirstTs = msg.ts;
+        if (msg.ts > accLastTs) accLastTs = msg.ts;
+      }
       newMessages.push(msg);
       const el = this.cb.buildMessageEl(msg);
       newEls.push(el);
       frag.appendChild(el);
     }
 
-    if (newMessages.length === 0) return;
+    if (newMessages.length === 0) {
+      // Pure-usage batch: its totals still belong to the straddling turn.
+      this.carryUsage = mergeTotals(acc, this.carryUsage);
+      return;
+    }
 
     const firstExisting = messageEls[0] ?? null;
     if (firstExisting) {
@@ -127,9 +212,53 @@ export class ChatPaginator {
     }
 
     const shift = newMessages.length;
-    this.cb.setMessages([...newMessages, ...messages]);
+    const merged = [...newMessages, ...messages];
+    this.cb.setMessages(merged);
     this.cb.setMessageEls([...newEls, ...messageEls]);
     this.cb.onShift(shift);
+
+    // ── Fold the closed turns this prepend completed ──────────────────────
+    // Prepended slice indices ARE merged indices (rows go in at the front).
+    if (boundaries.length === 0) {
+      // No boundary in the slice: the whole batch extends the still-open
+      // straddling turn. Pool its usage/span and wait for an older batch to
+      // bring the opening user message.
+      this.carryUsage = mergeTotals(acc, this.carryUsage);
+      if (accFirstTs > 0 && (this.carryFirstTs === 0 || accFirstTs < this.carryFirstTs)) this.carryFirstTs = accFirstTs;
+      if (accLastTs > this.carryLastTs) this.carryLastTs = accLastTs;
+    } else {
+      for (let i = 0; i < boundaries.length; i++) {
+        const start = boundaries[i]!.index + 1;
+        if (i + 1 < boundaries.length) {
+          // Turn fully inside the slice; its usage was recorded when its
+          // closing boundary was hit.
+          const closer = boundaries[i + 1]!;
+          const span = closer.firstTs > 0 && closer.lastTs > closer.firstTs ? closer.lastTs - closer.firstTs : 0;
+          this.cb.foldClosedRange(start, closer.index, closer.usage, span);
+        } else {
+          // Trailing range: closes at the first boundary of PREVIOUSLY
+          // rendered content (which may itself have arrived flat - this heals
+          // it). Usage = this slice's trailing accumulation + the carry from
+          // newer batches of the same turn.
+          let end = merged.length;
+          for (let j = shift; j < merged.length; j++) {
+            if (isBoundaryMessage(merged[j]!)) { end = j; break; }
+          }
+          const usage = mergeTotals(acc, this.carryUsage);
+          const firstTs = accFirstTs > 0 ? accFirstTs : this.carryFirstTs;
+          const lastTs = Math.max(accLastTs, this.carryLastTs);
+          const span = firstTs > 0 && lastTs > firstTs ? lastTs - firstTs : 0;
+          this.cb.foldClosedRange(start, end, usage, span);
+        }
+      }
+      // The slice's leading partial segment (rows before its first boundary)
+      // belongs to a turn an OLDER batch will close: its usage was recorded
+      // at this slice's first boundary. Carry it forward.
+      const first = boundaries[0]!;
+      this.carryUsage = first.usage;
+      this.carryFirstTs = first.firstTs;
+      this.carryLastTs = first.lastTs;
+    }
 
     void highlightCodeBlocks(this.container);
     this.cb.clampUserMessages();
