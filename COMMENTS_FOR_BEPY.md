@@ -1,5 +1,21 @@
 # Comments for Bepy
 
+## 2026-06-13 13:11 - Held messages while Claude is busy (autopilot)
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- New HeldMessages controller + composer staging hooks + working-bar chip/dropdown + completion auto-flush hook + 12 unit tests -> tsc + 346 vitest + vite build all green -> 804a973
+
+Decision needed: several design/UX calls I'd normally ask about. We'd already brainstormed the shape with you (inline chip on the working bar, full-width floating dropdown, editable rows, plain "Send now") before you said "/autopilot it", so those were settled. The autopilot-resolved ones:
+- Resolved via direct judgment (no iterate-it spent):
+  - "Chip outlives the working bar" problem: the working bar is `[hidden]` when not busy, but a held set can survive a turn (auto-flush deferred while you type). Made the bar show when `busy OR held-items-exist`, dropping the pulse-dot/italic when it's only hosting the chip. Reversible CSS/JS call.
+  - Auto-flush scope = the ACTIVE session only. If you queue on chat A, switch to B, and A finishes, A's queue does NOT auto-fire (no mounted composer to bind the send); it waits until you return to A. Per-session held set still persists. Picked this over cross-session send plumbing to keep one send-binding. Where: sidebar.ts onCompletion + active-session.ts attach.
+  - Bundle join = blank line (`\n\n`) between messages, matching the spec.
+- ASSUMED SCOPE (revisit): staging wired ONLY on the established-session pane (active-session.ts). The new-session first-message / pending-start flow (pending-pane.ts) keeps its existing send path - its started/placeholder/realId logic is fragile and queuing during the very first turn is an edge case. The shared `.session-thinking` markup + updateThinkingBar change apply to both panes, but pending never stages. Revisit: yes if you want to queue during a brand-new chat's first turn.
+
+NO push: committed to master locally only. Deploy is your call via /commit pushnbump.
+NO e2e: the flow needs a live busy session (daemon + real turn). Unit-tested hard instead (bundling, all 4 flush triggers, defer-while-typing, edit-to-remove, per-session isolation). Live look + flow -> BEPY_TODOS Visual QA.
+Revisit: yes (pending-pane staging + a wdio synthetic-busy-seam e2e are the two open follow-ups).
+
 ## 2026-06-13 - Auto-assign HotS heroes to every project (autopilot)
 
 RUN_LEDGER (chunk -> outcome -> sha):
