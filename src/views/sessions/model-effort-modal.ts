@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
+import { modelLabel } from "../../shared/model-name";
 import {
   EFFORTS,
   DEFAULT_PRESETS,
@@ -60,7 +61,7 @@ export async function openModelEffortModal(
       `).join("");
 
       const modelLabels = models.map((m, i) => `
-        <span class="slider-stop-label${i === modelIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(m)}</span>
+        <span class="slider-stop-label${i === modelIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(modelLabel(m))}</span>
       `).join("");
       const effortLabels = EFFORTS.map((e, i) => `
         <span class="slider-stop-label${i === effortIdx() ? " active" : ""}" data-stop="${i}">${escapeHtml(e)}</span>
