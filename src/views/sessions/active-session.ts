@@ -16,6 +16,8 @@ import {
 import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
+import { characterForSession, characterIconUrl } from "./session-characters";
+import { hydrateCharacterAvatars } from "../../shared/projects";
 import {
   addBackgroundSession,
   removeBackgroundSession,
@@ -97,9 +99,15 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     return;
   }
   const readOnly = sess.kind === "external" || sess.kind === "automated";
+  const headerCharId = characterForSession(sess);
+  const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
+  const headerHero = headerCharId
+    ? `<img class="char-avatar session-header-char" data-character-id="${escapeHtml(headerCharId)}"${headerIconUrl ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : ""} alt="">`
+    : "";
 
   pane.innerHTML = `
     <header class="session-header">
+      ${headerHero}
       <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
       <span class="meta">${escapeHtml(projectName(sess))}</span>
       <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i><span class="changes-count" hidden></span></button>
@@ -111,6 +119,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     <div class="session-thinking" hidden></div>
     <div class="session-composer"></div>
   `;
+
+  // Resolve the header hero avatar to its data URL (no-op when absent).
+  if (headerHero) void hydrateCharacterAvatars(pane);
 
   // Mount statusbar.
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");

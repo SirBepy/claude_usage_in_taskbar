@@ -17,6 +17,7 @@ import { selectSession, unwatchCurrentExternalSession } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
+import { loadProjectCharacters } from "./session-characters";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { sessionEvents } from "../../shared/chat/event-store";
 import type { TerminalAction, ContentBlock, ChatEvent } from "../../types/ipc.generated";
@@ -432,6 +433,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   const [, connected] = await Promise.all([
     refreshSessions(),
     invoke<boolean>("is_daemon_connected").catch(() => null),
+    loadProjectCharacters(),
   ]);
   if (state.mountId === myMount) {
     state.daemonConnected = connected ?? null;
@@ -480,7 +482,17 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   // Subscribe to live registry updates
   const ev = window.__TAURI__?.event;
   let unlistenDaemonStatus: (() => void) | null = null;
+  let unlistenSettingsChanged: (() => void) | null = null;
   if (ev?.listen) {
+    // Re-resolve project hero avatars whenever a character assignment changes
+    // (manual pick or the startup backfill), then repaint the sidebar.
+    unlistenSettingsChanged = await ev.listen("settings-changed", async () => {
+      if (state.mountId !== myMount) return;
+      await loadProjectCharacters();
+      if (state.mountId !== myMount) return;
+      renderSidebar(listEl);
+    });
+
     unlistenDaemonStatus = await ev.listen<{ connected: boolean }>("daemon-status-changed", (e) => {
       if (state.mountId !== myMount) return;
       state.daemonConnected = e.payload.connected;
@@ -562,6 +574,24 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       renderSidebar(listEl);
     });
   }
+
+  // Right-click anywhere on a session row opens the same context menu the
+  // hover-revealed ⋮ button does (the button stays for discoverability).
+  listEl.addEventListener("contextmenu", (e) => {
+    const li = (e.target as HTMLElement).closest<HTMLLIElement>("li[data-session-id]");
+    const sid = li?.dataset.sessionId;
+    if (!li || !sid) return;
+    e.preventDefault();
+    openCtxMenu(sid, li, {
+      onNewHere: (project) => {
+        void (async () => {
+          const config = await openModelEffortModal(project.path, project.name);
+          if (!config) return;
+          await launchNewSession(pane, project, config);
+        })();
+      },
+    });
+  });
 
   listEl.addEventListener("click", (e) => {
     // Discard parked draft (X on a parked row).
@@ -722,6 +752,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     unsubWhenDone();
     unlistenWhenDone();
     if (unlistenDaemonStatus) { try { unlistenDaemonStatus(); } catch { /* ignore */ } unlistenDaemonStatus = null; }
+    if (unlistenSettingsChanged) { try { unlistenSettingsChanged(); } catch { /* ignore */ } unlistenSettingsChanged = null; }
     disarmSetupStallTimer();
     teardownState();
   };

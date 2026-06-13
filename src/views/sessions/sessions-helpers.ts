@@ -114,6 +114,22 @@ export function loadStateStyle(): SessionStateStyle {
   return "icons";
 }
 
+/** The `st-*` status modifier for a session, shared by the dots-style indicator
+ * and the hero-avatar corner dot. Priority matches `statusIndicator`. */
+export function statusDotClass(
+  i: Instance,
+  unread: Set<string>,
+  attention: Set<string>,
+  question: Set<string>,
+): string {
+  if (attention.has(i.session_id)) return "st-attention";
+  if (i.kind === "external" || i.kind === "automated") return "st-external";
+  if (i.busy) return "st-working";
+  if (question.has(i.session_id)) return "st-question";
+  if (unread.has(i.session_id)) return "st-done";
+  return "st-your-turn";
+}
+
 export function statusIndicator(
   i: Instance,
   unread: Set<string>,
@@ -127,13 +143,7 @@ export function statusIndicator(
   const isExternal = i.kind === "external" || i.kind === "automated";
   const isQuestion = !needsAttention && !isExternal && !i.busy && question.has(i.session_id);
   if (style === "dots") {
-    let cls = "session-status-dot";
-    if (needsAttention) cls += " st-attention";
-    else if (isExternal) cls += " st-external";
-    else if (i.busy) cls += " st-working";
-    else if (isQuestion) cls += " st-question";
-    else if (unread.has(i.session_id)) cls += " st-done";
-    else cls += " st-your-turn";
+    const cls = `session-status-dot ${statusDotClass(i, unread, attention, question)}`;
     return `<span class="${cls}" title="${tooltip}"></span>`;
   }
   // icons mode

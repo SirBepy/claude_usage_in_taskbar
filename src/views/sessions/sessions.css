@@ -172,6 +172,55 @@
 .session-status-dot.st-external  { background: #60a5fa; box-shadow: 0 0 5px rgba(96,165,250,0.5); }
 .session-status-dot.st-attention { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.7); animation: attention-pulse 1.4s ease-in-out infinite; }
 
+/* ── Hero avatar with status glow (sidebar row) ─────────────────────────── */
+.session-avatar {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: inline-flex;
+  border-radius: 50%;
+}
+.session-char-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.18);
+  box-sizing: border-box;
+  image-rendering: pixelated;
+  background: rgba(255,255,255,0.04);
+}
+/* Status = a coloured ring + glow AROUND the circle. It sits outside the
+   portrait so it never fights the hero art's own colours. Working/attention
+   also pulse so "actively running" reads as motion, not just hue. */
+.session-avatar.st-question  .session-char-img { box-shadow: 0 0 0 1.5px #f59e0b, 0 0 6px 1px rgba(245,158,11,0.7); }
+.session-avatar.st-external  .session-char-img { box-shadow: 0 0 0 1.5px #60a5fa, 0 0 6px 1px rgba(96,165,250,0.65); }
+.session-avatar.st-done      .session-char-img { box-shadow: 0 0 0 1.5px #fbbf24, 0 0 5px 1px rgba(251,191,36,0.6); }
+.session-avatar.st-your-turn .session-char-img { box-shadow: 0 0 0 1px rgba(255,255,255,0.18); }
+.session-avatar.st-working   .session-char-img { animation: avatar-glow-working 1.5s ease-in-out infinite; }
+.session-avatar.st-attention .session-char-img { animation: avatar-glow-attention 1.3s ease-in-out infinite; }
+@keyframes avatar-glow-working {
+  0%, 100% { box-shadow: 0 0 0 1.5px #4ade80, 0 0 4px 0   rgba(74,222,128,0.5); }
+  50%      { box-shadow: 0 0 0 1.5px #4ade80, 0 0 8px 2px rgba(74,222,128,0.95); }
+}
+@keyframes avatar-glow-attention {
+  0%, 100% { box-shadow: 0 0 0 1.5px #ef4444, 0 0 5px 0   rgba(239,68,68,0.6); }
+  50%      { box-shadow: 0 0 0 1.5px #ef4444, 0 0 9px 2px rgba(239,68,68,1); }
+}
+
+/* Hero avatar in the open-chat header (circular, neutral border). */
+.session-header-char {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.18);
+  box-sizing: border-box;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.04);
+}
+
 /* A chat that parked a permission/question prompt while backgrounded. Pulse
    the icon and tint the row so the user knows to click in and answer. */
 .session-state-icon.attention-pulse { color: #f59e0b; animation: attention-pulse 1.4s ease-in-out infinite; }

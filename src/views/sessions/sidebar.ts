@@ -6,6 +6,7 @@ import {
   projectName,
   sessionSubtitle,
   statusIndicator,
+  statusDotClass,
   sortSessions,
   loadUnreadSet,
   saveUnreadSet,
@@ -16,6 +17,32 @@ import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
 import { reconcileList, loadAnimEnabled, markSessionExiting } from "./sidebar-anim";
+import { characterForSession, characterIconUrl } from "./session-characters";
+import { hydrateCharacterAvatars } from "../../shared/projects";
+
+/** Leading visual for a session row: the project's assigned HotS hero avatar
+ * with a corner status dot, or the bare status glyph when the project has no
+ * character. The avatar `<img>` is hydrated to a data URL after reconcile. */
+function leadingVisual(
+  s: Instance,
+  indicator: string,
+  unread: Set<string>,
+  attention: Set<string>,
+  question: Set<string>,
+): string {
+  const charId = characterForSession(s);
+  if (!charId) return indicator;
+  const id = escapeHtml(charId);
+  const st = statusDotClass(s, unread, attention, question);
+  const url = characterIconUrl(charId);
+  // Inline the preloaded data URL so the image is filled on first paint and
+  // doesn't flash broken when the row is rebuilt. data-hydrated makes the
+  // post-render hydrate pass a no-op for already-filled images.
+  const preload = url ? ` src="${escapeHtml(url)}" data-hydrated="${id}"` : "";
+  return `<span class="session-avatar ${st}">
+          <img class="char-avatar session-char-img" data-character-id="${id}"${preload} alt="${id}">
+        </span>`;
+}
 
 export function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external" || i.kind === "automated");
@@ -171,7 +198,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     entries.push({
       key: `s:${s.session_id}`,
       html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""}">
-        ${indicator}
+        ${leadingVisual(s, indicator, unread, attention, question)}
         <div class="session-row-text">
           <span class="session-row-project">${escapeHtml(projectName(s))}</span>
           <span class="session-row-subtitle">${escapeHtml(sessionSubtitle(s))}</span>
@@ -194,6 +221,8 @@ export function renderSidebar(listEl: HTMLElement): void {
   }
 
   reconcileList(listEl, entries, loadAnimEnabled());
+  // Resolve hero avatar images to data URLs (idempotent per character id).
+  void hydrateCharacterAvatars(listEl);
 }
 
 // ── Per-row 3-dot context menu ───────────────────────────────────────────────
