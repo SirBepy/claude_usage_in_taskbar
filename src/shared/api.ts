@@ -148,6 +148,7 @@ export const api = {
   getSettings: (): Promise<SettingsShape | null> => invoke("get_settings"),
   saveSettings: (settings: SettingsShape): Promise<unknown> =>
     invoke("save_settings", { updated: settings }),
+  fetchAvailableModels: (): Promise<string[]> => invoke("fetch_available_models"),
 
   // --- Audio ---
   listAudioOutputDevices: async (): Promise<AudioOutputDevice[]> => {

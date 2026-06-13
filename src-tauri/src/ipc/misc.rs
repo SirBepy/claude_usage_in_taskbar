@@ -589,6 +589,64 @@ pub fn play_sound_preview(app: AppHandle, filename: String) -> Result<(), String
     Ok(())
 }
 
+/// Fetch the list of model IDs the signed-in account can use via the
+/// Anthropic /v1/models endpoint, authenticated with the Claude OAuth token
+/// stored in ~/.claude/.credentials.json.
+///
+/// Returns the raw list of model id strings newest-first as the API delivers
+/// them. Curation (latest-per-family) and merge with user settings happen on
+/// the frontend. Fails silently on any error (file missing, bad JSON, network
+/// error, non-200, parse failure) and returns an empty vec, so a cold boot
+/// while offline never breaks the model picker.
+#[tauri::command]
+pub async fn fetch_available_models() -> Vec<String> {
+    match fetch_available_models_inner().await {
+        Ok(models) => models,
+        Err(e) => {
+            log::debug!("fetch_available_models: {e}");
+            vec![]
+        }
+    }
+}
+
+async fn fetch_available_models_inner() -> anyhow::Result<Vec<String>> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("no home dir"))?;
+    let creds_path = home.join(".claude").join(".credentials.json");
+    let raw = std::fs::read_to_string(&creds_path)
+        .map_err(|e| anyhow::anyhow!("read credentials: {e}"))?;
+    let creds: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("parse credentials: {e}"))?;
+    let token = creds
+        .get("claudeAiOauth")
+        .and_then(|o| o.get("accessToken"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("no claudeAiOauth.accessToken in credentials"))?
+        .to_string();
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let resp = client
+        .get("https://api.anthropic.com/v1/models")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .send()
+        .await?
+        .error_for_status()?;
+    let body: serde_json::Value = resp.json().await?;
+    let ids = body
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| item.get("id").and_then(|v| v.as_str()).map(String::from))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::read_log_contents;

@@ -257,6 +257,7 @@ pub fn run() {
             ipc::get_skill_usage_detail,
             ipc::list_installed_skills,
             ipc::frontend_ready,
+            ipc::fetch_available_models,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,

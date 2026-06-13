@@ -18,6 +18,41 @@ export interface SessionConfig {
 export const MODELS = ["haiku", "sonnet", "opus", "fable"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
+// Set by boot.ts after a successful fetch_available_models IPC call.
+// null = fetch not yet complete or failed; readModels falls back to MODELS seed.
+let _apiModels: string[] | null = null;
+
+export function setApiModels(models: string[]): void {
+  _apiModels = models.length > 0 ? models : null;
+}
+
+/**
+ * Given the raw model ID list from /v1/models (newest-first per family),
+ * return only the latest model per family. The API guarantees newest-first
+ * within each family, so first-seen-per-family is the latest.
+ */
+export function curateLatestPerFamily(models: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of models) {
+    const fam = modelFamilyFromId(m);
+    if (!seen.has(fam)) {
+      seen.add(fam);
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function modelFamilyFromId(id: string): string {
+  const s = id.toLowerCase();
+  if (s.includes("fable")) return "fable";
+  if (s.includes("opus")) return "opus";
+  if (s.includes("sonnet")) return "sonnet";
+  if (s.includes("haiku")) return "haiku";
+  return id;
+}
+
 export const DEFAULT_PRESETS: Preset[] = [
   { name: "Light", model: "sonnet", effort: "low" },
   { name: "Normal", model: "opus", effort: "high" },
@@ -29,23 +64,36 @@ export function isEffort(v: unknown): v is typeof EFFORTS[number] {
 }
 
 /**
- * Models offered in the "New session" picker. Reads `settings.models` when it is
- * a non-empty array of non-empty strings (trimmed + deduped, order preserved),
- * otherwise falls back to the built-in `MODELS` seed.
+ * Models offered in the "New session" picker.
+ *
+ * When the API fetch has completed (_apiModels is set), the base list is the
+ * curated API set (latest per family). Any entry in settings.models whose
+ * family is not already covered by the API set is appended as a user addition.
+ *
+ * Without API data yet, falls back to settings.models if non-empty, else the
+ * built-in MODELS seed.
  */
 export function readModels(settings: Record<string, unknown>): string[] {
-  const raw = settings["models"];
-  if (Array.isArray(raw)) {
-    const out: string[] = [];
-    for (const m of raw) {
-      if (typeof m === "string") {
-        const t = m.trim();
-        if (t && !out.includes(t)) out.push(t);
-      }
-    }
-    if (out.length > 0) return out;
+  const userModels = parseUserModels(settings);
+  if (_apiModels && _apiModels.length > 0) {
+    const apiFamilies = new Set(_apiModels.map(modelFamilyFromId));
+    const extras = userModels.filter(m => !apiFamilies.has(modelFamilyFromId(m)));
+    return extras.length > 0 ? [..._apiModels, ...extras] : [..._apiModels];
   }
-  return [...MODELS];
+  return userModels.length > 0 ? userModels : [...MODELS];
+}
+
+function parseUserModels(settings: Record<string, unknown>): string[] {
+  const raw = settings["models"];
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const m of raw) {
+    if (typeof m === "string") {
+      const t = m.trim();
+      if (t && !out.includes(t)) out.push(t);
+    }
+  }
+  return out;
 }
 
 /**

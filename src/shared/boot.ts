@@ -24,6 +24,7 @@ import type { TokenRecord, AliasMap } from "./tokens";
 import { doMerge } from "./merges";
 import { showToast } from "./toast";
 import { api } from "./api";
+import { curateLatestPerFamily, setApiModels } from "./effort-presets";
 import { refreshDashboard } from "../views/statistics/statistics";
 import { renderProjectsList } from "../views/projects/projects";
 import { renderProjectDetailContent } from "../views/project-detail/project-detail";
@@ -270,6 +271,12 @@ export function initBoot(): void {
       showToast("Daemon reconnected.");
     }
   });
+
+  // Discover available models from the API and update the model picker base.
+  // Silent on failure (offline, expired token, missing credentials).
+  void api.fetchAvailableModels().then((models) => {
+    if (models && models.length > 0) setApiModels(curateLatestPerFamily(models));
+  }).catch(() => {});
 
   // Modal + banner wiring (idempotent; safe to call on boot).
   wireHookModal();
