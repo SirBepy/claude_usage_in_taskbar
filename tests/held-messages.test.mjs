@@ -158,6 +158,24 @@ describe("HeldMessages — flush triggers", () => {
   });
 });
 
+describe("HeldMessages — pending placeholder -> real id", () => {
+  it("migrates a staged set so completion auto-flush matches the real id", () => {
+    const { held, send, attach } = makeHarness({ sessionId: "pending-123" });
+    held.stage(textBlocks("queued on placeholder"));
+
+    // start_session resolved: placeholder upgrades to a real id.
+    held.renameSession("pending-123", "real-abc");
+    expect(held.hasItemsForActive()).toBe(true); // attached id followed the rename
+
+    // The completion hook now fires under the REAL id and flushes.
+    held.onCompletion("real-abc", false);
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "queued on placeholder" }]);
+    // Sanity: the placeholder no longer carries the set.
+    held.attach({ ...attach, sessionId: "pending-123" });
+    expect(held.hasItemsForActive()).toBe(false);
+  });
+});
+
 describe("HeldMessages — editable dropdown rows", () => {
   it("drops a message when its row is cleared to empty and blurred", () => {
     const { held, chipSlot, anchor } = makeHarness();

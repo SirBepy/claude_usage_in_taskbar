@@ -3,8 +3,10 @@ import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
+import { HeldMessages } from "../../shared/chat/held-messages";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
+import { isCurrentSessionBusy, updateThinkingBar } from "./sessions";
 import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import type { SessionConfig } from "./model-effort-modal";
@@ -117,9 +119,42 @@ export async function renderPendingPane(
   if (composerEl) {
     state.composer?.destroy();
     let started = false;
-    state.composer = new Composer(composerEl, {
+
+    // Flush a held bundle to the (by-now-started) session. Resolves the real id
+    // dynamically: a flush only happens after the first message started the
+    // turn, so the placeholder has already been upgraded to a real session id.
+    const heldSend = async (blocks: ContentBlock[]): Promise<void> => {
+      const target = state.pendingNewSession?.realId ?? state.selectedId;
+      if (!target || target === placeholderId) return;
+      sessionEvents.pushSynthetic(target, {
+        type: "user_message",
+        content: blocks,
+        timestamp: BigInt(Date.now()),
+      } as ChatEvent);
+      try {
+        await invoke<void>("send_message", { sessionId: target, cwd: project.path, blocks });
+      } catch (err) {
+        console.error("[sessions] held flush send failed", err);
+        showToast(`Send failed: ${err}`);
+      }
+    };
+    const heldInterrupt = (): Promise<void> => {
+      const target = state.pendingNewSession?.realId ?? state.selectedId ?? placeholderId;
+      return invoke<void>("cancel_turn", { sessionId: target });
+    };
+
+    const composer = new Composer(composerEl, {
       projectDir: project.path,
       getRenderer: () => state.renderer,
+      // Staging routing (same as the established pane): while busy, Enter holds
+      // the message; not-busy-with-held bundles it. The FIRST message never
+      // stages (isBusy is false until firstMessageSent), so it still starts the
+      // session via onSend below.
+      isBusy: () => isCurrentSessionBusy(),
+      onStage: (blocks) => state.heldMessages?.stage(blocks),
+      hasHeld: () => !!state.heldMessages?.hasItemsForActive(),
+      flushHeldWithDraft: (draftBlocks) => { void state.heldMessages?.flushHeldWithDraft(draftBlocks); },
+      onDraftActivity: () => state.heldMessages?.notifyDraftActivity(),
       onSend: async (blocks: ContentBlock[]) => {
         if (state.mountId !== myMount) return;
         const promptText = blocks
@@ -164,6 +199,9 @@ export async function renderPendingPane(
               }
               if (isStillActive && state.composer) state.composer.setSessionId(sessionId, { readOnly: false });
               if (isStillActive) setActiveSession(sessionId);
+              // Held set was keyed by the placeholder id; migrate it to the real
+              // session id so the chip + completion auto-flush match.
+              state.heldMessages?.renameSession(placeholderId, sessionId);
               // Guard: don't clobber a newer pending if the user started another chat.
               if (state.pendingNewSession?.placeholderId === placeholderId) {
                 state.pendingNewSession = null;
@@ -205,7 +243,32 @@ export async function renderPendingPane(
         }
       },
     });
-    state.composer.setSessionId(placeholderId, { readOnly: false });
+    state.composer = composer;
+    composer.setSessionId(placeholderId, { readOnly: false });
+
+    // Attach the held-messages controller to the pending pane, keyed by the
+    // placeholder id until start_session upgrades it (renameSession above). The
+    // first message never stages (isBusy false until firstMessageSent), so it
+    // still starts the session normally.
+    if (!state.heldMessages) state.heldMessages = new HeldMessages();
+    const thinkingBar = pane.querySelector<HTMLElement>(".session-thinking");
+    const chipSlot = pane.querySelector<HTMLElement>(".held-chip-slot");
+    if (thinkingBar && chipSlot) {
+      state.heldMessages.attach({
+        sessionId: placeholderId,
+        chipSlot,
+        anchor: thinkingBar,
+        send: heldSend,
+        interrupt: heldInterrupt,
+        getDraftBlocks: () => composer.getDraftBlocks(),
+        isDraftEmpty: () => composer.isDraftEmpty(),
+        isComposing: () => composer.isComposing(),
+        clearComposer: () => composer.clearComposer(),
+        getIsBusy: () => isCurrentSessionBusy(),
+        onChange: () => updateThinkingBar(),
+      });
+    }
+    updateThinkingBar();
   }
 
   const ta = pane.querySelector<HTMLTextAreaElement>(".composer-textarea");

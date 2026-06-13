@@ -81,6 +81,23 @@ export class HeldMessages {
     this.renderChip();
   }
 
+  /** Migrate a held set when a pending placeholder id becomes the real session
+   * id, so staged items + the active-session matching (chip render, completion
+   * auto-flush) follow the session across the rename. */
+  renameSession(from: string, to: string): void {
+    if (from === to) return;
+    const items = this.map.get(from);
+    if (items && items.length) {
+      const existing = this.map.get(to) ?? [];
+      this.map.set(to, [...existing, ...items]);
+    }
+    this.map.delete(from);
+    if (this.attached && this.attached.sessionId === from) {
+      this.attached.sessionId = to;
+      this.renderChip();
+    }
+  }
+
   private get sid(): string | null {
     return this.attached?.sessionId ?? null;
   }
