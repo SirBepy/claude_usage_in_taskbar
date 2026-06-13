@@ -27,6 +27,14 @@ interface UsageSnapshot {
   extra_usage?: ExtraUsage | null;
 }
 
+// Per-model availability, from the count_tokens probe (probe_models_availability).
+// `message` carries the API's reason when a model is disabled (else null).
+export interface ModelAvailability {
+  id: string;
+  available: boolean;
+  message: string | null;
+}
+
 // Renderer-facing legacy shape (kept until views consume UsageSnapshot directly).
 export interface UsageRecord {
   hour: string;
@@ -149,6 +157,8 @@ export const api = {
   saveSettings: (settings: SettingsShape): Promise<unknown> =>
     invoke("save_settings", { updated: settings }),
   fetchAvailableModels: (): Promise<string[]> => invoke("fetch_available_models"),
+  probeModelsAvailability: (models: string[]): Promise<ModelAvailability[]> =>
+    invoke("probe_models_availability", { models }),
 
   // --- Audio ---
   listAudioOutputDevices: async (): Promise<AudioOutputDevice[]> => {

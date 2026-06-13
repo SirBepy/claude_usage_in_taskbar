@@ -258,6 +258,7 @@ pub fn run() {
             ipc::list_installed_skills,
             ipc::frontend_ready,
             ipc::fetch_available_models,
+            ipc::probe_models_availability,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,

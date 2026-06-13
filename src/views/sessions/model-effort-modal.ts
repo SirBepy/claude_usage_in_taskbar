@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
+import { api } from "../../shared/api";
 import { modelLabel } from "../../shared/model-name";
 import {
   EFFORTS,
@@ -44,6 +45,10 @@ export async function openModelEffortModal(
     let autoAccept = defaultFlags.autoAccept;
     let remote = defaultFlags.remote;
     let activePresetIndex = -1;
+    // Per-model availability from the count_tokens probe. Empty until the probe
+    // resolves; absent/true => model is selectable. A disabled model (e.g. Fable
+    // 5 when Anthropic has it off) stays clickable but blocks "Start session".
+    const availability: Record<string, boolean> = {};
 
     function syncActivePreset() {
       activePresetIndex = presets.findIndex((p) => p.model === model && p.effort === effort);
@@ -52,6 +57,7 @@ export async function openModelEffortModal(
 
     function modelIdx(): number { return Math.max(0, models.indexOf(model)); }
     function effortIdx(): number { return Math.max(0, EFFORTS.indexOf(effort as typeof EFFORTS[number])); }
+    function modelDisabled(): boolean { return availability[model] === false; }
 
     function renderBody() {
       const presetButtons = presets.map((p, i) => `
@@ -96,9 +102,11 @@ export async function openModelEffortModal(
             </label>
           </details>
 
+          ${modelDisabled() ? `<div class="me-model-warning" role="alert">${escapeHtml(modelLabel(model))} is disabled, please choose another model</div>` : ""}
+
           <div class="me-actions">
             <button type="button" class="me-cancel">Cancel</button>
-            <button type="button" class="me-confirm">Start session</button>
+            <button type="button" class="me-confirm"${modelDisabled() ? " disabled" : ""}>Start session</button>
           </div>
         </div>
       `;
@@ -144,6 +152,7 @@ export async function openModelEffortModal(
 
       overlay.querySelector<HTMLButtonElement>(".me-cancel")?.addEventListener("click", () => close(null));
       overlay.querySelector<HTMLButtonElement>(".me-confirm")?.addEventListener("click", () => {
+        if (modelDisabled()) return;
         void persistChoice().then(() => close({ model, effort, autoAccept, remote }));
       });
     }
@@ -173,6 +182,7 @@ export async function openModelEffortModal(
         close(null);
       } else if (e.key === "Enter") {
         e.preventDefault();
+        if (modelDisabled()) return;
         void persistChoice().then(() => close({ model, effort, autoAccept, remote }));
       }
     }
@@ -184,5 +194,15 @@ export async function openModelEffortModal(
 
     document.body.appendChild(overlay);
     renderBody();
+
+    // Probe model availability in the background (free count_tokens calls). When
+    // it resolves, re-render so a disabled model (e.g. Fable 5) blocks Start.
+    // Fails open: any probe error leaves every model selectable.
+    void api.probeModelsAvailability(models)
+      .then((results) => {
+        for (const r of results) availability[r.id] = r.available;
+        renderBody();
+      })
+      .catch(() => { /* fail open — leave all models enabled */ });
   });
 }

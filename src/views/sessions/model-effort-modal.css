@@ -148,3 +148,18 @@
   color: var(--color-background, #0e0e14);
   border-color: var(--color-primary, #6e8fff);
 }
+
+.model-effort-modal-card .me-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.model-effort-modal-card .me-model-warning {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--color-danger, #ff6b6b);
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #ff6b6b) 35%, transparent);
+}

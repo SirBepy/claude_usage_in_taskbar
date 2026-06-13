@@ -647,6 +647,116 @@ async fn fetch_available_models_inner() -> anyhow::Result<Vec<String>> {
     Ok(ids)
 }
 
+/// Read the Claude OAuth access token from ~/.claude/.credentials.json.
+fn read_claude_oauth_token() -> anyhow::Result<String> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("no home dir"))?;
+    let creds_path = home.join(".claude").join(".credentials.json");
+    let raw = std::fs::read_to_string(&creds_path)
+        .map_err(|e| anyhow::anyhow!("read credentials: {e}"))?;
+    let creds: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("parse credentials: {e}"))?;
+    creds
+        .get("claudeAiOauth")
+        .and_then(|o| o.get("accessToken"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .ok_or_else(|| anyhow::anyhow!("no claudeAiOauth.accessToken in credentials"))
+}
+
+/// Probe whether each given model id is actually usable by the signed-in
+/// account.
+///
+/// The /v1/models listing is NOT a reliable availability signal: it keeps
+/// listing models (e.g. Fable 5) even after Anthropic disables them. The free
+/// /v1/messages/count_tokens endpoint, by contrast, returns 404
+/// not_found_error for a disabled model, so we use it as a zero-cost probe — it
+/// only counts tokens, it never generates, so it is never billed.
+///
+/// Returns a JSON array of `{ id, available, message }`. `message` carries the
+/// API's explanation when a model is unavailable (e.g. "Claude Fable 5 is not
+/// available. Please use Opus 4.8."), null otherwise. Any error on our side (no
+/// credentials, network failure) is treated as available=true so a transient
+/// failure never wrongly blocks the picker.
+#[tauri::command]
+pub async fn probe_models_availability(models: Vec<String>) -> serde_json::Value {
+    let all_available = |models: Vec<String>| {
+        serde_json::Value::Array(
+            models
+                .into_iter()
+                .map(|id| serde_json::json!({ "id": id, "available": true, "message": null }))
+                .collect(),
+        )
+    };
+
+    let token = match read_claude_oauth_token() {
+        Ok(t) => t,
+        Err(e) => {
+            log::debug!("probe_models_availability: {e}");
+            return all_available(models);
+        }
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::debug!("probe_models_availability: {e}");
+            return all_available(models);
+        }
+    };
+
+    let probes = models.into_iter().map(|id| {
+        let client = client.clone();
+        let token = token.clone();
+        async move {
+            let (available, message) = probe_one_model(&client, &token, &id).await;
+            serde_json::json!({ "id": id, "available": available, "message": message })
+        }
+    });
+    serde_json::Value::Array(futures_util::future::join_all(probes).await)
+}
+
+/// Single count_tokens probe. Returns (available, optional API message). On any
+/// transport error we fail open (available=true) so we never block on a blip.
+async fn probe_one_model(
+    client: &reqwest::Client,
+    token: &str,
+    model: &str,
+) -> (bool, Option<String>) {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": "hi" }],
+    });
+    let resp = match client
+        .post("https://api.anthropic.com/v1/messages/count_tokens")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return (true, None),
+    };
+    if resp.status().is_success() {
+        return (true, None);
+    }
+    let message = resp
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .map(String::from)
+        });
+    (false, message)
+}
+
 #[cfg(test)]
 mod tests {
     use super::read_log_contents;
