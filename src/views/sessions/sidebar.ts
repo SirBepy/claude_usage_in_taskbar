@@ -183,24 +183,14 @@ export function renderSidebar(listEl: HTMLElement): void {
     });
   }
 
-  if (entries.length === 0) {
-    const connected = state.daemonConnected;
-    if (connected === true) {
-      entries.push({
-        key: "__empty__",
-        html: `<li class="sessions-empty-row" data-row-key="__empty__"><i class="ph ph-chat-circle-dots"></i>No active sessions</li>`,
-      });
-    } else if (state.daemonSetupStalled) {
-      entries.push({
-        key: "__stalled__",
-        html: `<li class="sessions-empty-row sessions-setup-row sessions-setup-stalled" data-row-key="__stalled__"><i class="ph ph-warning"></i>Daemon unreachable, retrying. See daemon.log if this persists.</li>`,
-      });
-    } else {
-      entries.push({
-        key: "__loading__",
-        html: `<li class="sessions-empty-row sessions-setup-row" data-row-key="__loading__"><i class="ph ph-spinner spinning"></i>Setting up...</li>`,
-      });
-    }
+  if (entries.length === 0 && state.daemonConnected === true) {
+    // While the daemon is NOT connected the pane shows the centered
+    // "Setting up..." / stalled state (paneEmptyStateHtml); the sidebar
+    // stays blank rather than duplicating it in a cramped row.
+    entries.push({
+      key: "__empty__",
+      html: `<li class="sessions-empty-row" data-row-key="__empty__"><i class="ph ph-chat-circle-dots"></i>No active sessions</li>`,
+    });
   }
 
   reconcileList(listEl, entries, loadAnimEnabled());

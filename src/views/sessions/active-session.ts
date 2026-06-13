@@ -11,6 +11,7 @@ import {
   sessionSubtitle,
   loadUnreadSet,
   saveUnreadSet,
+  paneEmptyStateHtml,
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
@@ -56,7 +57,7 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
   setActiveSession(null);
   const pane = document.querySelector<HTMLElement>(".session-pane #session-pane")
     ?? document.querySelector<HTMLElement>("#session-pane");
-  if (pane) pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+  if (pane) pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
   if (opts?.rerenderSidebar !== false) {
     const root = document.querySelector<HTMLElement>(".view-sessions");
     if (root) {

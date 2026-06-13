@@ -5,6 +5,7 @@ import { renderSidebar } from "./sidebar";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { savePendingSession, loadPendingSession, clearPendingSession } from "./pending-draft-storage";
 import { renderPendingPane } from "./pending-pane";
+import { paneEmptyStateHtml } from "./sessions-helpers";
 
 /**
  * Generate a placeholder session id used to subscribe `chat:<id>` BEFORE
@@ -64,7 +65,7 @@ export function discardDraft(pane: HTMLElement): void {
     state.composer?.destroy();
     state.composer = null;
     setActiveSession(null);
-    pane.innerHTML = `<div class="session-empty">Select or create a session</div>`;
+    pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
   }
 
   const root = document.querySelector<HTMLElement>(".view-sessions");

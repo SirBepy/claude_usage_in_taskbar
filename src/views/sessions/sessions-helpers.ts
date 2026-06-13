@@ -22,6 +22,22 @@ export function sessionSubtitle(i: Instance): string {
   return i.name || "New chat";
 }
 
+/**
+ * The pane's empty-state markup (nothing selected). Doubles as the daemon
+ * boot indicator: while the daemon is not connected the CENTER of the screen
+ * shows an animated "Setting up..." (or the stalled warning), not the
+ * sidebar - the sidebar stays blank until the daemon is reachable.
+ */
+export function paneEmptyStateHtml(connected: boolean | null, stalled: boolean): string {
+  if (connected === true) {
+    return `<div class="session-empty">Select or create a session</div>`;
+  }
+  if (stalled) {
+    return `<div class="session-empty session-empty--setup session-empty--stalled"><i class="ph ph-warning"></i><span>Daemon unreachable, retrying. See daemon.log if this persists.</span></div>`;
+  }
+  return `<div class="session-empty session-empty--setup"><i class="ph ph-spinner"></i><span>Setting up...</span></div>`;
+}
+
 /** 0=NeedsPermission, 1=Question, 2=Working, 3=Done(unread), 4=YourTurn, 5=External/Automated.
  * Question (Claude is waiting on the user) sorts above Working so idle-blocked
  * agents surface first for triage. */

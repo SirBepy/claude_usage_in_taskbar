@@ -320,12 +320,36 @@
   opacity: 0.7;
 }
 
+/* Centered daemon-boot state in the pane (replaces "Select or create a
+   session" while the daemon is connecting). The spinner MUST be animated:
+   the spin rule is scoped here because the generic .spinning helper only
+   targets .session-state-icon. */
+.session-empty--setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.session-empty--setup i.ph-spinner {
+  display: inline-block;
+  font-size: 1.8rem;
+  animation: spin 1.2s linear infinite;
+}
+
 /* Daemon stayed unreachable past the stall threshold: amber warning instead
    of the eternal spinner. Same amber as the "answer me" sidebar flag. */
-.sessions-setup-stalled {
-  color: #f59e0b !important;
-  opacity: 1;
+.session-empty--stalled {
+  color: #f59e0b;
   font-style: normal;
+  max-width: 360px;
+  margin: auto;
+  text-align: center;
+}
+
+.session-empty--stalled i.ph-warning {
+  font-size: 1.8rem;
 }
 
 .session-pending-hint {

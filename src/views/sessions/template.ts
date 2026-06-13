@@ -60,7 +60,7 @@ export function template() {
           <ul id="sessions-list" class="sessions-list"></ul>
         </aside>
         <main class="session-pane" id="session-pane">
-          <div class="session-empty">Select or create a session</div>
+          <div class="session-empty session-empty--setup"><i class="ph ph-spinner"></i><span>Setting up...</span></div>
         </main>
       </div>
     </div>
