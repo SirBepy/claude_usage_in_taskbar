@@ -3,6 +3,19 @@ use super::automation::{AutomationConfig, EndReason};
 use crate::sessions::kinds::InstanceKind;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, ts_rs::TS)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub enum CharacterWhitelist {
+    Default,
+    All,
+    Custom { games: Vec<String>, ids: Vec<String> },
+}
+
+impl Default for CharacterWhitelist {
+    fn default() -> Self { CharacterWhitelist::Default }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(tag = "kind", content = "value", rename_all = "lowercase")]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum Avatar {
@@ -43,6 +56,8 @@ pub struct ProjectConfig {
     pub created_at: String,
     #[serde(default)]
     pub last_active_at: Option<String>,
+    #[serde(default)]
+    pub whitelist: CharacterWhitelist,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
@@ -121,10 +136,41 @@ mod tests {
             automation: None,
             created_at: "2026-04-21T00:00:00Z".into(),
             last_active_at: None,
+            whitelist: CharacterWhitelist::default(),
         };
         let raw = serde_json::to_string(&p).unwrap();
         let back: ProjectConfig = serde_json::from_str(&raw).unwrap();
         assert_eq!(p, back);
+    }
+
+    #[test]
+    fn character_whitelist_default_serializes() {
+        let w = CharacterWhitelist::Default;
+        let raw = serde_json::to_string(&w).unwrap();
+        assert_eq!(raw, r#"{"mode":"default"}"#);
+        let back: CharacterWhitelist = serde_json::from_str(&raw).unwrap();
+        assert_eq!(w, back);
+    }
+
+    #[test]
+    fn character_whitelist_all_serializes() {
+        let w = CharacterWhitelist::All;
+        let raw = serde_json::to_string(&w).unwrap();
+        assert_eq!(raw, r#"{"mode":"all"}"#);
+        let back: CharacterWhitelist = serde_json::from_str(&raw).unwrap();
+        assert_eq!(w, back);
+    }
+
+    #[test]
+    fn character_whitelist_custom_serializes() {
+        let w = CharacterWhitelist::Custom {
+            games: vec!["heroes-of-the-storm".to_string()],
+            ids: vec!["abathur".to_string()],
+        };
+        let raw = serde_json::to_string(&w).unwrap();
+        assert_eq!(raw, r#"{"mode":"custom","games":["heroes-of-the-storm"],"ids":["abathur"]}"#);
+        let back: CharacterWhitelist = serde_json::from_str(&raw).unwrap();
+        assert_eq!(w, back);
     }
 
     #[test]

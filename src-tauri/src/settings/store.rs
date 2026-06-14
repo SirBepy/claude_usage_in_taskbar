@@ -110,6 +110,7 @@ pub fn upsert_project_for_cwd(
         automation: None,
         created_at: now.to_string(),
         last_active_at: Some(now.to_string()),
+        whitelist: crate::types::CharacterWhitelist::default(),
     });
     (id, true)
 }
@@ -150,6 +151,7 @@ pub fn upsert_project_with_id_for_cwd(
         automation: None,
         created_at: now.to_string(),
         last_active_at: Some(now.to_string()),
+        whitelist: crate::types::CharacterWhitelist::default(),
     });
 }
 

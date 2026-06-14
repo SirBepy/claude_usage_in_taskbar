@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use super::project::{ProjectConfig, ProjectsSortBy};
+use super::project::{CharacterWhitelist, ProjectConfig, ProjectsSortBy};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
@@ -82,12 +82,23 @@ pub struct Settings {
     pub legacy_obsidian_import_handled: bool,
     #[serde(rename = "audioOutputDevice", default)]
     pub audio_output_device: Option<String>,
+    #[serde(rename = "defaultCharacterWhitelist", default = "default_character_whitelist")]
+    pub default_character_whitelist: CharacterWhitelist,
+    #[serde(rename = "sessionCharacters", default)]
+    pub session_characters: std::collections::HashMap<String, String>,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
     #[serde(flatten, default)]
     #[ts(skip)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+fn default_character_whitelist() -> CharacterWhitelist {
+    CharacterWhitelist::Custom {
+        games: vec!["heroes-of-the-storm".to_string()],
+        ids: Vec::new(),
+    }
 }
 
 impl Default for Settings {
@@ -107,6 +118,8 @@ impl Default for Settings {
             hook_install_version: 0,
             legacy_obsidian_import_handled: false,
             audio_output_device: None,
+            default_character_whitelist: default_character_whitelist(),
+            session_characters: std::collections::HashMap::new(),
             extra: serde_json::Map::new(),
         }
     }
