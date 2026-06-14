@@ -200,7 +200,8 @@
       "PowerShell(git rev-parse --show-toplevel; \"now: $\\(Get-Date -Format 'yyyy-MM-dd HH:mm'\\)\"; \"5pm target: $\\(\\(Get-Date '17:00'\\).ToString\\('yyyy-MM-dd HH:mm'\\)\\)\"; Test-Path \"C:\\\\Users\\\\tecno\\\\.local\\\\bin\\\\claude.exe\")",
       "Bash(rm -f __TRACKED_VAR__/commit-buildwatch-autofixed)",
       "Bash(gh --version)",
-      "PowerShell($msg = \"FIX: modelContextWindow returns 1M for fable \\(was falling through to 200K default\\)\"; git -C \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\" commit -m $msg)"
+      "PowerShell($msg = \"FIX: modelContextWindow returns 1M for fable \\(was falling through to 200K default\\)\"; git -C \"C:\\\\Users\\\\tecno\\\\Desktop\\\\Projects\\\\claude_usage_in_taskbar\" commit -m $msg)",
+      "PowerShell(pnpm exec *)"
     ]
   }
 }
