@@ -533,11 +533,11 @@ fn migrate_hook_install_if_needed(app: &tauri::AppHandle) {
     );
 }
 
-/// One-time backfill: assign every project a Heroes of the Storm hero so
-/// existing installs get the per-project character feature in bulk. Guarded by
-/// `Settings.extra["characterBackfillVersion"]` so it runs once. Skips (without
-/// burning the version) when no HotS characters are on disk yet, so a slow
-/// first-run character unpack doesn't permanently miss the backfill.
+/// Migration v2: characters are now per-SESSION, not per-project. Convert any
+/// `Avatar::Character` entries back to `Avatar::None` so projects no longer
+/// carry a character assignment. `Avatar::Emoji` and `Avatar::Image` are left
+/// untouched. Guarded by `Settings.extra["characterBackfillVersion"]` so it
+/// runs once per install.
 fn backfill_project_characters_if_needed(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
     let state = app.state::<crate::state::AppState>();
@@ -553,18 +553,20 @@ fn backfill_project_characters_if_needed(app: &tauri::AppHandle) {
     if !needs {
         return;
     }
-    if crate::characters::assign::hots_pool().is_empty() {
-        log::warn!("character backfill deferred: no HotS characters on disk yet");
-        return;
-    }
     let snapshot = {
         let mut g = state.settings.lock().unwrap();
-        let n = crate::characters::assign::backfill_all_projects(&mut g);
+        let mut cleared = 0usize;
+        for proj in &mut g.projects {
+            if matches!(proj.avatar, crate::types::Avatar::Character(_)) {
+                proj.avatar = crate::types::Avatar::None;
+                cleared += 1;
+            }
+        }
         g.extra.insert(
             "characterBackfillVersion".into(),
             serde_json::json!(crate::characters::assign::CURRENT_BACKFILL_VERSION),
         );
-        log::info!("character backfill: assigned heroes to {n} project(s)");
+        log::info!("character migration v2: cleared character avatar from {cleared} project(s)");
         g.clone()
     };
     if let Ok(path) = paths::settings_file() {

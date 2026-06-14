@@ -21,7 +21,7 @@ pub const HOTS_GAME: &str = "heroes-of-the-storm";
 
 /// Bumped when the backfill logic changes in a way that should re-run for
 /// existing users. Stored in `Settings.extra["characterBackfillVersion"]`.
-pub const CURRENT_BACKFILL_VERSION: u32 = 1;
+pub const CURRENT_BACKFILL_VERSION: u32 = 2;
 
 /// All Heroes of the Storm hero ids currently on disk, sorted alphabetically.
 /// Excludes `_shared` bundles and any non-HotS game. Hits the character cache.
