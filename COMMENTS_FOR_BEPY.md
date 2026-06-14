@@ -1,5 +1,28 @@
 # Comments for Bepy
 
+## 2026-06-15 - Remote phone cockpit: foundation built, remote phases parked (autopilot)
+
+Task: build "phone as full second cockpit" for in-app chats. Brainstormed + converged with you first: full mobile control (b); ONE shared frontend codebase with a swappable transport seam; reuse logic via daemon chat-core fns shared by Tauri commands + a new HTTP server; transport = Tailscale + per-request token auth + QR provisioning; dedicated tailnet-bound authed server separate from the localhost hooks server.
+
+What I did vs deliberately did NOT do: this is a multi-session, SECURITY-CRITICAL build (the endpoint pipe-drives claude = RCE if mis-secured) and depends on your Tailscale setup. So autopilot shipped only the SAFE foundation and parked everything that exposes a remote surface (Hard Stop: security blast radius + needs your review + your manual Tailscale step).
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Design spec written -> docs/superpowers/specs/2026-06-15-remote-phone-cockpit-design.md (gitignored, local reference)
+- Phase 0a transport seam: new src/shared/transport.ts (Transport iface: call + listen, TauriTransport, getTransport()); ipc.ts invoke delegates to it; event-store.ts + slash.ts route listeners through getTransport().listen instead of window.__TAURI__ -> tsc clean, 376 vitest pass, behavior-preserving (TauriTransport is the only impl, desktop identical) -> 864b10d
+
+Decision log:
+- 2026-06-15 - Seam shape: ipc.ts stays the request/response wrapper (invoke delegates to transport.call); the 2 streaming consumers call getTransport().listen directly. Reason: tests vi.mock ipc.ts wholesale, so routing streaming through an ipc re-export broke 5 test files; calling transport directly keeps the existing window.__TAURI__ mocks valid with zero test churn. Direct judgment, reversible.
+- 2026-06-15 - Deferred Phase 0b (daemon chat-core extraction) to bundle with Phase 1 (ai_todo 103). Reason: extracting core fns with no second caller yet is speculative and only pays off alongside the HTTP server; doing it now also risks merge-thrash with concurrent autopilots on master. Direct judgment.
+- Lucky break logged: streaming needs no new engine - the daemon already has a per-session broadcast a WS can subscribe to.
+
+Parked (NOT built - security/dependency hard stops):
+- ai_todo 103: Phase 1 daemon chat-core extraction + tailnet-bound authed HTTP/WS server (RCE-critical, needs your review + Tailscale).
+- ai_todo 104: Phase 2 QR pairing + device registry + revoke + kill switch.
+- ai_todo 105: Phase 3+4 HttpTransport + PWA shell + mobile parity/degrade pass.
+- BEPY_TODOS Urgent: install Tailscale on PC + phone (+ MagicDNS/HTTPS certs) - blocks 103-105.
+
+NOT pushed (local master only). Next: do the Tailscale setup, then tell me to build ai_todo 103 with you reviewing the security boundary.
+
 ## 2026-06-14 20:35 - Remote-control for in-app chats: HARD STOP, parked (autopilot)
 
 Decision needed: you said remote-control is default-on yet no chat becomes remote-controllable, "it worked before the daemon epic, just make it work."
