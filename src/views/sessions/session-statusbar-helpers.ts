@@ -2,6 +2,9 @@ import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { modelLabel } from "../../shared/model-name";
+import {
+  type ChipType, DEFAULT_ROWS, MAX_ROWS, isKnownChip, TOOL_CHIP_TOOLS,
+} from "./statusline-catalog";
 
 export const DEFAULT_STATUSLINE_FIELDS = ["model", "effort", "branch", "repo", "context", "thinking", "messages", "turns"];
 
@@ -33,6 +36,85 @@ export async function saveStatuslineFields(fields: string[]): Promise<void> {
     await invoke("save_settings", { updated: { ...s, statuslineFields: fields } });
   } catch (e) {
     console.error("[statusbar] save fields failed", e);
+  }
+}
+
+// ── Rows model (the builder) ────────────────────────────────────────────────
+// statuslineRows supersedes the flat statuslineFields. statuslineHideZero is a
+// single global toggle for count/tool chips. Legacy settings are migrated once.
+
+// Legacy statuslineFields used "context"; the catalog splits it into
+// context_pct / context_tokens. Everything else is a 1:1 id.
+const LEGACY_FIELD_REMAP: Record<string, ChipType> = { context: "context_pct" };
+
+/** Build a rows layout from the pre-builder flat settings. Row 1 = enabled
+ *  fields (canonical order), row 2 = tool chips not hidden. Exported for tests. */
+export function migrateLegacyFields(fields: string[], hiddenTools: string[]): ChipType[][] {
+  const ORDER = ["model", "effort", "branch", "repo", "folder", "context", "thinking", "duration", "messages", "turns"];
+  const row1 = ORDER
+    .filter((f) => fields.includes(f))
+    .map((f) => LEGACY_FIELD_REMAP[f] ?? (f as ChipType))
+    .filter((c) => isKnownChip(c));
+  const row2: ChipType[] = TOOL_CHIP_TOOLS
+    .filter((t) => !hiddenTools.includes(t))
+    .map((t) => `tool:${t}` as ChipType);
+  const rows: ChipType[][] = [];
+  if (row1.length) rows.push(row1);
+  if (row2.length) rows.push(row2);
+  return rows.length ? rows : DEFAULT_ROWS.map((r) => [...r]);
+}
+
+function sanitizeRows(raw: unknown): ChipType[][] | null {
+  if (!Array.isArray(raw)) return null;
+  const rows = raw
+    .filter((r): r is unknown[] => Array.isArray(r))
+    .map((r) => r.filter((c): c is string => typeof c === "string" && isKnownChip(c)) as ChipType[])
+    .slice(0, MAX_ROWS);
+  const trimmed = rows.filter((r) => r.length > 0);
+  return trimmed.length ? trimmed : null;
+}
+
+export async function loadStatuslineRows(): Promise<ChipType[][]> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    const fromRows = sanitizeRows(s["statuslineRows"]);
+    if (fromRows) return fromRows;
+    // One-time migration from the pre-builder settings.
+    const legacyFields = Array.isArray(s["statuslineFields"]) ? (s["statuslineFields"] as string[]) : null;
+    if (legacyFields) {
+      const hidden = Array.isArray(s["tallyHiddenTools"]) ? (s["tallyHiddenTools"] as string[]) : [];
+      const migrated = migrateLegacyFields(legacyFields, hidden);
+      await invoke("save_settings", { updated: { ...s, statuslineRows: migrated } });
+      return migrated;
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_ROWS.map((r) => [...r]);
+}
+
+export async function saveStatuslineRows(rows: ChipType[][]): Promise<void> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    const clean = (sanitizeRows(rows) ?? []).slice(0, MAX_ROWS);
+    await invoke("save_settings", { updated: { ...s, statuslineRows: clean } });
+  } catch (e) {
+    console.error("[statusbar] save rows failed", e);
+  }
+}
+
+export async function loadStatuslineHideZero(): Promise<boolean> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    if (typeof s["statuslineHideZero"] === "boolean") return s["statuslineHideZero"] as boolean;
+  } catch { /* ignore */ }
+  return true; // default on
+}
+
+export async function saveStatuslineHideZero(hide: boolean): Promise<void> {
+  try {
+    const s = await invoke<Record<string, unknown>>("get_settings");
+    await invoke("save_settings", { updated: { ...s, statuslineHideZero: hide } });
+  } catch (e) {
+    console.error("[statusbar] save hideZero failed", e);
   }
 }
 
