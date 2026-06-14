@@ -10,6 +10,7 @@
 // docs/superpowers/specs/2026-06-13-held-messages-while-busy-design.md.
 
 import type { ContentBlock } from "../../types/ipc.generated";
+import { blocksToText } from "./content-blocks";
 import "./held-messages.css";
 
 interface HeldItem {
@@ -39,12 +40,6 @@ export interface HeldAttach {
   onChange: () => void;
 }
 
-function blocksToText(blocks: ContentBlock[]): string {
-  return blocks
-    .map((b) => (b && b.type === "text" ? b.text : ""))
-    .filter((s) => s)
-    .join("\n");
-}
 
 /** Join held items (+ optional trailing draft) into a single text block:
  * each message's text on its own, separated by a blank line. Non-text blocks

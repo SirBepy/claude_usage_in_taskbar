@@ -6,6 +6,7 @@ import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import { HeldMessages } from "../../shared/chat/held-messages";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
+import { blocksToText } from "../../shared/chat/content-blocks";
 import { state, setActiveSession } from "./state";
 import { isCurrentSessionBusy, updateThinkingBar } from "./sessions";
 import { projectName, sessionSubtitle } from "./sessions-helpers";
@@ -160,10 +161,7 @@ export async function renderPendingPane(
       onDraftActivity: () => state.heldMessages?.notifyDraftActivity(),
       onSend: async (blocks: ContentBlock[]) => {
         if (state.mountId !== myMount) return;
-        const promptText = blocks
-          .map((b) => (b && b.type === "text" ? b.text : ""))
-          .filter((s) => s)
-          .join("\n");
+        const promptText = blocksToText(blocks);
         if (!promptText.trim()) return;
 
         // Synthetic push: claude -p never echoes the prompt on stdout, so

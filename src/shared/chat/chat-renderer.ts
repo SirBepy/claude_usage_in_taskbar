@@ -1,4 +1,5 @@
 import type { ChatEvent } from "../../types/ipc.generated";
+import { blocksToText } from "./content-blocks";
 import { sessionEvents } from "./event-store";
 import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken } from "./chat-transforms";
 import { highlightCodeBlocks, highlightInlineCode } from "./code-highlighter";
@@ -502,12 +503,12 @@ export class ChatRenderer {
           }
         }
         if (!ev.streaming) {
-          const joined = ev.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          const joined = blocksToText(ev.content);
           this.setTurnStatus(detectStatusToken(joined));
         }
         // Update live token estimate from accumulated streamed assistant text
         if (this.activeTurnChipKey !== null) {
-          const joined = ev.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          const joined = blocksToText(ev.content);
           this.activeTurnStreamedText = joined;
           this.turnFooters.updateLiveTokenEstimate(this.activeTurnChipKey, joined);
         }
