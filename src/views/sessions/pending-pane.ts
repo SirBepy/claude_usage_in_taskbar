@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
+import { api } from "../../shared/api";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
@@ -97,6 +98,8 @@ export async function renderPendingPane(
       // New-chat auto-accept (modal checkbox, default on): arm it the instant
       // the real session id is known so first-turn prompts auto-allow.
       if (config.autoAccept !== false) setAutoAccept(realId, true);
+      // Apply the character chosen in the new-session pane to the real session.
+      if (config.characterId) void api.setSessionCharacter(realId, config.characterId).catch(() => {});
       if (unsubPlaceholderWatch) {
         try { unsubPlaceholderWatch(); } catch { /* ignore */ }
         unsubPlaceholderWatch = null;

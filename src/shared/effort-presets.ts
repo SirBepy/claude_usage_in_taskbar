@@ -15,6 +15,8 @@ export interface SessionConfig {
   // Spawn `claude --remote-control` for this session. Defaults on for new chats
   // (the modal checkbox); undefined on legacy drafts is treated as on.
   remote?: boolean;
+  /** Character chosen in the new-session pane; applied to the real session once it starts. */
+  characterId?: string | null;
 }
 
 export const MODELS = ["haiku", "sonnet", "opus", "fable"] as const;

@@ -15,10 +15,112 @@
   color: var(--color-text, #e8e8ee);
   border: 1px solid var(--color-border, #2a2a36);
   border-radius: 10px;
-  padding: 20px;
-  width: 420px;
-  max-width: 92vw;
+  padding: 0;
+  width: 640px;
+  max-width: 95vw;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* Two-column layout */
+.model-effort-modal-card .me-columns {
+  display: flex;
+  align-items: stretch;
+}
+
+.model-effort-modal-card .me-left-col {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 20px;
+}
+
+/* Right-side character pane */
+.model-effort-modal-card .me-char-pane {
+  width: 190px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 16px;
+  border-left: 1px solid var(--color-border, #2a2a36);
+  background: var(--color-surface-alt, #24242e);
+  text-align: center;
+}
+
+.model-effort-modal-card .me-char-portrait {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--color-border, #2a2a36);
+  background: var(--color-surface, #1c1c24);
+  display: block;
+}
+
+/* Placeholder circle while icon is loading */
+.model-effort-modal-card .me-char-portrait-ph {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border, #2a2a36);
+  background: var(--color-surface, #1c1c24);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: var(--color-text-muted, #8a8a96);
+}
+
+.model-effort-modal-card .me-char-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text, #e8e8ee);
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.model-effort-modal-card .me-char-game {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #8a8a96);
+}
+
+.model-effort-modal-card .me-char-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.model-effort-modal-card .me-char-reroll,
+.model-effort-modal-card .me-char-choose {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  border: 1px solid var(--color-border, #2a2a36);
+  background: var(--color-surface, #1c1c24);
+  color: var(--color-text, #e8e8ee);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.model-effort-modal-card .me-char-reroll:hover,
+.model-effort-modal-card .me-char-choose:hover {
+  background: color-mix(in srgb, var(--color-primary, #6e8fff) 12%, var(--color-surface, #1c1c24));
+  border-color: var(--color-primary, #6e8fff);
+}
+
+.model-effort-modal-card .me-char-loading,
+.model-effort-modal-card .me-char-empty {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #8a8a96);
+  text-align: center;
 }
 
 .model-effort-modal-card .me-title {
