@@ -54,6 +54,32 @@ function turnUsage() {
   };
 }
 
+function turnUsageDur(durationMs) {
+  return { ...turnUsage(), duration_ms: durationMs };
+}
+
+describe("ChatRenderer — live turn settle (transcript-watcher noise)", () => {
+  it("keeps the working shimmer until the authoritative end-of-turn usage", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+
+    r.handleEvent(userEvent("go"));            // live (no silent)
+    r.handleEvent(streamingEvent("working…")); // in-flight assistant message
+    expect(container.querySelector(".msg--working")).not.toBeNull();
+
+    // An open chat runs the frontend transcript watcher alongside the runner;
+    // the watcher re-emits a per-assistant-line usage MID-TURN with duration_ms 0.
+    // It must NOT settle the turn (the bug made it look done between lines).
+    r.handleEvent(turnUsageDur(0));
+    expect(container.querySelector(".msg--working")).not.toBeNull();
+
+    // The runner's real end-of-turn usage carries a non-zero duration_ms.
+    r.handleEvent(turnUsageDur(1234));
+    expect(container.querySelector(".msg--working")).toBeNull();
+  });
+});
+
 describe("ChatRenderer — activity pinning", () => {
   it("keeps the last tool action pinned through the streaming reply (no clear)", () => {
     const r = new ChatRenderer(document.createElement("div"));

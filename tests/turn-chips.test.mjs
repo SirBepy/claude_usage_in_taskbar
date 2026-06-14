@@ -167,6 +167,10 @@ describe("Turn footer DOM integration", () => {
     document = setup.document;
     global.document = document;
     global.window = setup.window;
+    // The renderer uses `instanceof HTMLElement` / `Node` (e.g. the active-chip
+    // pulse), so expose them as globals like the other DOM test harnesses do.
+    global.HTMLElement = setup.window.HTMLElement;
+    global.Node = setup.window.Node;
     global.MutationObserver = setup.window.MutationObserver || class {
       observe() {}
       disconnect() {}

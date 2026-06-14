@@ -596,7 +596,18 @@ export class ChatRenderer {
         // usage at turn end; history emits one per assistant line, and closing
         // here would orphan the turn's remaining tool rows on reload (the "chips
         // vanish when I reopen the chat" bug).
-        this.activeTurnSettled = true;
+        //
+        // Only the AUTHORITATIVE end-of-turn usage settles the working shimmer.
+        // An open chat runs the frontend transcript watcher alongside the runner
+        // stream; the watcher re-parses each assistant line (history mode) and
+        // emits a usage event per line with duration_ms 0, MID-TURN. Settling on
+        // those makes a live turn look done between assistant lines (gray border,
+        // no activity text, frozen tokens during a long tool call). The runner's
+        // real turn-end usage carries a non-zero duration_ms; bulk replay
+        // (opts.silent) is already-complete history, so settle as before.
+        if (opts.silent || Number(ev.duration_ms) > 0) {
+          this.activeTurnSettled = true;
+        }
         // Accumulate the turn's COMBINED usage. History replays one usage
         // event per assistant line: output/cache/cost sum, input is the
         // latest (context size), duration keeps the max (only live's single
