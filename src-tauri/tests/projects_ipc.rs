@@ -13,6 +13,7 @@ fn sample_project(id: &str, path: &str) -> ProjectConfig {
         path: path.into(),
         name: id.into(),
         avatar: Avatar::None,
+        whitelist: Default::default(),
         automation: None,
         created_at: "2026-04-21T00:00:00Z".into(),
         last_active_at: None,
