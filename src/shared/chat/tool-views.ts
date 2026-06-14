@@ -14,19 +14,11 @@ import type { RenderedMessage } from "./chat-transforms";
 import { canonicalTool } from "./tool-meta";
 import { escapeHtml } from "../escape-html";
 import { basename } from "../path-utils";
+import { asObj, strField } from "../obj-utils";
 
 // Canonical tool keys whose chip renders a custom aggregated view instead of the
 // generic stack of raw tool rows / target list.
 export const CUSTOM_VIEW_TOOLS = new Set(["Read", "Edit", "Skill", "AskUserQuestion"]);
-
-function asObj(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" ? (input as Record<string, unknown>) : {};
-}
-
-function strField(obj: Record<string, unknown>, key: string): string {
-  const v = obj[key];
-  return typeof v === "string" ? v : "";
-}
 
 /** Edit/Write/MultiEdit/NotebookEdit + Read all target a single path. */
 function filePathOf(input: unknown): string {

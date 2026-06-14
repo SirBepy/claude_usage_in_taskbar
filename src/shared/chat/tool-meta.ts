@@ -1,16 +1,7 @@
 import { basename } from "../path-utils";
+import { asObj, strField } from "../obj-utils";
 
 export const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
-
-/** Safely coerce an unknown tool input into a string-keyed record. */
-function asObj(input: unknown): Record<string, unknown> {
-  return input && typeof input === "object" ? (input as Record<string, unknown>) : {};
-}
-
-function strField(obj: Record<string, unknown>, key: string): string {
-  const v = obj[key];
-  return typeof v === "string" ? v : "";
-}
 
 /** Lowercased file extension (including the dot), or "" if none. */
 function extOf(path: string): string {
