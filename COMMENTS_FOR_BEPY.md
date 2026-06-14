@@ -257,3 +257,31 @@ RUN_LEDGER:
 - Chunk B (frontend: plumb parentToolUseId to RenderedMessage + nest children under the Subagent chip as a nested chip-strip, 2 new jsdom tests) -> 98ca6fe
 Deferred (separable): cold-reload-from-transcript nesting - subagent calls are NOT in the main .jsonl, they live only in the subagents/ file + the live stream, so after an app restart they would not nest (or appear) without also merging the subagents file. nested-strip-on-reload-straddle edge case is untested.
 Pending LIVE confirm (cannot verify statically): that the live stream actually populates parent_tool_use_id - a debug log was added in chat/parser.rs; Joe must run one real subagent turn and confirm. See BEPY_TODOS.
+
+## 2026-06-14 - Per-session characters + per-project whitelist (autopilot)
+
+Task: replace per-PROJECT character assignment with per-SESSION characters drawn from a per-project rule-based whitelist. Full design at docs/superpowers/specs/2026-06-14-per-session-characters-design.md (gitignored). Brainstormed + approved before /autopilot.
+
+Decisions settled in brainstorm (not autopilot-guessed): per-session ownership; project face = placeholder for now (Avatar::None), tech-icon detection deferred; whitelist = Default|All|Custom{games,ids} with live default reference + reset-to-default; sessionCharacters map in settings, live-only, lazy-pruned; random pick dedups vs live sessions; new-session UI = Option B side pane, sound on every pick; Change Character Modal (Whitelisted|All + search); per-session sound; migration marks all projects Default + converts Character avatars to None.
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- BE-1 CharacterWhitelist type + settings fields (defaultCharacterWhitelist, sessionCharacters) + ts-rs regen -> cargo build + tsc clean -> bc54602
+- BE-2 pure whitelist resolve()/pick_random() + 15 unit tests -> ecf48b2 ; fixed a ProjectConfig literal in projects_ipc test missed by BE-1 -> 58e4ec8
+- BE-3a session-char + whitelist IPC (ensure/set/reroll/list + project/default whitelist + resolve) with live-session lazy prune; registry via state.cached_instances -> cargo build clean -> 748b35a
+- BE-3b migration v2 (strip project Character avatars -> None, all projects inherit Default) + stop pick_hero on project create -> fc2944d ; finish/question sounds now use the session's character (session_id threaded through notifications::fire) -> f84269b
+- FE-1 session-keyed character lookup + ensure-on-appearance (instances-changed diff) + api wrappers -> tsc + 376 vitest -> 809cb41
+- FE-2 shared Change Character Modal (Whitelisted|All tabs + search) wired to chat header face + more-options menu (dynamic import to dodge cycle); fixed a latent "__loading__" sentinel crash in the modal -> 3a3c71a
+- FE-4 per-project whitelist editor (replaced old <select> subview) + Settings > Characters default editor + shared whitelist-editor.ts; updated the stale projects_view test -> 432a6aa
+- FE-3 new-session character side pane (Option B: portrait/name/game + Reroll/Choose, sound on every pick debounced 250ms, live-taken dedup) + characterId applied on session_started -> 2658b6a
+
+FINAL VERIFY (completion oracle, all green): cargo build (full) OK; pnpm tsc --noEmit clean; 376 vitest passed / 19 pre-existing skips; cargo whitelist 15 passed; projects_ipc 7 passed; notifications::rules 13 passed (per BE-3b). No node orphans. ipc.generated.ts is gitignored (regenerates on prebuild).
+
+Decisions log (autopilot - mostly settled in brainstorm, none needed iterate-it):
+- 2026-06-14 - Change-modal pick plays the "select" sound too (consistency with new-session "sound on every pick"). Direct judgment, reversible.
+- 2026-06-14 - Project face placeholder is renderAvatar's existing "?" for Avatar::None (real tech-icon detection is ai_todo 99). Direct judgment.
+- 2026-06-14 - more-menu -> active-session uses a DYNAMIC import to avoid the static import cycle (memory: sidebar import-cycle crashes node vitest). Direct judgment.
+- 2026-06-14 - FE-2/FE-4 subagents hit the API session limit mid-run; main agent finished both chunks inline (files were complete; only wiring + a latent modal crash + a stale test remained).
+
+Deferred (ai_todos created): 99 project tech-icon detection; 100 AUQ relay timeout on AFK.
+
+NOT pushed yet at time of writing; main agent will run /commit pushnbump next.
