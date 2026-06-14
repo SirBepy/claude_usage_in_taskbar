@@ -1,5 +1,13 @@
 import type { RenderedMessage } from "./chat-transforms";
 import { toolSummary, canonicalTool, toolLabel } from "./tool-meta";
+import { escapeHtml } from "../escape-html";
+import { basename } from "../path-utils";
+
+// Canonical tool keys whose chip panel renders a CUSTOM aggregated view built
+// from the turn's message data, instead of the generic stack of raw tool rows.
+// Read/Edit collapse repeated targets into one row-per-file; Skill lists the
+// skills used; AskUserQuestion pairs each question with the answer given.
+const CUSTOM_VIEW_TOOLS = new Set(["Read", "Edit", "Skill", "AskUserQuestion"]);
 
 /** Per-tool-type state for one turn's strip. */
 export interface ToolGroup {
@@ -105,6 +113,172 @@ function descOf(input: unknown): string {
   const t = typeof obj.subagent_type === "string" ? obj.subagent_type : "";
   const label = (d || t || "Subagent").trim();
   return label.length > 60 ? label.slice(0, 60) + "…" : label;
+}
+
+// ---------------------------------------------------------------------------
+// Custom chip-panel views (Read / File Changes / Skills / Questions)
+// ---------------------------------------------------------------------------
+
+function asObj(input: unknown): Record<string, unknown> {
+  return input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+}
+
+function strField(obj: Record<string, unknown>, key: string): string {
+  const v = obj[key];
+  return typeof v === "string" ? v : "";
+}
+
+/** Edit/Write/MultiEdit/NotebookEdit + Read all target a single path. */
+function filePathOf(input: unknown): string {
+  const o = asObj(input);
+  return strField(o, "file_path") || strField(o, "notebook_path");
+}
+
+/** Parent-directory tail of a path (everything before the basename), or "". */
+function dirOf(path: string): string {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i > 0 ? path.slice(0, i) : "";
+}
+
+/**
+ * Aggregate this turn's Read or File-Changes calls into one row per file,
+ * first-seen order, with a repeat-count badge. Rows open the file in the
+ * editor on click (delegated handler in chat-renderer). `kind` selects the
+ * badge wording: "read N×" vs "N changes".
+ */
+function renderFilesView(
+  messages: RenderedMessage[],
+  start: number,
+  end: number,
+  kind: "Read" | "Edit",
+): string {
+  const byPath = new Map<string, number>();
+  for (let i = start; i < end; i++) {
+    const m = messages[i];
+    if (!m || m.kind !== "tool_use" || m.parentToolUseId) continue;
+    if (canonicalTool(m.tool ?? "") !== kind) continue;
+    const path = filePathOf(m.input);
+    if (!path) continue;
+    byPath.set(path, (byPath.get(path) ?? 0) + 1);
+  }
+  if (byPath.size === 0) return "";
+  return [...byPath].map(([path, n]) => {
+    const pathEsc = escapeHtml(path);
+    const nameEsc = escapeHtml(basename(path));
+    const dirEsc = escapeHtml(dirOf(path));
+    const badge = kind === "Read"
+      ? (n > 1 ? `<span class="tool-file-count">${n}×</span>` : "")
+      : `<span class="tool-file-count">${n} ${n === 1 ? "change" : "changes"}</span>`;
+    return `<button type="button" class="tool-file-row" data-path="${pathEsc}" title="${pathEsc}"><i class="ph ph-file"></i><span class="tool-file-name">${nameEsc}</span><span class="tool-file-path">${dirEsc}</span>${badge}</button>`;
+  }).join("");
+}
+
+/** One clean row per skill used this turn, with a repeat-count badge. */
+function renderSkillsView(messages: RenderedMessage[], start: number, end: number): string {
+  const bySkill = new Map<string, number>();
+  for (let i = start; i < end; i++) {
+    const m = messages[i];
+    if (!m || m.kind !== "tool_use" || m.parentToolUseId || m.tool !== "Skill") continue;
+    const name = strField(asObj(m.input), "skill") || "(skill)";
+    bySkill.set(name, (bySkill.get(name) ?? 0) + 1);
+  }
+  if (bySkill.size === 0) return "";
+  return [...bySkill].map(([name, n]) => {
+    const badge = n > 1 ? `<span class="tool-file-count">x${n}</span>` : "";
+    return `<div class="tool-skill-row"><i class="ph ph-sparkle"></i><span class="tool-skill-name">${escapeHtml(name)}</span>${badge}</div>`;
+  }).join("");
+}
+
+/** Pull plain text out of a tool_result output block (else ""). */
+function resultText(m: RenderedMessage): string {
+  const out = m.output;
+  if (out && out.type === "text" && typeof out.text === "string") return out.text;
+  return "";
+}
+
+/**
+ * Parse the answer message the app feeds back to claude (built by
+ * permission-modal/question-ui::formatAnswersAsMessage) into a question->answer
+ * map. Shape: "User answered the question(s):\nQ: <q>\nA: <a>\n...".
+ */
+function parseAnswers(text: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const lines = text.split(/\r?\n/);
+  let pendingQ: string | null = null;
+  for (const line of lines) {
+    if (line.startsWith("Q: ")) pendingQ = line.slice(3).trim();
+    else if (line.startsWith("A: ") && pendingQ !== null) {
+      map.set(pendingQ, line.slice(3).trim());
+      pendingQ = null;
+    }
+  }
+  return map;
+}
+
+interface AskQuestion { question: string; header?: string }
+
+function extractAskQuestions(input: unknown): AskQuestion[] {
+  const raw = asObj(input).questions;
+  if (!Array.isArray(raw)) return [];
+  const out: AskQuestion[] = [];
+  for (const it of raw) {
+    const q = asObj(it);
+    const question = strField(q, "question");
+    if (!question) continue;
+    out.push({ question, header: strField(q, "header") || undefined });
+  }
+  return out;
+}
+
+/**
+ * For each AskUserQuestion call this turn, show every question (with its short
+ * header) paired with the answer the user gave. Answers come from the matching
+ * tool_result; while one is still pending the answer reads "awaiting answer".
+ */
+function renderQuestionsView(messages: RenderedMessage[], start: number, end: number): string {
+  // tool_use id -> parsed answers, harvested from each call's tool_result.
+  const answersById = new Map<string, Map<string, string>>();
+  for (let i = start; i < end; i++) {
+    const m = messages[i];
+    if (m?.kind === "tool_result" && m.tool_use_id) {
+      const t = resultText(m);
+      if (t) answersById.set(m.tool_use_id, parseAnswers(t));
+    }
+  }
+  const cards: string[] = [];
+  for (let i = start; i < end; i++) {
+    const m = messages[i];
+    if (!m || m.kind !== "tool_use" || m.parentToolUseId || m.tool !== "AskUserQuestion") continue;
+    const questions = extractAskQuestions(m.input);
+    const answers = (m.id && answersById.get(m.id)) || null;
+    for (const q of questions) {
+      const header = q.header ? `<div class="tool-qa-header">${escapeHtml(q.header)}</div>` : "";
+      const ans = answers?.get(q.question);
+      const answerHtml = ans
+        ? `<div class="tool-qa-a"><i class="ph ph-arrow-bend-down-right"></i><span>${escapeHtml(ans)}</span></div>`
+        : `<div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div>`;
+      cards.push(`<div class="tool-qa">${header}<div class="tool-qa-q">${escapeHtml(q.question)}</div>${answerHtml}</div>`);
+    }
+  }
+  return cards.join("");
+}
+
+/** Rebuild a custom bucket's content from the turn's message data. */
+function rebuildCustomBucket(
+  bucket: HTMLElement,
+  key: string,
+  messages: RenderedMessage[],
+  start: number,
+  end: number,
+): void {
+  let html = "";
+  switch (key) {
+    case "Read": html = renderFilesView(messages, start, end, "Read"); break;
+    case "Edit": html = renderFilesView(messages, start, end, "Edit"); break;
+    case "Skill": html = renderSkillsView(messages, start, end); break;
+    case "AskUserQuestion": html = renderQuestionsView(messages, start, end); break;
+  }
+  bucket.innerHTML = html;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +425,10 @@ export function groupToolRange(
     panel = first.panel;
   }
 
+  // Custom-view buckets touched this flush (bucket -> canonical key), rebuilt
+  // from message data after the fold loop instead of holding raw rows.
+  const customBuckets = new Map<HTMLElement, string>();
+
   // ------------------------------------------------------------------
   // Pass 2: fold each ungrouped row
   // ------------------------------------------------------------------
@@ -392,12 +570,31 @@ export function groupToolRange(
       agentGroupById.set(m.id, group);
     }
 
+    // Custom-view tools: don't stack raw rows in the bucket. Pull the row out
+    // of the chat flow, count it on the chip, and flag the bucket for a rebuild
+    // from message data below (one-row-per-file, skill list, Q&A pairs).
+    if (CUSTOM_VIEW_TOOLS.has(key)) {
+      group.bucket.dataset.customView = key;
+      el.dataset.toolGrouped = "1";
+      el.remove();
+      if (isUse) bumpChip(group.chip);
+      customBuckets.set(group.bucket, key);
+      continue;
+    }
+
     group.bucket.appendChild(el);
     el.dataset.toolGrouped = "1";
 
     if (isUse) {
       bumpChip(group.chip);
     }
+  }
+
+  // Rebuild every custom bucket touched this flush from the full turn range so
+  // counts/answers stay correct as more calls stream in (idempotent: a full
+  // innerHTML rewrite each time).
+  for (const [bucket, key] of customBuckets) {
+    rebuildCustomBucket(bucket, key, messages, start, end);
   }
 }
 

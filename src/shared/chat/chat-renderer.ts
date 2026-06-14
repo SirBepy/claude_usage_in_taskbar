@@ -5,7 +5,8 @@ import { highlightCodeBlocks, highlightInlineCode } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
-import { toolSummary, type ToolTally } from "./tool-meta";
+import { toolSummary, canonicalTool, type ToolTally } from "./tool-meta";
+import { invoke } from "../ipc";
 import { ToolTallyState } from "./tool-tally-state";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
@@ -85,6 +86,12 @@ export class ChatRenderer {
   // Per-type tool-group elements for the turn in progress (key = canonical tool
   // name). Cleared at each turn end; re-populated by groupToolRange each flush.
   private activeToolGroups = new Map<string, ToolGroup>();
+  // In-flight tool calls for the active turn: a tool_use seen with no matching
+  // tool_result yet. Drives the primary-color "currently working" chip pulse.
+  // pendingToolIds maps tool_use id -> canonical tool so a result can decrement
+  // the right bucket; pendingByCanon is the per-canonical-tool in-flight count.
+  private pendingToolIds = new Map<string, string>();
+  private pendingByCanon = new Map<string, number>();
   private closeTurnQueue: {
     start: number;
     end: number;
@@ -124,6 +131,7 @@ export class ChatRenderer {
     this.container.addEventListener("click", handleAttachmentClick);
     this.container.addEventListener("click", handlePastedLogClick);
     this.container.addEventListener("click", this.handleToolChipClick);
+    this.container.addEventListener("click", this.handleToolFileClick);
     this.paginator = new ChatPaginator(container, {
       getSessionId: () => this.sessionId,
       getMessages: () => this.messages,
@@ -164,6 +172,8 @@ export class ChatRenderer {
     this.fileEdits = [];
     this.lastActivity = null;
     this.activeToolGroups.clear();
+    this.pendingToolIds.clear();
+    this.pendingByCanon.clear();
     this.tallyState.reset();
     this.onFileEditsChanged?.([]);
     this.onToolTally?.(this.tallyState.build());
@@ -210,6 +220,8 @@ export class ChatRenderer {
     this.resetActiveTurnMeta();
     this.turnFooters.clear();
     this.activeToolGroups.clear();
+    this.pendingToolIds.clear();
+    this.pendingByCanon.clear();
     this.closeTurnQueue = [];
     this.setActivity(null);
     this.sessionId = null;
@@ -510,11 +522,16 @@ export class ChatRenderer {
           const t = this.tallyState.tallyToolUse(ev.tool_name, ev.input, ev.id);
           if (t) this.onToolTally?.(t);
         }
+        if (ev.id) {
+          const canon = canonicalTool(ev.tool_name);
+          this.pendingToolIds.set(ev.id, canon);
+          this.pendingByCanon.set(canon, (this.pendingByCanon.get(canon) ?? 0) + 1);
+        }
         this.setActivity(this.describeActivity(ev.tool_name, ev.input));
         touched = true;
         break;
       }
-      case "tool_result":
+      case "tool_result": {
         this.messages.push({
           kind: "tool_result",
           tool_use_id: ev.tool_use_id,
@@ -522,8 +539,16 @@ export class ChatRenderer {
           is_error: ev.is_error,
           ts,
         });
+        const canon = ev.tool_use_id ? this.pendingToolIds.get(ev.tool_use_id) : undefined;
+        if (canon) {
+          this.pendingToolIds.delete(ev.tool_use_id);
+          const n = (this.pendingByCanon.get(canon) ?? 1) - 1;
+          if (n <= 0) this.pendingByCanon.delete(canon);
+          else this.pendingByCanon.set(canon, n);
+        }
         touched = true;
         break;
+      }
       case "notification":
         this.messages.push({ kind: "notification", text: ev.body, ts: Date.now() });
         touched = true;
@@ -646,6 +671,7 @@ export class ChatRenderer {
       const footer = this.activeTurnChipKey !== null ? this.turnFooters.getOrCreateFooter(this.activeTurnChipKey) : null;
       groupToolRange(this.messages, this.messageEls, this.activeTurnStart, this.messages.length, this.activeToolGroups, footer);
     }
+    this.applyRunningHighlight();
     void highlightCodeBlocks(this.container);
     wrapBlockquotes(this.container);
     highlightInlineCode(this.container);
@@ -764,6 +790,7 @@ export class ChatRenderer {
   private enqueueTurnClose(): void {
     // The next turn folds into fresh groups; closed-turn rows already carry
     // data-tool-grouped, so processTurnCloseQueue won't re-fold them.
+    this.clearRunningHighlight();
     this.activeToolGroups.clear();
     this.activeTurnSettled = false;
     if (this.activeTurnChipKey !== null) {
@@ -777,6 +804,45 @@ export class ChatRenderer {
     }
     this.resetActiveTurnMeta();
     this.activeTurnStart = null;
+  }
+
+  /**
+   * Drop the "currently working" pulse from a turn's chips and forget its
+   * in-flight calls. Called when the turn closes (the next user message) so a
+   * tool that never reported a result can't leave its chip pulsing forever.
+   */
+  private clearRunningHighlight(): void {
+    if (this.activeTurnChipKey !== null) {
+      const footer = this.turnFooters.getOrCreateFooter(this.activeTurnChipKey);
+      footer.querySelectorAll<HTMLElement>(".tool-chip--running")
+        .forEach((c) => c.classList.remove("tool-chip--running"));
+    }
+    this.pendingToolIds.clear();
+    this.pendingByCanon.clear();
+  }
+
+  /**
+   * Pulse the active turn's main-strip chip for any tool with an in-flight call
+   * (tool_use seen, tool_result not yet). Live only: bulk replay nets every
+   * result and the transcript is hidden until it settles, so a pulse there would
+   * be both invisible and misleading.
+   */
+  private applyRunningHighlight(): void {
+    if (this.liveBuffer !== null || this.activeTurnChipKey === null) return;
+    const footer = this.turnFooters.getOrCreateFooter(this.activeTurnChipKey);
+    // The main strip is a direct child of the footer (subagent strips live
+    // deeper inside buckets - we only pulse top-level chips). Walk children
+    // directly rather than rely on :scope, which jsdom handles inconsistently.
+    const strip = [...footer.children].find(
+      (c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains("tool-strip"),
+    );
+    if (!strip) return;
+    for (const node of strip.children) {
+      if (!(node instanceof HTMLElement) || !node.classList.contains("tool-chip")) continue;
+      const tool = node.dataset.tool;
+      const running = !!tool && (this.pendingByCanon.get(tool) ?? 0) > 0;
+      node.classList.toggle("tool-chip--running", running);
+    }
   }
 
   /** Clear all per-turn meta tracking (key, usage, timestamps, streamed text). */
@@ -819,6 +885,16 @@ export class ChatRenderer {
     }
     this.closeTurnQueue = [];
   }
+
+  // Custom chip-panel file rows (Read / File Changes) open their target in the
+  // editor. Interim behavior until the unified file view/edit screen lands
+  // (see .for_bepy/ai_todos): one click -> open_in_editor.
+  private handleToolFileClick = (e: MouseEvent): void => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>(".tool-file-row[data-path]");
+    if (!row) return;
+    const path = row.dataset.path;
+    if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[chat] open_in_editor failed", err));
+  };
 
   private handleToolChipClick = (e: MouseEvent): void => {
     const chip = (e.target as HTMLElement).closest<HTMLElement>(".tool-chip");

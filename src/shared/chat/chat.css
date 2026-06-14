@@ -616,6 +616,22 @@
 }
 .tool-chip--active.tool-chip--highlight { animation: none; }
 
+/* "Currently working" chip: the tool whose call is in flight right now (a
+   tool_use with no result yet). Primary-color fill + a soft pulsing ring, held
+   for as long as the call runs. The flash animation is the one-shot bump; this
+   is the persistent state, so it wins. */
+@keyframes tool-chip-working {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 40%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 0%, transparent); }
+}
+.tool-chip--running,
+.tool-chip--running.tool-chip--highlight {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-primary) 24%, var(--color-surface));
+  border-color: var(--color-primary);
+  animation: tool-chip-working 1.4s ease-in-out infinite;
+}
+
 .tool-chip i { font-size: 0.85rem; }
 
 .tool-chip-label { font-weight: 600; }
@@ -662,6 +678,108 @@
 .tool-strip-group .tool-strip-panel {
   margin: 0 7px 7px;
 }
+
+/* Custom chip-panel views (Read / File Changes / Skills / Questions): clean
+   aggregated lists, not the generic stack of raw tool rows. */
+.tool-strip-group[data-custom-view] {
+  padding: 3px;
+}
+
+.tool-file-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+.tool-file-row:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+.tool-file-row > .ph {
+  font-size: 0.95rem;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+.tool-file-name {
+  font-weight: 600;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+.tool-file-path {
+  flex: 1;
+  min-width: 0;
+  opacity: 0.55;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-file-count {
+  flex-shrink: 0;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+.tool-skill-row > .ph {
+  font-size: 0.95rem;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.tool-skill-name { font-weight: 600; }
+.tool-skill-row .tool-file-count { margin-left: auto; }
+
+.tool-qa {
+  padding: 7px 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+.tool-qa:last-child { border-bottom: none; }
+.tool-qa-header {
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+  margin-bottom: 2px;
+}
+.tool-qa-q {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+.tool-qa-a {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+.tool-qa-a > .ph {
+  color: var(--color-primary);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.tool-qa-a--pending {
+  opacity: 0.6;
+  font-style: italic;
+}
+.tool-qa-a--pending > .ph { color: var(--color-text-muted); }
 
 /* Per-subagent chip: descriptions can be long, so cap + ellipsize the label
    and lead with the robot icon so it reads as "a subagent", not a tool. */

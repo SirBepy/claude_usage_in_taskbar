@@ -56,6 +56,10 @@ export function toolSummary(tool: string, input: unknown): { icon: string; tool:
       case "Agent":
       case "Task":
         return { icon: "ph-robot", target: "starting subagent" };
+      case "AskUserQuestion":
+        return { icon: "ph-chats-circle", target: "" };
+      case "Skill":
+        return { icon: "ph-sparkle", target: typeof obj.skill === "string" ? obj.skill : "" };
       default:
         return { icon: "ph-wrench", target: "" };
     }
@@ -65,11 +69,13 @@ export function toolSummary(tool: string, input: unknown): { icon: string; tool:
 
 // Tools that fold into another tool's chip/tally so the user sees one bucket
 // per concept, not per CLI variant: PowerShell and Bash are both "Ran"; the
-// edit family (MultiEdit/NotebookEdit) folds into "Edit".
+// edit family (MultiEdit/NotebookEdit) AND Write fold into "Edit" - one
+// "File Changes" bucket covers every file the turn created or modified.
 const CANONICAL_TOOL: Record<string, string> = {
   PowerShell: "Bash",
   MultiEdit: "Edit",
   NotebookEdit: "Edit",
+  Write: "Edit",
 };
 
 /** The bucket a tool groups under (Bash/PowerShell -> Bash, edit family -> Edit). */
@@ -80,13 +86,14 @@ export function canonicalTool(tool: string): string {
 // Friendly verbs for a (canonical) tool, shown on tally + transcript chips.
 const TOOL_LABELS: Record<string, string> = {
   Read: "Read",
-  Edit: "Edited",
-  Write: "Wrote",
+  Edit: "File Changes",
   Grep: "Grep",
   Glob: "Glob",
   Bash: "Ran",
   Task: "Subagent",
   Agent: "Subagent",
+  AskUserQuestion: "Questions",
+  Skill: "Skills",
 };
 
 /** Friendly chip label for a tool, after canonicalizing (e.g. PowerShell -> "Ran"). */
