@@ -1,5 +1,13 @@
-import { describe, it, expect } from "vitest";
+// @vitest-environment jsdom
+import { describe, it, expect, vi } from "vitest";
 import { insertChip, moveChip, removeAt, addRow, trimRows } from "../src/views/settings/subviews/statusline/statusline-dnd.ts";
+
+// Mock Tauri invoke so renderStatuslineView can load/save settings in jsdom.
+const ipcMock = { impl: async (cmd) => (cmd === "get_settings" ? {} : null) };
+vi.mock("../src/shared/ipc.ts", () => ({
+  invoke: vi.fn((cmd, args) => ipcMock.impl(cmd, args)),
+}));
+const { renderStatuslineView } = await import("../src/views/settings/subviews/statusline/statusline.ts");
 
 describe("statusline dnd model ops", () => {
   it("inserts a palette chip at a position (dupes allowed)", () => {
@@ -25,5 +33,26 @@ describe("statusline dnd model ops", () => {
   it("moving within the same row to a later index lands correctly", () => {
     const r = moveChip([["a", "b", "c"]], { row: 0, index: 0 }, { row: 0, index: 2 });
     expect(r).toEqual([["b", "a", "c"]]);
+  });
+});
+
+describe("builder view - drag-out remove (DOM)", () => {
+  it("dragging a placed chip out of the bar removes it", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    await renderStatuslineView(host);
+
+    const bar = host.querySelector("#slBar");
+    const before = bar.querySelectorAll(".sl-placed").length;
+    expect(before).toBeGreaterThan(0);
+
+    const chip = bar.querySelector(".sl-placed");
+    // jsdom elementFromPoint always returns null => pointerup is "outside any
+    // row" => the drag-out remove path fires.
+    chip.dispatchEvent(new MouseEvent("pointerdown", { clientX: 100, clientY: 100, bubbles: true }));
+    document.dispatchEvent(new MouseEvent("pointermove", { clientX: -50, clientY: -50, bubbles: true }));
+    document.dispatchEvent(new MouseEvent("pointerup", { clientX: -50, clientY: -50, bubbles: true }));
+
+    expect(bar.querySelectorAll(".sl-placed").length).toBe(before - 1);
   });
 });

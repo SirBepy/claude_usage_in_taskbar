@@ -1,15 +1,16 @@
-import { html, render } from "lit-html";
 import {
-  ALL_STATUSLINE_FIELDS,
-  DEFAULT_STATUSLINE_FIELDS,
-  loadStatuslineFields,
-  saveStatuslineFields,
-  TALLY_TOOL_OPTIONS,
-  DEFAULT_TALLY_HIDDEN_TOOLS,
-  loadTallyHiddenTools,
-  saveTallyHiddenTools,
+  loadStatuslineRows,
+  saveStatuslineRows,
+  loadStatuslineHideZero,
+  saveStatuslineHideZero,
 } from "../../../sessions/session-statusbar-helpers";
-import { modelLabel as shortModelName } from "../../../../shared/model-name";
+import {
+  type ChipType, STATIC_CHIPS, SECTION_LABELS, type SectionKey,
+  TOOL_CHIP_TOOLS, DEFAULT_ROWS, MAX_ROWS, isToolChip, chipToolName,
+} from "../../../sessions/statusline-catalog";
+import { toolLabel, toolSummary } from "../../../../shared/chat/tool-meta";
+import { escapeHtml } from "../../../../shared/escape-html";
+import { type Pos, insertChip, moveChip, removeAt, addRow, trimRows } from "./statusline-dnd";
 import "../../settings.css";
 import "./statusline.css";
 import "../../../sessions/session-statusbar.css";
@@ -17,186 +18,231 @@ import "../../../sessions/session-statusbar.css";
 interface LegacyGlobals {
   navigateTo(name: string): Promise<void>;
 }
-
 function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
-// Mock data used for the live preview.
-const MOCK = {
-  branch: "main",
-  repo: "my-project",
-  folder: "my-project",
-  model: shortModelName("claude-sonnet-4-6"),
-  effort: "Normal",
-  contextPct: "45",
-  duration: "2m 30s",
-  messages: "12",
-  turns: "8",
-};
+interface ChipDisplay { icon: string; sample: string; tooltip: string; }
 
-function previewChips(fields: string[]): string {
-  const git: string[] = [];
-  const claude: string[] = [];
-  const counts: string[] = [];
-
-  if (fields.includes("branch"))
-    git.push(`<span class="sb-chip sb-branch"><i class="ph ph-git-branch"></i>${MOCK.branch}</span>`);
-  if (fields.includes("repo"))
-    git.push(`<span class="sb-chip sb-repo"><i class="ph ph-folder-simple"></i>${MOCK.repo}</span>`);
-  if (fields.includes("folder"))
-    git.push(`<span class="sb-chip sb-folder"><i class="ph ph-folder-open"></i>${MOCK.folder}</span>`);
-
-  if (fields.includes("model"))
-    claude.push(`<span class="sb-chip sb-model"><i class="ph ph-robot"></i>${MOCK.model}</span>`);
-  if (fields.includes("effort"))
-    claude.push(`<span class="sb-chip sb-effort"><i class="ph ph-gauge"></i>${MOCK.effort}</span>`);
-  if (fields.includes("context"))
-    claude.push(`<span class="sb-chip sb-context"><i class="ph ph-stack"></i>${MOCK.contextPct}%</span>`);
-  if (fields.includes("thinking"))
-    claude.push(`<span class="sb-chip sb-thinking active"><i class="ph ph-brain"></i>thinking</span>`);
-  if (fields.includes("duration"))
-    claude.push(`<span class="sb-chip sb-duration"><i class="ph ph-timer"></i>${MOCK.duration}</span>`);
-
-  if (fields.includes("messages"))
-    counts.push(`<span class="sb-chip sb-messages"><i class="ph ph-chat-circle"></i>${MOCK.messages} msgs</span>`);
-  if (fields.includes("turns"))
-    counts.push(`<span class="sb-chip sb-turns"><i class="ph ph-arrows-clockwise"></i>${MOCK.turns} turns</span>`);
-
-  if (git.length === 0 && claude.length === 0 && counts.length === 0)
-    return `<span class="sb-empty">No fields</span>`;
-
-  const out: string[] = [];
-  for (const group of [git, claude, counts]) {
-    if (group.length === 0) continue;
-    if (out.length > 0) out.push(`<span class="sb-sep"></span>`);
-    out.push(...group);
+// Display metadata for any chip - static chips from the catalog, tool chips
+// derived from the shared tool-meta so the palette/preview match the real bar.
+function chipMeta(type: ChipType): ChipDisplay {
+  if (isToolChip(type)) {
+    const tool = chipToolName(type);
+    return {
+      icon: toolSummary(tool, {}).icon,
+      sample: `${toolLabel(tool)} ×3`,
+      tooltip: `How many ${toolLabel(tool)} tool calls ran this session.`,
+    };
   }
-  return out.join("");
+  const m = STATIC_CHIPS[type as keyof typeof STATIC_CHIPS];
+  return { icon: m.icon, sample: m.sample, tooltip: m.tooltip };
 }
 
-function template(fields: string[], hiddenTools: string[]) {
-  return html`
-    <div class="view view-settings-statusline">
-      <div class="view-header">
-        <button class="icon-btn back-to-settings" title="Back">←</button>
-        <h2>Statusline</h2>
-        <div style="width:32px"></div>
+function chipHtml(type: ChipType, cls: string, extra = ""): string {
+  const m = chipMeta(type);
+  return `<span class="sb-chip sl-pchip ${cls}" data-type="${escapeHtml(type)}" ${extra} title="${escapeHtml(m.tooltip)}"><i class="ph ${m.icon}"></i>${escapeHtml(m.sample)}</span>`;
+}
+
+const SECTION_ORDER: SectionKey[] = ["model", "git", "session", "tools"];
+
+function paletteChipsFor(section: SectionKey): ChipType[] {
+  if (section === "tools") return TOOL_CHIP_TOOLS.map((t) => `tool:${t}` as ChipType);
+  return (Object.keys(STATIC_CHIPS) as (keyof typeof STATIC_CHIPS)[])
+    .filter((k) => STATIC_CHIPS[k].section === section) as ChipType[];
+}
+
+const SHELL = `
+  <div class="view view-settings-statusline">
+    <div class="view-header">
+      <button class="icon-btn back-to-settings" title="Back">←</button>
+      <h2>Statusline</h2>
+      <div style="width:32px"></div>
+    </div>
+    <div class="view-body">
+      <div class="kit-section sl-section">
+        <div class="kit-section-title">Preview &amp; layout</div>
+        <div class="kit-section-hint sl-hint">Drag chips from the palette into the bar. Reorder by dragging, remove by dragging a chip out of the bar. Up to ${MAX_ROWS} rows.</div>
+        <div class="sl-builder-chrome">
+          <div class="sl-builder-titlebar">my-project — active session</div>
+          <div class="session-statusbar sl-builder-bar" id="slBar"></div>
+          <div class="sl-builder-body"><span>chat messages…</span></div>
+        </div>
       </div>
-      <div class="view-body">
 
-        <div class="kit-section sl-section">
-          <div class="kit-section-title">Preview</div>
-          <div class="sl-preview-wrap">
-            <div class="sl-preview-chrome">my-project — active session</div>
-            <div class="sl-preview-bar sl-preview-bar-live">
-              ${fields.length > 0
-                ? html`<div class="sb-chips" style="flex:1;display:flex;align-items:center;gap:4px;overflow:hidden;" .innerHTML=${previewChips(fields)}></div>`
-                : html`<span class="sb-empty">No fields selected</span>`}
-            </div>
-            <div class="sl-preview-body">
-              <span class="sl-preview-body-hint">chat messages</span>
-            </div>
-          </div>
-        </div>
+      <div class="kit-section sl-section">
+        <div class="kit-section-title">Palette</div>
+        <div class="sl-palette" id="slPalette"></div>
+      </div>
 
-        <div class="kit-section sl-section">
-          <div class="kit-section-title">Fields</div>
-          <div class="sl-fields">
-            ${ALL_STATUSLINE_FIELDS.map(({ key, label }) => html`
-              <label class="sl-field-row">
-                <input type="checkbox" data-key="${key}" ?checked=${fields.includes(key)}>
-                ${label}
-              </label>
-            `)}
-          </div>
-        </div>
+      <div class="kit-section sl-section">
+        <label class="sl-hidezero">
+          <input type="checkbox" id="slHideZero">
+          Hide tool / count chips when they're zero
+        </label>
+      </div>
 
-        <div class="kit-section sl-section">
-          <div class="kit-section-title">Tool activity chips</div>
-          <div class="kit-section-hint" style="margin-bottom:8px;font-size:0.78rem;opacity:0.7;">
-            Which tool counters (Read, Grep, ...) appear in the activity row. Untick to hide.
-          </div>
-          <div class="sl-fields">
-            ${TALLY_TOOL_OPTIONS.map(({ key, label }) => html`
-              <label class="sl-tally-row">
-                <input type="checkbox" data-tool="${key}" ?checked=${!hiddenTools.includes(key)}>
-                ${label}
-              </label>
-            `)}
-          </div>
-        </div>
-
-        <div class="kit-section">
-          <button class="btn-secondary" id="slResetBtn" style="font-size:0.8rem;">Reset to defaults</button>
-        </div>
-
+      <div class="kit-section">
+        <button class="btn-secondary" id="slResetBtn" style="font-size:0.8rem;">Reset to defaults</button>
       </div>
     </div>
-  `;
-}
+  </div>
+`;
 
 export async function renderStatuslineView(root: HTMLElement): Promise<() => void> {
-  const fields = await loadStatuslineFields();
-  const hiddenTools = await loadTallyHiddenTools();
+  let rows = await loadStatuslineRows();
+  let hideZero = await loadStatuslineHideZero();
 
-  render(template(fields, hiddenTools), root);
-  wire(root);
+  root.innerHTML = SHELL;
+  const bar = root.querySelector<HTMLElement>("#slBar")!;
+  const palette = root.querySelector<HTMLElement>("#slPalette")!;
+  const hideZeroBox = root.querySelector<HTMLInputElement>("#slHideZero")!;
+  hideZeroBox.checked = hideZero;
 
-  return () => {};
-}
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  const persist = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void saveStatuslineRows(rows), 250);
+  };
 
-function wire(root: HTMLElement): void {
+  // ── drag state ─────────────────────────────────────────────────────────────
+  let drag: {
+    type: ChipType;
+    fromPlaced: Pos | null; // null => dragged from palette
+    clone: HTMLElement;
+  } | null = null;
+  let onMove: ((e: PointerEvent) => void) | null = null;
+  let onUp: ((e: PointerEvent) => void) | null = null;
+
+  function paint(): void {
+    bar.innerHTML =
+      rows.map((row, ri) =>
+        `<div class="sb-row sl-row${row.length === 0 ? " sl-row-empty" : ""}" data-row="${ri}">`
+        + row.map((type, ci) => chipHtml(type, "sl-placed", `data-row="${ri}" data-index="${ci}"`)).join("")
+        + `</div>`
+      ).join("")
+      + (rows.length < MAX_ROWS ? `<button class="sl-addrow" id="slAddRow">+ row</button>` : "");
+
+    palette.innerHTML = SECTION_ORDER.map((sec) =>
+      `<div class="sl-palette-section">`
+      + `<div class="sl-section-label">${escapeHtml(SECTION_LABELS[sec])}</div>`
+      + `<div class="sl-palette-chips">`
+      + paletteChipsFor(sec).map((type) => chipHtml(type, "sl-source")).join("")
+      + `</div></div>`
+    ).join("");
+
+    wireChips();
+    root.querySelector<HTMLButtonElement>("#slAddRow")?.addEventListener("click", () => {
+      rows = addRow(rows);
+      paint();
+    });
+  }
+
+  function wireChips(): void {
+    root.querySelectorAll<HTMLElement>(".sl-pchip").forEach((chip) => {
+      chip.addEventListener("pointerdown", (e) => startDrag(e, chip));
+    });
+  }
+
+  function startDrag(e: PointerEvent, chip: HTMLElement): void {
+    e.preventDefault();
+    const type = chip.dataset.type as ChipType;
+    const placed = chip.classList.contains("sl-placed");
+    const fromPlaced: Pos | null = placed
+      ? { row: Number(chip.dataset.row), index: Number(chip.dataset.index) }
+      : null;
+
+    const clone = document.createElement("span");
+    clone.className = "sb-chip sl-drag-clone";
+    clone.innerHTML = chip.innerHTML;
+    clone.style.left = `${e.clientX + 8}px`;
+    clone.style.top = `${e.clientY + 8}px`;
+    document.body.appendChild(clone);
+
+    drag = { type, fromPlaced, clone };
+
+    onMove = (ev: PointerEvent) => moveDrag(ev);
+    onUp = (ev: PointerEvent) => endDrag(ev);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }
+
+  // Find the row + insertion index under the pointer, or null if not over a row.
+  function hitTest(x: number, y: number): Pos | null {
+    if (typeof document.elementFromPoint !== "function") return null; // jsdom / no layout
+    const rowEl = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>(".sl-row");
+    if (!rowEl) return null;
+    const ri = Number(rowEl.dataset.row);
+    const chips = [...rowEl.querySelectorAll<HTMLElement>(".sl-placed")];
+    let index = chips.length;
+    for (let i = 0; i < chips.length; i++) {
+      const c = chips[i];
+      if (!c) continue;
+      const r = c.getBoundingClientRect();
+      if (x < r.left + r.width / 2) { index = i; break; }
+    }
+    return { row: ri, index };
+  }
+
+  function moveDrag(e: PointerEvent): void {
+    if (!drag) return;
+    drag.clone.style.left = `${e.clientX + 8}px`;
+    drag.clone.style.top = `${e.clientY + 8}px`;
+    const pos = hitTest(e.clientX, e.clientY);
+    const removing = drag.fromPlaced !== null && pos === null;
+    drag.clone.classList.toggle("sl-removing", removing);
+    root.querySelectorAll<HTMLElement>(".sl-row.sl-drop-target").forEach((el) => el.classList.remove("sl-drop-target"));
+    if (pos) {
+      root.querySelector<HTMLElement>(`.sl-row[data-row="${pos.row}"]`)?.classList.add("sl-drop-target");
+    }
+  }
+
+  function endDrag(e: PointerEvent): void {
+    if (onMove) document.removeEventListener("pointermove", onMove);
+    if (onUp) document.removeEventListener("pointerup", onUp);
+    onMove = onUp = null;
+    if (!drag) return;
+    const { type, fromPlaced, clone } = drag;
+    clone.remove();
+    drag = null;
+
+    const pos = hitTest(e.clientX, e.clientY);
+    if (pos) {
+      rows = fromPlaced ? moveChip(rows, fromPlaced, pos) : insertChip(rows, pos, type);
+    } else if (fromPlaced) {
+      rows = removeAt(rows, fromPlaced); // drag-out = remove
+    } else {
+      paint(); // palette chip dropped on nothing: no-op
+      return;
+    }
+    rows = trimRows(rows);
+    paint();
+    persist();
+  }
+
+  // ── static wiring ──────────────────────────────────────────────────────────
   root.querySelector<HTMLButtonElement>(".back-to-settings")!.onclick = () => g().navigateTo("settings");
 
-  root.querySelectorAll<HTMLInputElement>(".sl-field-row input").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const key = cb.dataset.key!;
-      const fields = getFields(root);
-      const next = cb.checked
-        ? [...fields, key].filter((k, i, a) => a.indexOf(k) === i)
-        : fields.filter((k) => k !== key);
-      void saveStatuslineFields(next);
-      // Re-render to update preview.
-      root.querySelector<HTMLElement>(".sl-preview-bar-live .sb-chips")?.remove();
-      const bar = root.querySelector<HTMLElement>(".sl-preview-bar-live");
-      if (bar) {
-        bar.innerHTML = `<div class="sb-chips" style="flex:1;display:flex;align-items:center;gap:4px;overflow:hidden;"></div>`;
-        const chips = bar.querySelector<HTMLElement>(".sb-chips");
-        if (chips) chips.innerHTML = previewChips(next);
-      }
-    });
+  hideZeroBox.addEventListener("change", () => {
+    hideZero = hideZeroBox.checked;
+    void saveStatuslineHideZero(hideZero);
   });
 
-  root.querySelectorAll<HTMLInputElement>(".sl-tally-row input").forEach((cb) => {
-    cb.addEventListener("change", () => {
-      const hidden = Array.from(root.querySelectorAll<HTMLInputElement>(".sl-tally-row input"))
-        .filter((c) => !c.checked)
-        .map((c) => c.dataset.tool!);
-      void saveTallyHiddenTools(hidden);
-    });
+  root.querySelector<HTMLButtonElement>("#slResetBtn")?.addEventListener("click", () => {
+    rows = DEFAULT_ROWS.map((r) => [...r]);
+    hideZero = true;
+    hideZeroBox.checked = true;
+    void saveStatuslineHideZero(true);
+    paint();
+    persist();
   });
 
-  root.querySelector<HTMLButtonElement>("#slResetBtn")?.addEventListener("click", async () => {
-    await saveStatuslineFields([...DEFAULT_STATUSLINE_FIELDS]);
-    await saveTallyHiddenTools([...DEFAULT_TALLY_HIDDEN_TOOLS]);
-    root.querySelectorAll<HTMLInputElement>(".sl-tally-row input").forEach((cb) => {
-      cb.checked = !DEFAULT_TALLY_HIDDEN_TOOLS.includes(cb.dataset.tool!);
-    });
-    root.querySelectorAll<HTMLInputElement>(".sl-field-row input").forEach((cb) => {
-      cb.checked = DEFAULT_STATUSLINE_FIELDS.includes(cb.dataset.key!);
-    });
-    const bar = root.querySelector<HTMLElement>(".sl-preview-bar-live");
-    if (bar) {
-      bar.innerHTML = `<div class="sb-chips" style="flex:1;display:flex;align-items:center;gap:4px;overflow:hidden;"></div>`;
-      const chips = bar.querySelector<HTMLElement>(".sb-chips");
-      if (chips) chips.innerHTML = previewChips([...DEFAULT_STATUSLINE_FIELDS]);
-    }
-  });
-}
+  paint();
 
-function getFields(root: HTMLElement): string[] {
-  return Array.from(root.querySelectorAll<HTMLInputElement>(".sl-field-row input"))
-    .filter((cb) => cb.checked)
-    .map((cb) => cb.dataset.key!);
+  return () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    if (onMove) document.removeEventListener("pointermove", onMove);
+    if (onUp) document.removeEventListener("pointerup", onUp);
+    drag?.clone.remove();
+  };
 }

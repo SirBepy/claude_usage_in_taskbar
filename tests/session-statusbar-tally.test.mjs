@@ -60,7 +60,7 @@ describe("per-tool chips", () => {
     const { el, sb } = mount();
     sb.updateToolTally(sampleTally());
     const chips = [...el.querySelectorAll(".sb-tally-chip")].map((c) => c.textContent);
-    expect(chips).toEqual(["Read x4", "Grep x3", "Edited x6", "Ran x5"]);
+    expect(chips).toEqual(["Read x4", "Grep x3", "File Changes x6", "Ran x5"]);
     const tools = [...el.querySelectorAll(".sb-tally-chip")].map((c) => c.dataset.tool);
     expect(tools).toEqual(["Read", "Grep", "Edit", "Bash"]);
   });

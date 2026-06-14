@@ -26,22 +26,6 @@ export class ToolTallyRow {
     this.container = container;
   }
 
-  // Build the chip-row HTML for the tally (one chip per non-hidden tool type).
-  // Returns "" when nothing to show so callers can skip the row wrapper.
-  renderChips(tally: ToolTally, hiddenTools: string[]): string {
-    // Cumulative tool-tally chips (Read x4, Edited x6, ...). Always-on group,
-    // not gated on `fields`. Each chip opens its OWN drill-down popover.
-    const tallyChips = tally.byType
-      .filter((t) => !hiddenTools.includes(t.tool))
-      .map((t) => {
-        const { icon } = toolSummary(t.tool, {});
-        const label = toolLabel(t.tool);
-        return `<span class="sb-tally-chip" role="button" tabindex="0" data-tool="${escapeHtml(t.tool)}" title="${escapeHtml(label)} targets"><i class="ph ${icon}"></i>${escapeHtml(label)} x${t.count}</span>`;
-      });
-    if (tallyChips.length === 0) return "";
-    return `<span class="sb-tally-row">${tallyChips.join("")}</span>`;
-  }
-
   /** Build ONE tool chip's HTML (count + drill-down affordance) for a given
    *  tool, or "" when hideZero is on and the count is 0 / the tool never ran.
    *  `count` is passed by the caller (SessionStatusbar owns the tally state);

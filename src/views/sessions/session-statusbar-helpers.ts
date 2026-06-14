@@ -6,39 +6,6 @@ import {
   type ChipType, DEFAULT_ROWS, MAX_ROWS, isKnownChip, TOOL_CHIP_TOOLS,
 } from "./statusline-catalog";
 
-export const DEFAULT_STATUSLINE_FIELDS = ["model", "effort", "branch", "repo", "context", "thinking", "messages", "turns"];
-
-export const ALL_STATUSLINE_FIELDS = [
-  { key: "branch",   label: "Branch" },
-  { key: "repo",     label: "Repo" },
-  { key: "folder",   label: "Project Folder" },
-  { key: "model",    label: "Model" },
-  { key: "effort",   label: "Effort" },
-  { key: "context",  label: "Context %" },
-  { key: "thinking", label: "Thinking" },
-  { key: "duration", label: "Duration" },
-  { key: "messages", label: "Messages" },
-  { key: "turns",    label: "Turns" },
-];
-
-export async function loadStatuslineFields(): Promise<string[]> {
-  try {
-    const s = await invoke<Record<string, unknown>>("get_settings");
-    const v = s["statuslineFields"];
-    if (Array.isArray(v)) return v as string[];
-  } catch { /* ignore */ }
-  return [...DEFAULT_STATUSLINE_FIELDS];
-}
-
-export async function saveStatuslineFields(fields: string[]): Promise<void> {
-  try {
-    const s = await invoke<Record<string, unknown>>("get_settings");
-    await invoke("save_settings", { updated: { ...s, statuslineFields: fields } });
-  } catch (e) {
-    console.error("[statusbar] save fields failed", e);
-  }
-}
-
 // ── Rows model (the builder) ────────────────────────────────────────────────
 // statuslineRows supersedes the flat statuslineFields. statuslineHideZero is a
 // single global toggle for count/tool chips. Legacy settings are migrated once.
@@ -115,46 +82,6 @@ export async function saveStatuslineHideZero(hide: boolean): Promise<void> {
     await invoke("save_settings", { updated: { ...s, statuslineHideZero: hide } });
   } catch (e) {
     console.error("[statusbar] save hideZero failed", e);
-  }
-}
-
-// Tool-activity chips the user can show/hide in the statusbar tally row. Keys are
-// raw tool names (what the chips group by); a tool not listed here always shows.
-// Keys are CANONICAL tool buckets (see canonicalTool): Edit covers the whole
-// edit family (Edit/MultiEdit/NotebookEdit), Bash covers Bash + PowerShell.
-export const TALLY_TOOL_OPTIONS = [
-  { key: "Read",            label: "Read" },
-  { key: "Edit",            label: "Edited" },
-  { key: "Write",           label: "Wrote" },
-  { key: "Grep",            label: "Grep" },
-  { key: "Glob",            label: "Glob" },
-  { key: "Bash",            label: "Ran (shell)" },
-  { key: "Task",            label: "Subagent" },
-  { key: "TodoWrite",       label: "Todo updates" },
-  { key: "AskUserQuestion", label: "Ask-user questions" },
-  { key: "WebFetch",        label: "Web fetch" },
-  { key: "WebSearch",       label: "Web search" },
-];
-
-// Denylist (raw tool names) hidden from the tally row by default. Noise the user
-// rarely cares to scan: question prompts and todo bookkeeping.
-export const DEFAULT_TALLY_HIDDEN_TOOLS = ["AskUserQuestion", "TodoWrite"];
-
-export async function loadTallyHiddenTools(): Promise<string[]> {
-  try {
-    const s = await invoke<Record<string, unknown>>("get_settings");
-    const v = s["tallyHiddenTools"];
-    if (Array.isArray(v)) return v as string[];
-  } catch { /* ignore */ }
-  return [...DEFAULT_TALLY_HIDDEN_TOOLS];
-}
-
-export async function saveTallyHiddenTools(tools: string[]): Promise<void> {
-  try {
-    const s = await invoke<Record<string, unknown>>("get_settings");
-    await invoke("save_settings", { updated: { ...s, tallyHiddenTools: tools } });
-  } catch (e) {
-    console.error("[statusbar] save tally tools failed", e);
   }
 }
 

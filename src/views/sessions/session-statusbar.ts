@@ -18,14 +18,6 @@ import {
   type StatusbarOptions,
 } from "./session-statusbar-helpers";
 export {
-  DEFAULT_STATUSLINE_FIELDS,
-  ALL_STATUSLINE_FIELDS,
-  loadStatuslineFields,
-  saveStatuslineFields,
-  TALLY_TOOL_OPTIONS,
-  DEFAULT_TALLY_HIDDEN_TOOLS,
-  loadTallyHiddenTools,
-  saveTallyHiddenTools,
   loadStatuslineRows,
   saveStatuslineRows,
   loadStatuslineHideZero,
