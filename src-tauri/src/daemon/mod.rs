@@ -16,6 +16,7 @@ pub mod lifecycle;
 pub mod lockfile;
 pub mod methods;
 pub mod notifier;
+pub mod remote_server;
 pub mod rpc;
 pub mod session;
 pub mod settings_cache;
@@ -88,6 +89,12 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
         Err(e) => return Err(e.into()),
     };
     detector_task::spawn(state.clone());
+
+    // Remote-access server (phone cockpit, Phase 1). Localhost-bound + token-
+    // authed; opt-in remote reach via the user's `tailscale serve`. Best-effort:
+    // never fails daemon startup. See daemon/remote_server.rs for the security
+    // boundary.
+    remote_server::spawn(state.clone(), app_data.clone());
 
     // Restore Interactive (in-app) chats persisted before the last shutdown.
     // The registry is in-memory only; without this, every daemon restart (reboot,
