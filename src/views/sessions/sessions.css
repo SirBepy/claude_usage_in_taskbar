@@ -248,35 +248,63 @@
 .session-avatar.st-attention::before { animation: avatar-edge-pulse 1.4s ease-in-out infinite; }
 @keyframes avatar-edge-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-/* Hero avatar in the open-chat header: circular, with a status-coloured ring
-   matching the sidebar strip's accent colour. */
-.session-header-char {
+/* Wrapper for the open-chat header avatar: circular clip + status-coloured
+   ring. Contains session-header-backdrop (blurred art fill) + session-header-char
+   (sharp portrait). Also used as a plain container for the "?" placeholder. */
+.session-header-avatar {
+  position: relative;
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  object-fit: cover;
+  overflow: hidden;
   border: 2px solid rgba(255,255,255,0.18);
   box-sizing: border-box;
-  image-rendering: pixelated;
   flex-shrink: 0;
   background: rgba(255,255,255,0.04);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.session-header-char.st-question  { border-color: #f59e0b; box-shadow: 0 0 6px 1px rgba(245,158,11,0.55); }
-.session-header-char.st-external  { border-color: #60a5fa; box-shadow: 0 0 6px 1px rgba(96,165,250,0.5); }
-.session-header-char.st-done      { border-color: #fbbf24; box-shadow: 0 0 5px 1px rgba(251,191,36,0.5); }
-.session-header-char.st-your-turn { border-color: rgba(255,255,255,0.22); }
-.session-header-char.st-working   { border-color: #4ade80; animation: header-char-pulse 1.5s ease-in-out infinite; }
-.session-header-char.st-attention { border-color: #ef4444; animation: header-char-pulse 1.3s ease-in-out infinite; }
+.session-header-avatar.st-question  { border-color: #f59e0b; box-shadow: 0 0 6px 1px rgba(245,158,11,0.55); }
+.session-header-avatar.st-external  { border-color: #60a5fa; box-shadow: 0 0 6px 1px rgba(96,165,250,0.5); }
+.session-header-avatar.st-done      { border-color: #fbbf24; box-shadow: 0 0 5px 1px rgba(251,191,36,0.5); }
+.session-header-avatar.st-your-turn { border-color: rgba(255,255,255,0.22); }
+.session-header-avatar.st-working   { border-color: #4ade80; animation: header-char-pulse 1.5s ease-in-out infinite; }
+.session-header-avatar.st-attention { border-color: #ef4444; animation: header-char-pulse 1.3s ease-in-out infinite; }
 @keyframes header-char-pulse {
   0%, 100% { box-shadow: 0 0 4px 0 rgba(74,222,128,0.4); }
   50%      { box-shadow: 0 0 9px 2px rgba(74,222,128,0.85); }
 }
-.session-header-char.st-attention {
+.session-header-avatar.st-attention {
   animation-name: header-char-pulse-red;
 }
 @keyframes header-char-pulse-red {
   0%, 100% { box-shadow: 0 0 4px 0 rgba(239,68,68,0.45); }
   50%      { box-shadow: 0 0 9px 2px rgba(239,68,68,0.9); }
+}
+/* Blurred backdrop behind the sharp portrait — fills transparent hexagon
+   corners with hero colours instead of the app background. */
+.session-header-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.8);
+  filter: blur(7px) saturate(1.3) brightness(0.85);
+  image-rendering: auto;
+  z-index: 0;
+}
+/* Sharp portrait layered above the backdrop. */
+.session-header-char {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  z-index: 1;
 }
 
 /* Stacked text column beside the header avatar: title on top (the important

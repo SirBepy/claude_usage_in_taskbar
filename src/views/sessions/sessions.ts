@@ -39,7 +39,7 @@ const HEADER_STATUS_CLASSES = [
  * state (working/done/question/…), so the ring colour tracks live changes
  * without re-rendering the whole header. */
 function updateHeaderAvatarStatus(pane: HTMLElement, sess: import("../../types/ipc.generated").Instance): void {
-  const heroEl = pane.querySelector<HTMLImageElement>(".session-header-char");
+  const heroEl = pane.querySelector<HTMLElement>(".session-header-avatar");
   if (!heroEl) return;
   const st = headerStatusClass(sess);
   if (heroEl.classList.contains(st)) return;

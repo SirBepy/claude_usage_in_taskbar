@@ -75,14 +75,25 @@ export async function changeCharacterForSession(sessionId: string): Promise<void
     const old = header?.querySelector<HTMLElement>(".header-char-clickable");
     if (header && old) {
       const url = characterIconUrl(picked);
-      const img = document.createElement("img");
-      img.className = `char-avatar session-header-char header-char-clickable ${headerStatusClass(sess)}`;
-      img.dataset.characterId = picked;
-      img.title = "Change character";
-      img.setAttribute("role", "button");
-      img.alt = "";
-      if (url) img.src = url;
-      old.replaceWith(img);
+      const wrapper = document.createElement("span");
+      wrapper.className = `session-header-avatar header-char-clickable ${headerStatusClass(sess)}`;
+      wrapper.title = "Change character";
+      wrapper.setAttribute("role", "button");
+      wrapper.tabIndex = 0;
+      const backdrop = document.createElement("img");
+      backdrop.className = "char-avatar session-header-backdrop";
+      backdrop.dataset.characterId = picked;
+      backdrop.alt = "";
+      backdrop.setAttribute("aria-hidden", "true");
+      if (url) { backdrop.src = url; backdrop.dataset.hydrated = picked; }
+      const sharp = document.createElement("img");
+      sharp.className = "char-avatar session-header-char";
+      sharp.dataset.characterId = picked;
+      sharp.alt = "";
+      if (url) { sharp.src = url; sharp.dataset.hydrated = picked; }
+      wrapper.appendChild(backdrop);
+      wrapper.appendChild(sharp);
+      old.replaceWith(wrapper);
     }
   }
   const root = document.querySelector<HTMLElement>(".view-sessions");
@@ -164,9 +175,13 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const headerCharId = characterForSession(sess);
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
+  const preload = headerIconUrl && headerCharId ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : "";
   const headerHero = headerCharId
-    ? `<img class="char-avatar session-header-char header-char-clickable ${headerStatus}" data-character-id="${escapeHtml(headerCharId)}"${headerIconUrl ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : ""} alt="" title="Change character" role="button" tabindex="0">`
-    : `<div class="char-avatar session-header-char-placeholder header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">?</div>`;
+    ? `<span class="session-header-avatar header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">`
+    + `<img class="char-avatar session-header-backdrop" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="" aria-hidden="true">`
+    + `<img class="char-avatar session-header-char" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="">`
+    + `</span>`
+    : `<div class="session-header-avatar session-header-char-placeholder header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">?</div>`;
 
   pane.innerHTML = `
     <header class="session-header">
