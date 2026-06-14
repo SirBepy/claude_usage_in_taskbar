@@ -274,6 +274,13 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       const root = document.querySelector<HTMLElement>(".view-sessions");
       const listEl = root?.querySelector<HTMLElement>("#sessions-list");
       if (listEl) renderSidebar(listEl);
+      if (status === "done" || status === "question") {
+        const charId = characterForSession(sess);
+        if (charId) {
+          const slot = status === "question" ? "question_asked" : "work_finished";
+          void api.playCharacterSlot(charId, slot).catch(() => {});
+        }
+      }
     };
     pane.querySelector(".changes-btn")?.addEventListener("click", () => panel.toggle());
     await renderer.attach(sessionId);
