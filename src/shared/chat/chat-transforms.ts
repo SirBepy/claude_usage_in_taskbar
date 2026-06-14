@@ -242,7 +242,27 @@ export function renderMessage(m: RenderedMessage): string {
 }
 
 function renderMarkdown(text: string, breaks = false): string {
-  return highlightSlashMentions((breaks ? mdBreaks : md).render(text));
+  const inst = breaks ? mdBreaks : md;
+  return linkifyInlineCodeUrls(highlightSlashMentions(inst.render(text)), inst);
+}
+
+// markdown-it linkifies bare URLs in normal text, but a URL the model wraps in
+// `inline code` renders as a non-clickable <code> span. When an inline-code
+// span IS a single whole URL, wrap its contents in an anchor so it's clickable
+// too — the global interceptor (shared/external-links.ts) opens it externally.
+// Only whole-span URLs are linked, so a snippet like `curl https://x && y`
+// stays untouched and copyable. Fenced blocks render as <pre><code> (or
+// <code class="...">) and are excluded by the lookbehind / no-attribute match.
+const INLINE_CODE_URL_RE = /(?<!<pre>)<code>([^<]+)<\/code>/g;
+
+function linkifyInlineCodeUrls(html: string, inst: MarkdownIt): string {
+  return html.replace(INLINE_CODE_URL_RE, (full: string, inner: string) => {
+    const matches = inst.linkify.match(inner);
+    if (!matches || matches.length !== 1) return full;
+    const m = matches[0]!;
+    if (m.index !== 0 || m.lastIndex !== inner.length) return full;
+    return `<code><a href="${escapeHtml(m.url)}">${inner}</a></code>`;
+  });
 }
 
 // Claude Code wraps slash-command prompts with internal tags like

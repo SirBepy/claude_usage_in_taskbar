@@ -153,6 +153,29 @@ describe("renderBlocks — pasted-log chip", () => {
   });
 });
 
+describe("renderBlocks — inline-code URL linkify", () => {
+  it("makes a URL-only inline-code span clickable", () => {
+    const html = renderBlocks([{ type: "text", text: "Open: `http://localhost:57217`" }]);
+    expect(html).toContain('<code><a href="http://localhost:57217">http://localhost:57217</a></code>');
+  });
+
+  it("leaves a non-URL inline-code span untouched", () => {
+    const html = renderBlocks([{ type: "text", text: "run `cargo build` now" }]);
+    expect(html).toContain("<code>cargo build</code>");
+    expect(html).not.toContain("<a href");
+  });
+
+  it("does not linkify a URL embedded in a larger command snippet", () => {
+    const html = renderBlocks([{ type: "text", text: "run `curl https://example.com -o x` now" }]);
+    expect(html).not.toContain("<a href");
+  });
+
+  it("still linkifies a bare URL in plain text", () => {
+    const html = renderBlocks([{ type: "text", text: "see http://localhost:57217 now" }]);
+    expect(html).toContain('href="http://localhost:57217"');
+  });
+});
+
 describe("status marker", () => {
   it("strips the status marker from rendered text", () => {
     const html = renderBlocks([{ type: "text", text: "All done here.\n<cc-status:done>" }]);
