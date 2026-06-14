@@ -431,6 +431,29 @@ pub fn get_update_state(app: AppHandle) -> serde_json::Value {
 pub struct GitInfo {
     pub branch: Option<String>,
     pub repo: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub sha: Option<String>,
+    pub insertions: Option<u32>,
+    pub deletions: Option<u32>,
+}
+
+/// Parse `git diff --shortstat` output into (insertions, deletions). Empty
+/// output (clean tree) => (None, None); a present line with only one side =>
+/// the missing side is 0.
+pub fn parse_shortstat(s: &str) -> (Option<u32>, Option<u32>) {
+    let s = s.trim();
+    if s.is_empty() {
+        return (None, None);
+    }
+    let grab = |needle: &str| -> Option<u32> {
+        let idx = s.find(needle)?;
+        s[..idx]
+            .rsplit(|c: char| !c.is_ascii_digit())
+            .find(|p| !p.is_empty())
+            .and_then(|p| p.parse().ok())
+    };
+    (Some(grab("insertion").unwrap_or(0)), Some(grab("deletion").unwrap_or(0)))
 }
 
 /// Daemon-aligned context-window status for a session. The transcript lives on
@@ -554,10 +577,48 @@ pub async fn get_git_info(cwd: String) -> GitInfo {
                 .map(|s| s.to_string())
         };
 
-        GitInfo { branch, repo }
+        // Upstream ahead/behind: `behind<TAB>ahead`. None when no upstream.
+        let (ahead, behind) = run_git(&cwd, &["rev-list", "--left-right", "--count", "@{u}...HEAD"])
+            .and_then(|s| {
+                let mut it = s.split_whitespace();
+                let behind = it.next()?.parse::<u32>().ok()?;
+                let ahead = it.next()?.parse::<u32>().ok()?;
+                Some((Some(ahead), Some(behind)))
+            })
+            .unwrap_or((None, None));
+
+        let sha = run_git(&cwd, &["rev-parse", "--short", "HEAD"]);
+
+        let (insertions, deletions) = run_git(&cwd, &["diff", "--shortstat"])
+            .map(|s| parse_shortstat(&s))
+            .unwrap_or((None, None));
+
+        GitInfo { branch, repo, ahead, behind, sha, insertions, deletions }
     })
     .await
-    .unwrap_or(GitInfo { branch: None, repo: None })
+    .unwrap_or(GitInfo { branch: None, repo: None, ahead: None, behind: None, sha: None, insertions: None, deletions: None })
+}
+
+#[cfg(test)]
+mod git_info_tests {
+    use super::parse_shortstat;
+
+    #[test]
+    fn parses_insertions_and_deletions() {
+        assert_eq!(parse_shortstat(" 3 files changed, 42 insertions(+), 7 deletions(-)"), (Some(42), Some(7)));
+    }
+    #[test]
+    fn parses_insertions_only() {
+        assert_eq!(parse_shortstat(" 1 file changed, 5 insertions(+)"), (Some(5), Some(0)));
+    }
+    #[test]
+    fn parses_deletions_only() {
+        assert_eq!(parse_shortstat(" 1 file changed, 9 deletions(-)"), (Some(0), Some(9)));
+    }
+    #[test]
+    fn empty_is_none() {
+        assert_eq!(parse_shortstat(""), (None, None));
+    }
 }
 
 #[tauri::command]
