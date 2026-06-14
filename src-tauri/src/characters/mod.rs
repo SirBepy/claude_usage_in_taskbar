@@ -7,6 +7,7 @@ pub mod assets;
 pub mod bundled;
 pub mod cache;
 pub mod assign;
+pub mod whitelist;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
