@@ -101,7 +101,7 @@ pub(super) async fn on_notify(
     log::info!("hook /notify: cwd={}", payload.cwd.as_deref().unwrap_or("-"));
     ctx.state
         .notifier
-        .publish("notify_requested", json!({"cwd": payload.cwd}));
+        .publish("notify_requested", json!({"cwd": payload.cwd, "session_id": payload.session_id}));
     StatusCode::OK
 }
 

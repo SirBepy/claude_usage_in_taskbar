@@ -19,15 +19,19 @@ pub struct NotifContext {
 /// `sound_file` carries an absolute path resolved from a character slot.
 pub const CHARACTER_PACK_SENTINEL: &str = "__character__";
 
-/// Character-aware resolver. For `WorkFinished` / `QuestionAsked`, if the
-/// project at `cwd_key` has `Avatar::Character(id)` and that character has a
-/// non-empty slot, returns a synthetic rule whose `sound_file` is an absolute
-/// path. Otherwise returns the global default rule for the kind.
+/// Character-aware resolver. For `WorkFinished` / `QuestionAsked`:
+/// 1. Prefers the SESSION character: when `session_id` is `Some` and
+///    `settings.session_characters` has an entry for it, that char_id is used.
+/// 2. Falls back to the project avatar at `cwd_key` (post-migration this will
+///    be `Avatar::None` for most projects, yielding the default sound).
+/// Returns a synthetic rule whose `sound_file` is an absolute path when a
+/// character is resolved and its slot has a file; otherwise the global default.
 /// `ThresholdCrossed` always returns the global default.
 pub fn resolve_with_character(
     cfg: &crate::tray::NotificationsConfig,
     settings: &Settings,
     kind: NotifKind,
+    session_id: Option<&str>,
     cwd_key: Option<&str>,
 ) -> NotificationRule {
     let default_rule = match kind {
@@ -36,15 +40,26 @@ pub fn resolve_with_character(
         NotifKind::ThresholdCrossed => cfg.threshold_crossed.clone(),
     };
     if matches!(kind, NotifKind::ThresholdCrossed) { return default_rule; }
-    let Some(key) = cwd_key else { return default_rule; };
-    // Normalize the incoming CWD the same way stored paths are keyed so that
-    // casing and separator variants don't cause a miss.
-    let normalized_key = crate::settings::store::project_key(std::path::Path::new(key));
-    let Some(proj) = settings.projects.iter().find(|p| {
-        crate::settings::store::project_key(&p.path) == normalized_key
-    }) else { return default_rule; };
-    let Avatar::Character(char_id) = &proj.avatar else { return default_rule; };
-    let Some(character) = crate::characters::get(char_id) else { return default_rule; };
+
+    // 1. Prefer the session's character.
+    let char_id: Option<String> = session_id
+        .and_then(|sid| settings.session_characters.get(sid).cloned());
+
+    // 2. Fall back to the project avatar.
+    let char_id: Option<String> = char_id.or_else(|| {
+        let key = cwd_key?;
+        let normalized_key = crate::settings::store::project_key(std::path::Path::new(key));
+        let proj = settings.projects.iter().find(|p| {
+            crate::settings::store::project_key(&p.path) == normalized_key
+        })?;
+        match &proj.avatar {
+            Avatar::Character(id) => Some(id.clone()),
+            _ => None,
+        }
+    });
+
+    let Some(char_id) = char_id else { return default_rule; };
+    let Some(character) = crate::characters::get(&char_id) else { return default_rule; };
     let slot = match kind {
         NotifKind::WorkFinished  => crate::characters::slots::Slot::WorkFinished,
         NotifKind::QuestionAsked => crate::characters::slots::Slot::QuestionAsked,
@@ -68,7 +83,13 @@ pub(crate) fn should_suppress(settings: &Settings, mode: NotifMode) -> bool {
     matches!(mode, NotifMode::Sound | NotifMode::Voice) && settings.mute_sounds()
 }
 
-pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option<&str>) {
+pub fn fire(
+    app: &AppHandle,
+    kind: NotifKind,
+    ctx: NotifContext,
+    session_id: Option<&str>,
+    cwd_key: Option<&str>,
+) {
     let state = app.state::<AppState>();
     let settings_snapshot = state.settings.lock().unwrap().clone();
     // Meeting gate: while a meeting is detected (camera/mic in use or a meeting
@@ -81,7 +102,7 @@ pub fn fire(app: &AppHandle, kind: NotifKind, ctx: NotifContext, cwd_key: Option
         return;
     }
     let cfg: crate::tray::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
-    let rule = resolve_with_character(&cfg, &settings_snapshot, kind, cwd_key);
+    let rule = resolve_with_character(&cfg, &settings_snapshot, kind, session_id, cwd_key);
     if !rule.enabled { return; }
     if should_suppress(&settings_snapshot, rule.mode) { return; }
     match rule.mode {
@@ -227,7 +248,7 @@ mod tests {
     fn character_resolver_falls_back_to_global_when_no_cwd() {
         let cfg = NotificationsConfig::default();
         let s = Settings::default();
-        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None);
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None, None);
         assert_eq!(rule.sound_pack, "default");
     }
 
@@ -235,7 +256,7 @@ mod tests {
     fn character_resolver_falls_back_to_global_when_no_project_match() {
         let cfg = NotificationsConfig::default();
         let s = Settings::default();
-        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some("C:/missing"));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None, Some("C:/missing"));
         assert_eq!(rule.sound_pack, "default");
     }
 
@@ -244,7 +265,7 @@ mod tests {
         let cfg = NotificationsConfig::default();
         let s = settings_with_project("C:/proj", None);
         let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
-        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None, Some(&key));
         assert_eq!(rule.sound_pack, "default");
     }
 
@@ -253,7 +274,7 @@ mod tests {
         let cfg = NotificationsConfig::default();
         let s = settings_with_project("C:/proj", Some("peon"));
         let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
-        let rule = resolve_with_character(&cfg, &s, NotifKind::ThresholdCrossed, Some(&key));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::ThresholdCrossed, None, Some(&key));
         assert_eq!(rule.sound_pack, "default");
     }
 
@@ -262,7 +283,7 @@ mod tests {
         let cfg = NotificationsConfig::default();
         let s = settings_with_project("C:/proj", Some("nonexistent-character"));
         let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
-        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None, Some(&key));
         assert_eq!(rule.sound_pack, "default");
     }
 
@@ -298,7 +319,7 @@ mod tests {
         crate::characters::cache::set_for_test(vec![character]);
 
         let key = crate::settings::store::project_key(std::path::Path::new("C:/proj"));
-        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, Some(&key));
+        let rule = resolve_with_character(&cfg, &s, NotifKind::WorkFinished, None, Some(&key));
 
         assert_eq!(rule.sound_pack, CHARACTER_PACK_SENTINEL);
         assert_eq!(rule.mode, NotifMode::Sound);

@@ -200,6 +200,7 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
                     crate::notifications::NotifKind::ThresholdCrossed,
                     crate::notifications::NotifContext { percent: Some(pct), name: None },
                     None,
+                    None,
                 );
             }
         }

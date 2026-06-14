@@ -230,6 +230,7 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
         "refresh_requested" => {
             let app2 = app.clone();
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let session_id = params.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
             tokio::spawn(async move {
                 let _ = crate::scheduler::poll_once(&app2, crate::scheduler::PollTrigger::Hook).await;
                 let name = cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
@@ -237,17 +238,20 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
                     &app2,
                     crate::notifications::NotifKind::WorkFinished,
                     crate::notifications::NotifContext { name, percent: None },
+                    session_id.as_deref(),
                     cwd.as_deref(),
                 );
             });
         }
         "notify_requested" => {
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let session_id = params.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
             let name = cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
             crate::notifications::fire(
                 app,
                 crate::notifications::NotifKind::QuestionAsked,
                 crate::notifications::NotifContext { name, percent: None },
+                session_id.as_deref(),
                 cwd.as_deref(),
             );
         }
@@ -256,10 +260,12 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
         // they missed it (best-effort - a dropped broadcast frame only costs the
         // notification, not the cleanup).
         "question_expired" => {
+            let session_id = params.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
             crate::notifications::fire(
                 app,
                 crate::notifications::NotifKind::QuestionAsked,
                 crate::notifications::NotifContext { name: None, percent: None },
+                session_id.as_deref(),
                 None,
             );
         }
