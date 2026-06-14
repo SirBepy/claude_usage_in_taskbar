@@ -130,3 +130,43 @@ describe("per-tool chips", () => {
     expect(calls).toContainEqual(["open_in_editor", { path: "/proj/src/a.ts" }]);
   });
 });
+
+describe("custom-view provider (reuses the in-chat views)", () => {
+  it("renders the provider HTML for custom tools and opens files in the editor", () => {
+    const calls = [];
+    ipcMock.impl = async (cmd, args) => { calls.push([cmd, args]); return null; };
+    const { el, sb } = mount([["tool:Read", "tool:Skill", "tool:AskUserQuestion"]]);
+    sb.setToolViewProvider((tool) => {
+      if (tool === "Read") return '<button class="tool-file-row" data-path="/p/x.ts"><span class="tool-file-name">x.ts</span></button>';
+      if (tool === "Skill") return '<div class="tool-skill-row"><span class="tool-skill-name">commit</span></div>';
+      if (tool === "AskUserQuestion") return '<div class="tool-qa"><div class="tool-qa-q">Q?</div></div>';
+      return null;
+    });
+    sb.updateToolTally({ byType: [
+      { tool: "Read", count: 1, items: [] },
+      { tool: "Skill", count: 2, items: [] },
+      { tool: "AskUserQuestion", count: 1, items: [] },
+    ] });
+
+    openChip(el, "Skill");
+    expect(document.body.querySelector(".sb-tally-popover .tool-skill-row .tool-skill-name").textContent).toBe("commit");
+    openChip(el, "Skill"); // close
+
+    openChip(el, "AskUserQuestion");
+    expect(document.body.querySelector(".sb-tally-popover .tool-qa .tool-qa-q").textContent).toBe("Q?");
+    openChip(el, "AskUserQuestion"); // close
+
+    openChip(el, "Read");
+    const fileRow = document.body.querySelector(".sb-tally-popover .tool-file-row");
+    expect(fileRow).not.toBeNull();
+    fileRow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(calls).toContainEqual(["open_in_editor", { path: "/p/x.ts" }]);
+  });
+
+  it("falls back to the target list when no provider is set", () => {
+    const { el, sb } = mount([["tool:Read"]]);
+    sb.updateToolTally(sampleTally());
+    openChip(el, "Read");
+    expect(document.body.querySelector(".sb-tally-popover .sb-tally-file")).not.toBeNull();
+  });
+});

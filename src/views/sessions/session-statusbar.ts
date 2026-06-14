@@ -176,6 +176,13 @@ export class SessionStatusbar {
     this.tally.update(t);
   }
 
+  /** Wire the shared custom-view provider (the chat renderer's message-derived
+   *  HTML) so the tool-chip popovers reuse the in-chat Read/File-Changes/Skills/
+   *  Questions views. Forwarded to the ToolTallyRow controller. */
+  setToolViewProvider(fn: (tool: string) => string | null): void {
+    this.tally.setCustomViewProvider(fn);
+  }
+
   setSessionId(id: string): void {
     this.sessionId = id;
     this.counts = null;

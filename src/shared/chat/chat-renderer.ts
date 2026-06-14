@@ -10,6 +10,7 @@ import { invoke } from "../ipc";
 import { ToolTallyState } from "./tool-tally-state";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
+import { renderCustomToolView } from "./tool-views";
 import { ChatPaginator } from "./chat-pagination";
 import { TurnFooterRegistry, type TurnChipKey, type TurnUsageTotals } from "./turn-chips";
 
@@ -264,6 +265,15 @@ export class ChatRenderer {
   /** Clone of the by-type tool tally (no internal refs leaked). */
   get toolTally(): ToolTally {
     return this.tallyState.build();
+  }
+
+  /**
+   * Rendered custom-view HTML for a tool over ALL loaded messages, or null when
+   * the tool has no custom view. Lets the statusline tally popover reuse the
+   * exact same Read/File-Changes/Skills/Questions views as the in-chat chips.
+   */
+  customToolView(tool: string): string | null {
+    return renderCustomToolView(tool, this.messages, 0, this.messages.length);
   }
 
   private describeActivity(toolName: string, input: unknown): string {
@@ -546,6 +556,10 @@ export class ChatRenderer {
           if (n <= 0) this.pendingByCanon.delete(canon);
           else this.pendingByCanon.set(canon, n);
         }
+        // The tally counts didn't change, but a result can complete a custom
+        // view (e.g. an AskUserQuestion answer): nudge the statusline so an open
+        // popover re-renders from the now-updated messages.
+        this.onToolTally?.(this.tallyState.build());
         touched = true;
         break;
       }

@@ -192,6 +192,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       renderer.onToolTally = (t) => {
         if (state.statusbar === sbForRenderer) sbForRenderer.updateToolTally(t);
       };
+      // Tool-chip popovers reuse the in-chat custom views (Read/File Changes/
+      // Skills/Questions), built from this renderer's messages.
+      sbForRenderer.setToolViewProvider((tool) => renderer.customToolView(tool));
       // Reopened chat: surface its already-accrued tool counts immediately.
       sbForRenderer.updateToolTally(renderer.toolTally);
     }

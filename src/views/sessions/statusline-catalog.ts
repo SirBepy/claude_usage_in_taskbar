@@ -48,9 +48,11 @@ export const STATIC_CHIPS = {
 
 // Canonical tool buckets that become individual `tool:<name>` chips. Mirrors
 // TALLY_TOOL_OPTIONS in session-statusbar-helpers.
+// Write folds into Edit ("File Changes"), so it is NOT its own chip; Skill +
+// AskUserQuestion render rich custom popovers (skills list / Q&A).
 export const TOOL_CHIP_TOOLS = [
-  "Read", "Edit", "Write", "Grep", "Glob", "Bash",
-  "Task", "TodoWrite", "AskUserQuestion", "WebFetch", "WebSearch",
+  "Read", "Edit", "Grep", "Glob", "Bash",
+  "Task", "TodoWrite", "AskUserQuestion", "Skill", "WebFetch", "WebSearch",
 ] as const;
 
 export type StaticChipType = keyof typeof STATIC_CHIPS;
@@ -69,13 +71,15 @@ export function chipToolName(t: ToolChipType): string {
  *  the default-visible tool chips (AskUserQuestion + TodoWrite stay off). */
 export const DEFAULT_ROWS: ChipType[][] = [
   ["model", "effort", "branch", "repo", "context_pct", "thinking", "messages", "turns"],
-  ["tool:Read", "tool:Edit", "tool:Write", "tool:Grep", "tool:Glob", "tool:Bash", "tool:Task", "tool:WebFetch", "tool:WebSearch"],
+  ["tool:Read", "tool:Edit", "tool:Grep", "tool:Glob", "tool:Bash", "tool:Task", "tool:Skill", "tool:WebFetch", "tool:WebSearch"],
 ];
 
 export const MAX_ROWS = 5;
 
 /** True if `t` is a known static chip or any tool chip. Unknown ids are dropped
- *  on load so a stale/garbage setting never crashes the bar. */
+ *  on load so a stale/garbage setting never crashes the bar. `tool:Write` is
+ *  retired (folded into `tool:Edit`), so a stale one is dropped on load. */
 export function isKnownChip(t: string): boolean {
+  if (t === "tool:Write") return false;
   return isToolChip(t) || Object.prototype.hasOwnProperty.call(STATIC_CHIPS, t);
 }

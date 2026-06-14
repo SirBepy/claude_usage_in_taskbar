@@ -2,6 +2,7 @@ import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { openLightbox } from "../../shared/chat/lightbox";
 import { toolSummary, toolLabel, type ToolTally } from "../../shared/chat/tool-meta";
+import { CUSTOM_VIEW_TOOLS } from "../../shared/chat/tool-views";
 import "./session-tally.css";
 
 // Cumulative tool tally row: one chip per tool type, each its OWN drill-down
@@ -21,9 +22,21 @@ export class ToolTallyRow {
   // Which tool's popover is open (null = none); kept so updateToolTally can
   // rebuild it in place as more calls of that type stream in.
   private tallyOpenTool: string | null = null;
+  // Provider for the shared custom views (Read/File Changes/Skills/Questions),
+  // backed by the chat renderer's messages. When set, custom-tool popovers reuse
+  // the exact same markup as the in-chat chip panels instead of the generic
+  // target list. Null until the renderer is wired (e.g. pending-pane previews).
+  private getCustomView: ((tool: string) => string | null) | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
+  }
+
+  /** Wire the shared custom-view provider (the chat renderer's message-derived
+   *  HTML). Safe to call after construction; refreshes an open popover. */
+  setCustomViewProvider(fn: (tool: string) => string | null): void {
+    this.getCustomView = fn;
+    if (this.tallyOpenTool) this.openToolPopover(this.tallyOpenTool);
   }
 
   /** Build ONE tool chip's HTML (count + drill-down affordance) for a given
@@ -121,6 +134,14 @@ export class ToolTallyRow {
       });
     });
 
+    // Shared custom-view file rows (Read / File Changes) open in the editor too.
+    pop.querySelectorAll<HTMLElement>(".tool-file-row[data-path]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const path = row.dataset.path;
+        if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[statusbar] open_in_editor failed", err));
+      });
+    });
+
     pop.querySelectorAll<HTMLElement>(".sb-tally-media").forEach((row) => {
       const path = row.dataset.path;
       const filename = row.dataset.filename ?? "";
@@ -148,6 +169,13 @@ export class ToolTallyRow {
   }
 
   private renderToolItems(tool: string): string {
+    // Custom-view tools (Read / File Changes / Skills / Questions) reuse the
+    // shared in-chat markup, built from the renderer's messages.
+    if (CUSTOM_VIEW_TOOLS.has(tool) && this.getCustomView) {
+      const html = this.getCustomView(tool);
+      if (html) return html;
+      return `<div class="sb-tally-empty">No targets</div>`;
+    }
     const entry = this.toolTally.byType.find((b) => b.tool === tool);
     const items = entry?.items ?? [];
     if (items.length === 0) return `<div class="sb-tally-empty">No targets</div>`;
