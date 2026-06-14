@@ -592,11 +592,11 @@ async fn auto_update_loop(app: tauri::AppHandle) {
             AutoUpdateMode::Never => {}
             AutoUpdateMode::OnStartup => {
                 if !did_startup_check {
-                    let _ = crate::ipc::misc::run_update_check(&app, false).await;
+                    let _ = crate::ipc::update::run_update_check(&app, false).await;
                 }
             }
             AutoUpdateMode::Immediate => {
-                let _ = crate::ipc::misc::run_update_check(&app, true).await;
+                let _ = crate::ipc::update::run_update_check(&app, true).await;
             }
         }
         did_startup_check = true;
