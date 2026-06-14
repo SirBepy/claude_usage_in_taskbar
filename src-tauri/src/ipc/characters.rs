@@ -2,9 +2,11 @@
 
 use crate::characters::{self, Character};
 use crate::characters::slots::Slot;
+use crate::characters::whitelist;
 use crate::state::AppState;
 use crate::settings::{self, paths};
-use crate::types::Avatar;
+use crate::types::{Avatar, CharacterWhitelist};
+use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
@@ -97,4 +99,302 @@ pub fn get_characters_dir() -> Result<String, String> {
 #[tauri::command]
 pub fn invalidate_characters_cache() {
     characters::cache::invalidate();
+}
+
+// ---------------------------------------------------------------------------
+// Session-character commands
+// ---------------------------------------------------------------------------
+
+/// Prune dead sessions from session_characters. A session is dead when it
+/// either does not appear in `live_ids` at all, or it does appear but its
+/// `end_reason` is Some. Returns true when any entries were removed.
+fn prune_dead_sessions(
+    session_characters: &mut HashMap<String, String>,
+    live_ids: &HashSet<String>,
+) -> bool {
+    let before = session_characters.len();
+    session_characters.retain(|sid, _| live_ids.contains(sid));
+    session_characters.len() < before
+}
+
+/// Collect the set of currently-live session ids from cached_instances.
+/// A session is live when end_reason.is_none().
+fn live_session_ids(state: &AppState) -> HashSet<String> {
+    state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|i| i.end_reason.is_none())
+        .map(|i| i.session_id.clone())
+        .collect()
+}
+
+/// Ensure a session has a character assigned. Prunes dead sessions first,
+/// returns the existing assignment if already set, or picks a new one from
+/// the project's whitelist while avoiding characters held by sibling sessions
+/// in the same project.
+#[tauri::command]
+pub fn ensure_session_character(
+    session_id: String,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<Option<String>, String> {
+    let live_ids = live_session_ids(&state);
+    let mut s = state.settings.lock().unwrap();
+
+    let pruned = prune_dead_sessions(&mut s.session_characters, &live_ids);
+
+    // Already assigned and session is live.
+    if let Some(existing) = s.session_characters.get(&session_id).cloned() {
+        if pruned {
+            let snapshot = s.clone();
+            drop(s);
+            if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+            let _ = app.emit("settings-changed", &snapshot);
+        }
+        return Ok(Some(existing));
+    }
+
+    // Find the session's Instance to get project_id.
+    let instance = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.session_id == session_id)
+        .cloned();
+    let Some(inst) = instance else {
+        if pruned {
+            let snapshot = s.clone();
+            drop(s);
+            if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+            let _ = app.emit("settings-changed", &snapshot);
+        }
+        return Ok(None);
+    };
+
+    let project_id = &inst.project_id;
+    let proj_wl = s
+        .projects
+        .iter()
+        .find(|p| p.id == *project_id)
+        .map(|p| p.whitelist.clone())
+        .unwrap_or(CharacterWhitelist::Default);
+
+    let all = characters::list();
+    let resolved = whitelist::resolve(&proj_wl, &s.default_character_whitelist, &all);
+
+    // Chars taken by OTHER live sessions in the same project.
+    let live_taken: HashSet<String> = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|i| i.project_id == *project_id && i.session_id != session_id && i.end_reason.is_none())
+        .filter_map(|i| s.session_characters.get(&i.session_id).cloned())
+        .collect();
+
+    let pick = whitelist::pick_random(&resolved, &live_taken);
+    if let Some(ref id) = pick {
+        s.session_characters.insert(session_id, id.clone());
+    }
+
+    let should_persist = pruned || pick.is_some();
+    if should_persist {
+        let snapshot = s.clone();
+        drop(s);
+        if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+        let _ = app.emit("settings-changed", &snapshot);
+    }
+
+    Ok(pick)
+}
+
+/// Override or clear a session's character assignment explicitly.
+#[tauri::command]
+pub fn set_session_character(
+    session_id: String,
+    character_id: Option<String>,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut s = state.settings.lock().unwrap();
+        match character_id {
+            Some(id) => { s.session_characters.insert(session_id, id); }
+            None => { s.session_characters.remove(&session_id); }
+        }
+        s.clone()
+    };
+    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(())
+}
+
+/// Pick a new character for a session, explicitly excluding its current one
+/// so the reroll always produces something different when alternatives exist.
+#[tauri::command]
+pub fn reroll_session_character(
+    session_id: String,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<Option<String>, String> {
+    let live_ids = live_session_ids(&state);
+    let mut s = state.settings.lock().unwrap();
+    let pruned = prune_dead_sessions(&mut s.session_characters, &live_ids);
+
+    let instance = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|i| i.session_id == session_id)
+        .cloned();
+    let Some(inst) = instance else {
+        if pruned {
+            let snapshot = s.clone();
+            drop(s);
+            if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+            let _ = app.emit("settings-changed", &snapshot);
+        }
+        return Ok(None);
+    };
+
+    let project_id = &inst.project_id;
+    let proj_wl = s
+        .projects
+        .iter()
+        .find(|p| p.id == *project_id)
+        .map(|p| p.whitelist.clone())
+        .unwrap_or(CharacterWhitelist::Default);
+
+    let all = characters::list();
+    let resolved = whitelist::resolve(&proj_wl, &s.default_character_whitelist, &all);
+
+    // live_taken includes OTHER sessions PLUS the current session's char (forcing a change).
+    let mut live_taken: HashSet<String> = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|i| i.project_id == *project_id && i.end_reason.is_none())
+        .filter_map(|i| s.session_characters.get(&i.session_id).cloned())
+        .collect();
+    // Also include current session's existing char so it can't be re-picked.
+    if let Some(cur) = s.session_characters.get(&session_id).cloned() {
+        live_taken.insert(cur);
+    }
+
+    let pick = whitelist::pick_random(&resolved, &live_taken);
+    if let Some(ref id) = pick {
+        s.session_characters.insert(session_id, id.clone());
+    }
+
+    let snapshot = s.clone();
+    drop(s);
+    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+    let _ = app.emit("settings-changed", &snapshot);
+
+    Ok(pick)
+}
+
+/// Return the session->character map, pruning dead sessions first.
+#[tauri::command]
+pub fn list_session_characters(state: State<AppState>, app: AppHandle) -> HashMap<String, String> {
+    let live_ids = live_session_ids(&state);
+    let mut s = state.settings.lock().unwrap();
+    let pruned = prune_dead_sessions(&mut s.session_characters, &live_ids);
+    let map = s.session_characters.clone();
+    if pruned {
+        let snapshot = s.clone();
+        drop(s);
+        if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+        let _ = app.emit("settings-changed", &snapshot);
+    }
+    map
+}
+
+// ---------------------------------------------------------------------------
+// Project whitelist commands
+// ---------------------------------------------------------------------------
+
+/// Get the whitelist for a specific project.
+#[tauri::command]
+pub fn get_project_whitelist(project_id: String, state: State<AppState>) -> CharacterWhitelist {
+    state
+        .settings
+        .lock()
+        .unwrap()
+        .projects
+        .iter()
+        .find(|p| p.id == project_id)
+        .map(|p| p.whitelist.clone())
+        .unwrap_or(CharacterWhitelist::Default)
+}
+
+/// Set the whitelist for a specific project.
+#[tauri::command]
+pub fn set_project_whitelist(
+    project_id: String,
+    whitelist: CharacterWhitelist,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut s = state.settings.lock().unwrap();
+        let p = s.projects.iter_mut().find(|p| p.id == project_id)
+            .ok_or_else(|| format!("project not found: {project_id}"))?;
+        p.whitelist = whitelist;
+        s.clone()
+    };
+    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(())
+}
+
+/// Get the settings-level default whitelist.
+#[tauri::command]
+pub fn get_default_whitelist(state: State<AppState>) -> CharacterWhitelist {
+    state.settings.lock().unwrap().default_character_whitelist.clone()
+}
+
+/// Set the settings-level default whitelist.
+#[tauri::command]
+pub fn set_default_whitelist(
+    whitelist: CharacterWhitelist,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut s = state.settings.lock().unwrap();
+        s.default_character_whitelist = whitelist;
+        s.clone()
+    };
+    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(())
+}
+
+/// Resolve the effective whitelist for a project to a list of Character objects.
+/// Used by the modal's "Whitelisted" tab.
+#[tauri::command]
+pub fn resolve_whitelist_characters(project_id: String, state: State<AppState>) -> Vec<Character> {
+    let s = state.settings.lock().unwrap();
+    let proj_wl = s
+        .projects
+        .iter()
+        .find(|p| p.id == project_id)
+        .map(|p| p.whitelist.clone())
+        .unwrap_or(CharacterWhitelist::Default);
+    let default_wl = s.default_character_whitelist.clone();
+    drop(s);
+
+    let all = characters::list();
+    let resolved_ids = whitelist::resolve(&proj_wl, &default_wl, &all);
+    // Map ids back to Character, preserving the sorted order from resolve().
+    resolved_ids
+        .iter()
+        .filter_map(|id| characters::get(id))
+        .collect()
 }
