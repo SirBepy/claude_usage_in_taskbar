@@ -17,7 +17,8 @@ import { selectSession, unwatchCurrentExternalSession, headerStatusClass } from 
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
-import { loadProjectCharacters } from "./session-characters";
+import { loadSessionCharacters } from "./session-characters";
+import { api } from "../../shared/api";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { sessionEvents } from "../../shared/chat/event-store";
 import type { TerminalAction, ContentBlock, ChatEvent } from "../../types/ipc.generated";
@@ -50,6 +51,12 @@ let _pane: HTMLElement | null = null;
 let _pendingOpenPicker = false;
 let _pendingHistoryResume: string | null = null;
 let _pendingNewChat: { project: { path: string; name: string }; config: SessionConfig } | null = null;
+
+/** Session ids for which we have already called ensureSessionCharacter this
+ * runtime. Prevents redundant IPC chatter on every instances-changed event.
+ * Cleared on unmount so a fresh mount re-ensures any sessions that appeared
+ * while the view was hidden. */
+const _ensuredSessionIds = new Set<string>();
 
 export function queueHistoryResume(sessionId: string): void {
   _pendingHistoryResume = sessionId;
@@ -381,6 +388,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   // Reset state on each mount; bump mountId so any pending async work from
   // a prior mount sees a stale id and bails.
   const myMount = resetState();
+  _ensuredSessionIds.clear();
   loadAndRestorePendingSession();
 
   render(template(), root);
@@ -467,7 +475,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   const [, connected] = await Promise.all([
     refreshSessions(),
     invoke<boolean>("is_daemon_connected").catch(() => null),
-    loadProjectCharacters(),
+    loadSessionCharacters(),
   ]);
   if (state.mountId === myMount) {
     state.daemonConnected = connected ?? null;
@@ -518,11 +526,11 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   let unlistenDaemonStatus: (() => void) | null = null;
   let unlistenSettingsChanged: (() => void) | null = null;
   if (ev?.listen) {
-    // Re-resolve project hero avatars whenever a character assignment changes
-    // (manual pick or the startup backfill), then repaint the sidebar.
+    // Re-resolve session hero assignments whenever a character changes
+    // (ensure on appearance, manual pick, or re-roll), then repaint the sidebar.
     unlistenSettingsChanged = await ev.listen("settings-changed", async () => {
       if (state.mountId !== myMount) return;
-      await loadProjectCharacters();
+      await loadSessionCharacters();
       if (state.mountId !== myMount) return;
       renderSidebar(listEl);
     });
@@ -544,6 +552,21 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       if (state.mountId !== myMount) return;
       await refreshSessions();
       if (state.mountId !== myMount) return;
+
+      // Ensure every newly-appeared live session gets a character assigned.
+      // Track ensured ids so we don't re-call on every subsequent event.
+      const liveSessions = state.sessions.filter((s) => !s.ended_at && !s.end_reason);
+      const newOnes = liveSessions.filter((s) => !_ensuredSessionIds.has(s.session_id));
+      if (newOnes.length > 0) {
+        for (const s of newOnes) {
+          _ensuredSessionIds.add(s.session_id);
+        }
+        await Promise.all(newOnes.map((s) => api.ensureSessionCharacter(s.session_id).catch(() => null)));
+        if (state.mountId !== myMount) return;
+        await loadSessionCharacters();
+        if (state.mountId !== myMount) return;
+      }
+
       renderSidebar(listEl);
       updateThinkingBar();
       // Live-update the pane header title when the session name resolves, and

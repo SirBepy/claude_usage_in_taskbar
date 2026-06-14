@@ -8,6 +8,7 @@
 import { invoke } from "./ipc";
 import type { TokenRecord, AliasMap } from "./tokens";
 import type { SettingsShape } from "./state";
+import type { CharacterWhitelist } from "../types/ipc.generated";
 
 // ── Backend snapshot shape ────────────────────────────────────────────────
 
@@ -250,6 +251,28 @@ export const api = {
     listenEvent("character-preview-ended", cb),
   getCharactersDir: (): Promise<string> => invoke("get_characters_dir"),
   invalidateCharactersCache: (): Promise<void> => invoke("invalidate_characters_cache"),
+
+  // --- Session characters ---
+  ensureSessionCharacter: (sessionId: string): Promise<string | null> =>
+    invoke("ensure_session_character", { sessionId }),
+  setSessionCharacter: (sessionId: string, characterId: string | null): Promise<void> =>
+    invoke("set_session_character", { sessionId, characterId }),
+  rerollSessionCharacter: (sessionId: string): Promise<string | null> =>
+    invoke("reroll_session_character", { sessionId }),
+  listSessionCharacters: (): Promise<Record<string, string>> =>
+    invoke("list_session_characters"),
+
+  // --- Whitelist ---
+  getProjectWhitelist: (projectId: string): Promise<CharacterWhitelist> =>
+    invoke("get_project_whitelist", { projectId }),
+  setProjectWhitelist: (projectId: string, whitelist: CharacterWhitelist): Promise<void> =>
+    invoke("set_project_whitelist", { projectId, whitelist }),
+  getDefaultWhitelist: (): Promise<CharacterWhitelist> =>
+    invoke("get_default_whitelist"),
+  setDefaultWhitelist: (whitelist: CharacterWhitelist): Promise<void> =>
+    invoke("set_default_whitelist", { whitelist }),
+  resolveWhitelistCharacters: (projectId: string): Promise<Character[]> =>
+    invoke("resolve_whitelist_characters", { projectId }),
 
   // --- Piper TTS ---
   piperStatus: (): Promise<PiperStatus> => invoke("piper_status"),
