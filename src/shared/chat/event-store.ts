@@ -14,6 +14,7 @@
 
 import type { ChatEvent, HistoryPage } from "../../types/ipc.generated";
 import { invoke } from "../ipc";
+import { getTransport } from "../transport";
 import { normalizeUserMessageText } from "./chat-transforms";
 
 type Unlisten = () => void;
@@ -332,17 +333,15 @@ class SessionEventStore {
   private async ensureListener(sessionId: string): Promise<void> {
     const entry = this.cache.get(sessionId);
     if (!entry || entry.unlisten) return;
-    const ev = window.__TAURI__?.event;
-    if (!ev?.listen) return;
-    entry.unlisten = await ev.listen<ChatEvent>(`chat:${sessionId}`, (e) => {
+    entry.unlisten = await getTransport().listen<ChatEvent>(`chat:${sessionId}`, (payload) => {
       const cur = this.cache.get(sessionId);
       if (!cur) return;
       // claude -p --resume replays the full conversation history including past
       // user messages. Those arrive here as live events and would duplicate what
       // pushSynthetic already added (current turn) or loadInitial loads from
       // JSONL (history). Drop all user_message events from the live stream.
-      if (e.payload.type === "user_message") return;
-      this.deliver(sessionId, e.payload);
+      if (payload.type === "user_message") return;
+      this.deliver(sessionId, payload);
     });
   }
 
@@ -361,10 +360,8 @@ class SessionEventStore {
       this.cache.set(sessionId, entry);
     }
     if (entry.unlistenWatch) return;
-    const ev = window.__TAURI__?.event;
-    if (!ev?.listen) return;
-    entry.unlistenWatch = await ev.listen<ChatEvent>(`chat-watch:${sessionId}`, (e) => {
-      this.deliver(sessionId, e.payload);
+    entry.unlistenWatch = await getTransport().listen<ChatEvent>(`chat-watch:${sessionId}`, (payload) => {
+      this.deliver(sessionId, payload);
     });
   }
 

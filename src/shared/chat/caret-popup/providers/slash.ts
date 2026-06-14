@@ -1,5 +1,6 @@
 import type { SlashEntry, SlashSource } from "../../../../types/ipc.generated";
 import { invoke } from "../../../ipc";
+import { getTransport } from "../../../transport";
 import { setSlashEntries, slashEntryQualifiedName } from "../../slash-registry";
 import { match } from "../match";
 import type { SuggestProvider } from "../types";
@@ -13,12 +14,9 @@ export class SlashProvider implements SuggestProvider<SlashEntry> {
   async start(projectDir: string | null): Promise<void> {
     this.projectDir = projectDir;
     await this.refetch();
-    const ev = window.__TAURI__?.event;
-    if (ev?.listen) {
-      this.unlisten = await ev.listen("slash-commands-changed", () => {
-        void this.refetch();
-      });
-    }
+    this.unlisten = await getTransport().listen("slash-commands-changed", () => {
+      void this.refetch();
+    });
   }
 
   stop(): void {
