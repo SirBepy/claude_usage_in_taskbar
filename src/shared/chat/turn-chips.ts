@@ -33,10 +33,18 @@ export function formatTurnDuration(ms: number): string {
   return `${s}s`;
 }
 
-/** Compact token count: "980", "2.1k", "12.4k". */
-export function formatTokenCount(n: number): string {
-  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
-  return String(Math.round(n));
+/**
+ * Compact token count: "980", "2.1k", "12.4k". Pass `{ decimals: 0 }` for the
+ * decimal-free form used by the context chip, e.g. "90k" / "200k".
+ */
+export function formatTokenCount(n: number, opts?: { decimals?: number }): string {
+  const decimals = opts?.decimals ?? 1;
+  const v = Number(n) || 0;
+  if (v >= 1_000) {
+    const k = v / 1000;
+    return `${decimals <= 0 ? Math.round(k) : k.toFixed(decimals)}k`;
+  }
+  return String(Math.round(v));
 }
 
 /** Estimate output tokens from streamed assistant text length (chars / 4). */

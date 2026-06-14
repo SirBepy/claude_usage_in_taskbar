@@ -1,6 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { type ToolTally } from "../../shared/chat/tool-meta";
+import { formatTokenCount } from "../../shared/chat/turn-chips";
 import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
@@ -31,12 +32,6 @@ export {
 } from "./session-statusbar-helpers";
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
-
-/** Compact token count for the context-tokens chip, e.g. 90123 => "90k". */
-function fmtTokens(n: number): string {
-  const v = Math.round(Number(n) || 0);
-  return v >= 1000 ? `${Math.round(v / 1000)}k` : String(v);
-}
 
 export class SessionStatusbar {
   private container: HTMLElement;
@@ -321,7 +316,7 @@ export class SessionStatusbar {
       const win = Number(c.window).toLocaleString();
       const note = estimated ? " (estimated)" : "";
       const pctStr = raw < 1 && raw > 0 ? "<1" : String(Math.min(100, Math.round(raw)));
-      const body = asTokens ? `${fmtTokens(Number(c.occupancy))} / ${fmtTokens(Number(c.window))}` : `${pctStr}%`;
+      const body = asTokens ? `${formatTokenCount(Number(c.occupancy), { decimals: 0 })} / ${formatTokenCount(Number(c.window), { decimals: 0 })}` : `${pctStr}%`;
       return `<span class="sb-chip sb-context${cls}${this.animClass(key)}" title="${occ} / ${win} tokens (conversation + system prompt + tools)${note}"><i class="ph ph-stack"></i>${body}</span>`;
     } else if (this.meta.inputTokens > 0) {
       const window = modelContextWindow(this.sessionModel || this.meta.model);
@@ -329,7 +324,7 @@ export class SessionStatusbar {
       if (raw >= 100) console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, sessionModel: this.sessionModel, metaModel: this.meta.model });
       const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
       const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
-      const body = asTokens ? `${fmtTokens(this.meta.inputTokens)} / ${fmtTokens(window)}` : `${pctStr}%`;
+      const body = asTokens ? `${formatTokenCount(this.meta.inputTokens, { decimals: 0 })} / ${formatTokenCount(window, { decimals: 0 })}` : `${pctStr}%`;
       return `<span class="sb-chip sb-context${cls}${this.animClass(key)}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens (conversation + system prompt + tools)"><i class="ph ph-stack"></i>${body}</span>`;
     } else if (!this.metaLoaded) {
       return this.skeletonChip(key, "sb-context", "ph-stack", asTokens ? "70px" : "40px");
