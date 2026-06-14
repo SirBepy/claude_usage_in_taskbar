@@ -15,7 +15,7 @@ import {
   paneEmptyStateHtml,
   statusDotClass,
 } from "./sessions-helpers";
-import { SessionStatusbar, loadStatuslineFields, loadTallyHiddenTools, fetchGitInfo } from "./session-statusbar";
+import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { characterForSession, characterIconUrl } from "./session-characters";
@@ -146,8 +146,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   // Mount statusbar.
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
-    const fields = await loadStatuslineFields();
-    const tallyHiddenTools = await loadTallyHiddenTools();
+    const rows = await loadStatuslineRows();
+    const hideZero = await loadStatuslineHideZero();
     let effortDisplay = sess.effort ?? "";
     if (!effortDisplay && sess.kind === "external" && sess.cwd) {
       try {
@@ -157,13 +157,13 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         effortDisplay = last?.effort ?? normal?.effort ?? "";
       } catch { /* leave blank */ }
     }
-    const sb = new SessionStatusbar(sbHost, sess.started_at, fields, {
+    const sb = new SessionStatusbar(sbHost, sess.started_at, rows, {
       cwd: sess.cwd ? String(sess.cwd) : null,
       effort: effortDisplay,
       sessionId: sess.session_id,
       readOnly: sess.kind === "external",
       sessionModel: sess.model || null,
-      tallyHiddenTools,
+      hideZero,
     });
     state.statusbar = sb;
     // Fetch git info async (cache-first; instantly populated by constructor

@@ -5,6 +5,7 @@ import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
+import { type ChipType, isToolChip, chipToolName } from "./statusline-catalog";
 import {
   formatDuration,
   shortModelName,
@@ -25,6 +26,11 @@ export {
   DEFAULT_TALLY_HIDDEN_TOOLS,
   loadTallyHiddenTools,
   saveTallyHiddenTools,
+  loadStatuslineRows,
+  saveStatuslineRows,
+  loadStatuslineHideZero,
+  saveStatuslineHideZero,
+  migrateLegacyFields,
   shortModelName,
   modelContextWindow,
   formatDuration,
@@ -34,48 +40,54 @@ export {
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
 
+/** Compact token count for the context-tokens chip, e.g. 90123 => "90k". */
+function fmtTokens(n: number): string {
+  const v = Math.round(Number(n) || 0);
+  return v >= 1000 ? `${Math.round(v / 1000)}k` : String(v);
+}
+
 export class SessionStatusbar {
   private container: HTMLElement;
-  private fields: string[];
+  private rows: ChipType[][];
   private meta: SessionMeta = EMPTY_META;
-  private gitInfo: GitInfo = { branch: null, repo: null };
+  private gitInfo: GitInfo = { branch: null, repo: null, ahead: null, behind: null, sha: null, insertions: null, deletions: null };
   private gitInfoLoaded = false;
   private metaLoaded = false;
   private counts: SessionCounts | null = null;
   private countsLoaded = false;
   // Daemon-computed context occupancy is the source of truth for the context
   // chip; the frontend modelContextWindow calc is only a transition/offline
-  // fallback (see render). null = not yet fetched or unavailable for this session.
+  // fallback (see renderContext). null = not yet fetched or unavailable.
   private ctxStatus: ContextStatus | null = null;
+  // Uncommitted-file count for the `dirty` chip (via get_git_dirty IPC, cwd-based).
+  private dirtyCount: number | null = null;
+  private dirtyLoaded = false;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
   private sessionId: string | null;
   private sessionModel: string | null;
   private readOnlyEffort: boolean;
-  // Raw tool names hidden from the tally row (settings-configurable).
-  private tallyHiddenTools: string[];
+  // Global hide-at-zero: when true, count/tool chips resolving to 0 are omitted.
+  private hideZero: boolean;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
   private effortPopoverOpen = false;
   private modelPopoverOpen = false;
   private animatedKeys = new Set<string>();
   private toolTally: ToolTally = { byType: [] };
-  // Cumulative tool tally row: one chip per tool type, each its OWN drill-down
-  // popover listing that tool's distinct targets. The chip-row build, popover,
-  // open/close/toggle and outside-click cleanup live in the ToolTallyRow
-  // controller; this class owns only the toolTally + tallyHiddenTools state.
+  // Per-tool chips delegate their drill-down popover to this controller.
   private tally: ToolTallyRow;
 
-  constructor(container: HTMLElement, startedAt: string | null, fields: string[], opts: StatusbarOptions = {}) {
+  constructor(container: HTMLElement, startedAt: string | null, rows: ChipType[][], opts: StatusbarOptions = {}) {
     this.container = container;
     this.startedAt = startedAt;
-    this.fields = fields;
+    this.rows = rows;
     this.cwd = opts.cwd ?? null;
     this.effort = opts.effort ?? "";
     this.sessionId = opts.sessionId ?? null;
     this.sessionModel = opts.sessionModel ?? null;
     this.readOnlyEffort = opts.readOnly ?? false;
-    this.tallyHiddenTools = opts.tallyHiddenTools ?? [];
+    this.hideZero = opts.hideZero ?? true;
     this.container.className = "session-statusbar";
     this.tally = new ToolTallyRow(this.container);
 
@@ -95,18 +107,18 @@ export class SessionStatusbar {
     }
 
     this.render();
-    if (this.fields.includes("duration")) this.startDurationTimer();
+    if (this.wantsTimer()) this.startTimer();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
+    if (this.hasChip("dirty")) void this.refreshDirty();
   }
 
-  private wantsCounts(): boolean {
-    return this.fields.includes("messages") || this.fields.includes("turns");
+  private hasChip(type: string): boolean {
+    return this.rows.some((r) => r.includes(type as ChipType));
   }
-
-  private wantsContext(): boolean {
-    return this.fields.includes("context");
-  }
+  private wantsCounts(): boolean { return this.hasChip("messages") || this.hasChip("turns"); }
+  private wantsContext(): boolean { return this.hasChip("context_pct") || this.hasChip("context_tokens"); }
+  private wantsTimer(): boolean { return this.hasChip("duration") || this.hasChip("clock"); }
 
   private async refreshCounts(): Promise<void> {
     const sid = this.sessionId;
@@ -121,11 +133,6 @@ export class SessionStatusbar {
     } catch { /* transient - keep last known counts */ }
   }
 
-  // Fetch the daemon-computed context occupancy (source of truth). Does not
-  // block render; render reads the cached this.ctxStatus and falls back to the
-  // frontend calc until this resolves. arg key is camelCase `sessionId` to
-  // match the Rust `session_id` param (Tauri auto-converts), same convention
-  // as instance_token_stats above.
   private async refreshContextStatus(): Promise<void> {
     const sid = this.sessionId;
     if (!sid) return;
@@ -137,8 +144,21 @@ export class SessionStatusbar {
         ctxStatusCache.set(sid, r);
         this.render();
       }
-      // r === null: keep last known / fall back to frontend calc, no re-render needed.
     } catch { /* command may predate this binary, or transient - keep fallback */ }
+  }
+
+  // Uncommitted-file count for the `dirty` chip. cwd-based (not session-based),
+  // so it is not reset on setSessionId. Mirrors refreshCounts.
+  private async refreshDirty(): Promise<void> {
+    const cwd = this.cwd;
+    if (!cwd) return;
+    try {
+      const files = await invoke<string[]>("get_git_dirty", { cwd });
+      if (this.cwd !== cwd) return;
+      this.dirtyCount = files.length;
+      this.dirtyLoaded = true;
+      this.render();
+    } catch { /* transient - keep last known */ }
   }
 
   updateMeta(meta: SessionMeta): void {
@@ -155,11 +175,9 @@ export class SessionStatusbar {
     this.gitInfoLoaded = true;
     if (this.cwd) gitInfoCache.set(this.cwd, info);
     this.render();
+    if (this.hasChip("dirty")) void this.refreshDirty();
   }
 
-  // Cumulative tool tally for this session (Read/Edit/Bash/... counts + the
-  // distinct file/image targets behind the Files|Media popover). Re-renders the
-  // row; an open popover is rebuilt so its lists stay in sync.
   updateToolTally(t: ToolTally): void {
     this.toolTally = t;
     this.render();
@@ -168,8 +186,6 @@ export class SessionStatusbar {
 
   setSessionId(id: string): void {
     this.sessionId = id;
-    // Reset per-session state so a prior session's counts/context never linger
-    // on screen, then re-seed from cache (stale-while-revalidate) and re-render.
     this.counts = null;
     this.countsLoaded = false;
     this.ctxStatus = null;
@@ -193,14 +209,17 @@ export class SessionStatusbar {
     this.tally.destroy();
   }
 
-  private tickDuration(): void {
-    if (!this.startedAt) return;
-    const el = this.container.querySelector<HTMLElement>(".sb-duration .sb-duration-text");
-    if (el) el.textContent = formatDuration(this.startedAt);
+  private tickTimer(): void {
+    if (this.startedAt) {
+      const el = this.container.querySelector<HTMLElement>(".sb-duration .sb-duration-text");
+      if (el) el.textContent = formatDuration(this.startedAt);
+    }
+    const clock = this.container.querySelector<HTMLElement>(".sb-clock .sb-clock-text");
+    if (clock) clock.textContent = this.clockText();
   }
 
-  private startDurationTimer(): void {
-    this.durationTimer = setInterval(() => this.tickDuration(), 1000);
+  private startTimer(): void {
+    this.durationTimer = setInterval(() => this.tickTimer(), 1000);
   }
 
   private skeletonChip(key: string, extraClass: string, iconClass: string, width: string): string {
@@ -213,121 +232,151 @@ export class SessionStatusbar {
     return " sb-fadein";
   }
 
+  private clockText(): string {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  // ── chip dispatch ──────────────────────────────────────────────────────────
+  private renderChip(type: ChipType): string {
+    if (isToolChip(type)) {
+      const tool = chipToolName(type);
+      const count = this.toolTally.byType.find((b) => b.tool === tool)?.count ?? 0;
+      return this.tally.renderChipFor(tool, count, this.hideZero);
+    }
+    switch (type) {
+      case "model": {
+        const model = this.meta.model ?? this.sessionModel;
+        if (model) return `<span class="sb-chip sb-model sb-model-btn${this.animClass("model")}" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(model))}</span>`;
+        if (!this.metaLoaded) return this.skeletonChip("model", "sb-model", "ph-robot", "70px");
+        return "";
+      }
+      case "effort": {
+        if (!this.effort) return "";
+        const cls = this.readOnlyEffort ? " readonly" : " sb-effort-btn";
+        return `<span class="sb-chip sb-effort${cls}${this.animClass("effort")}" role="button" tabindex="0"><i class="ph ph-gauge"></i>${escapeHtml(this.effort)}</span>`;
+      }
+      case "context_pct": return this.renderContext(false);
+      case "context_tokens": return this.renderContext(true);
+      case "thinking":
+        return this.meta.hasThinking ? `<span class="sb-chip sb-thinking active${this.animClass("thinking")}"><i class="ph ph-brain"></i>thinking</span>` : "";
+      case "branch": {
+        if (this.gitInfo.branch) return `<span class="sb-chip sb-branch${this.animClass("branch")}"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`;
+        if (!this.gitInfoLoaded) return this.skeletonChip("branch", "sb-branch", "ph-git-branch", "60px");
+        return "";
+      }
+      case "repo": {
+        if (this.gitInfo.repo) return `<span class="sb-chip sb-repo${this.animClass("repo")}"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`;
+        if (!this.gitInfoLoaded) return this.skeletonChip("repo", "sb-repo", "ph-folder-simple", "80px");
+        return "";
+      }
+      case "folder": {
+        if (!this.cwd) return "";
+        const folderName = this.cwd.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? this.cwd;
+        const cwdEsc = escapeHtml(this.cwd);
+        return `<span class="sb-chip sb-folder sb-folder-btn${this.animClass("folder")}" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`;
+      }
+      case "commits": return this.renderCommits("both");
+      case "commits_ahead": return this.renderCommits("ahead");
+      case "commits_behind": return this.renderCommits("behind");
+      case "dirty": return this.renderDirty();
+      case "sha":
+        if (this.gitInfo.sha) return `<span class="sb-chip sb-sha${this.animClass("sha")}"><i class="ph ph-hash"></i>${escapeHtml(this.gitInfo.sha)}</span>`;
+        return this.gitInfoLoaded ? "" : this.skeletonChip("sha", "sb-sha", "ph-hash", "60px");
+      case "diffstat": return this.renderDiffstat();
+      case "messages": {
+        if (this.counts) {
+          const n = this.counts.prompts;
+          if (n === 0 && this.hideZero) return "";
+          return `<span class="sb-chip sb-messages${this.animClass("messages")}"><i class="ph ph-chat-circle"></i>${n} ${n === 1 ? "msg" : "msgs"}</span>`;
+        }
+        return this.countsLoaded ? "" : this.skeletonChip("messages", "sb-messages", "ph-chat-circle", "52px");
+      }
+      case "turns": {
+        if (this.counts) {
+          const n = this.counts.turns;
+          if (n === 0 && this.hideZero) return "";
+          return `<span class="sb-chip sb-turns${this.animClass("turns")}"><i class="ph ph-arrows-clockwise"></i>${n} ${n === 1 ? "turn" : "turns"}</span>`;
+        }
+        return this.countsLoaded ? "" : this.skeletonChip("turns", "sb-turns", "ph-arrows-clockwise", "55px");
+      }
+      case "duration":
+        if (!this.startedAt) return "";
+        return `<span class="sb-chip sb-duration${this.animClass("duration")}"><i class="ph ph-timer"></i><span class="sb-duration-text">${formatDuration(this.startedAt)}</span></span>`;
+      case "cost": return this.renderCost();
+      case "clock":
+        return `<span class="sb-chip sb-clock${this.animClass("clock")}"><i class="ph ph-clock"></i><span class="sb-clock-text">${this.clockText()}</span></span>`;
+      default: return "";
+    }
+  }
+
+  private renderContext(asTokens: boolean): string {
+    const key = asTokens ? "context_tokens" : "context_pct";
+    if (this.ctxStatus) {
+      const c = this.ctxStatus;
+      const raw = c.pct_used;
+      const estimated = c.confidence !== "proven";
+      if (raw >= 100) console.warn("[ctx-100] context pinned at 100% (daemon)", { occupancy: String(c.occupancy), window: String(c.window), model: c.model, confidence: c.confidence });
+      const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
+      const occ = Number(c.occupancy).toLocaleString();
+      const win = Number(c.window).toLocaleString();
+      const note = estimated ? " (estimated)" : "";
+      const pctStr = raw < 1 && raw > 0 ? "<1" : String(Math.min(100, Math.round(raw)));
+      const body = asTokens ? `${fmtTokens(Number(c.occupancy))} / ${fmtTokens(Number(c.window))}` : `${pctStr}%`;
+      return `<span class="sb-chip sb-context${cls}${this.animClass(key)}" title="${occ} / ${win} tokens (conversation + system prompt + tools)${note}"><i class="ph ph-stack"></i>${body}</span>`;
+    } else if (this.meta.inputTokens > 0) {
+      const window = modelContextWindow(this.sessionModel || this.meta.model);
+      const raw = (this.meta.inputTokens / window) * 100;
+      if (raw >= 100) console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, sessionModel: this.sessionModel, metaModel: this.meta.model });
+      const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
+      const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
+      const body = asTokens ? `${fmtTokens(this.meta.inputTokens)} / ${fmtTokens(window)}` : `${pctStr}%`;
+      return `<span class="sb-chip sb-context${cls}${this.animClass(key)}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens (conversation + system prompt + tools)"><i class="ph ph-stack"></i>${body}</span>`;
+    } else if (!this.metaLoaded) {
+      return this.skeletonChip(key, "sb-context", "ph-stack", asTokens ? "70px" : "40px");
+    }
+    return "";
+  }
+
+  private renderCommits(mode: "ahead" | "behind" | "both"): string {
+    const a = this.gitInfo.ahead ?? null, b = this.gitInfo.behind ?? null;
+    if (a === null && b === null) {
+      return this.gitInfoLoaded ? "" : this.skeletonChip("commits", "sb-commits", "ph-arrows-down-up", "44px");
+    }
+    let txt = "", icon = "ph-arrows-down-up";
+    if (mode === "ahead") { txt = `↑${a ?? 0}`; icon = "ph-arrow-up"; }
+    else if (mode === "behind") { txt = `↓${b ?? 0}`; icon = "ph-arrow-down"; }
+    else { txt = `↑${a ?? 0} ↓${b ?? 0}`; }
+    const key = `commits_${mode}`;
+    return `<span class="sb-chip sb-commits${this.animClass(key)}" title="${a ?? 0} ahead, ${b ?? 0} behind upstream"><i class="ph ${icon}"></i>${txt}</span>`;
+  }
+
+  private renderDirty(): string {
+    const n = this.dirtyCount;
+    if (n === null) return this.dirtyLoaded ? "" : this.skeletonChip("dirty", "sb-dirty", "ph-pencil-simple", "44px");
+    if (n === 0 && this.hideZero) return "";
+    return `<span class="sb-chip sb-dirty${this.animClass("dirty")}" title="${n} uncommitted file${n === 1 ? "" : "s"}"><i class="ph ph-pencil-simple"></i>${n} dirty</span>`;
+  }
+
+  private renderDiffstat(): string {
+    const ins = this.gitInfo.insertions, del = this.gitInfo.deletions;
+    if (ins == null && del == null) return this.gitInfoLoaded ? "" : this.skeletonChip("diffstat", "sb-diffstat", "ph-plus-minus", "50px");
+    if ((ins ?? 0) === 0 && (del ?? 0) === 0 && this.hideZero) return "";
+    return `<span class="sb-chip sb-diffstat${this.animClass("diffstat")}" title="uncommitted: +${ins ?? 0} / -${del ?? 0}"><i class="ph ph-plus-minus"></i><span class="sb-ins">+${ins ?? 0}</span> <span class="sb-del">-${del ?? 0}</span></span>`;
+  }
+
+  private renderCost(): string {
+    const c = this.meta.totalCostUsd;
+    if (!this.metaLoaded) return this.skeletonChip("cost", "sb-cost", "ph-currency-dollar", "44px");
+    if ((!c || c <= 0) && this.hideZero) return "";
+    return `<span class="sb-chip sb-cost${this.animClass("cost")}" title="Estimated session cost (local estimate, not a charge)"><i class="ph ph-currency-dollar"></i>~$${(c ?? 0).toFixed(2)}</span>`;
+  }
+
   private render(): void {
-    const f = this.fields;
-
-    const gitChips: string[] = [];
-    if (f.includes("branch")) {
-      if (this.gitInfo.branch) {
-        gitChips.push(`<span class="sb-chip sb-branch${this.animClass("branch")}"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`);
-      } else if (!this.gitInfoLoaded) {
-        gitChips.push(this.skeletonChip("branch", "sb-branch", "ph-git-branch", "60px"));
-      }
-    }
-    if (f.includes("repo")) {
-      if (this.gitInfo.repo) {
-        gitChips.push(`<span class="sb-chip sb-repo${this.animClass("repo")}"><i class="ph ph-folder-simple"></i>${escapeHtml(this.gitInfo.repo)}</span>`);
-      } else if (!this.gitInfoLoaded) {
-        gitChips.push(this.skeletonChip("repo", "sb-repo", "ph-folder-simple", "80px"));
-      }
-    }
-    if (f.includes("folder") && this.cwd) {
-      const folderName = this.cwd.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? this.cwd;
-      const cwdEsc = escapeHtml(this.cwd);
-      gitChips.push(`<span class="sb-chip sb-folder sb-folder-btn${this.animClass("folder")}" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`);
-    }
-
-    const claudeChips: string[] = [];
-    if (f.includes("model")) {
-      // Prefer the live meta model, but fall back to the session's known model
-      // (passed at construction) so the chip shows instantly on first open
-      // instead of a skeleton until the first meta event streams in.
-      const model = this.meta.model ?? this.sessionModel;
-      if (model) {
-        claudeChips.push(`<span class="sb-chip sb-model sb-model-btn${this.animClass("model")}" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(model))}</span>`);
-      } else if (!this.metaLoaded) {
-        claudeChips.push(this.skeletonChip("model", "sb-model", "ph-robot", "70px"));
-      }
-    }
-    if (f.includes("effort") && this.effort) {
-      const cls = this.readOnlyEffort ? " readonly" : " sb-effort-btn";
-      claudeChips.push(`<span class="sb-chip sb-effort${cls}${this.animClass("effort")}" role="button" tabindex="0"><i class="ph ph-gauge"></i>${escapeHtml(this.effort)}</span>`);
-    }
-    if (f.includes("context")) {
-      // Source of truth is the daemon's context_status (this.ctxStatus): it
-      // computes occupancy + window app-side with a sticky >200K correction
-      // that fixes the old "pinned at 100%" bug. The frontend calc below is a
-      // transition/offline fallback for when the IPC returns null/throws (e.g.
-      // a running binary that predates the command, or no usage yet).
-      if (this.ctxStatus) {
-        const c = this.ctxStatus;
-        const raw = c.pct_used;
-        const estimated = c.confidence !== "proven";
-        if (raw >= 100) {
-          console.warn("[ctx-100] context pinned at 100% (daemon)", { occupancy: String(c.occupancy), window: String(c.window), model: c.model, confidence: c.confidence });
-        }
-        const pctNum = raw < 1 && raw > 0 ? "<1" : String(Math.min(100, Math.round(raw)));
-        // No "~" prefix: the rough number is good enough to show plainly. The
-        // estimated state still surfaces via the "(estimated)" tooltip note.
-        const pctStr = pctNum;
-        const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
-        const occ = Number(c.occupancy).toLocaleString();
-        const win = Number(c.window).toLocaleString();
-        const note = estimated ? " (estimated)" : "";
-        claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${occ} / ${win} tokens (conversation + system prompt + tools)${note}"><i class="ph ph-stack"></i>${pctStr}%</span>`);
-      } else if (this.meta.inputTokens > 0) {
-        // Fallback: frontend-only calc (transition/offline, not source of truth).
-        const window = modelContextWindow(this.sessionModel || this.meta.model);
-        const raw = (this.meta.inputTokens / window) * 100;
-        if (raw >= 100) {
-          console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, sessionModel: this.sessionModel, metaModel: this.meta.model });
-        }
-        const pctStr = raw < 1 ? "<1" : String(Math.min(100, Math.round(raw)));
-        const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
-        claudeChips.push(`<span class="sb-chip sb-context${cls}${this.animClass("context")}" title="${this.meta.inputTokens.toLocaleString()} / ${window.toLocaleString()} tokens (conversation + system prompt + tools)"><i class="ph ph-stack"></i>${pctStr}%</span>`);
-      } else if (!this.metaLoaded) {
-        claudeChips.push(this.skeletonChip("context", "sb-context", "ph-stack", "40px"));
-      }
-    }
-    if (f.includes("thinking") && this.meta.hasThinking) {
-      claudeChips.push(`<span class="sb-chip sb-thinking active${this.animClass("thinking")}"><i class="ph ph-brain"></i>thinking</span>`);
-    }
-    if (f.includes("duration") && this.startedAt) {
-      claudeChips.push(`<span class="sb-chip sb-duration${this.animClass("duration")}"><i class="ph ph-timer"></i><span class="sb-duration-text">${formatDuration(this.startedAt)}</span></span>`);
-    }
-
-    const countChips: string[] = [];
-    if (f.includes("messages")) {
-      if (this.counts) {
-        const n = this.counts.prompts;
-        countChips.push(`<span class="sb-chip sb-messages${this.animClass("messages")}"><i class="ph ph-chat-circle"></i>${n} ${n === 1 ? "msg" : "msgs"}</span>`);
-      } else if (!this.countsLoaded) {
-        countChips.push(this.skeletonChip("messages", "sb-messages", "ph-chat-circle", "52px"));
-      }
-    }
-    if (f.includes("turns")) {
-      if (this.counts) {
-        const n = this.counts.turns;
-        countChips.push(`<span class="sb-chip sb-turns${this.animClass("turns")}"><i class="ph ph-arrows-clockwise"></i>${n} ${n === 1 ? "turn" : "turns"}</span>`);
-      } else if (!this.countsLoaded) {
-        countChips.push(this.skeletonChip("turns", "sb-turns", "ph-arrows-clockwise", "55px"));
-      }
-    }
-
-    // Cumulative tool-tally chips (Read x4, Edited x6, ...). Always-on group,
-    // not gated on `fields`. Built + wired by the ToolTallyRow controller.
-    const tallyRowHtml = this.tally.renderChips(this.toolTally, this.tallyHiddenTools);
-
-    const allChips: string[] = [];
-    for (const group of [gitChips, claudeChips, countChips]) {
-      if (group.length === 0) continue;
-      if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
-      allChips.push(...group);
-    }
-    if (tallyRowHtml) {
-      if (allChips.length > 0) allChips.push(`<span class="sb-sep"></span>`);
-      allChips.push(tallyRowHtml);
-    }
+    const rowsHtml = this.rows.map((row) => {
+      const chips = row.map((t) => this.renderChip(t)).filter(Boolean).join("");
+      return chips ? `<div class="sb-row">${chips}</div>` : "";
+    }).filter(Boolean).join("");
 
     const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
     const effortPopoverHtml = this.effortPopoverOpen ? `
@@ -349,7 +398,7 @@ export class SessionStatusbar {
     ` : "";
 
     this.container.innerHTML = `
-      <div class="sb-chips">${allChips.length > 0 ? allChips.join("") : '<span class="sb-empty">No fields</span>'}</div>
+      <div class="sb-rows">${rowsHtml || '<span class="sb-empty">No chips</span>'}</div>
       ${effortPopoverHtml}
       ${modelPopoverHtml}
     `;

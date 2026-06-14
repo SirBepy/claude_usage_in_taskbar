@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 //
-// The cumulative tool-tally row renders one chip per tool type (Read x4,
-// Edited x6, ...) and each chip opens its OWN drill-down popover listing that
-// tool's distinct targets. This drives the real SessionStatusbar so a
-// regression in the row build or the popover DOM is caught. Tauri `invoke` is
-// mocked (jsdom has no backend), so the thumbnail/open-in-editor side effects
-// are asserted at the call level only.
+// Per-tool chips: in the rows model each tool is its own placeable chip
+// (`tool:Read`, ...) rendered inline in its row, still opening its OWN
+// drill-down popover listing that tool's distinct targets. The global
+// hideZero setting drops zero-count chips. This drives the real
+// SessionStatusbar so a regression in the chip build or the popover DOM is
+// caught. Tauri `invoke` is mocked (jsdom has no backend).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -16,10 +16,12 @@ vi.mock("../src/shared/ipc.ts", () => ({
 
 const { SessionStatusbar } = await import("../src/views/sessions/session-statusbar.ts");
 
-function mount(fields = []) {
+const TOOL_ROW = [["tool:Read", "tool:Grep", "tool:Edit", "tool:Bash"]];
+
+function mount(rows = TOOL_ROW, opts = {}) {
   const el = document.createElement("div");
   document.body.appendChild(el);
-  const sb = new SessionStatusbar(el, null, fields, { sessionId: "sess-1" });
+  const sb = new SessionStatusbar(el, null, rows, { sessionId: "sess-1", hideZero: true, ...opts });
   return { el, sb };
 }
 
@@ -53,8 +55,8 @@ beforeEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("tool-tally row", () => {
-  it("renders one chip per tool type with friendly labels, counts and data-tool", () => {
+describe("per-tool chips", () => {
+  it("renders one chip per placed tool type with friendly labels, counts and data-tool", () => {
     const { el, sb } = mount();
     sb.updateToolTally(sampleTally());
     const chips = [...el.querySelectorAll(".sb-tally-chip")].map((c) => c.textContent);
@@ -63,12 +65,25 @@ describe("tool-tally row", () => {
     expect(tools).toEqual(["Read", "Grep", "Edit", "Bash"]);
   });
 
-  it("hides the row when byType is empty", () => {
+  it("renders each configured row as its own .sb-row line", () => {
+    const { el } = mount([["clock"], ["clock"]]);
+    expect(el.querySelectorAll(".sb-row").length).toBe(2);
+  });
+
+  it("global hideZero drops zero-count tool chips", () => {
     const { el, sb } = mount();
     sb.updateToolTally(sampleTally());
-    expect(el.querySelector(".sb-tally-row")).not.toBeNull();
-    sb.updateToolTally({ byType: [] });
-    expect(el.querySelector(".sb-tally-row")).toBeNull();
+    expect(el.querySelectorAll(".sb-tally-chip").length).toBe(4);
+    sb.updateToolTally({ byType: [] }); // every count now 0
+    expect(el.querySelectorAll(".sb-tally-chip").length).toBe(0);
+  });
+
+  it("with hideZero off, zero-count tool chips still show x0", () => {
+    const { el, sb } = mount(TOOL_ROW, { hideZero: false });
+    sb.updateToolTally({ byType: [{ tool: "Read", count: 0, items: [] }] });
+    const read = el.querySelector('.sb-tally-chip[data-tool="Read"]');
+    expect(read).not.toBeNull();
+    expect(read.textContent).toBe("Read x0");
   });
 
   it("opens a per-tool popover listing that tool's files and images", () => {
@@ -77,7 +92,6 @@ describe("tool-tally row", () => {
     openChip(el, "Read");
     const pop = document.body.querySelector(".sb-tally-popover");
     expect(pop).not.toBeNull();
-    // No tabs in the per-tool popover.
     expect(pop.querySelector(".sb-tally-tab")).toBeNull();
     const files = [...pop.querySelectorAll(".sb-tally-file .sb-tally-name")].map((n) => n.textContent);
     expect(files).toEqual(["a.ts", "b.ts"]);

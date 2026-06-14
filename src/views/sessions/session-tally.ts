@@ -42,6 +42,18 @@ export class ToolTallyRow {
     return `<span class="sb-tally-row">${tallyChips.join("")}</span>`;
   }
 
+  /** Build ONE tool chip's HTML (count + drill-down affordance) for a given
+   *  tool, or "" when hideZero is on and the count is 0 / the tool never ran.
+   *  `count` is passed by the caller (SessionStatusbar owns the tally state);
+   *  this controller only owns the popover. Used by the rows renderer, which
+   *  places each tool as an individual chip. */
+  renderChipFor(tool: string, count: number, hideZero: boolean): string {
+    if (count === 0 && hideZero) return "";
+    const { icon } = toolSummary(tool, {});
+    const label = toolLabel(tool);
+    return `<span class="sb-tally-chip sb-chip" role="button" tabindex="0" data-tool="${escapeHtml(tool)}" title="${escapeHtml(label)} targets"><i class="ph ${icon}"></i>${escapeHtml(label)} x${count}</span>`;
+  }
+
   // Wire the freshly-rendered chips' click handlers. Call after the container's
   // innerHTML is set on every render.
   wireChips(): void {

@@ -215,6 +215,6 @@ export interface StatusbarOptions {
   sessionId?: string | null;
   readOnly?: boolean;
   sessionModel?: string | null;
-  /** Raw tool names hidden from the tally row (see loadTallyHiddenTools). */
-  tallyHiddenTools?: string[];
+  /** Global hide-at-zero for count/tool chips (statuslineHideZero). Default true. */
+  hideZero?: boolean;
 }

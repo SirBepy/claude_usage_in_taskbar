@@ -2,23 +2,42 @@
 
 .session-statusbar-host {
   flex-shrink: 0;
-  /* Fixed height (not min-height) so the host can never grow once chips
-     render. Matches .session-statusbar's final height exactly, so the
-     readonly banner sits at its final Y from the moment the pane mounts. */
-  height: 32px;
+  /* Grows with the configured row count (WYSIWYG, up to 5 rows). A single row
+     stays at the historical 32px; extra rows add height. */
+  min-height: 32px;
   box-sizing: border-box;
 }
 
 .session-statusbar {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
   padding: 4px 12px;
   background: var(--color-surface-alt);
   border-bottom: 1px solid var(--color-border);
-  height: 32px;
+  min-height: 32px;
   box-sizing: border-box;
   position: relative;
+}
+
+/* Vertical stack of statusline rows; each .sb-row is one horizontal chip line. */
+.sb-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+.sb-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .sb-chips {
@@ -100,9 +119,16 @@
 .sb-chip.sb-context.danger { color: #f87171; border-color: rgba(248, 113, 113, 0.3); }
 .sb-chip.sb-thinking.active { color: #a78bfa; border-color: rgba(167, 139, 250, 0.3); }
 .sb-chip.sb-duration { color: var(--color-text-muted); }
-.sb-chip.sb-cost { color: var(--color-text-muted); }
+.sb-chip.sb-cost { color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
+.sb-chip.sb-clock { color: var(--color-text-muted); }
 .sb-chip.sb-messages { color: #60a5fa; border-color: rgba(96, 165, 250, 0.2); }
 .sb-chip.sb-turns { color: #38bdf8; border-color: rgba(56, 189, 248, 0.2); }
+.sb-chip.sb-commits { color: #818cf8; border-color: rgba(129, 140, 248, 0.25); }
+.sb-chip.sb-sha { color: var(--color-text-muted); }
+.sb-chip.sb-dirty { color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
+.sb-chip.sb-diffstat { color: var(--color-text-muted); }
+.sb-chip.sb-diffstat .sb-ins { color: #4ade80; }
+.sb-chip.sb-diffstat .sb-del { color: #f87171; }
 
 .sb-sep {
   display: inline-block;
@@ -135,7 +161,7 @@
 .sb-effort-popover,
 .sb-model-popover {
   position: absolute;
-  bottom: 32px;
+  bottom: calc(100% + 2px);
   right: 8px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);

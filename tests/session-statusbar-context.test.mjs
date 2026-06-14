@@ -41,7 +41,7 @@ async function flush() {
 function mount(opts) {
   const el = document.createElement("div");
   document.body.appendChild(el);
-  const sb = new SessionStatusbar(el, null, ["context"], { sessionId: "sess-1", ...opts });
+  const sb = new SessionStatusbar(el, null, [["context_pct"]], { sessionId: "sess-1", hideZero: true, ...opts });
   return { el, sb };
 }
 
