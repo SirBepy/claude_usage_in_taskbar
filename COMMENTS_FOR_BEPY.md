@@ -1,5 +1,21 @@
 # Comments for Bepy
 
+## 2026-06-14 20:35 - Remote-control for in-app chats: HARD STOP, parked (autopilot)
+
+Decision needed: you said remote-control is default-on yet no chat becomes remote-controllable, "it worked before the daemon epic, just make it work."
+Resolved via: live investigation (claude --help + 2 controlled spawns + on-disk session files + process cmdlines). NOT guessed - this is a real architecture fork, parked per autopilot Hard Stops.
+Picked: PARK with full diagnosis + options doc (.for_bepy/ai_todos/102). Did NOT revert the daemon epic or remove the flag while you're AFK.
+Reason: it is a hard Claude-CLI constraint, not a bug. PROOF:
+  - `claude --help`: `--remote-control` = "Start an INTERACTIVE session"; `--input-format`/`--output-format`/`--include-partial-messages` "only work with --print".
+  - Spawning `claude --output-format=stream-json` (no -p) errors "When using --print, --output-format=stream-json requires --verbose" -> stream-json output FORCES print mode; print mode never opens a bridge.
+  - On disk: app chats' `~/.claude/sessions/<pid>.json` = `entrypoint:"sdk-cli"`, NO bridgeSessionId. Only interactive `entrypoint:"cli"` sessions (the channel/Plan-C spawn, e.g. your Obsidian one) get a bridgeSessionId. A fresh app chat (pid 35028) had `--remote-control` ON ITS CMDLINE yet no bridge.
+  - "Worked before the daemon epic" = pre-daemon chats were interactive --remote-control (real bridge). The daemon switched to print-mode stream-json for stdin turn-driving + partial streaming; the bridge was the casualty. The two are mutually exclusive in ONE claude process.
+The fork (you choose, see ai_todo 102): A) revert chats to interactive --remote-control (loses daemon stdin-driving/cancel/partial-stream/held-msgs); B) app speaks the remote-control bridge wire protocol so app+phone share one interactive session (keeps the daemon epic, but a real project); C) dual-process (conflict-prone, not recommended); D) accept it + remove the no-op flag + document phone-control = channels/automation path only.
+My recommendation: if "make it work" means phone-controllable chats, B is the only path that keeps the daemon epic - but it is a build, not a fix. D is the honest stopgap.
+Where: daemon/claude_config.rs::base_claude_args (the dead flag), channels/spawn.rs (the working interactive path), hooks_server/lifecycle.rs (is_remote wiring).
+Cleanup: 2 short-lived haiku test sessions spawned in C:\tmp during diagnosis; both exited, no orphans (verified). Memory project_remote_chat_flag corrected (was "UNTESTED" -> now "TESTED, no-op").
+Revisit: yes - needs your architecture call before any code lands.
+
 ## 2026-06-13 13:11 - Held messages while Claude is busy (autopilot)
 
 RUN_LEDGER (chunk -> outcome -> sha):
