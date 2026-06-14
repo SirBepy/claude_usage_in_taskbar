@@ -140,12 +140,12 @@
   border: 1px solid var(--color-border);
   position: relative;
   align-self: flex-start;
+  /* fit-content gives the bubble a definite width (= content size, capped by
+     max-width) so child percentage widths resolve and pre.shiki's overflow-x:
+     auto scrollbar fires instead of the pre spilling past the bubble edge. */
+  width: fit-content;
   max-width: 92%;
   margin-right: 32px;
-  /* Clip any content (e.g. wide code blocks) that would overflow the bubble.
-     This also gives pre.shiki a definite containing-block width so its
-     overflow-x: auto scrollbar works instead of the pre just spilling out. */
-  overflow: hidden;
 }
 
 .msg.assistant:hover .msg-copy-btn {
