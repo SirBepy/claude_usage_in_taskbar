@@ -1,0 +1,196 @@
+import "./change-character-modal.css";
+import { api } from "./api";
+import type { Character } from "./api";
+import { escapeHtml } from "./escape-html";
+
+export async function openChangeCharacterModal(opts: {
+  projectId: string;
+  currentId: string | null;
+}): Promise<string | null> {
+  const { projectId, currentId } = opts;
+
+  return new Promise<string | null>((resolve) => {
+    // --- state ---
+    type Tab = "whitelisted" | "all";
+    let activeTab: Tab = "whitelisted";
+    let query = "";
+    const cache: Partial<Record<Tab, Character[]>> = {};
+    // icon url cache: charId -> url
+    const iconCache = new Map<string, string | null>();
+
+    const overlay = document.createElement("div");
+    overlay.className = "cc-modal-overlay";
+
+    function close(result: string | null) {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+      resolve(result);
+    }
+
+    function filterChars(list: Character[]): Character[] {
+      if (!query) return list;
+      const q = query.toLowerCase();
+      return list.filter((c) => c.label.toLowerCase().includes(q));
+    }
+
+    function renderBody() {
+      // cache[tab] may be: undefined (not started), the "__loading__" sentinel
+      // (in flight, see loadTab), or the resolved Character[]. Only a real array
+      // is renderable; everything else means "still loading".
+      const tabData = cache[activeTab];
+      const ready = Array.isArray(tabData);
+      const loading = !ready;
+      const filtered = ready ? filterChars(tabData) : [];
+
+      let bodyHtml: string;
+      if (loading) {
+        bodyHtml = `<div class="cc-modal-loading">Loading...</div>`;
+      } else if (filtered.length === 0) {
+        bodyHtml = `<div class="cc-modal-empty">No characters found.</div>`;
+      } else {
+        const cards = filtered.map((c) => {
+          const iconUrl = iconCache.get(c.id);
+          let iconHtml: string;
+          if (iconUrl) {
+            iconHtml = `<img class="cc-char-icon" src="${escapeHtml(iconUrl)}" alt="" data-char-icon="${escapeHtml(c.id)}">`;
+          } else {
+            iconHtml = `<div class="cc-char-icon-placeholder" data-char-icon-ph="${escapeHtml(c.id)}"><i class="ph ph-question"></i></div>`;
+          }
+          const gameLabel = c.game_label
+            ? `<span class="cc-char-game">${escapeHtml(c.game_label)}</span>`
+            : "";
+          return `<button class="cc-char-card${c.id === currentId ? " selected" : ""}" data-char-id="${escapeHtml(c.id)}" type="button">
+            ${iconHtml}
+            <span class="cc-char-label">${escapeHtml(c.label)}</span>
+            ${gameLabel}
+          </button>`;
+        });
+        bodyHtml = `<div class="cc-char-grid">${cards.join("")}</div>`;
+      }
+
+      overlay.innerHTML = `
+        <div class="cc-modal-card" role="dialog" aria-modal="true" aria-label="Change character">
+          <div class="cc-modal-header">
+            <h3 class="cc-modal-title">Change character</h3>
+            <button type="button" class="cc-modal-close" title="Close"><i class="ph ph-x"></i></button>
+          </div>
+          <div class="cc-modal-search-row">
+            <div class="cc-modal-search-wrap">
+              <i class="ph ph-magnifying-glass cc-modal-search-icon"></i>
+              <input type="text" class="cc-modal-search" placeholder="Search..." value="${escapeHtml(query)}" autocomplete="off" spellcheck="false">
+            </div>
+          </div>
+          <div class="cc-modal-tabs">
+            <button type="button" class="cc-modal-tab${activeTab === "whitelisted" ? " active" : ""}" data-tab="whitelisted">Whitelisted</button>
+            <button type="button" class="cc-modal-tab${activeTab === "all" ? " active" : ""}" data-tab="all">All</button>
+          </div>
+          <div class="cc-modal-body">${bodyHtml}</div>
+        </div>
+      `;
+
+      attachHandlers();
+
+      // Focus the search input, preserve cursor position
+      const searchEl = overlay.querySelector<HTMLInputElement>(".cc-modal-search");
+      if (searchEl) {
+        searchEl.focus();
+        const len = searchEl.value.length;
+        searchEl.setSelectionRange(len, len);
+      }
+
+      // Kick off lazy icon loads for characters that don't have icons cached yet
+      if (tabData) {
+        for (const c of filtered) {
+          if (!iconCache.has(c.id)) {
+            iconCache.set(c.id, null); // mark as in-flight
+            api.characterAssetUrl(c.id, "icon.png").then((url) => {
+              iconCache.set(c.id, url);
+              // Patch the DOM directly (avoid full re-render)
+              const ph = overlay.querySelector<HTMLElement>(`[data-char-icon-ph="${CSS.escape(c.id)}"]`);
+              if (ph && url) {
+                const img = document.createElement("img");
+                img.className = "cc-char-icon";
+                img.src = url;
+                img.alt = "";
+                img.dataset.charIcon = c.id;
+                ph.replaceWith(img);
+              }
+            }).catch(() => {
+              // leave placeholder
+            });
+          }
+        }
+      }
+    }
+
+    function attachHandlers() {
+      overlay.querySelector<HTMLButtonElement>(".cc-modal-close")?.addEventListener("click", () => close(null));
+
+      overlay.querySelector<HTMLInputElement>(".cc-modal-search")?.addEventListener("input", (e) => {
+        query = (e.target as HTMLInputElement).value;
+        renderBody();
+      });
+
+      overlay.querySelectorAll<HTMLButtonElement>(".cc-modal-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const tab = btn.dataset.tab as Tab;
+          if (!tab) return;
+          activeTab = tab;
+          renderBody();
+          // Trigger load if not yet cached
+          loadTab(tab);
+        });
+      });
+
+      overlay.querySelectorAll<HTMLButtonElement>(".cc-char-card").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const charId = btn.dataset.charId;
+          if (charId) close(charId);
+        });
+      });
+    }
+
+    function loadTab(tab: Tab) {
+      if (cache[tab] !== undefined) return; // already loaded or loading
+      // Set to a sentinel so we don't double-load, but keep showing "Loading..."
+      // We use undefined = not started, so we need a different signal.
+      // Use a local promise pattern: mark as "in progress" by storing empty array temporarily.
+      // We'll use null as "loading" - but type is Character[] | undefined. Re-key:
+      // Actually just fire the async load and re-render when done.
+      const loader = tab === "whitelisted"
+        ? api.resolveWhitelistCharacters(projectId)
+        : api.listCharacters();
+
+      // Store a temporary marker so we don't double-trigger
+      (cache as Record<string, unknown>)[tab] = "__loading__";
+
+      loader.then((chars) => {
+        cache[tab] = chars;
+        // Pre-seed icon cache entries for already-known URLs
+        // (The per-card lazy load below will fill them in)
+        if (activeTab === tab) renderBody();
+      }).catch((err) => {
+        console.error("[change-character-modal] failed to load tab", tab, err);
+        cache[tab] = [];
+        if (activeTab === tab) renderBody();
+      });
+    }
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close(null);
+      }
+    }
+
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close(null);
+    });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+
+    // Initial render + first tab load
+    renderBody();
+    loadTab("whitelisted");
+  });
+}

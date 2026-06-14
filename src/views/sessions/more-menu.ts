@@ -27,6 +27,7 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string, readOnly
   if (!readOnly) {
     items.push(`<button class="smore-item smore-auto-accept${autoOn ? " is-on" : ""}" data-action="auto-accept"><i class="ph ph-shield-check"></i>Auto-accept${autoOn ? '<span class="smore-check-dot"></span>' : ""}</button>`);
   }
+  items.push(`<button class="smore-item" data-action="change-character"><i class="ph ph-user-switch"></i>Change character</button>`);
   items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Open in Terminal</button>`);
   items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
   if (!readOnly) {
@@ -57,6 +58,12 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string, readOnly
           // Turning it ON should clear an already-parked prompt (and its sidebar
           // dot) right away, not wait for a switch-away/back.
           if (next) autoAcceptParked(sessionId);
+          break;
+        }
+        case "change-character": {
+          // Dynamic import breaks the active-session <-> more-menu static cycle.
+          const m = await import("./active-session");
+          await m.changeCharacterForSession(sessionId);
           break;
         }
         case "terminal":

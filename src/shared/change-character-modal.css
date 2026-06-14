@@ -1,0 +1,209 @@
+/* ── Change-character picker modal ─────────────────────────────────────────── */
+
+.cc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cc-modal-card {
+  background: var(--color-surface, #1c1c24);
+  color: var(--color-text, #e8e8ee);
+  border: 1px solid var(--color-border, #2a2a36);
+  border-radius: 10px;
+  padding: 0;
+  width: 480px;
+  max-width: 94vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+.cc-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--color-border, #2a2a36);
+  flex-shrink: 0;
+}
+
+.cc-modal-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.cc-modal-close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted, #8a8a96);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cc-modal-close:hover {
+  color: var(--color-text, #e8e8ee);
+  background: var(--color-surface-alt, #24242e);
+}
+
+.cc-modal-search-row {
+  padding: 10px 16px 0;
+  flex-shrink: 0;
+}
+
+.cc-modal-search {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--color-surface-alt, #24242e);
+  border: 1px solid var(--color-border, #2a2a36);
+  border-radius: 6px;
+  color: var(--color-text, #e8e8ee);
+  font-size: 0.85rem;
+  padding: 7px 10px 7px 32px;
+  outline: none;
+}
+
+.cc-modal-search:focus {
+  border-color: var(--color-primary, #6e8fff);
+}
+
+.cc-modal-search-wrap {
+  position: relative;
+}
+
+.cc-modal-search-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.cc-modal-tabs {
+  display: flex;
+  gap: 0;
+  padding: 8px 16px 0;
+  flex-shrink: 0;
+}
+
+.cc-modal-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted, #8a8a96);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.cc-modal-tab.active {
+  color: var(--color-primary, #6e8fff);
+  border-bottom-color: var(--color-primary, #6e8fff);
+}
+
+.cc-modal-tab:hover:not(.active) {
+  color: var(--color-text, #e8e8ee);
+}
+
+.cc-modal-body {
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  flex: 1 1 auto;
+}
+
+.cc-modal-loading {
+  text-align: center;
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 0.82rem;
+  padding: 32px 0;
+}
+
+.cc-modal-empty {
+  text-align: center;
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 0.82rem;
+  padding: 32px 0;
+}
+
+.cc-char-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+.cc-char-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 8px;
+  background: var(--color-surface-alt, #24242e);
+  border: 1px solid var(--color-border, #2a2a36);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.cc-char-card:hover {
+  border-color: var(--color-primary, #6e8fff);
+  background: color-mix(in srgb, var(--color-primary, #6e8fff) 8%, var(--color-surface-alt, #24242e));
+}
+
+.cc-char-card.selected {
+  border-color: var(--color-primary, #6e8fff);
+  background: color-mix(in srgb, var(--color-primary, #6e8fff) 15%, var(--color-surface-alt, #24242e));
+}
+
+.cc-char-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--color-surface, #1c1c24);
+  border: 2px solid var(--color-border, #2a2a36);
+  flex-shrink: 0;
+}
+
+.cc-char-icon-placeholder {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--color-surface, #1c1c24);
+  border: 2px solid var(--color-border, #2a2a36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.cc-char-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text, #e8e8ee);
+  word-break: break-word;
+  line-height: 1.2;
+}
+
+.cc-char-game {
+  font-size: 0.68rem;
+  color: var(--color-text-muted, #8a8a96);
+  line-height: 1.2;
+}

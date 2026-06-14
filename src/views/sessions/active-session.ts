@@ -18,8 +18,10 @@ import {
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
-import { characterForSession, characterIconUrl } from "./session-characters";
+import { characterForSession, characterIconUrl, loadSessionCharacters } from "./session-characters";
 import { hydrateCharacterAvatars } from "../../shared/projects";
+import { api } from "../../shared/api";
+import { openChangeCharacterModal } from "../../shared/change-character-modal";
 import {
   addBackgroundSession,
   removeBackgroundSession,
@@ -43,6 +45,49 @@ export function headerStatusClass(sess: Instance): string {
     ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),
   ]);
   return statusDotClass(sess, unread, attention, question);
+}
+
+/**
+ * Open the Change Character modal for a session and apply the pick: persist the
+ * session->character mapping, reload the session-character cache, play the new
+ * character's `select` sound (best-effort), and refresh the header face + the
+ * sidebar row. Shared by the header face click and the ⋮ "Change character"
+ * menu (the latter imports this dynamically to avoid an import cycle).
+ */
+export async function changeCharacterForSession(sessionId: string): Promise<void> {
+  const sess = state.sessions.find((s) => s.session_id === sessionId);
+  if (!sess) return;
+  const current = characterForSession(sess);
+  const picked = await openChangeCharacterModal({ projectId: sess.project_id, currentId: current });
+  if (!picked || picked === current) return;
+  try {
+    await api.setSessionCharacter(sessionId, picked);
+    await loadSessionCharacters();
+    void api.playCharacterSlot(picked, "select").catch(() => { /* sound is best-effort */ });
+  } catch (e) {
+    console.error("[active-session] change character failed", e);
+    return;
+  }
+  // Surgically swap the active pane's header face (avoid a full pane re-render
+  // that would tear down the live renderer/composer mid-session).
+  if (state.selectedId === sessionId) {
+    const header = document.querySelector<HTMLElement>(".session-header");
+    const old = header?.querySelector<HTMLElement>(".header-char-clickable");
+    if (header && old) {
+      const url = characterIconUrl(picked);
+      const img = document.createElement("img");
+      img.className = `char-avatar session-header-char header-char-clickable ${headerStatusClass(sess)}`;
+      img.dataset.characterId = picked;
+      img.title = "Change character";
+      img.setAttribute("role", "button");
+      img.alt = "";
+      if (url) img.src = url;
+      old.replaceWith(img);
+    }
+  }
+  const root = document.querySelector<HTMLElement>(".view-sessions");
+  const listEl = root?.querySelector<HTMLElement>("#sessions-list");
+  if (listEl) renderSidebar(listEl);
 }
 
 function isCloseCommand(blocks: ContentBlock[]): boolean {
@@ -120,8 +165,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
   const headerHero = headerCharId
-    ? `<img class="char-avatar session-header-char ${headerStatus}" data-character-id="${escapeHtml(headerCharId)}"${headerIconUrl ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : ""} alt="">`
-    : "";
+    ? `<img class="char-avatar session-header-char header-char-clickable ${headerStatus}" data-character-id="${escapeHtml(headerCharId)}"${headerIconUrl ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : ""} alt="" title="Change character" role="button" tabindex="0">`
+    : `<div class="char-avatar session-header-char-placeholder header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">?</div>`;
 
   pane.innerHTML = `
     <header class="session-header">
@@ -141,7 +186,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   `;
 
   // Resolve the header hero avatar to its data URL (no-op when absent).
-  if (headerHero) void hydrateCharacterAvatars(pane);
+  if (headerCharId) void hydrateCharacterAvatars(pane);
+
+  // Clicking the header face opens the Change Character modal for this session.
+  const headerEl = pane.querySelector<HTMLElement>(".session-header");
+  headerEl?.addEventListener("click", (e) => {
+    if (!(e.target as Element).closest(".header-char-clickable")) return;
+    void changeCharacterForSession(sess.session_id);
+  });
 
   // Mount statusbar.
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
