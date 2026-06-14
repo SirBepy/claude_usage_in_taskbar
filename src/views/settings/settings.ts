@@ -171,6 +171,7 @@ export async function renderSettingsView(
   const navNotifs = root.querySelector<HTMLElement>("#nav-notifications");
   const navPresets = root.querySelector<HTMLElement>("#nav-presets");
   const navPermissions = root.querySelector<HTMLElement>("#nav-permissions");
+  const navCharacters = root.querySelector<HTMLElement>("#nav-characters");
   const navShortcuts = root.querySelector<HTMLElement>("#nav-shortcuts");
   const navStatusline = root.querySelector<HTMLElement>("#nav-statusline");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
@@ -179,6 +180,7 @@ export async function renderSettingsView(
   if (navNotifs) navNotifs.onclick = () => g().navigateTo("settings-notifications");
   if (navPresets) navPresets.onclick = () => g().navigateTo("settings-presets");
   if (navPermissions) navPermissions.onclick = () => g().navigateTo("settings-permissions");
+  if (navCharacters) navCharacters.onclick = () => g().navigateTo("settings-characters");
   if (navShortcuts) navShortcuts.onclick = () => g().navigateTo("settings-shortcuts");
   if (navStatusline) navStatusline.onclick = () => g().navigateTo("settings-statusline");
 
@@ -223,6 +225,10 @@ function template() {
           </div>
           <div class="kit-row kit-nav-row" id="nav-permissions">
             <span class="kit-row-label">Permissions</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
+          <div class="kit-row kit-nav-row" id="nav-characters">
+            <span class="kit-row-label">Characters</span>
             <span class="kit-nav-arrow">›</span>
           </div>
           <div class="kit-row kit-nav-row" id="nav-statusline">

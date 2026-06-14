@@ -1,0 +1,99 @@
+.wle-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wle-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wle-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.wle-default-notice {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #8a8a96);
+  font-style: italic;
+}
+
+.wle-groups-section {
+  border: 1px solid var(--color-border, #2a313c);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.wle-hidden {
+  display: none;
+}
+
+.wle-groups-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.wle-game-group {
+  margin-bottom: 8px;
+}
+
+.wle-game-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.wle-chars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 20px;
+  margin-top: 2px;
+}
+
+.wle-char-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 1px 0;
+}
+
+.wle-char-disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.wle-char-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--color-surface-alt, #1d222b);
+  flex: 0 0 auto;
+}
+
+.wle-empty-hint {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--color-warning, #e0a33e);
+}
+
+.wle-actions {
+  display: flex;
+  justify-content: flex-start;
+}

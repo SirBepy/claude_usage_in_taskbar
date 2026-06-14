@@ -104,7 +104,8 @@ describe("Projects view DOM", () => {
     expect(folderMappingTs).toMatch(/id="hideProjectBtn"/);
   });
 
-  it("character-pick subview owns the dropdown", () => {
-    expect(characterPickTs).toMatch(/id="character-select"/);
+  it("character-pick subview hosts the whitelist editor", () => {
+    expect(characterPickTs).toMatch(/id="whitelist-editor-host"/);
+    expect(characterPickTs).toMatch(/renderWhitelistEditor/);
   });
 });
