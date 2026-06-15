@@ -4,6 +4,11 @@
 
 - Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
+- 0.1.89 shipped broken (blank app / dead settings nav) from an unresolvable `@tauri-apps/plugin-opener` import poisoning the entry chunk; fixed locally + build/tests green, but it needs `/commit pushnbump` to get a working release out to the installed app.
+
+### Visual QA
+
+- After the next build, confirm the 0.1.89 fix end-to-end: app boots normally, Settings > Statusline > Back works again, and Settings > About > the GitHub/YouTube dev-link buttons open in the browser (now routed through the app's `open_external` IPC).
 
 ### Remote phone cockpit - LIVE PHONE TEST (real-UI PWA, autopilot 2026-06-15)
 

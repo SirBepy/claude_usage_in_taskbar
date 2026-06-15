@@ -107,6 +107,7 @@ export async function renderAboutView(root: HTMLElement): Promise<() => void> {
       await api.copyLogs();
     },
     onBack: () => { void g().navigateTo("settings"); },
+    onOpenLink: (url) => { void api.openExternal(url); },
     update: deriveUpdateDeps(updateState, isMac),
     onRerender: () => doRender(),
   };
