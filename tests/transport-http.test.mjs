@@ -139,8 +139,25 @@ describe("HttpTransport.call mapping", () => {
     expect(body()).toEqual({ method: "cancel_turn", params: { session_id: "sess-3" } });
   });
 
+  it("maps load_history_page to the rpc with reshaped (snake_case) params", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ events: [], oldest_seq: 0, newest_seq: 0, has_more: false }),
+    });
+    await new HttpTransport().call("load_history_page", {
+      sessionId: "sess-h",
+      cwd: "/work",
+      messageLimit: 20,
+    });
+    expect(url()).toBe("/api/rpc");
+    expect(body()).toEqual({
+      method: "load_history_page",
+      params: { session_id: "sess-h", cwd: "/work", before_seq: null, message_limit: 20 },
+    });
+  });
+
   it("throws RemoteUnavailableError for commands with no remote path", async () => {
-    await expect(new HttpTransport().call("load_history_page", {})).rejects.toBeInstanceOf(
+    await expect(new HttpTransport().call("start_session", {})).rejects.toBeInstanceOf(
       RemoteUnavailableError,
     );
     await expect(new HttpTransport().call("get_settings")).rejects.toBeInstanceOf(

@@ -106,8 +106,45 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
     }
     // Snapshot fetch so a freshly-connected app can seed its instance cache
     // without waiting for the next instances_changed notification (ai_todo 63).
-    router.register("list_instances", move |_params, _ctx| {
+    {
         let state = state.clone();
-        async move { Ok(json!(state.registry.list())) }
+        router.register("list_instances", move |_params, _ctx| {
+            let state = state.clone();
+            async move { Ok(json!(state.registry.list())) }
+        });
+    }
+    // Paginated transcript reader exposed over the remote-access API so that the
+    // phone/browser client can load past conversation history without a Tauri
+    // runtime. Reuses the same JSONL logic as the desktop `load_history_page`
+    // Tauri command; no parsing is duplicated.
+    router.register("load_history_page", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct HistoryPageParams {
+                session_id: String,
+                cwd: Option<String>,
+                before_seq: Option<u64>,
+                message_limit: u32,
+            }
+            let p: HistoryPageParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            // Validate the session id (reuse the same check as the IPC layer to
+            // reject path-traversal attempts before any filesystem access).
+            crate::ipc::chat::attachments::validate_session_id(&p.session_id)
+                .map_err(|e| RpcError::invalid_params(e))?;
+            let limit = p.message_limit.clamp(1, 500);
+            // Filesystem + JSONL parsing is synchronous IO; run on blocking pool.
+            tokio::task::spawn_blocking(move || {
+                let path = crate::chat::history::locate_transcript(
+                    &p.session_id,
+                    p.cwd.as_deref(),
+                )?;
+                crate::chat::history::read_page(&path, p.before_seq, limit)
+            })
+            .await
+            .map_err(|e| RpcError::internal(format!("join: {e}")))?
+            .map(|page| serde_json::to_value(page).unwrap_or(serde_json::Value::Null))
+            .map_err(|e| RpcError::internal(e))
+        }
     });
 }

@@ -107,9 +107,16 @@ export class HttpTransport implements Transport {
         });
       case "send_message":
         return this.sendMessage<T>(args);
-      // No remote path yet: history transcript RPC (task #2), new-session
-      // orchestration (start_session), takeover, editor/window/local-FS,
-      // file watchers, get_settings, usage/token history. Degrade clearly.
+      case "load_history_page":
+        return this.rpc<T>("load_history_page", {
+          session_id: args.sessionId ?? args.session_id,
+          cwd: args.cwd ?? null,
+          before_seq: args.beforeSeq ?? args.before_seq ?? null,
+          message_limit: args.messageLimit ?? args.message_limit ?? 20,
+        });
+      // No remote path yet: new-session orchestration (start_session), takeover,
+      // editor/window/local-FS, file watchers, get_settings, usage/token history.
+      // Degrade clearly.
       default:
         throw new RemoteUnavailableError(command);
     }

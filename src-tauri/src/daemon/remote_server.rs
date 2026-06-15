@@ -69,6 +69,7 @@ const SAFE_METHODS: &[&str] = &[
     "respond_permission",
     "respond_question",
     "set_session_effort",
+    "load_history_page",
 ];
 
 /// Start the remote-access server. Best-effort: a bind failure disables remote
@@ -448,6 +449,7 @@ mod tests {
             "cancel_turn",
             "respond_question",
             "respond_permission",
+            "load_history_page",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }
