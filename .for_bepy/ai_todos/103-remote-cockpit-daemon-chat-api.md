@@ -19,6 +19,13 @@ SECURITY-CRITICAL. This endpoint pipe-drives `claude` with Bash/Edit/Read tools,
    - **Per-request bearer-token auth middleware** on every REST + WS request (tokens minted in Phase 2). No token -> 401. Defense-in-depth on top of the tailnet.
 3. **Concurrency:** rely on the existing busy/turn serialization + held-messages queue so desktop + phone driving one session can't corrupt the single `claude` stdin; both subscribers mirror live.
 
+## Status 2026-06-15: SHIPPED + live-verified
+
+- Server (commit cb4bbf6) + allowlisted `POST /api/rpc` (commit b46e4fa) are in and LIVE-VERIFIED by Joe via curl: `/api/health` -> ok; no token -> 401 (fail-closed); valid token -> real session list; allowlist 403s non-listed methods (unit-tested; the live 403 curl just needs PowerShell-safe quoting `--data-raw '{"method":"..."}'`).
+- `SAFE_METHODS` allowlist (8): list_instances, list_pending_prompts, start_session, send_message, cancel_turn, respond_permission, respond_question, set_session_effort.
+- Phase 0b (extract chat-core fns + make Tauri commands thin wrappers) was NOT needed: `/api/rpc` reuses the existing daemon RPC router directly (cloned in run_daemon_main), which already is the shared logic layer.
+- Remaining for full parity (later): widen the allowlist as the client needs more methods; a transcript-on-open endpoint (history is app-side today, daemon has no transcript loader - the WS live stream covers in-flight turns only).
+
 ## Acceptance
 
 - Core fns exist; Tauri chat commands are thin wrappers over them (behavior unchanged); `cargo build` clean, existing daemon tests green (scoped, never the full `--lib` that kills the dev daemon - see memory `project_cargo_test_kills_daemon`).
