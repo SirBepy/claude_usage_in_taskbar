@@ -1,7 +1,26 @@
 fn main() {
     let date = build_date();
     println!("cargo:rustc-env=BUILD_DATE={date}");
+    ensure_dist_dir();
     tauri_build::build();
+}
+
+/// The remote-access server embeds `../dist` at compile time via rust_embed.
+/// The `prebuild` npm step (`cargo test --test export_types`) compiles this
+/// crate BEFORE `vite build` creates `dist/`, so on a clean checkout the embed
+/// derive fails (`E0599: no associated function 'get' for Assets`). Guarantee
+/// the folder + a placeholder index.html exist so the derive always expands;
+/// the real `vite build` overwrites dist/ before the final binary is compiled.
+fn ensure_dist_dir() {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
+    let dist = std::path::Path::new(&manifest).join("..").join("dist");
+    if !dist.join("index.html").exists() {
+        let _ = std::fs::create_dir_all(&dist);
+        let _ = std::fs::write(
+            dist.join("index.html"),
+            "<!doctype html><meta charset=utf-8><title>Claude Companion</title>\n",
+        );
+    }
 }
 
 fn build_date() -> String {
