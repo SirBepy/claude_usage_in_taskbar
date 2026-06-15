@@ -128,6 +128,14 @@
   white-space: nowrap;
 }
 
+.session-remote-badge {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-left: 4px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 .session-row-subtitle {
   font-size: 0.72rem;
   color: var(--color-text-muted);
@@ -618,6 +626,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-header-remote-badge {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-left: 5px;
+  vertical-align: middle;
 }
 
 .session-header .meta {

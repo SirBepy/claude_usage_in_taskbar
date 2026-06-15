@@ -92,6 +92,18 @@ export class SessionHeader {
   setTitle(text: string): void { this._titleEl.textContent = text; }
   setMeta(text: string): void { this._metaEl.textContent = text; }
 
+  setRemote(isRemote: boolean): void {
+    const existing = this.el.querySelector(".session-header-remote-badge");
+    if (isRemote && !existing) {
+      const icon = document.createElement("i");
+      icon.className = "ph ph-device-mobile session-header-remote-badge";
+      icon.title = "Remote chat";
+      this._titleEl.appendChild(icon);
+    } else if (!isRemote && existing) {
+      existing.remove();
+    }
+  }
+
   setChangesBadge(n: number): void {
     const badge = this._changesBtn.querySelector<HTMLElement>(".changes-count");
     if (!badge) return;

@@ -244,7 +244,7 @@ export function renderSidebar(listEl: HTMLElement): void {
       html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
         ${leadingVisual(s, indicator, unread, attention, question)}
         <div class="session-row-text">
-          <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}</span>
+          <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}</span>
           <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>
         </div>
         <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">

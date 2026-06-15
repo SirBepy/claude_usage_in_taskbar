@@ -179,6 +179,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
 
   const header = new SessionHeader({ title: sessionSubtitle(sess), meta: projectName(sess) });
   header.onCharClick = () => { void changeCharacterForSession(sess.session_id); };
+  header.setRemote(sess.is_remote);
   header.bindSession({
     sessionId: sess.session_id,
     readOnly,
