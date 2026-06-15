@@ -1,5 +1,17 @@
 # Comments for Bepy
 
+## 2026-06-15 - Deploy unblocked: release CI was red for 3 separate reasons (autopilot "fix until it builds")
+
+Releasing the cockpit + close-leak work surfaced that the Tauri Release CI had been RED since before this work. Fixed all three, build now GREEN + published (v0.1.89, run 27546575533, all 4 platforms + publish success).
+
+1. Submodule not pushed: parent pointed vendor/tauri_kit at commit ac831a2 (the About-page work) which was never pushed to its remote -> every build failed at checkout ("upload-pack: not our ref"). Fixed: `git -C vendor/tauri_kit push origin HEAD:main` (Joe authorized; shared-remote push of another agent's commit).
+2. rust_embed E0599 on clean checkout: the prebuild step (cargo test --test export_types) compiles the crate BEFORE vite build creates dist/, so the `#[folder="../dist"]` embed had no `get`. Fixed in build.rs (creates a placeholder dist/index.html if missing; vite overwrites for the real binary) -> c7a59aa. Verified locally by deleting dist/ and reproducing the exact failure, which then compiled.
+3. Version-tag skip: the failed 0.1.88 run had already created the tauri-v0.1.88 tag (tag job runs before build), so re-pushing at 0.1.88 skipped the build (check job gate = release only if tag absent). Bumped to 0.1.89 -> b14dc56 -> real build -> green.
+
+Decision log:
+- Auto-fixed the E0599 + re-pushed without asking (clear, mechanical, self-inflicted, traced to my pushed files; auto-fix one-shot marker used then cleared on success). The submodule push WAS confirmed with Joe first (shared remote + not my commit).
+- Did NOT rewrite history to un-bundle the earlier concurrent-agent collision (commit 7999034) - dropping another agent's live work is a hard stop.
+
 ## 2026-06-15 (later) - Remote phone cockpit: real-UI build (autopilot, tasks #2-5)
 
 Continuing the cockpit from the foundation below. Goal: a phone-testable real-UI chat served from the daemon. Orchestrator + sonnet implementer subagents.
