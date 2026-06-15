@@ -31,7 +31,7 @@ use axum::{
     },
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -109,6 +109,7 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
     // /api/health is unauthenticated (connectivity probe, reveals nothing).
     // The WS stream self-authenticates via its query token in the handler.
     let public = Router::new()
+        .route("/", get(index_page))
         .route("/api/health", get(|| async { "ok" }))
         .route("/api/sessions/:id/stream", get(stream_ws));
 
@@ -194,6 +195,82 @@ fn ensure_token(app_data: &Path) {
 async fn list_sessions(State(ctx): State<Arc<RemoteCtx>>) -> Response {
     Json(ctx.state.registry.list()).into_response()
 }
+
+/// Minimal self-contained remote console (Phase 1 v0). Unauthenticated HTML
+/// (no secrets in it); its in-page JS authenticates every API call with the
+/// token the user pastes. Uses only the explicit REST/WS routes - NOT the
+/// shared SPA - so it ships without a build step. The polished PWA is ai_todo 105.
+async fn index_page() -> Html<&'static str> {
+    Html(INDEX_HTML)
+}
+
+const INDEX_HTML: &str = r##"<!doctype html><html><head>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Claude Remote</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;font:15px/1.4 system-ui,sans-serif;background:#16181d;color:#e6e6e6}
+header{padding:10px 12px;background:#1f2229;display:flex;gap:8px;align-items:center}
+input,textarea,button{font:inherit}
+input,textarea{background:#0f1115;color:#e6e6e6;border:1px solid #333;border-radius:8px;padding:8px;width:100%;box-sizing:border-box}
+button{background:#3b6ea5;color:#fff;border:0;border-radius:8px;padding:9px 12px}
+button.sec{background:#333}
+.wrap{padding:12px;max-width:720px;margin:0 auto}
+.row{display:flex;gap:8px;margin:8px 0}
+.sess{display:block;width:100%;text-align:left;background:#1f2229;margin:6px 0;padding:10px;border-radius:10px;color:#e6e6e6}
+.sess .b{color:#8fbf8f;font-size:12px}
+#log{white-space:pre-wrap;word-break:break-word;background:#0f1115;border:1px solid #222;border-radius:10px;padding:10px;height:55vh;overflow:auto;font:12px/1.35 ui-monospace,monospace}
+.hide{display:none}
+.muted{color:#888;font-size:12px}
+</style></head><body>
+<header><b>Claude Remote</b><span id=status class=muted style=margin-left:auto></span></header>
+<div class=wrap>
+<div id=auth>
+<div class=muted>Paste the token from remote-access-token.txt</div>
+<div class=row><input id=token placeholder=token autocomplete=off></div>
+<div class=row><button onclick=saveTok()>Save &amp; load sessions</button></div>
+</div>
+<div id=list class=hide>
+<div class=row><button onclick=loadSessions()>Refresh sessions</button><button class=sec onclick=logout()>Token</button></div>
+<div id=sessions></div>
+</div>
+<div id=chat class=hide>
+<div class=row><button class=sec onclick=back()>&larr; Back</button><button class=sec onclick=cancelTurn()>Cancel turn</button></div>
+<div id=title class=muted></div>
+<div id=log></div>
+<div class=row><textarea id=msg rows=2 placeholder=message></textarea></div>
+<div class=row><button onclick=send()>Send</button></div>
+</div>
+</div>
+<script>
+var T=localStorage.getItem('rc_token')||'';var cur=null;var ws=null;var SESS=[];
+function $(i){return document.getElementById(i)}
+function show(id){['auth','list','chat'].forEach(function(s){$(s).classList.toggle('hide',s!==id)})}
+function st(m){$('status').textContent=m||''}
+function hdr(){return {'Authorization':'Bearer '+T}}
+function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+if(T)$('token').value=T;
+function saveTok(){T=$('token').value.trim();localStorage.setItem('rc_token',T);loadSessions()}
+function logout(){show('auth')}
+function loadSessions(){st('loading...');
+fetch('/api/sessions',{headers:hdr()}).then(function(r){if(!r.ok){st('auth failed ('+r.status+')');throw 0}return r.json()})
+.then(function(s){SESS=s;st('');show('list');var h='';
+s.forEach(function(x,i){h+='<button class=sess onclick="open_('+i+')">'+esc(x.name||x.session_id)+'<div class=b>'+(x.busy?'running':'idle')+' &middot; '+esc(x.model)+'</div></button>'});
+$('sessions').innerHTML=h||'<div class=muted>no sessions</div>'}).catch(function(){})}
+function open_(i){var x=SESS[i];cur=x.session_id;show('chat');$('title').textContent=x.name||x.session_id;$('log').textContent='';
+if(ws){try{ws.close()}catch(e){}}
+var proto=location.protocol==='https:'?'wss':'ws';
+ws=new WebSocket(proto+'://'+location.host+'/api/sessions/'+cur+'/stream?token='+encodeURIComponent(T));
+ws.onopen=function(){st('live')};ws.onclose=function(){st('closed')};ws.onmessage=function(e){append(e.data)}}
+function append(d){var t=d;try{var o=JSON.parse(d);t=o.text||o.delta||('['+(o.type||'event')+'] '+(o.text||''))}catch(e){}
+var l=$('log');l.textContent+=t+'\n';l.scrollTop=l.scrollHeight}
+function send(){var m=$('msg').value;if(!m||!cur)return;$('msg').value='';
+fetch('/api/sessions/'+cur+'/send',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr()),body:JSON.stringify({text:m})}).then(function(r){if(!r.ok)st('send failed '+r.status)})}
+function cancelTurn(){if(cur)fetch('/api/sessions/'+cur+'/cancel',{method:'POST',headers:hdr()})}
+function back(){if(ws){try{ws.close()}catch(e){}}cur=null;loadSessions()}
+if(T)loadSessions();else show('auth');
+</script></body></html>"##;
 
 #[derive(Deserialize)]
 struct SendBody {
