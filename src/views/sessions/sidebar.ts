@@ -190,8 +190,8 @@ export function renderSidebar(listEl: HTMLElement): void {
       ? `<li class="${activeCls} pending draft" data-pending="1" data-placeholder-id="${pid}" title="Draft — type a message to start">
           ${draftLeadingVisual(pending.config.characterId, pending.projectPath)}
           <div class="session-row-text">
-            <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
-            <span class="session-row-subtitle">Draft New Chat</span>
+            <span class="session-row-project">Draft New Chat</span>
+            <span class="session-row-subtitle">${escapeHtml(pending.projectName || "New session")}</span>
           </div>
           <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-draft="1">
             <i class="ph ph-x-circle"></i>
@@ -200,8 +200,8 @@ export function renderSidebar(listEl: HTMLElement): void {
       : `<li class="${activeCls} pending" data-pending="1" data-placeholder-id="${pid}" title="Starting new session... click X to discard if stuck">
           ${draftLeadingVisual(pending.config.characterId, pending.projectPath)}
           <div class="session-row-text">
-            <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
-            <span class="session-row-subtitle">starting...</span>
+            <span class="session-row-project">starting...</span>
+            <span class="session-row-subtitle">${escapeHtml(pending.projectName || "New session")}</span>
           </div>
           <button class="session-row-menu-btn icon-btn" title="Discard stuck session" data-discard-stuck="1">
             <i class="ph ph-x-circle"></i>
@@ -216,8 +216,8 @@ export function renderSidebar(listEl: HTMLElement): void {
       html: `<li class="parked-draft" data-placeholder-id="${escapeHtml(d.placeholderId)}" title="Parked draft — click to resume">
         ${draftLeadingVisual(d.config.characterId, d.projectPath)}
         <div class="session-row-text">
-          <span class="session-row-project">${escapeHtml(d.projectName || "New session")}</span>
-          <span class="session-row-subtitle">Draft New Chat</span>
+          <span class="session-row-project">Draft New Chat</span>
+          <span class="session-row-subtitle">${escapeHtml(d.projectName || "New session")}</span>
         </div>
         <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-parked="${escapeHtml(d.placeholderId)}">
           <i class="ph ph-x-circle"></i>
@@ -243,8 +243,8 @@ export function renderSidebar(listEl: HTMLElement): void {
       html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
         ${leadingVisual(s, indicator, unread, attention, question)}
         <div class="session-row-text">
-          <span class="session-row-project">${escapeHtml(projectName(s))}</span>
-          <span class="session-row-subtitle">${escapeHtml(sessionSubtitle(s))}</span>
+          <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}</span>
+          <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>
         </div>
         <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
           <i class="ph ph-dots-three-vertical"></i>

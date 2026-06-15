@@ -78,7 +78,7 @@
   opacity: 0.8;
 }
 
-.sessions-list li.is-external .session-row-project {
+.sessions-list li.is-external .session-row-subtitle {
   font-style: italic;
   opacity: 0.85;
 }
@@ -403,7 +403,7 @@
   box-shadow: inset 3px 0 0 #ef4444;
   animation: closing-pulse 1.2s ease-in-out infinite;
 }
-.sessions-list li.closing .session-row-subtitle::after {
+.sessions-list li.closing .session-row-project::after {
   content: " · closing…";
   color: #ef4444;
 }
