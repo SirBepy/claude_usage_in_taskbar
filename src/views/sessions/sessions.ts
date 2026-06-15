@@ -16,7 +16,7 @@ import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession, headerStatusClass } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
-import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
+import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu } from "./sidebar";
 import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
@@ -540,15 +540,33 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   });
 
   listEl.addEventListener("click", (e) => {
-    // Discard parked draft (X on a parked row).
-    const discardParkedBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-parked]");
-    if (discardParkedBtn) {
+    // All row menu buttons (3-dot) — handles live sessions, active drafts, and parked drafts.
+    const menuBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".session-row-menu-btn");
+    if (menuBtn) {
       e.stopPropagation();
-      const pid = discardParkedBtn.dataset.discardParked;
-      if (pid) {
-        state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== pid);
-        discardComposerDraft(pid);
-        renderSidebar(listEl);
+      const sid = menuBtn.dataset.sessionId;
+      const parkedPid = menuBtn.dataset.parkedPlaceholderId;
+      if (sid) {
+        openCtxMenu(sid, menuBtn, {
+          onNewHere: (project) => {
+            void (async () => {
+              const config = await openModelEffortModal(project.path, project.name);
+              if (!config) return;
+              await launchNewSession(pane, project, config);
+            })();
+          },
+        });
+      } else if (parkedPid) {
+        openDraftCtxMenu(menuBtn, () => {
+          state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== parkedPid);
+          discardComposerDraft(parkedPid);
+          renderSidebar(listEl);
+        });
+      } else if (menuBtn.dataset.draftMenu === "1") {
+        openDraftCtxMenu(menuBtn, () => {
+          if (state.pendingNewSession?.firstMessageSent) discardStuckPending(pane);
+          else { discardDraft(pane); updateThinkingBar(); }
+        });
       }
       return;
     }
@@ -573,43 +591,6 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
           })();
         }
       }
-      return;
-    }
-
-    // Discard-draft button intercept (sits on the pending row, no session_id).
-    const discardBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-draft]");
-    if (discardBtn) {
-      e.stopPropagation();
-      discardDraft(pane);
-      updateThinkingBar();
-      return;
-    }
-
-    // Discard-stuck button: visible on the "starting..." pending row so the
-    // user can bail out when start_session never completes (typically after
-    // the app crashed mid-spawn and the pending state was restored from
-    // localStorage on the next launch).
-    const stuckBtn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-discard-stuck]");
-    if (stuckBtn) {
-      e.stopPropagation();
-      discardStuckPending(pane);
-      return;
-    }
-
-    // 3-dot menu button intercept
-    const menuBtn = (e.target as HTMLElement).closest<HTMLButtonElement>(".session-row-menu-btn");
-    if (menuBtn) {
-      e.stopPropagation();
-      const sid = menuBtn.dataset.sessionId;
-      if (sid) openCtxMenu(sid, menuBtn, {
-        onNewHere: (project) => {
-          void (async () => {
-            const config = await openModelEffortModal(project.path, project.name);
-            if (!config) return;
-            await launchNewSession(pane, project, config);
-          })();
-        },
-      });
       return;
     }
 

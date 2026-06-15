@@ -193,8 +193,8 @@ export function renderSidebar(listEl: HTMLElement): void {
             <span class="session-row-project">Draft New Chat</span>
             <span class="session-row-subtitle">${escapeHtml(pending.projectName || "New session")}</span>
           </div>
-          <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-draft="1">
-            <i class="ph ph-x-circle"></i>
+          <button class="session-row-menu-btn icon-btn" title="Draft options" data-draft-menu="1">
+            <i class="ph ph-dots-three-vertical"></i>
           </button>
         </li>`
       : `<li class="${activeCls} pending" data-pending="1" data-placeholder-id="${pid}" title="Starting new session... click X to discard if stuck">
@@ -203,8 +203,8 @@ export function renderSidebar(listEl: HTMLElement): void {
             <span class="session-row-project">starting...</span>
             <span class="session-row-subtitle">${escapeHtml(pending.projectName || "New session")}</span>
           </div>
-          <button class="session-row-menu-btn icon-btn" title="Discard stuck session" data-discard-stuck="1">
-            <i class="ph ph-x-circle"></i>
+          <button class="session-row-menu-btn icon-btn" title="Draft options" data-draft-menu="1">
+            <i class="ph ph-dots-three-vertical"></i>
           </button>
         </li>`;
     entries.push({ key: `p:${pending.placeholderId}`, html });
@@ -219,8 +219,8 @@ export function renderSidebar(listEl: HTMLElement): void {
           <span class="session-row-project">Draft New Chat</span>
           <span class="session-row-subtitle">${escapeHtml(d.projectName || "New session")}</span>
         </div>
-        <button class="session-row-menu-btn icon-btn" title="Discard draft" data-discard-parked="${escapeHtml(d.placeholderId)}">
-          <i class="ph ph-x-circle"></i>
+        <button class="session-row-menu-btn icon-btn" title="Draft options" data-parked-placeholder-id="${escapeHtml(d.placeholderId)}">
+          <i class="ph ph-dots-three-vertical"></i>
         </button>
       </li>`,
     });
@@ -278,6 +278,31 @@ export function closeCtxMenu(): void {
     activeCtxMenu.remove();
     activeCtxMenu = null;
   }
+}
+
+function positionMenu(menu: HTMLElement, anchor: HTMLElement): void {
+  const rect = anchor.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  let left = rect.right - menuRect.width;
+  if (left < 4) left = 4;
+  if (top + menuRect.height > window.innerHeight - 4) top = rect.top - menuRect.height - 4;
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+}
+
+export function openDraftCtxMenu(anchor: HTMLElement, onDiscard: () => void): void {
+  closeCtxMenu();
+  const menu = document.createElement("div");
+  menu.className = "session-ctx-menu";
+  const item = document.createElement("button");
+  item.className = "session-ctx-item";
+  item.innerHTML = '<i class="ph ph-x"></i> Discard draft';
+  item.addEventListener("click", () => { closeCtxMenu(); onDiscard(); });
+  menu.appendChild(item);
+  document.body.appendChild(menu);
+  activeCtxMenu = menu;
+  positionMenu(menu, anchor);
 }
 
 export interface CtxMenuActions {
@@ -369,16 +394,7 @@ export function openCtxMenu(
 
   document.body.appendChild(menu);
   activeCtxMenu = menu;
-
-  // Position below the anchor button, right-aligned
-  const rect = anchor.getBoundingClientRect();
-  const menuRect = menu.getBoundingClientRect();
-  let top = rect.bottom + 4;
-  let left = rect.right - menuRect.width;
-  if (left < 4) left = 4;
-  if (top + menuRect.height > window.innerHeight - 4) top = rect.top - menuRect.height - 4;
-  menu.style.top = `${top}px`;
-  menu.style.left = `${left}px`;
+  positionMenu(menu, anchor);
 }
 
 // Close context menu on outside click or Escape (wired once at module load)
