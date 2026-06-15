@@ -12,6 +12,7 @@
 // toggles + countdown chip are appended below a separator.
 
 import type { TerminalAction } from "../../types/ipc.generated";
+import { positionDropdown } from "./position-dropdown";
 import {
   armOrToggleWhenDone,
   cancelWhenDone,
@@ -86,9 +87,7 @@ function openViewMoreMenu(btn: HTMLButtonElement): void {
 
   rerenderViewMenuProtocol();
 
-  const rect = btn.getBoundingClientRect();
-  menu.style.top = `${rect.bottom + 4}px`;
-  menu.style.right = `${window.innerWidth - rect.right}px`;
+  positionDropdown(menu, btn);
 
   // Protocol clicks (toggles + cancel). Clicks on the relocated New/History
   // buttons keep firing their own bound listeners; we just close the menu for

@@ -1,4 +1,5 @@
 import { invoke } from "../../shared/ipc";
+import { positionDropdown } from "./position-dropdown";
 import { isAutoAccept, setAutoAccept, autoAcceptParked } from "./permission-modal";
 import { closeChat } from "./close-chat";
 
@@ -43,9 +44,7 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
   document.body.appendChild(menu);
   _moreMenu = menu;
 
-  const rect = btn.getBoundingClientRect();
-  menu.style.top = `${rect.bottom + 4}px`;
-  menu.style.right = `${window.innerWidth - rect.right}px`;
+  positionDropdown(menu, btn);
 
   menu.addEventListener("click", (e) => {
     const item = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-action]");

@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../shared/escape-html";
+import { positionDropdown } from "./position-dropdown";
 import { invoke } from "../../shared/ipc";
 import type { Instance } from "../../types/ipc.generated";
 import { closeChat } from "./close-chat";
@@ -280,17 +281,6 @@ export function closeCtxMenu(): void {
   }
 }
 
-function positionMenu(menu: HTMLElement, anchor: HTMLElement): void {
-  const rect = anchor.getBoundingClientRect();
-  const menuRect = menu.getBoundingClientRect();
-  let top = rect.bottom + 4;
-  let left = rect.right - menuRect.width;
-  if (left < 4) left = 4;
-  if (top + menuRect.height > window.innerHeight - 4) top = rect.top - menuRect.height - 4;
-  menu.style.top = `${top}px`;
-  menu.style.left = `${left}px`;
-}
-
 export function openDraftCtxMenu(anchor: HTMLElement, onDiscard: () => void): void {
   closeCtxMenu();
   const menu = document.createElement("div");
@@ -302,7 +292,7 @@ export function openDraftCtxMenu(anchor: HTMLElement, onDiscard: () => void): vo
   menu.appendChild(item);
   document.body.appendChild(menu);
   activeCtxMenu = menu;
-  positionMenu(menu, anchor);
+  positionDropdown(menu, anchor);
 }
 
 export interface CtxMenuActions {
@@ -394,7 +384,7 @@ export function openCtxMenu(
 
   document.body.appendChild(menu);
   activeCtxMenu = menu;
-  positionMenu(menu, anchor);
+  positionDropdown(menu, anchor);
 }
 
 // Close context menu on outside click or Escape (wired once at module load)
