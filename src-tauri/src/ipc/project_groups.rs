@@ -96,6 +96,7 @@ pub mod groups_test_helpers {
             any_remote: false,
             any_automated: false,
             last_active_at: None,
+            path_exists: true,
         }
     }
 
@@ -128,9 +129,9 @@ pub async fn list_project_groups(state: State<'_, AppState>) -> Result<Vec<crate
             Err(_) => Vec::new(),
         };
         let mut groups = groups_test_helpers::build_groups(&projects, &token_history, &instances, now_ms);
-        // Drop ghost entries: paths from old token history that no longer exist on disk
-        // and were never added to settings.projects (id is None means settings never saw them).
-        groups.retain(|g| g.id.is_some() || Path::new(&g.path).exists());
+        for g in &mut groups {
+            g.path_exists = Path::new(&g.path).exists();
+        }
         groups
     })
     .await

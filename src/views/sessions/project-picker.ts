@@ -146,7 +146,7 @@ export function openProjectPickerModal(
                     e.preventDefault();
                     const idx = Math.min(selectedIdx, matches.length - 1);
                     const m = matches[idx]!;
-                    finish({ path: m.path, name: m.name });
+                    if (m.path_exists !== false) finish({ path: m.path, name: m.name });
                   }
                 } else if (e.key === "ArrowDown") {
                   e.preventDefault();
@@ -182,7 +182,7 @@ export function openProjectPickerModal(
                 : rows.map(
                     (p, i) => html`
                       <li
-                        class="project-picker-row ${i === Math.min(selectedIdx, rows.length - 1) ? "selected" : ""}"
+                        class="project-picker-row ${i === Math.min(selectedIdx, rows.length - 1) ? "selected" : ""} ${p.path_exists === false ? "project-picker-row--missing" : ""}"
                         data-row-idx=${i}
                         @mouseenter=${() => {
                           if (selectedIdx !== i) {
@@ -190,10 +190,11 @@ export function openProjectPickerModal(
                             renderModal();
                           }
                         }}
-                        @click=${() => finish({ path: p.path, name: p.name })}
+                        @click=${() => { if (p.path_exists !== false) finish({ path: p.path, name: p.name }); }}
                       >
                         <span class="project-picker-name">${p.name}</span>
                         <span class="project-picker-path">${p.path}</span>
+                        ${p.path_exists === false ? html`<span class="project-picker-missing-msg">This folder doesn't exist</span>` : ""}
                       </li>
                     `,
                   )}

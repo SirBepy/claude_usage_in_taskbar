@@ -113,6 +113,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.project-picker-row--missing {
+  cursor: default;
+  opacity: 0.45;
+}
+.project-picker-row--missing:hover,
+.project-picker-row--missing.selected {
+  background: transparent;
+  box-shadow: none;
+}
+.project-picker-missing-msg {
+  font-size: 0.7rem;
+  color: var(--color-warning, #e5a040);
+  font-style: italic;
+}
 .project-picker-empty {
   padding: 16px;
   text-align: center;

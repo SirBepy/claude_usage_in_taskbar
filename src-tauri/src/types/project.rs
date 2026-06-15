@@ -120,6 +120,7 @@ pub struct ProjectGroup {
     pub any_remote: bool,
     pub any_automated: bool,
     pub last_active_at: Option<String>,
+    pub path_exists: bool,
 }
 
 #[cfg(test)]
