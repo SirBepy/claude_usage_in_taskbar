@@ -50,11 +50,30 @@ pub const REMOTE_PORT: u16 = 27183;
 struct RemoteCtx {
     state: Arc<DaemonState>,
     app_data: PathBuf,
+    router: crate::daemon::rpc::Router,
 }
+
+/// Daemon RPC methods the remote client may invoke via `POST /api/rpc`. This is
+/// the load-bearing security allowlist: anything NOT here is 403, so adding a
+/// method is a deliberate, reviewable act. Deliberately EXCLUDED: `shutdown_daemon`,
+/// `set_settings` (could disable security), all `*_channel` (automation/bridge
+/// control), `end_session`, and the streaming methods `attach_session` /
+/// `detach_session` / `subscribe_global` (connection-scoped; the WS endpoint
+/// handles streaming instead). See the test below.
+const SAFE_METHODS: &[&str] = &[
+    "list_instances",
+    "list_pending_prompts",
+    "start_session",
+    "send_message",
+    "cancel_turn",
+    "respond_permission",
+    "respond_question",
+    "set_session_effort",
+];
 
 /// Start the remote-access server. Best-effort: a bind failure disables remote
 /// access for this run but never takes down the daemon. Call once at startup.
-pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf) {
+pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf, router: crate::daemon::rpc::Router) {
     ensure_token(&app_data);
     tokio::spawn(async move {
         let listener = match TcpListener::bind(("127.0.0.1", REMOTE_PORT)).await {
@@ -66,7 +85,7 @@ pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf) {
                 return;
             }
         };
-        let ctx = Arc::new(RemoteCtx { state, app_data });
+        let ctx = Arc::new(RemoteCtx { state, app_data, router });
         let app = build_router(ctx);
         log::info!(
             "remote-access server listening on 127.0.0.1:{REMOTE_PORT} (expose with `tailscale serve --bg --https=443 http://127.0.0.1:{REMOTE_PORT}`)"
@@ -84,6 +103,7 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/:id/send", post(send_message))
         .route("/api/sessions/:id/cancel", post(cancel_turn))
+        .route("/api/rpc", post(rpc_dispatch))
         .route_layer(middleware::from_fn_with_state(ctx.clone(), auth_mw));
 
     // /api/health is unauthenticated (connectivity probe, reveals nothing).
@@ -205,6 +225,41 @@ async fn cancel_turn(
 }
 
 #[derive(Deserialize)]
+struct RpcBody {
+    method: String,
+    #[serde(default)]
+    params: Option<serde_json::Value>,
+}
+
+/// Generic command dispatch: forwards an allowlisted daemon RPC method to the
+/// shared router. This is how the phone runs the real SPA (its transport calls
+/// commands by name). A throwaway ConnectionContext is fine because every
+/// allowlisted method is request/response - streaming methods are excluded and
+/// served by the WS endpoint instead.
+async fn rpc_dispatch(State(ctx): State<Arc<RemoteCtx>>, Json(body): Json<RpcBody>) -> Response {
+    if !SAFE_METHODS.contains(&body.method.as_str()) {
+        return (
+            StatusCode::FORBIDDEN,
+            format!("method not allowed remotely: {}", body.method),
+        )
+            .into_response();
+    }
+    let (tx, _rx) = tokio::sync::mpsc::channel(16);
+    let conn = crate::daemon::rpc::ConnectionContext::new(tx);
+    let req = crate::daemon::rpc::Request {
+        jsonrpc: "2.0".into(),
+        id: serde_json::json!(0),
+        method: body.method,
+        params: body.params,
+    };
+    let resp = ctx.router.dispatch(req, conn).await;
+    match resp.error {
+        Some(err) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err)).into_response(),
+        None => Json(resp.result.unwrap_or(serde_json::Value::Null)).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
 struct StreamQuery {
     token: String,
 }
@@ -282,6 +337,43 @@ mod tests {
         assert!(token_is_valid(secret, dir.path()));
         assert!(!token_is_valid("wrong", dir.path()));
         assert!(!token_is_valid("", dir.path()));
+    }
+
+    #[test]
+    fn allowlist_excludes_dangerous_methods() {
+        for m in [
+            "shutdown_daemon",
+            "set_settings",
+            "start_channel",
+            "stop_channel",
+            "restart_channel",
+            "show_channel",
+            "hide_channel",
+            "end_session",
+            "attach_session",
+            "detach_session",
+            "subscribe_global",
+            "externalize_session",
+            "takeover_manual",
+        ] {
+            assert!(
+                !SAFE_METHODS.contains(&m),
+                "{m} must NOT be remotely callable"
+            );
+        }
+    }
+
+    #[test]
+    fn allowlist_includes_core_chat_methods() {
+        for m in [
+            "list_instances",
+            "send_message",
+            "cancel_turn",
+            "respond_question",
+            "respond_permission",
+        ] {
+            assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
+        }
     }
 
     #[test]

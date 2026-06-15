@@ -94,7 +94,7 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     // authed; opt-in remote reach via the user's `tailscale serve`. Best-effort:
     // never fails daemon startup. See daemon/remote_server.rs for the security
     // boundary.
-    remote_server::spawn(state.clone(), app_data.clone());
+    remote_server::spawn(state.clone(), app_data.clone(), router.clone());
 
     // Restore Interactive (in-app) chats persisted before the last shutdown.
     // The registry is in-memory only; without this, every daemon restart (reboot,
