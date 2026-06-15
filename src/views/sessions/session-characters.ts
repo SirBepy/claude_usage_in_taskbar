@@ -3,22 +3,23 @@
  *
  * The backend assigns every live session an `Avatar::Character(id)` via
  * `ensure_session_character`. This module caches a `session_id -> char_id` map
- * AND a `char_id -> icon data URL` map so `renderSidebar` can emit a filled
- * `<img src>` synchronously without flashing broken images on every repaint.
+ * so `renderSidebar` can resolve a session's hero; the `char_id -> icon URL`
+ * cache + resolution lives in the shared `character-icon` module so this surface
+ * can emit a filled `<img src>` synchronously without flashing broken images.
  *
  * Populated on mount and refreshed on the `settings-changed` event (which fires
  * whenever a character is assigned or re-rolled).
  */
 
 import { api } from "../../shared/api";
+import { getCharacterIconUrl, cachedCharacterIconUrl } from "../../shared/character-icon";
 import type { Instance } from "../../types/ipc.generated";
 
 /** session_id -> char_id */
 let sessionCharMap = new Map<string, string>();
-let iconUrlById = new Map<string, string>();
 
 /** (Re)load the session -> character map and preload each hero's icon data URL.
- * Safe to call repeatedly; already-fetched icon URLs are reused. */
+ * Safe to call repeatedly; the shared icon cache reuses already-fetched URLs. */
 export async function loadSessionCharacters(): Promise<void> {
   try {
     const raw = await api.listSessionCharacters();
@@ -28,22 +29,10 @@ export async function loadSessionCharacters(): Promise<void> {
     }
     sessionCharMap = bySession;
 
-    // Preload icon data URLs so rows render with `src` already set. Reuse any
-    // URLs we already resolved so a refresh only fetches genuinely-new heroes.
+    // Preload icon data URLs so rows render with `src` already set. The shared
+    // cache de-dupes, so a refresh only fetches genuinely-new heroes.
     const ids = new Set<string>(bySession.values());
-    const urls = new Map<string, string>(iconUrlById);
-    await Promise.all(
-      [...ids].map(async (id) => {
-        if (urls.has(id)) return;
-        try {
-          const url = await api.characterAssetUrl(id, "icon.png");
-          if (url) urls.set(id, url);
-        } catch {
-          /* leave uncached; renderer falls back to async hydrate */
-        }
-      }),
-    );
-    iconUrlById = urls;
+    await Promise.all([...ids].map((id) => getCharacterIconUrl(id)));
   } catch (e) {
     console.warn("[sessions] loadSessionCharacters failed", e);
   }
@@ -57,5 +46,5 @@ export function characterForSession(s: Instance): string | null {
 
 /** Preloaded icon data URL for a character id, or null if not yet cached. */
 export function characterIconUrl(charId: string): string | null {
-  return iconUrlById.get(charId) ?? null;
+  return cachedCharacterIconUrl(charId);
 }

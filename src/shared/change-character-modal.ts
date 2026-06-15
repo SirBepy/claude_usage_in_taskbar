@@ -2,6 +2,7 @@ import "./change-character-modal.css";
 import { api } from "./api";
 import type { Character } from "./api";
 import { escapeHtml } from "./escape-html";
+import { getCharacterIconUrl, cachedCharacterIconUrl } from "./character-icon";
 
 export async function openChangeCharacterModal(opts: {
   projectId: string;
@@ -15,8 +16,7 @@ export async function openChangeCharacterModal(opts: {
     let activeTab: Tab = "whitelisted";
     let query = "";
     const cache: Partial<Record<Tab, Character[]>> = {};
-    // icon url cache: charId -> url
-    const iconCache = new Map<string, string | null>();
+    // Icon URLs come from the shared character-icon cache (see character-icon.ts).
 
     const overlay = document.createElement("div");
     overlay.className = "cc-modal-overlay";
@@ -49,7 +49,7 @@ export async function openChangeCharacterModal(opts: {
         bodyHtml = `<div class="cc-modal-empty">No characters found.</div>`;
       } else {
         const cards = filtered.map((c) => {
-          const iconUrl = iconCache.get(c.id);
+          const iconUrl = cachedCharacterIconUrl(c.id);
           let iconHtml: string;
           if (iconUrl) {
             iconHtml = `<img class="cc-char-icon" src="${escapeHtml(iconUrl)}" alt="" data-char-icon="${escapeHtml(c.id)}">`;
@@ -98,27 +98,25 @@ export async function openChangeCharacterModal(opts: {
         searchEl.setSelectionRange(len, len);
       }
 
-      // Kick off lazy icon loads for characters that don't have icons cached yet
+      // Kick off lazy icon loads for characters that don't have icons cached yet.
+      // The shared cache de-dupes concurrent/repeat requests, so we just skip any
+      // id already resolved (it rendered as an <img> above) and patch the rest.
       if (tabData) {
         for (const c of filtered) {
-          if (!iconCache.has(c.id)) {
-            iconCache.set(c.id, null); // mark as in-flight
-            api.characterAssetUrl(c.id, "icon.png").then((url) => {
-              iconCache.set(c.id, url);
-              // Patch the DOM directly (avoid full re-render)
-              const ph = overlay.querySelector<HTMLElement>(`[data-char-icon-ph="${CSS.escape(c.id)}"]`);
-              if (ph && url) {
-                const img = document.createElement("img");
-                img.className = "cc-char-icon";
-                img.src = url;
-                img.alt = "";
-                img.dataset.charIcon = c.id;
-                ph.replaceWith(img);
-              }
-            }).catch(() => {
-              // leave placeholder
-            });
-          }
+          if (cachedCharacterIconUrl(c.id)) continue;
+          void getCharacterIconUrl(c.id).then((url) => {
+            if (!url) return; // no icon - leave the placeholder
+            // Patch the DOM directly (avoid full re-render)
+            const ph = overlay.querySelector<HTMLElement>(`[data-char-icon-ph="${CSS.escape(c.id)}"]`);
+            if (ph) {
+              const img = document.createElement("img");
+              img.className = "cc-char-icon";
+              img.src = url;
+              img.alt = "";
+              img.dataset.charIcon = c.id;
+              ph.replaceWith(img);
+            }
+          });
         }
       }
     }

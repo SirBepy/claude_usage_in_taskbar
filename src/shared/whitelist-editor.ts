@@ -15,6 +15,7 @@
 import { api, type Character } from "./api";
 import type { CharacterWhitelist } from "../types/ipc.generated";
 import { escapeHtml } from "./escape-html";
+import { hydrateCharacterIcons } from "./character-icon";
 import "./whitelist-editor.css";
 
 export interface WhitelistEditorOpts {
@@ -32,19 +33,11 @@ interface GameGroup {
 }
 
 let _cachedChars: Character[] | null = null;
-let _cachedUrls: Map<string, string> = new Map();
 
 async function getCharacters(): Promise<Character[]> {
   if (_cachedChars) return _cachedChars;
   _cachedChars = await api.listCharacters();
   return _cachedChars;
-}
-
-async function getIconUrl(id: string): Promise<string | null> {
-  if (_cachedUrls.has(id)) return _cachedUrls.get(id) ?? null;
-  const url = await api.characterAssetUrl(id, "icon.png");
-  if (url) _cachedUrls.set(id, url);
-  return url ?? null;
 }
 
 function groupCharacters(chars: Character[]): GameGroup[] {
@@ -97,16 +90,6 @@ function buildGroupsHtml(
     html += `</div>`;
   }
   return html;
-}
-
-/** Async: fills icon imgs after the initial render. */
-async function hydrateIcons(host: HTMLElement, chars: Character[]): Promise<void> {
-  for (const c of chars) {
-    const img = host.querySelector<HTMLImageElement>(`img[data-char-id="${CSS.escape(c.id)}"]`);
-    if (!img) continue;
-    const url = await getIconUrl(c.id);
-    if (url && img.isConnected) img.src = url;
-  }
 }
 
 /**
@@ -210,7 +193,7 @@ export async function renderWhitelistEditor(
     host.innerHTML = buildEditorHtml(groups, currentWl, allowDefault);
     wireInteractions();
     // Kick off async icon hydration without blocking
-    void hydrateIcons(host, chars);
+    void hydrateCharacterIcons(host);
   }
 
   function updateGroupsSection(): void {
@@ -229,7 +212,7 @@ export async function renderWhitelistEditor(
     if (!groupsDiv) return;
     groupsDiv.innerHTML = buildGroupsHtml(groups, currentWl);
     wireCheckboxes();
-    void hydrateIcons(host, chars);
+    void hydrateCharacterIcons(host);
   }
 
   function showEmptyHint(show: boolean): void {
