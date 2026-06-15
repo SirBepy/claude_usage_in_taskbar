@@ -42,8 +42,9 @@ export function getProjectAvatarForCwd(cwd: string): Avatar | null {
   return _projectAvatarByPath.get(cwd.toLowerCase()) ?? null;
 }
 
-/** Renders the project avatar as a badge span, or empty string when none. */
-function projBadgeHtml(avatar: Avatar | null, cls: string): string {
+/** Renders the project avatar as a badge span, or empty string when none.
+ *  Shared by the sidebar rows and the session-header badge (active-session.ts). */
+export function projBadgeHtml(avatar: Avatar | null, cls: string): string {
   if (!avatar || avatar.kind === "none") return "";
   if (avatar.kind === "emoji") {
     return `<span class="${cls}" aria-hidden="true">${escapeHtml(avatar.value)}</span>`;
