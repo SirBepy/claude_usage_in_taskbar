@@ -1,6 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
-import type { Instance } from "../../types/ipc.generated";
+import type { Avatar, Instance, ProjectGroup } from "../../types/ipc.generated";
 import { closeChat } from "./close-chat";
 import {
   projectName,
@@ -20,9 +20,50 @@ import { reconcileList, loadAnimEnabled, markSessionExiting } from "./sidebar-an
 import { characterForSession, characterIconUrl } from "./session-characters";
 import { hydrateCharacterAvatars } from "../../shared/projects";
 
-/** Leading visual for a session row: the project's assigned HotS hero avatar
- * with a corner status dot, or the bare status glyph when the project has no
- * character. The avatar `<img>` is hydrated to a data URL after reconcile. */
+// ── Project avatar cache ─────────────────────────────────────────────────────
+// Keyed by normalised (lowercased) cwd so Windows path casing doesn't matter.
+let _projectAvatarByPath: Map<string, Avatar> = new Map();
+
+export async function loadProjectAvatars(): Promise<void> {
+  try {
+    const groups = await invoke<ProjectGroup[]>("list_project_groups");
+    const next = new Map<string, Avatar>();
+    for (const g of groups) {
+      if (g.avatar.kind !== "none") next.set(g.path.toLowerCase(), g.avatar);
+    }
+    _projectAvatarByPath = next;
+  } catch {
+    // non-fatal; badge just won't appear
+  }
+}
+
+export function getProjectAvatarForCwd(cwd: string): Avatar | null {
+  return _projectAvatarByPath.get(cwd.toLowerCase()) ?? null;
+}
+
+/** Renders the project avatar as a badge span, or empty string when none. */
+function projBadgeHtml(avatar: Avatar | null, cls: string): string {
+  if (!avatar || avatar.kind === "none") return "";
+  if (avatar.kind === "emoji") {
+    return `<span class="${cls}" aria-hidden="true">${escapeHtml(avatar.value)}</span>`;
+  }
+  if (avatar.kind === "image") {
+    const src = escapeHtml(`file:///${avatar.value.replaceAll("\\", "/")}`);
+    return `<span class="${cls}"><img src="${src}" alt="" style="width:100%;height:100%;object-fit:cover"></span>`;
+  }
+  if (avatar.kind === "character") {
+    const id = escapeHtml(avatar.value);
+    return `<span class="${cls}"><img class="char-avatar" data-character-id="${id}" alt="" style="width:100%;height:100%;object-fit:cover;image-rendering:pixelated"></span>`;
+  }
+  return "";
+}
+
+/** Wrap an avatar strip + optional project badge in the positioning wrapper. */
+function avatarWrap(avatarHtml: string, badge: string): string {
+  return `<span class="session-avatar-wrap">${avatarHtml}${badge}</span>`;
+}
+
+/** Leading visual for a live session row: character portrait + status glow + optional project badge. */
 function leadingVisual(
   s: Instance,
   indicator: string,
@@ -44,10 +85,28 @@ function leadingVisual(
   //    edge so a transparent (hexagonal) portrait's corners reveal blurred hero
   //    colours instead of the row background — no hexagon silhouette.
   //  - foreground: the sharp portrait on top.
-  return `<span class="session-avatar ${st}">
+  const avatarHtml = `<span class="session-avatar ${st}">
           <img class="char-avatar session-char-backdrop" data-character-id="${id}"${preload} alt="" aria-hidden="true">
           <img class="char-avatar session-char-img" data-character-id="${id}"${preload} alt="${id}">
         </span>`;
+  const badge = projBadgeHtml(getProjectAvatarForCwd(s.cwd), "session-proj-badge");
+  return avatarWrap(avatarHtml, badge);
+}
+
+/** Leading visual for a draft/parked-draft row: same structure as live rows
+ * but no status glow (nothing is in flight). Falls back to a muted icon when
+ * the session has no character assigned yet. */
+function draftLeadingVisual(charId: string | null | undefined, cwd: string): string {
+  if (!charId) return `<i class="session-state-icon ph ph-chat-circle-dots"></i>`;
+  const id = escapeHtml(charId);
+  const url = characterIconUrl(charId);
+  const preload = url ? ` src="${escapeHtml(url)}" data-hydrated="${id}"` : "";
+  const avatarHtml = `<span class="session-avatar">
+          <img class="char-avatar session-char-backdrop" data-character-id="${id}"${preload} alt="" aria-hidden="true">
+          <img class="char-avatar session-char-img" data-character-id="${id}"${preload} alt="${id}">
+        </span>`;
+  const badge = projBadgeHtml(getProjectAvatarForCwd(cwd), "session-proj-badge");
+  return avatarWrap(avatarHtml, badge);
 }
 
 export function isLive(i: Instance): boolean {
@@ -159,7 +218,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     const pid = escapeHtml(pending.placeholderId);
     const html = !pending.firstMessageSent
       ? `<li class="${activeCls} pending draft" data-pending="1" data-placeholder-id="${pid}" title="Draft — type a message to start">
-          <i class="session-state-icon ph ph-note-pencil" title="Draft"></i>
+          ${draftLeadingVisual(pending.config.characterId, pending.projectPath)}
           <div class="session-row-text">
             <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
             <span class="session-row-subtitle">Draft New Chat</span>
@@ -169,7 +228,7 @@ export function renderSidebar(listEl: HTMLElement): void {
           </button>
         </li>`
       : `<li class="${activeCls} pending" data-pending="1" data-placeholder-id="${pid}" title="Starting new session... click X to discard if stuck">
-          <i class="session-state-icon ph ph-spinner spinning s-green" title="Starting..."></i>
+          ${draftLeadingVisual(pending.config.characterId, pending.projectPath)}
           <div class="session-row-text">
             <span class="session-row-project">${escapeHtml(pending.projectName || "New session")}</span>
             <span class="session-row-subtitle">starting...</span>
@@ -185,7 +244,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     entries.push({
       key: `p:${d.placeholderId}`,
       html: `<li class="parked-draft" data-placeholder-id="${escapeHtml(d.placeholderId)}" title="Parked draft — click to resume">
-        <i class="session-state-icon ph ph-note-pencil" title="Parked draft"></i>
+        ${draftLeadingVisual(d.config.characterId, d.projectPath)}
         <div class="session-row-text">
           <span class="session-row-project">${escapeHtml(d.projectName || "New session")}</span>
           <span class="session-row-subtitle">Draft New Chat</span>

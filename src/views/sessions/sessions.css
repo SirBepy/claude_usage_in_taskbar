@@ -248,9 +248,68 @@
 .session-avatar.st-attention::before { animation: avatar-edge-pulse 1.4s ease-in-out infinite; }
 @keyframes avatar-edge-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
+/* Positioning wrapper that holds the avatar strip + optional project badge.
+   Takes the flex-item slot; the inner .session-avatar fills it absolutely so
+   its overflow:hidden clip still works while the badge can protrude outside. */
+.session-avatar-wrap {
+  position: relative;
+  align-self: stretch;
+  flex-shrink: 0;
+  width: 40px;
+  margin: -8px 0 -8px -10px;
+}
+.session-avatar-wrap > .session-avatar {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-self: auto;
+  width: auto;
+  height: auto;
+}
+.session-proj-badge {
+  position: absolute;
+  bottom: 4px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--color-surface, #0d0f15);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.7);
+}
+
 /* Wrapper for the open-chat header avatar: circular clip + status-coloured
    ring. Contains session-header-backdrop (blurred art fill) + session-header-char
    (sharp portrait). Also used as a plain container for the "?" placeholder. */
+.session-header-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.session-header-proj-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 2px solid var(--color-surface, #0d0f15);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.7);
+}
 .session-header-avatar {
   position: relative;
   width: 32px;

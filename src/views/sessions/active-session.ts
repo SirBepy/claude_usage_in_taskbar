@@ -17,7 +17,7 @@ import {
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
-import { renderSidebar, refreshSessions } from "./sidebar";
+import { renderSidebar, refreshSessions, getProjectAvatarForCwd } from "./sidebar";
 import { characterForSession, characterIconUrl, loadSessionCharacters } from "./session-characters";
 import { hydrateCharacterAvatars } from "../../shared/projects";
 import { api } from "../../shared/api";
@@ -176,12 +176,23 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
   const preload = headerIconUrl && headerCharId ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : "";
-  const headerHero = headerCharId
-    ? `<span class="session-header-avatar header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">`
-    + `<img class="char-avatar session-header-backdrop" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="" aria-hidden="true">`
-    + `<img class="char-avatar session-header-char" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="">`
-    + `</span>`
-    : `<div class="session-header-avatar session-header-char-placeholder header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">?</div>`;
+  const projAvatar = getProjectAvatarForCwd(sess.cwd);
+  const headerProjBadge = (() => {
+    if (!projAvatar || projAvatar.kind === "none") return "";
+    if (projAvatar.kind === "emoji") return `<span class="session-header-proj-badge" aria-hidden="true">${escapeHtml(projAvatar.value)}</span>`;
+    if (projAvatar.kind === "image") return `<span class="session-header-proj-badge"><img src="${escapeHtml(`file:///${projAvatar.value.replaceAll("\\", "/")}`)}" alt="" style="width:100%;height:100%;object-fit:cover"></span>`;
+    if (projAvatar.kind === "character") return `<span class="session-header-proj-badge"><img class="char-avatar" data-character-id="${escapeHtml(projAvatar.value)}" alt="" style="width:100%;height:100%;object-fit:cover;image-rendering:pixelated"></span>`;
+    return "";
+  })();
+  const headerHero = `<span class="session-header-avatar-wrap">`
+    + (headerCharId
+      ? `<span class="session-header-avatar header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">`
+        + `<img class="char-avatar session-header-backdrop" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="" aria-hidden="true">`
+        + `<img class="char-avatar session-header-char" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="">`
+        + `</span>`
+      : `<div class="session-header-avatar session-header-char-placeholder header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">?</div>`)
+    + headerProjBadge
+    + `</span>`;
 
   pane.innerHTML = `
     <header class="session-header">
