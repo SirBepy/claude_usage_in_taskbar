@@ -13,7 +13,6 @@ import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import type { SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
-import { closeChat } from "./close-chat";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { savePendingSession, clearPendingSession } from "./pending-draft-storage";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
@@ -35,12 +34,16 @@ export async function renderPendingPane(
   const myMount = state.mountId;
   pane.innerHTML = `
     <header class="session-header">
+      <span class="session-header-avatar-wrap">
+        <div class="session-header-avatar">?</div>
+      </span>
       <div class="session-header-text">
         <span class="title">New chat</span>
-        <span class="meta">${escapeHtml(project.name)} - ${escapeHtml(project.path)}</span>
+        <span class="meta">${escapeHtml(project.name)}</span>
       </div>
-      <button class="icon-btn close-session-btn" title="Close session"><i class="ph ph-x-circle"></i></button>
+      <button class="icon-btn changes-btn" title="Show all file changes in this chat" hidden><i class="ph ph-git-diff"></i><span class="changes-count" hidden></span></button>
       <button class="icon-btn cancel-btn" title="Cancel turn" hidden><i class="ph ph-x"></i></button>
+      <button class="icon-btn more-btn" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
     </header>
     <div class="session-statusbar-host"></div>
     <div class="session-messages">
@@ -69,6 +72,14 @@ export async function renderPendingPane(
     fetchGitInfo(project.path)
       .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
       .catch(() => {});
+  }
+
+  const draftMoreBtn = pane.querySelector<HTMLButtonElement>(".more-btn");
+  if (draftMoreBtn) {
+    draftMoreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openMoreMenu(draftMoreBtn, null, false, onDiscard ? () => onDiscard(pane) : undefined);
+    });
   }
 
   if (state.renderer) state.renderer.detach();
@@ -286,14 +297,6 @@ export async function renderPendingPane(
     }
   });
 
-  pane.querySelector<HTMLButtonElement>(".close-session-btn")?.addEventListener("click", () => {
-    if (!state.pendingNewSession?.firstMessageSent && onDiscard) {
-      onDiscard(pane);
-      return;
-    }
-    const closeTarget = state.pendingNewSession?.realId || placeholderId;
-    void closeChat(closeTarget);
-  });
 }
 
 function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {

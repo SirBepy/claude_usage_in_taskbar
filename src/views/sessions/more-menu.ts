@@ -16,24 +16,28 @@ export function closeMoreMenu(): void {
   if (_moreMenuCleanup) { _moreMenuCleanup(); _moreMenuCleanup = null; }
 }
 
-export function openMoreMenu(btn: HTMLButtonElement, sessionId: string, readOnly: boolean): void {
+export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, readOnly: boolean, onDiscard?: () => void): void {
   closeMoreMenu();
-  const autoOn = isAutoAccept(sessionId);
 
   const menu = document.createElement("div");
   menu.className = "session-more-menu";
 
   const items: string[] = [];
-  if (!readOnly) {
-    items.push(`<button class="smore-item smore-auto-accept${autoOn ? " is-on" : ""}" data-action="auto-accept"><i class="ph ph-shield-check"></i>Auto-accept${autoOn ? '<span class="smore-check-dot"></span>' : ""}</button>`);
-  }
-  items.push(`<button class="smore-item" data-action="change-character"><i class="ph ph-user-switch"></i>Change character</button>`);
-  items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Open in Terminal</button>`);
-  items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
-  if (!readOnly) {
-    items.push(`<div class="smore-sep"></div>`);
-    items.push(`<button class="smore-item" data-action="stop"><i class="ph ph-x"></i>Stop turn</button>`);
-    items.push(`<button class="smore-item smore-danger" data-action="close"><i class="ph ph-x-circle"></i>Close session</button>`);
+  if (sessionId === null) {
+    items.push(`<button class="smore-item smore-danger" data-action="discard"><i class="ph ph-x-circle"></i>Discard draft</button>`);
+  } else {
+    const autoOn = isAutoAccept(sessionId);
+    if (!readOnly) {
+      items.push(`<button class="smore-item smore-auto-accept${autoOn ? " is-on" : ""}" data-action="auto-accept"><i class="ph ph-shield-check"></i>Auto-accept${autoOn ? '<span class="smore-check-dot"></span>' : ""}</button>`);
+    }
+    items.push(`<button class="smore-item" data-action="change-character"><i class="ph ph-user-switch"></i>Change character</button>`);
+    items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Open in Terminal</button>`);
+    items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
+    if (!readOnly) {
+      items.push(`<div class="smore-sep"></div>`);
+      items.push(`<button class="smore-item" data-action="stop"><i class="ph ph-x"></i>Stop turn</button>`);
+      items.push(`<button class="smore-item smore-danger" data-action="close"><i class="ph ph-x-circle"></i>Close session</button>`);
+    }
   }
   menu.innerHTML = items.join("");
   document.body.appendChild(menu);
@@ -49,6 +53,8 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string, readOnly
     const action = item.dataset.action;
     closeMoreMenu();
     void (async () => {
+      if (action === "discard") { onDiscard?.(); return; }
+      if (!sessionId) return;
       switch (action) {
         case "auto-accept": {
           const next = !isAutoAccept(sessionId);
