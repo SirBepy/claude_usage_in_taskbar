@@ -2,7 +2,7 @@
 id: 105
 slug: remote-cockpit-httptransport-pwa
 title: Remote cockpit Phase 3+4 - HttpTransport impl + PWA shell + mobile parity pass
-status: parked
+status: open
 ---
 
 ## Why parked

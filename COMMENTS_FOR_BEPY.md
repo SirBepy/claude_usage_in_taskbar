@@ -1,5 +1,30 @@
 # Comments for Bepy
 
+## 2026-06-15 (later) - Remote phone cockpit: real-UI build (autopilot, tasks #2-5)
+
+Continuing the cockpit from the foundation below. Goal: a phone-testable real-UI chat served from the daemon. Orchestrator + sonnet implementer subagents.
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- #1 HttpTransport spine (browser/phone half of the seam: call->/api/rpc + send endpoint, listen->per-session WS, getTransport branches on window.__TAURI__). 388 vitest, tsc clean. -> 515724f
+- #2 load_history_page daemon RPC (reuses crate::chat::history locate_transcript+read_page; allowlisted in SAFE_METHODS; mapped in HttpTransport) so the phone can load past chat content (it had NO daemon transcript loader). cargo build + 389 vitest + tsc clean. -> swept into 7999034 (see collision note).
+- #3 daemon broadcasts remote_echo-marked user_message on send; desktop event-store delivers marked (deduped vs local synthetic), drops unmarked replay. 4 jsdom tests, cargo+tsc+393 vitest. -> e69fa33
+- #4a serve real SPA from daemon via rust_embed (replaces stub console) + SPA fallback (path-sanitized, mime-typed); /api stays authed. cargo+tsc+393 vitest. NOTE found pnpm build ALREADY broken on master (About page imports uninstalled @tauri-apps/plugin-opener); unblocked via vite externalize, proper fix parked -> ai_todo 111. -> 1a761ce
+- #4b browser token gate (remote-gate.ts, no-op in webview) + boot degrade (HttpTransport get_settings->null, get_history->[] instead of throwing; boot.ts tolerates) so the served SPA boots in a plain browser. 403 vitest, tsc clean. -> 84c075e
+- #5a serve-side done: installable PWA (manifest + icons + minimal network-first SW, browser-only registration) + HttpTransport polls list_instances every ~3.5s for the global instances-changed channel (no global WS exists). 4 poll tests. -> 5fd52f9
+
+FINAL VERIFY (all green on the final tree): cargo build clean (1 pre-existing lifecycle.rs unused_imports warning); pnpm tsc --noEmit = only the 2 pre-existing vendor/tauri_kit errors; pnpm vitest run = 407 passed / 19 skipped; pnpm build succeeds + embeds dist.
+
+STILL PARKED to ai_todo 105 (need a LIVE phone to validate, error-prone unattended): (a) live permission/AUQ prompts on the phone (poll list_pending_prompts + surface via the must-deliver path; lossy-broadcast nuance); (b) full mobile degrade pass - image-block send (text-only today), new-session start_session orchestration on the phone (degrades now), usage/token dashboards (app-side only); (c) settings parity (daemon read-only settings getter so the phone gets real models/presets - currently get_settings returns null -> defaults); (d) optional: replace the instances poll with a real global WS.
+
+LIVE PHONE TEST is the gate - see BEPY_TODOS. NOT pushed (local master only); deploy is your call via /commit pushnbump.
+
+Extra crates added (safety-checked): rust-embed "8" (past the 2021 traversal fix), mime_guess "2" (ubiquitous pure crate). Pre-existing bug found + parked: pnpm build was ALREADY broken on master (About page imports uninstalled @tauri-apps/plugin-opener) -> unblocked via a vite externalize stopgap, proper fix in ai_todo 111.
+
+COLLISION NOTE: a CONCURRENT autopilot agent (working sessions/draft-rows/character-avatar) ran a broad `git add` and bundled my staged chunk-#2 files (registry.rs, remote_server.rs, transport.ts, transport-http.test.mjs) into ITS commit 7999034 ("FEAT: show character avatar on draft rows"). Verified all 4 files are present + correct in that commit. Did NOT soft-reset/rewrite to un-bundle (would drop the other agent's live work = hard stop). Cosmetic only: code is correct, committed, history is just mislabeled. Going forward I commit each chunk as fast as possible after verify to shrink the collision window.
+
+Decision log:
+- 2026-06-15 - Phone-sent message must show on BOTH phone and PC (Joe's "PC doesn't see it" bug). Root cause: claude -p stream-json does NOT echo user input, so the only user bubble is the desktop's LOCAL pushSynthetic; a phone send has no synthetic anywhere. FIX (direct judgment, no iterate-it - design is determined by the dedup mechanics): the DAEMON broadcasts a MARKED user_message echo on send_message; the desktop event-store delivers MARKED user_messages (routing through deliver(), whose content-dedup cancels the desktop's own synthetic) but still DROPS unmarked ones (claude --resume replay = old history). Self-correcting: own-send = synthetic+echo deduped->once; phone-send on PC = echo delivered->once; phone-send on phone = echo via WS->once; resume replay = dropped. Reversible (schema field + one event-store branch). Where: types/chat.rs (UserMessage marker), daemon lifecycle::send_message, src/shared/chat/event-store.ts:343.
+
 ## 2026-06-15 - Remote phone cockpit: foundation built, remote phases parked (autopilot)
 
 Task: build "phone as full second cockpit" for in-app chats. Brainstormed + converged with you first: full mobile control (b); ONE shared frontend codebase with a swappable transport seam; reuse logic via daemon chat-core fns shared by Tauri commands + a new HTTP server; transport = Tailscale + per-request token auth + QR provisioning; dedicated tailnet-bound authed server separate from the localhost hooks server.

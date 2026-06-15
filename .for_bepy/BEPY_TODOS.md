@@ -5,31 +5,36 @@
 - Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 
-### Remote phone cockpit - how to test (shipped v0.1.85)
+### Remote phone cockpit - LIVE PHONE TEST (real-UI PWA, autopilot 2026-06-15)
 
-The daemon now serves a minimal remote console you can drive from your phone over Tailscale. It's a bare console (raw-ish event log, send/cancel) - the polished real-UI PWA is ai_todo 105.
+The stub console is GONE - the daemon now serves the **real chat UI** as an installable PWA. The whole core loop is built + unit/build-verified, but NONE of it is live-verified (only you can phone-test it). This is the gate.
 
-1. Make sure the app is running and updated to >= 0.1.85 (so the daemon includes the remote server). It binds `127.0.0.1:27183`.
-2. One-time, on the PC - expose it on your tailnet (the daemon also logs this exact line on startup):
+REQUIRED FIRST: **redeploy + update.** The running daemon still serves the OLD stub until its binary is rebuilt with the embedded SPA. Run `/commit pushnbump` then let the app auto-update (or rebuild). The new daemon binds `127.0.0.1:27183` as before.
+
+1. One-time on the PC, expose it on your tailnet (the daemon logs this exact line on startup):
    ```
    tailscale serve --bg --https=443 http://127.0.0.1:27183
    ```
-3. Get the token (it persists across restarts - reuse the same one):
+2. Get the token (persists across restarts):
    ```
    Get-Content "$env:APPDATA\claude-usage-tauri\remote-access-token.txt"
    ```
-4. On your phone (same tailnet), open in the browser:
-   ```
-   https://<your-pc-magicdns-name>/
-   ```
-   Paste the token -> you get the console: list sessions, tap one to watch its live stream, type to send a message, "Cancel turn" to interrupt.
-5. Local sanity (no phone/Tailscale needed), from the PC:
-   ```
-   curl.exe http://127.0.0.1:27183/api/health                                          # -> ok
-   curl.exe -i http://127.0.0.1:27183/api/sessions                                     # -> 401 (no token)
-   curl.exe -H "Authorization: Bearer <TOKEN>" http://127.0.0.1:27183/api/sessions     # -> JSON session list
-   ```
+3. On your phone (same tailnet), open `https://<your-pc-magicdns-name>/`. If it's a fresh phone you get a token-entry screen (paste the token); if you used the old stub the token is already in localStorage. You should land in the **real app UI**.
 
-**Eyeball first** (couldn't be tested headless): the WebSocket **live stream** and the embedded page rendering on the phone. If the stream log stays empty while a turn runs, it's most likely the `ChatEvent` JSON shape vs the console's generic renderer - tell me, it's a ~2-line tweak.
+VERIFY (the things that couldn't be tested headless):
+- The real chat UI loads (not the old raw console), session list shows, and it stays live (polls every ~3.5s).
+- Open one of your existing chats -> **past messages render** (new daemon history RPC) -> with real content, not `[user_message]` tags.
+- Send a message FROM the phone -> it shows as your bubble on BOTH the phone AND the PC (the user-echo fix), and the AI reply streams to both.
+- "Add to Home Screen" -> it installs as a PWA (manifest + service worker).
 
-**Security notes:** localhost-bound, so nothing is reachable until you run `tailscale serve`. Only the token's hash is stored; the plaintext lives in `remote-access-token.txt` - delete that file after copying it (only the hash is needed). Every data route requires the bearer token (fail-closed); dangerous daemon methods are blocked by an allowlist.
+Local sanity (no phone needed), from the PC after redeploy:
+```
+curl.exe http://127.0.0.1:27183/api/health                                       # -> ok
+curl.exe -i http://127.0.0.1:27183/                                              # -> 200 + the real index.html
+curl.exe -i http://127.0.0.1:27183/api/sessions                                 # -> 401 (no token)
+curl.exe -H "Authorization: Bearer <TOKEN>" http://127.0.0.1:27183/api/sessions  # -> JSON session list
+```
+
+KNOWN DEGRADES (parked in ai_todo 105, not bugs): starting a NEW chat from the phone isn't wired yet (open existing ones); image attachments send as text-only; permission/AUQ prompts don't yet auto-surface on the phone; usage/token dashboards + custom settings (models/presets) are app-side only (phone uses defaults). Tell me if any of these matter and I'll prioritize them.
+
+**Security:** unchanged - localhost-bound (nothing reachable until `tailscale serve`), only the token hash is stored (delete `remote-access-token.txt` after copying), every `/api` route is token-gated fail-closed, dangerous daemon methods blocked by an allowlist. The SPA HTML/JS is served unauthenticated (no secrets in it; it authes every API call with the token).
