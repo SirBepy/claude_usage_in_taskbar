@@ -1,5 +1,17 @@
 # Comments for Bepy
 
+## 2026-06-15 - Autopilot run: ai_todos 99, 90, 85 (project logos prioritized by Joe)
+
+RUN_LEDGER (chunk -> outcome -> sha) appended as each lands.
+
+### 2026-06-15 - ai_todo 99 design decisions
+Decision needed: how to render project tech LOGOS when this app standardizes on Phosphor (which has no brand/tech logos), per Joe's explicit "prioritize the project logos".
+Resolved via: direct judgment (clear-correct; copies Joe's own server_supervisor approach, which the todo names as the source).
+Picked: (1) Devicon icon font for tech logos, loaded from **unpkg CDN** (the same host already whitelisted for Phosphor in the CSP) - NOT an npm dependency, so no bundle change and no package-safety gate. (2) Frontend three-tier lazy fallback mirroring server_supervisor (real icon file -> tech devicon -> generic Phosphor `ph-folder`), hydrated only on the `Avatar::None` path so user-set emoji/image/character avatars are untouched. (3) Backend gets two read-only commands `get_project_icon` (base64 of a found icon.svg/logo.png/etc., reusing the existing `AttachmentData{mime,base64}` so no new ts-rs type) + `get_project_tech` (marker-file -> stack key), same priority order as server_supervisor (flutter>rust>python>go>deno>dotnet>node).
+Reason: matches Joe's established pattern, keeps the project-list payload lean (icons fetched lazily per card, not embedded in list_project_groups), CSP already permits unpkg CSS+fonts and `img-src data:`.
+Where: src-tauri/src/ipc/project_icons.rs (new), shared/projects.ts, projects list + project-detail header.
+Revisit: no for the two named sites; secondary avatar sites (subview-header, session-detail, character-pick) left on the old "?" placeholder for none - noted as optional follow-up.
+
 ## 2026-06-15 - Deploy unblocked: release CI was red for 3 separate reasons (autopilot "fix until it builds")
 
 Releasing the cockpit + close-leak work surfaced that the Tauri Release CI had been RED since before this work. Fixed all three, build now GREEN + published (v0.1.89, run 27546575533, all 4 platforms + publish success).

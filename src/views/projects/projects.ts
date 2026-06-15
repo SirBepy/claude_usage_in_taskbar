@@ -3,7 +3,7 @@ import { openSidemenu } from "../../shared/sidemenu";
 import "./projects.css";
 import { setTokenHistory } from "../../shared/state";
 import { openProjectDetail } from "../../shared/navigation";
-import { renderAvatar, hydrateCharacterAvatars, type Avatar } from "../../shared/projects";
+import { renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons, type Avatar } from "../../shared/projects";
 import { escapeHtml } from "../../shared/escape-html";
 import { formatTokens } from "../../shared/tokens";
 import { timeAgo } from "../../shared/time";
@@ -11,7 +11,7 @@ import { api, type ProjectGroup } from "../../shared/api";
 
 export function projectCardHtml(g: ProjectGroup): string {
   const displayName = g.parent_segment ? `${g.name} · ${g.parent_segment}` : g.name;
-  const avatar = renderAvatar(g.avatar as Avatar);
+  const avatar = renderAvatar(g.avatar as Avatar, g.path);
   const tokens = formatTokens(Number(g.tokens_7d) || 0);
   const lastSeen = g.last_active_at ? timeAgo(g.last_active_at) : "";
   const tags = [
@@ -112,6 +112,7 @@ export async function renderProjectsList(): Promise<void> {
     };
   });
   void hydrateCharacterAvatars(container);
+  void hydrateProjectTechIcons(container);
 
   setupBackfillBtn();
 }

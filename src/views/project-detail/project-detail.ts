@@ -4,7 +4,7 @@ import { formatTokens, formatMillions, totalTok } from "../../shared/tokens";
 import type { TokenRecord } from "../../shared/tokens";
 import { invoke } from "../../shared/ipc";
 import type { HistoryEntry } from "../../types/ipc.generated";
-import { projectLabel, renderAvatar, hydrateCharacterAvatars } from "../../shared/projects";
+import { projectLabel, renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import { resolveMergeChain, doMerge } from "../../shared/merges";
 import { timeAgo } from "../../shared/time";
 import {
@@ -29,16 +29,16 @@ import { openModelEffortModal } from "../sessions/model-effort-modal";
 function setHeader(cwd: string): void {
   const settings = getSettings();
   const configured = (settings.projects || []).find((p) => p.path === cwd);
-  const avatar = configured?.avatar || {
-    kind: "emoji" as const,
-    value: (configured?.name || cwd || "?").charAt(0),
-  };
+  // No user-set avatar -> detect a tech icon for the face (ai_todo 99) instead
+  // of the old first-letter emoji placeholder.
+  const avatar = configured?.avatar ?? { kind: "none" as const };
   const aliases = settings.projectAliases || {};
   const avatarEl = document.getElementById("projectDetailAvatar");
   const titleEl = document.getElementById("projectDetailTitle");
   if (avatarEl) {
-    avatarEl.innerHTML = renderAvatar(avatar);
+    avatarEl.innerHTML = renderAvatar(avatar, cwd);
     void hydrateCharacterAvatars(avatarEl);
+    void hydrateProjectTechIcons(avatarEl);
   }
   if (titleEl) titleEl.textContent = projectLabel(cwd, aliases);
 }
@@ -251,13 +251,9 @@ export function renderProjectDetailContent(): void {
   const avatarEl = document.getElementById("projectDetailAvatar");
   if (avatarEl) {
     const configured = (settings.projects || []).find((p) => p.path === cwd);
-    avatarEl.innerHTML = renderAvatar(
-      configured?.avatar || {
-        kind: "emoji",
-        value: (configured?.name || cwd || "?").charAt(0),
-      },
-    );
+    avatarEl.innerHTML = renderAvatar(configured?.avatar ?? { kind: "none" }, cwd);
     void hydrateCharacterAvatars(avatarEl);
+    void hydrateProjectTechIcons(avatarEl);
   }
 
   document.querySelectorAll<HTMLButtonElement>(".range-btn").forEach((btn) => {
