@@ -31,3 +31,14 @@ Build order for this chunk: (1) inventory the exact Tauri commands the core chat
 - In a phone browser on the tailnet, after pairing, the PWA lists sessions, opens one, streams replies live, sends messages, and cancels - at desktop feature parity (chips included), over the authed HTTPS/wss tailnet channel.
 - Tauri-only flows either work via HTTP or degrade with a clear message (no silent breakage).
 - `pnpm tsc --noEmit` clean, vitest green, `cargo build` clean.
+
+## Live-test findings 2026-06-15 (Joe ran a real phone against the v0 stub)
+
+Phone connects to the daemon server fine (sees the open sessions list). But everything below traces to ONE fact: the daemon at `GET /` serves a ~60-line throwaway `INDEX_HTML` console hardcoded in `remote_server.rs`, NOT the real SPA. Phase 3 (serve real SPA + HttpTransport) makes 1/2/3/B2 vanish; B needs a separate desktop fix.
+
+1. **Mobile does NOT reuse the real chat UI** — it's the bespoke stub. (fixed by serving real SPA)
+2. **Chat content shows empty** — stub renders `event.text || event.delta`, but `ChatEvent` is a tagged union carrying `content[]` blocks with no top-level `text` field, so nothing renders. (fixed by real SPA / `chat-transforms.eventToRenderedMessage`)
+3. **Not a PWA** — no PWA shell yet (manifest/service worker). Phase 4.
+4. **B2 (phone shows raw `[user_message] [tool_use] [assistant_message]` tags)** — same as #2: stub falls back to `'['+type+']'` because it can't parse the schema.
+5. **B (PC never sees the phone's sent user message, only the AI replies)** — `event-store.ts:343` DROPS live `user_message` events (resume-replay dedup); the desktop only ever shows its OWN `pushSynthetic` echo. A phone-sent message has no synthetic on the desktop, so nobody renders it; AI replies aren't dropped, so those show. Requires a small, careful desktop change (deliver live user_messages that have no matching local synthetic), in the fragile parser-dedup zone. Does NOT replace the PC UI - "PC stays as it is" preserved.
+6. **A (phone msg only "sends" after leaving the PC chat)** — session was mid-turn/busy, so the phone send hit the existing held-message queue (by design) and flushed on turn-end; the phone gave no "queued" feedback. Add a queued/pending indicator on the remote send path. (confirm exact trigger during build)
