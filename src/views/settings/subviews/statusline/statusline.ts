@@ -1,3 +1,4 @@
+import { html, render } from "lit-html";
 import {
   loadStatuslineRows,
   saveStatuslineRows,
@@ -52,7 +53,10 @@ function paletteChipsFor(section: SectionKey): ChipType[] {
     .filter((k) => STATIC_CHIPS[k].section === section) as ChipType[];
 }
 
-const SHELL = `
+// Rendered via lit (not root.innerHTML) so the router's lit part markers on
+// `root` survive. Clobbering them with innerHTML ejects lit's marker nodes and
+// makes the next `render(html``, root)` on navigate-away throw.
+const shell = () => html`
   <div class="view view-settings-statusline">
     <div class="view-header">
       <button class="icon-btn back-to-settings" title="Back">←</button>
@@ -94,7 +98,7 @@ export async function renderStatuslineView(root: HTMLElement): Promise<() => voi
   let rows = await loadStatuslineRows();
   let hideZero = await loadStatuslineHideZero();
 
-  root.innerHTML = SHELL;
+  render(shell(), root);
   const bar = root.querySelector<HTMLElement>("#slBar")!;
   const palette = root.querySelector<HTMLElement>("#slPalette")!;
   const hideZeroBox = root.querySelector<HTMLInputElement>("#slHideZero")!;
