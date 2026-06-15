@@ -133,6 +133,53 @@ describe("HeldMessages — flush triggers", () => {
     expect(send).toHaveBeenCalledWith([{ type: "text", text: "alpha" }]);
   });
 
+  it("deferred flush fires on its own when the user just WAITS (no draft activity)", () => {
+    vi.useFakeTimers();
+    try {
+      const { held, send, state } = makeHarness();
+      held.stage(textBlocks("waited"));
+      // Turn completes within the isComposing keystroke window (user staged then
+      // sat still). The session is idle; they never touch the composer again.
+      state.composing = true;
+      state.busy = false;
+      held.onCompletion("sess-A", false);
+      expect(send).not.toHaveBeenCalled();
+
+      // The 2s keystroke window lapses -> isComposing flips false. No blur/input
+      // event fires, but the self-retry timer must still flush.
+      state.composing = false;
+      vi.advanceTimersByTime(2200);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith([{ type: "text", text: "waited" }]);
+      expect(held.hasItemsForActive()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("deferred retry keeps waiting while the user is still actively typing", () => {
+    vi.useFakeTimers();
+    try {
+      const { held, send, state } = makeHarness();
+      held.stage(textBlocks("queued"));
+      state.composing = true;
+      state.busy = false;
+      held.onCompletion("sess-A", false);
+
+      // Still typing one cycle later -> must NOT force-send.
+      vi.advanceTimersByTime(2200);
+      expect(send).not.toHaveBeenCalled();
+
+      // They stop -> the next cycle flushes.
+      state.composing = false;
+      vi.advanceTimersByTime(2200);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith([{ type: "text", text: "queued" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("Send now interrupts the turn, then sends held + draft as one", async () => {
     const { held, send, interrupt, state } = makeHarness();
     held.stage(textBlocks("queued"));

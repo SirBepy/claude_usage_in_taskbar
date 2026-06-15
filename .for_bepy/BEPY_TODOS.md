@@ -8,6 +8,7 @@
 ### Visual QA
 
 - After the next build, confirm the 0.1.89 fix end-to-end: app boots normally, Settings > Statusline > Back works again, and Settings > About > the GitHub/YouTube dev-link buttons open in the browser (now routed through the app's `open_external` IPC).
+- After the next build, confirm held-message auto-send: while a chat is working, send a message (it shows "N waiting" + "Send now"), then DON'T touch the composer - when the turn finishes it should auto-send on its own within ~2s (no "Send now" click). Was hanging when the turn ended right after your keystroke. (It still holds, by design, if the turn ends on a question.)
 - After the next build, eyeball that character icons still load in all three surfaces (ai_todo 101 collapsed them onto one shared `character-icon.ts` cache): the Change-character modal grid, the whitelist editor rows (Settings + per-project), and the sessions sidebar/header faces. Pure refactor, tsc + full vitest green; just a visual confirm.
 
 ### Remote phone cockpit - LIVE PHONE TEST (real-UI PWA, autopilot 2026-06-15)

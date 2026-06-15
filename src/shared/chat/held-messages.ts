@@ -18,6 +18,11 @@ interface HeldItem {
   blocks: ContentBlock[];
 }
 
+// Poll cadence for a deferred auto-flush. Sits just past the composer's 2000ms
+// isComposing() keystroke window so a "staged then waited" message flushes on
+// its own one tick after the user stops typing.
+const DEFER_RETRY_MS = 2100;
+
 /** Everything the controller needs from the currently-mounted pane/composer.
  * Re-supplied on every `attach()` because the pane DOM and the per-session
  * send/interrupt closures are rebuilt on each session switch. */
@@ -65,12 +70,14 @@ export class HeldMessages {
   private attached: HeldAttach | null = null;
   private expanded = false;
   private deferredSid: string | null = null;
+  private deferRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private nextId = 1;
   private closeDropdownOutside: ((e: MouseEvent) => void) | null = null;
 
   /** Point the controller at the freshly-mounted active pane. */
   attach(opts: HeldAttach): void {
     this.detachOutsideClick();
+    this.clearDeferRetry();
     this.attached = opts;
     this.expanded = false;
     this.renderChip();
@@ -129,6 +136,8 @@ export class HeldMessages {
     const bundle = bundleHeld(items.map((i) => i.blocks), draftBlocks);
     // Clear state BEFORE sending so a re-render mid-send can't double-fire.
     this.map.set(sid, []);
+    this.deferredSid = null;
+    this.clearDeferRetry();
     this.expanded = false;
     this.closeDropdown();
     if (includeDraft && draftBlocks.length) a.clearComposer();
@@ -159,6 +168,8 @@ export class HeldMessages {
     const items = this.itemsForActive();
     const bundle = bundleHeld(items.map((i) => i.blocks), draftBlocks);
     this.map.set(sid, []);
+    this.deferredSid = null;
+    this.clearDeferRetry();
     this.expanded = false;
     this.closeDropdown();
     a.onChange();
@@ -167,13 +178,17 @@ export class HeldMessages {
   }
 
   /** Busy went true->false for the active session. Auto-flush unless Claude is
-   * asking a question (hold for the answer) or the user is mid-compose. */
+   * asking a question (hold for the answer) or the user is mid-compose. When we
+   * defer for composing, a self-retry timer keeps trying so the flush still
+   * fires if the user simply WAITS (the input/blur-driven notifyDraftActivity
+   * never fires when they don't touch the composer). */
   onCompletion(sid: string, isQuestion: boolean): void {
     if (sid !== this.sid) return;
     if (this.itemsForActive().length === 0) return;
     if (isQuestion) return;
     if (this.attached?.isComposing()) {
       this.deferredSid = sid;
+      this.scheduleDeferRetry();
       return;
     }
     void this.flush(false);
@@ -186,7 +201,36 @@ export class HeldMessages {
     if (!a) return;
     if (this.deferredSid && this.deferredSid === this.sid && !a.isComposing() && !a.getIsBusy()) {
       this.deferredSid = null;
+      this.clearDeferRetry();
       void this.flush(false);
+    }
+  }
+
+  /** Poll until a deferred flush can fire on its own: once the user stops
+   * composing (the 2s keystroke window lapses) and the session is idle, send.
+   * If they're still actively typing or the session is busy again, keep waiting
+   * — this never force-interrupts an in-progress draft, it only covers the
+   * "staged a message and walked away" case the blur/input path missed. */
+  private scheduleDeferRetry(): void {
+    if (this.deferRetryTimer !== null) return; // already polling
+    this.deferRetryTimer = setTimeout(() => {
+      this.deferRetryTimer = null;
+      const a = this.attached;
+      if (!this.deferredSid || this.deferredSid !== this.sid) return;
+      if (!a || this.itemsForActive().length === 0) { this.deferredSid = null; return; }
+      if (a.isComposing() || a.getIsBusy()) {
+        this.scheduleDeferRetry(); // still typing / busy — check again shortly
+        return;
+      }
+      this.deferredSid = null;
+      void this.flush(false);
+    }, DEFER_RETRY_MS);
+  }
+
+  private clearDeferRetry(): void {
+    if (this.deferRetryTimer !== null) {
+      clearTimeout(this.deferRetryTimer);
+      this.deferRetryTimer = null;
     }
   }
 
