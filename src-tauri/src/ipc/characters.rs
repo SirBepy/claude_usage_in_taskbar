@@ -44,7 +44,12 @@ pub fn play_character_slot(
     character_id: String,
     slot: Slot,
     app: AppHandle,
+    state: State<AppState>,
 ) -> Result<(), String> {
+    let settings = state.settings.lock().unwrap().clone();
+    if settings.mute_all() || settings.mute_sounds() {
+        return Ok(());
+    }
     let Some(c) = characters::get(&character_id) else {
         return Err(format!("unknown character: {character_id}"));
     };
