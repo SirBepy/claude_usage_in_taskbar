@@ -17,7 +17,7 @@ import {
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
-import { renderSidebar, refreshSessions, projBadgeHtml } from "./sidebar";
+import { renderSidebar, refreshSessions } from "./sidebar";
 import { characterForSession, characterIconUrl, loadSessionCharacters } from "./session-characters";
 import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import { api } from "../../shared/api";
@@ -31,7 +31,7 @@ import {
 } from "./permission-modal";
 import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
-import { openMoreMenu } from "./more-menu";
+import { SessionHeader } from "./session-header";
 import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./sessions";
 
 /** Status class (st-working / st-question / …) for an open session, using the
@@ -176,45 +176,30 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const headerCharId = characterForSession(sess);
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
-  const preload = headerIconUrl && headerCharId ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : "";
-  const headerProjBadge = projBadgeHtml(sess.cwd, "session-header-proj-badge");
-  const headerHero = `<span class="session-header-avatar-wrap">`
-    + (headerCharId
-      ? `<span class="session-header-avatar header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">`
-        + `<img class="char-avatar session-header-backdrop" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="" aria-hidden="true">`
-        + `<img class="char-avatar session-header-char" data-character-id="${escapeHtml(headerCharId)}"${preload} alt="">`
-        + `</span>`
-      : `<div class="session-header-avatar session-header-char-placeholder header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">?</div>`)
-    + headerProjBadge
-    + `</span>`;
 
-  pane.innerHTML = `
-    <header class="session-header">
-      ${headerHero}
-      <div class="session-header-text">
-        <span class="title">${escapeHtml(sessionSubtitle(sess))}</span>
-        <span class="meta">${escapeHtml(projectName(sess))}</span>
-      </div>
-      <button class="icon-btn changes-btn" title="Show all file changes in this chat"><i class="ph ph-git-diff"></i><span class="changes-count" hidden></span></button>
-      <button class="icon-btn more-btn${!readOnly && isAutoAccept(sess.session_id) ? " has-indicator" : ""}" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
-    </header>
-    <div class="session-statusbar-host"></div>
-    ${readOnly ? '<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>' : ""}
-    <div class="session-messages"></div>
-    <div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>
-    <div class="session-composer"></div>
-  `;
+  const header = new SessionHeader({ title: sessionSubtitle(sess), meta: projectName(sess) });
+  header.onCharClick = () => { void changeCharacterForSession(sess.session_id); };
+  header.bindSession({
+    sessionId: sess.session_id,
+    readOnly,
+    charId: headerCharId,
+    charUrl: headerIconUrl,
+    charStatus: headerStatus,
+    cwd: sess.cwd ? String(sess.cwd) : null,
+    autoAcceptOn: !readOnly && isAutoAccept(sess.session_id),
+  });
 
-  // Resolve the header hero avatar to its data URL (no-op when absent).
+  pane.innerHTML = [
+    `<div class="session-statusbar-host"></div>`,
+    readOnly ? `<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>` : "",
+    `<div class="session-messages"></div>`,
+    `<div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>`,
+    `<div class="session-composer"></div>`,
+  ].join("");
+  pane.insertBefore(header.el, pane.firstChild);
+
   if (headerCharId) void hydrateCharacterAvatars(pane);
   void hydrateProjectTechIcons(pane);
-
-  // Clicking the header face opens the Change Character modal for this session.
-  const headerEl = pane.querySelector<HTMLElement>(".session-header");
-  headerEl?.addEventListener("click", (e) => {
-    if (!(e.target as Element).closest(".header-char-clickable")) return;
-    void changeCharacterForSession(sess.session_id);
-  });
 
   // Mount statusbar.
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
@@ -278,20 +263,22 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     state.changesPanel = panel;
     renderer.onFileEditsChanged = (edits) => {
       panel.onUpdate(edits);
-      const badge = pane.querySelector<HTMLElement>(".changes-btn .changes-count");
-      if (badge) {
-        const n = dedupeByPath(edits).length;
-        badge.textContent = String(n);
-        badge.toggleAttribute("hidden", n === 0);
-      }
+      header.setChangesBadge(dedupeByPath(edits).length);
     };
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
     // Track Claude's self-reported turn status for this session so the sidebar
     // shows an amber "answer me" flag for questions and a calm icon otherwise.
+    // Suppresses sidebar re-renders during history replay (loadFromStore).
+    // onStatusUpdate fires for every historical cc-status marker; intermediate
+    // question→done transitions cause spurious FLIP animation that makes rows
+    // appear to reorder and snap back. questionSessions is still updated
+    // correctly throughout; the final renderSidebar below captures the result.
+    let historyLoaded = false;
     renderer.onStatusUpdate = (status) => {
       if (state.renderer !== renderer) return;
       if (status === "question") state.questionSessions.add(sessionId);
       else state.questionSessions.delete(sessionId);
+      if (!historyLoaded) return;
       const root = document.querySelector<HTMLElement>(".view-sessions");
       const listEl = root?.querySelector<HTMLElement>("#sessions-list");
       if (listEl) renderSidebar(listEl);
@@ -299,7 +286,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       // (notifications::rules::fire) which already resolves the character slot
       // and respects mute settings. Playing here too causes a double sound.
     };
-    pane.querySelector(".changes-btn")?.addEventListener("click", () => panel.toggle());
+    header.onChangesClick = () => panel.toggle();
     await renderer.attach(sessionId);
     // Bail if a newer mount or selectSession superseded us during await.
     if (state.mountId !== myMount || state.selectedId !== sessionId) {
@@ -322,6 +309,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     } finally {
       overlay?.remove();
     }
+    historyLoaded = true;
   }
 
   // Attach composer + held-messages controller
@@ -421,12 +409,6 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     updateThinkingBar();
   }
 
-  // Wire header buttons
-  pane.querySelector<HTMLButtonElement>(".more-btn")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const btn = e.currentTarget as HTMLButtonElement;
-    openMoreMenu(btn, sessionId, readOnly);
-  });
   // Start real-time file watcher for all sessions. External sessions get new
   // messages this way; Interactive sessions also need it so that turns
   // continued in a terminal appear in the UI. Watcher emits chat-watch:<id>

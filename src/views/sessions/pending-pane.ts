@@ -16,8 +16,10 @@ import { isAutoAccept, setAutoAccept } from "./permission-modal";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { savePendingSession, clearPendingSession } from "./pending-draft-storage";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
-import { openMoreMenu } from "./more-menu";
+import { SessionHeader } from "./session-header";
 import { showToast } from "../../shared/toast";
+
+let _pendingHeader: SessionHeader | null = null;
 
 function rebuildSidebar(): void {
   const listEl = document.querySelector<HTMLElement>("#sessions-list");
@@ -32,29 +34,33 @@ export async function renderPendingPane(
   onDiscard?: (pane: HTMLElement) => void,
 ): Promise<void> {
   const myMount = state.mountId;
-  pane.innerHTML = `
-    <header class="session-header">
-      <span class="session-header-avatar-wrap">
-        <div class="session-header-avatar">?</div>
-      </span>
-      <div class="session-header-text">
-        <span class="title">New chat</span>
-        <span class="meta">${escapeHtml(project.name)}</span>
-      </div>
-      <button class="icon-btn changes-btn" title="Show all file changes in this chat" hidden><i class="ph ph-git-diff"></i><span class="changes-count" hidden></span></button>
-      <button class="icon-btn cancel-btn" title="Cancel turn" hidden><i class="ph ph-x"></i></button>
-      <button class="icon-btn more-btn" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
-    </header>
-    <div class="session-statusbar-host"></div>
-    <div class="session-messages">
-      <div class="session-pending-hint">
-        <i class="ph ph-paper-plane-tilt"></i>
-        <p>Type a message below to start a new session in <strong>${escapeHtml(project.name)}</strong>.</p>
-      </div>
-    </div>
-    <div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>
-    <div class="session-composer"></div>
-  `;
+
+  _pendingHeader = new SessionHeader({
+    title: "New chat",
+    meta: project.name,
+    onDiscard: onDiscard ? () => onDiscard(pane) : undefined,
+  });
+  _pendingHeader.onCancelClick = async () => {
+    const cancelTarget = state.pendingNewSession?.realId || placeholderId;
+    try {
+      await invoke<void>("cancel_turn", { sessionId: cancelTarget });
+    } catch (err) {
+      console.error("[sessions] cancel_turn failed", err);
+    }
+  };
+
+  pane.innerHTML = [
+    `<div class="session-statusbar-host"></div>`,
+    `<div class="session-messages">`,
+    `  <div class="session-pending-hint">`,
+    `    <i class="ph ph-paper-plane-tilt"></i>`,
+    `    <p>Type a message below to start a new session in <strong>${escapeHtml(project.name)}</strong>.</p>`,
+    `  </div>`,
+    `</div>`,
+    `<div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>`,
+    `<div class="session-composer"></div>`,
+  ].join("\n");
+  pane.insertBefore(_pendingHeader.el, pane.firstChild);
 
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
@@ -72,14 +78,6 @@ export async function renderPendingPane(
     fetchGitInfo(project.path)
       .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
       .catch(() => {});
-  }
-
-  const draftMoreBtn = pane.querySelector<HTMLButtonElement>(".more-btn");
-  if (draftMoreBtn) {
-    draftMoreBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openMoreMenu(draftMoreBtn, null, false, onDiscard ? () => onDiscard(pane) : undefined);
-    });
   }
 
   if (state.renderer) state.renderer.detach();
@@ -286,17 +284,6 @@ export async function renderPendingPane(
   const ta = pane.querySelector<HTMLTextAreaElement>(".composer-textarea");
   if (ta) ta.focus();
 
-  // cancel_turn targets placeholder while realId is unknown; rebindPaneHeader
-  // replaces this handler with a direct-id version once start_session resolves.
-  pane.querySelector<HTMLButtonElement>(".cancel-btn")?.addEventListener("click", async () => {
-    const cancelTarget = state.pendingNewSession?.realId || placeholderId;
-    try {
-      await invoke<void>("cancel_turn", { sessionId: cancelTarget });
-    } catch (err) {
-      console.error("[sessions] cancel_turn failed", err);
-    }
-  });
-
 }
 
 function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
@@ -304,41 +291,18 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
     state.statusbar.setSessionId(sessionId);
     state.statusbar.setReadOnlyEffort(false);
   }
-
-  const header = pane.querySelector<HTMLElement>(".session-header");
-  if (!header) return;
-  const sess = state.sessions.find((s) => s.session_id === sessionId);
-  const title = header.querySelector<HTMLElement>(".title");
-  if (title && sess) title.textContent = sessionSubtitle(sess);
-  const meta = header.querySelector<HTMLElement>(".meta");
-  if (meta && sess) meta.textContent = projectName(sess);
   pane.querySelector(".session-pending-hint")?.remove();
 
-  // Swap the pending placeholder buttons (close + cancel) for the same header a
-  // normal active session shows: a changes button + the ⋮ more-options menu
-  // (which holds auto-accept / terminal / detach / stop / close). This keeps a
-  // freshly-started chat visually identical to a reopened one instead of a row
-  // of five separate icon buttons.
-  header.querySelectorAll(".icon-btn").forEach((b) => b.remove());
+  const h = _pendingHeader;
+  if (!h) return;
 
-  const changesBtn = document.createElement("button");
-  changesBtn.className = "icon-btn changes-btn";
-  changesBtn.title = "Show all file changes in this chat";
-  changesBtn.innerHTML = '<i class="ph ph-git-diff"></i><span class="changes-count" hidden></span>';
-  header.appendChild(changesBtn);
+  const sess = state.sessions.find((s) => s.session_id === sessionId);
+  if (sess) {
+    h.setTitle(sessionSubtitle(sess));
+    h.setMeta(projectName(sess));
+  }
+  h.bindSession({ sessionId, readOnly: false, autoAcceptOn: isAutoAccept(sessionId) });
 
-  const moreBtn = document.createElement("button");
-  moreBtn.className = "icon-btn more-btn" + (isAutoAccept(sessionId) ? " has-indicator" : "");
-  moreBtn.title = "More options";
-  moreBtn.innerHTML = '<i class="ph ph-dots-three-vertical"></i>';
-  moreBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    openMoreMenu(moreBtn, sessionId, false);
-  });
-  header.appendChild(moreBtn);
-
-  // Mount the all-changes panel and wire the renderer's file-edit feed so the
-  // changes badge + panel behave exactly like a reopened session's.
   const messagesEl = pane.querySelector<HTMLElement>(".session-messages");
   const renderer = state.renderer;
   if (messagesEl && renderer) {
@@ -346,16 +310,13 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
     const panel = new ChangesPanel();
     panel.mount(pane, messagesEl);
     state.changesPanel = panel;
-    const syncBadge = (edits: ReturnType<typeof renderer.getFileEdits>) => {
-      const n = dedupeByPath(edits).length;
-      const badge = changesBtn.querySelector<HTMLElement>(".changes-count");
-      if (badge) { badge.textContent = String(n); badge.toggleAttribute("hidden", n === 0); }
+    renderer.onFileEditsChanged = (edits) => {
+      panel.onUpdate(edits);
+      h.setChangesBadge(dedupeByPath(edits).length);
     };
-    renderer.onFileEditsChanged = (edits) => { panel.onUpdate(edits); syncBadge(edits); };
-    // Seed with any edits already accrued during the first turn.
     const seeded = renderer.getFileEdits();
     panel.onUpdate(seeded);
-    syncBadge(seeded);
-    changesBtn.addEventListener("click", () => panel.toggle());
+    h.setChangesBadge(dedupeByPath(seeded).length);
+    h.onChangesClick = () => panel.toggle();
   }
 }
