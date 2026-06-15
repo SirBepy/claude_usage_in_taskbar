@@ -114,8 +114,17 @@ export class HttpTransport implements Transport {
           before_seq: args.beforeSeq ?? args.before_seq ?? null,
           message_limit: args.messageLimit ?? args.message_limit ?? 20,
         });
+      // Safe-default stubs: the daemon doesn't serve these (app-process-only
+      // commands), but boot reads them unconditionally. Return empty/null so
+      // boot continues rather than leaving the app in a stuck state.
+      case "get_settings":
+        // Boot already handles null gracefully (boot.ts `if (s)` guard).
+        return null as unknown as T;
+      case "get_history":
+        // Usage history unavailable on the phone; boot treats [] as "no data".
+        return [] as unknown as T;
       // No remote path yet: new-session orchestration (start_session), takeover,
-      // editor/window/local-FS, file watchers, get_settings, usage/token history.
+      // editor/window/local-FS, file watchers, token history.
       // Degrade clearly.
       default:
         throw new RemoteUnavailableError(command);

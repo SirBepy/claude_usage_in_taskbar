@@ -160,9 +160,16 @@ describe("HttpTransport.call mapping", () => {
     await expect(new HttpTransport().call("start_session", {})).rejects.toBeInstanceOf(
       RemoteUnavailableError,
     );
-    await expect(new HttpTransport().call("get_settings")).rejects.toBeInstanceOf(
-      RemoteUnavailableError,
-    );
+  });
+
+  it("returns null for get_settings (safe-default, no throw) so boot degrades cleanly", async () => {
+    const result = await new HttpTransport().call("get_settings");
+    expect(result).toBeNull();
+  });
+
+  it("returns [] for get_history (safe-default, no throw) so boot degrades cleanly", async () => {
+    const result = await new HttpTransport().call("get_history");
+    expect(result).toEqual([]);
   });
 
   it("throws on a non-ok HTTP response", async () => {

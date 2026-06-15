@@ -223,6 +223,10 @@ export function initBoot(): void {
     initUsage = h;
     setUsageHistory(h);
     tryInitialRender();
+  }).catch(() => {
+    // Browser (HttpTransport) degrades to empty history; unblock render gate.
+    initUsage = [];
+    tryInitialRender();
   });
   void fetchTokenHistoryWithLive().then((th) => {
     initTokens = th;
@@ -234,6 +238,10 @@ export function initBoot(): void {
       const coerced = coerceSettings(s);
       setSettings(coerced);
     }
+    initSettings = true;
+    tryInitialRender();
+  }).catch(() => {
+    // Browser (HttpTransport) degrades to no settings; unblock render gate.
     initSettings = true;
     tryInitialRender();
   });

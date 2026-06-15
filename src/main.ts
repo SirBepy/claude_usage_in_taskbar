@@ -36,6 +36,7 @@ import { renderPermissionsView } from "./views/settings/subviews/permissions/per
 import { renderStatuslineView } from "./views/settings/subviews/statusline/statusline";
 import { renderAboutView } from "./views/settings/subviews/about/about";
 import { initBoot } from "./shared/boot";
+import { ensureRemoteToken } from "./shared/remote-gate";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
 import { installPermissionModalListener, setSidebarRerenderHook, setSelectedSessionId } from "./views/sessions/permission-modal";
@@ -165,8 +166,13 @@ if (new URLSearchParams(window.location.search).get("chatswindow") === "1") {
   document.getElementById("sidemenuBackdrop")?.remove();
 }
 
+// Browser-only token gate: shows a full-screen form when no bearer token is
+// stored. Complete NO-OP inside the Tauri webview (window.__TAURI__ present).
+// Halt boot when the gate rendered its form so no commands are sent without auth.
 const detachedSessionId = detachedSessionFromHash();
-if (detachedSessionId) {
+if (!ensureRemoteToken()) {
+  // Gate rendered - boot stops here. The form's submit handler reloads the page.
+} else if (detachedSessionId) {
   document.body.classList.add("detached-mode");
   // Hide all static legacy views from index.html so only #app renders.
   document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
