@@ -33,6 +33,14 @@ export {
 
 const EMPTY_META: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
 
+// NOTE: a split of the chip-render concern into a separate `statusline-chip-render.ts`
+// was evaluated and rejected (ai_todo 98). The render methods read ~18 instance
+// fields and depend on a LIVE controller (`this.tally.renderChipFor` for tool chips)
+// plus a MUTABLE `animatedKeys` Set (`animClass` has a side effect), so a "pure
+// function + small snapshot" seam doesn't hold - the snapshot balloons and threading
+// the controller + mutable set out worsens readability. This file uses plain
+// innerHTML strings (not lit) and sits only marginally over the ~400-line guideline,
+// which this codebase tolerates. Leave as-is; don't re-attempt without a new seam.
 export class SessionStatusbar {
   private container: HTMLElement;
   private rows: ChipType[][];
