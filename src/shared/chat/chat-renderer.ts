@@ -88,12 +88,6 @@ export class ChatRenderer {
   // Per-type tool-group elements for the turn in progress (key = canonical tool
   // name). Cleared at each turn end; re-populated by groupToolRange each flush.
   private activeToolGroups = new Map<string, ToolGroup>();
-  // In-flight tool calls for the active turn: a tool_use seen with no matching
-  // tool_result yet. Drives the primary-color "currently working" chip pulse.
-  // pendingToolIds maps tool_use id -> canonical tool so a result can decrement
-  // the right bucket; pendingByCanon is the per-canonical-tool in-flight count.
-  private pendingToolIds = new Map<string, string>();
-  private pendingByCanon = new Map<string, number>();
   private closeTurnQueue: {
     start: number;
     end: number;
@@ -181,8 +175,6 @@ export class ChatRenderer {
     this.lastActivity = null;
     this.activityToolCanon = null;
     this.activeToolGroups.clear();
-    this.pendingToolIds.clear();
-    this.pendingByCanon.clear();
     this.tallyState.reset();
     this.onFileEditsChanged?.([]);
     this.onToolTally?.(this.tallyState.build());
@@ -229,8 +221,6 @@ export class ChatRenderer {
     this.resetActiveTurnMeta();
     this.turnFooters.clear();
     this.activeToolGroups.clear();
-    this.pendingToolIds.clear();
-    this.pendingByCanon.clear();
     this.closeTurnQueue = [];
     this.setActivity(null);
     this.sessionId = null;
@@ -544,11 +534,6 @@ export class ChatRenderer {
           const t = this.tallyState.tallyToolUse(ev.tool_name, ev.input, ev.id);
           if (t) this.onToolTally?.(t);
         }
-        if (ev.id) {
-          const canon = canonicalTool(ev.tool_name);
-          this.pendingToolIds.set(ev.id, canon);
-          this.pendingByCanon.set(canon, (this.pendingByCanon.get(canon) ?? 0) + 1);
-        }
         this.activityToolCanon = canonicalTool(ev.tool_name);
         this.setActivity(this.describeActivity(ev.tool_name, ev.input));
         touched = true;
@@ -562,13 +547,6 @@ export class ChatRenderer {
           is_error: ev.is_error,
           ts,
         });
-        const canon = ev.tool_use_id ? this.pendingToolIds.get(ev.tool_use_id) : undefined;
-        if (canon) {
-          this.pendingToolIds.delete(ev.tool_use_id);
-          const n = (this.pendingByCanon.get(canon) ?? 1) - 1;
-          if (n <= 0) this.pendingByCanon.delete(canon);
-          else this.pendingByCanon.set(canon, n);
-        }
         // The tally counts didn't change, but a result can complete a custom
         // view (e.g. an AskUserQuestion answer): nudge the statusline so an open
         // popover re-renders from the now-updated messages.
@@ -856,8 +834,6 @@ export class ChatRenderer {
         .forEach((c) => c.classList.remove("tool-chip--running"));
     }
     this.activityToolCanon = null;
-    this.pendingToolIds.clear();
-    this.pendingByCanon.clear();
   }
 
   /**
