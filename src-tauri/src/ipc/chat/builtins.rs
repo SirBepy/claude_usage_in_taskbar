@@ -10,10 +10,14 @@ pub async fn clear_session(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // For external sessions (the user's own `claude` terminal), kill the
-    // claude process tree by its registered pid so closing the chat row
-    // actually terminates the underlying CLI. Interactive sessions are
-    // handled by the per-turn kill above; only external needs this step.
+    // Kill the underlying claude so closing a chat actually TERMINATES it, not
+    // just hides the row. External sessions (the user's own `claude` terminal)
+    // are killed by pid here. Interactive (daemon-hosted) chats run a long-lived
+    // `claude` in the daemon's SessionMap: `mark_session_ended` only flags the
+    // registry entry and does NOT kill that process, so before this fix a closed
+    // chat kept running (a leak - still visible via `list_instances`, e.g. on the
+    // remote/mobile client). `end_session` closes stdin, waits up to 3s for a
+    // clean exit, then force-kills the tree + removes the MCP config.
     let cached = state
         .cached_instances
         .lock()
@@ -21,7 +25,11 @@ pub async fn clear_session(
         .iter()
         .find(|i| i.session_id == session_id)
         .cloned();
-    if let Some(inst) = cached {
+    let is_interactive = cached
+        .as_ref()
+        .map(|i| i.kind == crate::sessions::kinds::InstanceKind::Interactive)
+        .unwrap_or(false);
+    if let Some(inst) = &cached {
         if inst.kind == crate::sessions::kinds::InstanceKind::External && inst.pid != 0 {
             let _ = crate::channels::kill::kill_tree(inst.pid);
         }
@@ -29,6 +37,9 @@ pub async fn clear_session(
 
     let guard = state.daemon_client.lock().await;
     if let Some(client) = guard.as_ref() {
+        if is_interactive {
+            let _ = client.end_session(&session_id).await;
+        }
         let _ = client.mark_session_ended(&session_id).await;
         // Re-seed the instance cache directly rather than waiting for the
         // `instances_changed` notification: that broadcast is lossy (can be

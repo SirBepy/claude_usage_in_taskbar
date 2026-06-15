@@ -29,6 +29,7 @@ import {
   replayPendingPrompt,
   pendingPromptSessionIds,
 } from "./permission-modal";
+import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { openMoreMenu } from "./more-menu";
 import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./sessions";
@@ -343,18 +344,34 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         timestamp: BigInt(Date.now()),
       } as ChatEvent);
 
-      // `/close`: dismount the pane immediately and let the skill run in
-      // the background. AskUserQuestion modals still surface (background
-      // gate). When the turn ends, clear the session from the registry.
+      // `/close`: keep the chat VISIBLE in a "closing" state and run the skill
+      // in the background (AskUserQuestion modals still surface via the
+      // background gate). Only when the turn ends do we actually end the session
+      // - `clear_session` now KILLS the daemon process, not just hides the row -
+      // and then drop it from the UI. Replaces the old "vanish immediately but
+      // keep running" behaviour (orphaned-process leak, still shown on mobile).
       if (isCloseCommand(blocks)) {
         const cwd = String(sess.cwd ?? ".");
         addBackgroundSession(sessionId);
-        dismountActivePane();
+        markSessionClosing(sessionId);
+        const listEl = document.querySelector<HTMLElement>("#sessions-list");
+        if (listEl) renderSidebar(listEl);
         invoke<void>("send_message", { sessionId, cwd, blocks })
           .catch(err => console.error("[sessions] background /close send_message failed", err))
           .finally(() => {
             removeBackgroundSession(sessionId);
-            invoke<void>("clear_session", { sessionId }).catch(() => {});
+            // End for real (kills the process), THEN remove from the UI.
+            invoke<void>("clear_session", { sessionId })
+              .catch(() => {})
+              .finally(() => {
+                unmarkSessionClosing(sessionId);
+                if (state.selectedId === sessionId) {
+                  dismountActivePane({ rerenderSidebar: true });
+                } else {
+                  const el = document.querySelector<HTMLElement>("#sessions-list");
+                  if (el) renderSidebar(el);
+                }
+              });
           });
         return;
       }

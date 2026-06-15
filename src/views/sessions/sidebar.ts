@@ -2,6 +2,7 @@ import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import type { Avatar, Instance, ProjectGroup } from "../../types/ipc.generated";
 import { closeChat } from "./close-chat";
+import { isSessionClosing } from "./closing-sessions";
 import {
   projectName,
   sessionSubtitle,
@@ -259,6 +260,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   for (const [i, s] of sorted.entries()) {
     const isActive = s.session_id === state.selectedId;
     const needsAttention = attention.has(s.session_id);
+    const isClosing = isSessionClosing(s.session_id);
     const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml);
     let kbdHint = "";
     if (isManualSlots) {
@@ -269,7 +271,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     }
     entries.push({
       key: `s:${s.session_id}`,
-      html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""}">
+      html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
         ${leadingVisual(s, indicator, unread, attention, question)}
         <div class="session-row-text">
           <span class="session-row-project">${escapeHtml(projectName(s))}</span>
