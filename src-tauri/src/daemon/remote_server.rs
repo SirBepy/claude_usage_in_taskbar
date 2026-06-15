@@ -29,12 +29,13 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path as AxPath, Query, Request, State,
     },
-    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
+    http::{header, header::AUTHORIZATION, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use rust_embed::RustEmbed;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
@@ -42,6 +43,17 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::daemon::session::Session;
 use crate::daemon::state::DaemonState;
+
+/// The compiled frontend SPA, embedded at compile time from `../dist` (the vite
+/// build output). `$CARGO_MANIFEST_DIR` resolves to `src-tauri/`, so the path
+/// reaches the repo-root `dist/` directory.
+///
+/// The SPA HTML/JS/CSS are served UNAUTHENTICATED: they contain no secrets and
+/// the SPA JS authenticates every `/api` call with the bearer token the user
+/// pastes in once. `/api/*` routes stay token-gated by `auth_mw` as before.
+#[derive(RustEmbed)]
+#[folder = "../dist"]
+struct Assets;
 
 /// Fixed localhost port for the remote API. Stable so the user's
 /// `tailscale serve` config can target it. Distinct from the hook port (27182).
@@ -109,12 +121,18 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
 
     // /api/health is unauthenticated (connectivity probe, reveals nothing).
     // The WS stream self-authenticates via its query token in the handler.
+    // Static SPA assets are served unauthenticated (no secrets in them; the
+    // SPA JS authenticates every /api call with the bearer token).
+    // The fallback only fires when no named route matches, so /api/* and the
+    // WS route above are never shadowed by it.
     let public = Router::new()
-        .route("/", get(index_page))
         .route("/api/health", get(|| async { "ok" }))
         .route("/api/sessions/:id/stream", get(stream_ws));
 
-    protected.merge(public).with_state(ctx)
+    protected
+        .merge(public)
+        .fallback(spa_fallback)
+        .with_state(ctx)
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────
@@ -197,81 +215,52 @@ async fn list_sessions(State(ctx): State<Arc<RemoteCtx>>) -> Response {
     Json(ctx.state.registry.list()).into_response()
 }
 
-/// Minimal self-contained remote console (Phase 1 v0). Unauthenticated HTML
-/// (no secrets in it); its in-page JS authenticates every API call with the
-/// token the user pastes. Uses only the explicit REST/WS routes - NOT the
-/// shared SPA - so it ships without a build step. The polished PWA is ai_todo 105.
-async fn index_page() -> Html<&'static str> {
-    Html(INDEX_HTML)
-}
+/// SPA fallback: serves the embedded frontend bundle for any path that does not
+/// match a named API route. Handles two cases:
+///   1. A real asset path (JS, CSS, fonts, icons) - serve it with the correct
+///      Content-Type derived from the file extension.
+///   2. A client-side route (anything that doesn't map to a file) - serve
+///      `index.html` so the SPA router takes over (SPA fallback pattern).
+///
+/// Path sanitization prevents directory traversal: requests with `..` or a
+/// backslash are rejected with 404 before any embed lookup.
+async fn spa_fallback(req: axum::extract::Request) -> Response {
+    let raw = req.uri().path();
+    // Strip leading slash to match rust-embed keys (e.g. "/assets/main.js" -> "assets/main.js").
+    let path = raw.trim_start_matches('/');
 
-const INDEX_HTML: &str = r##"<!doctype html><html><head>
-<meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<title>Claude Remote</title>
-<style>
-:root{color-scheme:dark}
-body{margin:0;font:15px/1.4 system-ui,sans-serif;background:#16181d;color:#e6e6e6}
-header{padding:10px 12px;background:#1f2229;display:flex;gap:8px;align-items:center}
-input,textarea,button{font:inherit}
-input,textarea{background:#0f1115;color:#e6e6e6;border:1px solid #333;border-radius:8px;padding:8px;width:100%;box-sizing:border-box}
-button{background:#3b6ea5;color:#fff;border:0;border-radius:8px;padding:9px 12px}
-button.sec{background:#333}
-.wrap{padding:12px;max-width:720px;margin:0 auto}
-.row{display:flex;gap:8px;margin:8px 0}
-.sess{display:block;width:100%;text-align:left;background:#1f2229;margin:6px 0;padding:10px;border-radius:10px;color:#e6e6e6}
-.sess .b{color:#8fbf8f;font-size:12px}
-#log{white-space:pre-wrap;word-break:break-word;background:#0f1115;border:1px solid #222;border-radius:10px;padding:10px;height:55vh;overflow:auto;font:12px/1.35 ui-monospace,monospace}
-.hide{display:none}
-.muted{color:#888;font-size:12px}
-</style></head><body>
-<header><b>Claude Remote</b><span id=status class=muted style=margin-left:auto></span></header>
-<div class=wrap>
-<div id=auth>
-<div class=muted>Paste the token from remote-access-token.txt</div>
-<div class=row><input id=token placeholder=token autocomplete=off></div>
-<div class=row><button onclick=saveTok()>Save &amp; load sessions</button></div>
-</div>
-<div id=list class=hide>
-<div class=row><button onclick=loadSessions()>Refresh sessions</button><button class=sec onclick=logout()>Token</button></div>
-<div id=sessions></div>
-</div>
-<div id=chat class=hide>
-<div class=row><button class=sec onclick=back()>&larr; Back</button><button class=sec onclick=cancelTurn()>Cancel turn</button></div>
-<div id=title class=muted></div>
-<div id=log></div>
-<div class=row><textarea id=msg rows=2 placeholder=message></textarea></div>
-<div class=row><button onclick=send()>Send</button></div>
-</div>
-</div>
-<script>
-var T=localStorage.getItem('rc_token')||'';var cur=null;var ws=null;var SESS=[];
-function $(i){return document.getElementById(i)}
-function show(id){['auth','list','chat'].forEach(function(s){$(s).classList.toggle('hide',s!==id)})}
-function st(m){$('status').textContent=m||''}
-function hdr(){return {'Authorization':'Bearer '+T}}
-function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-if(T)$('token').value=T;
-function saveTok(){T=$('token').value.trim();localStorage.setItem('rc_token',T);loadSessions()}
-function logout(){show('auth')}
-function loadSessions(){st('loading...');
-fetch('/api/sessions',{headers:hdr()}).then(function(r){if(!r.ok){st('auth failed ('+r.status+')');throw 0}return r.json()})
-.then(function(s){SESS=s;st('');show('list');var h='';
-s.forEach(function(x,i){h+='<button class=sess onclick="open_('+i+')">'+esc(x.name||x.session_id)+'<div class=b>'+(x.busy?'running':'idle')+' &middot; '+esc(x.model)+'</div></button>'});
-$('sessions').innerHTML=h||'<div class=muted>no sessions</div>'}).catch(function(){})}
-function open_(i){var x=SESS[i];cur=x.session_id;show('chat');$('title').textContent=x.name||x.session_id;$('log').textContent='';
-if(ws){try{ws.close()}catch(e){}}
-var proto=location.protocol==='https:'?'wss':'ws';
-ws=new WebSocket(proto+'://'+location.host+'/api/sessions/'+cur+'/stream?token='+encodeURIComponent(T));
-ws.onopen=function(){st('live')};ws.onclose=function(){st('closed')};ws.onmessage=function(e){append(e.data)}}
-function append(d){var t=d;try{var o=JSON.parse(d);t=o.text||o.delta||('['+(o.type||'event')+'] '+(o.text||''))}catch(e){}
-var l=$('log');l.textContent+=t+'\n';l.scrollTop=l.scrollHeight}
-function send(){var m=$('msg').value;if(!m||!cur)return;$('msg').value='';
-fetch('/api/sessions/'+cur+'/send',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},hdr()),body:JSON.stringify({text:m})}).then(function(r){if(!r.ok)st('send failed '+r.status)})}
-function cancelTurn(){if(cur)fetch('/api/sessions/'+cur+'/cancel',{method:'POST',headers:hdr()})}
-function back(){if(ws){try{ws.close()}catch(e){}}cur=null;loadSessions()}
-if(T)loadSessions();else show('auth');
-</script></body></html>"##;
+    // Defense-in-depth: reject traversal attempts.
+    if path.contains("..") || path.contains('\\') {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    // Serve the real asset if it exists, otherwise fall back to index.html for
+    // SPA client-side routing.
+    let (asset_path, is_fallback) = if path.is_empty() {
+        ("index.html", true)
+    } else {
+        match Assets::get(path) {
+            Some(_) => (path, false),
+            None => ("index.html", true),
+        }
+    };
+    let _ = is_fallback; // used implicitly via asset_path selection
+
+    match Assets::get(asset_path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(asset_path)
+                .first_or_octet_stream()
+                .to_string();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime)],
+                content.data,
+            )
+                .into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
 
 #[derive(Deserialize)]
 struct SendBody {
@@ -453,6 +442,16 @@ mod tests {
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }
+    }
+
+    #[test]
+    fn spa_assets_embed_index_html() {
+        // Verifies that the rust-embed compile-time embedding captured the real
+        // frontend build. If dist/ was absent at compile time this will be None.
+        assert!(
+            Assets::get("index.html").is_some(),
+            "index.html not found in embedded assets - run `pnpm build` before `cargo build`"
+        );
     }
 
     #[test]
