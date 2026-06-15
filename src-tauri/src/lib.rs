@@ -181,6 +181,7 @@ pub fn run() {
             ipc::copy_logs,
             ipc::get_platform,
             ipc::get_app_version,
+            ipc::get_version_info,
             ipc::pick_folder,
             ipc::create_folder,
             ipc::open_external,

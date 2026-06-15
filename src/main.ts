@@ -34,6 +34,7 @@ import { renderCharactersSettingsView } from "./views/settings/subviews/characte
 import { renderShortcutsView } from "./views/settings/subviews/shortcuts/shortcuts";
 import { renderPermissionsView } from "./views/settings/subviews/permissions/permissions";
 import { renderStatuslineView } from "./views/settings/subviews/statusline/statusline";
+import { renderAboutView } from "./views/settings/subviews/about/about";
 import { initBoot } from "./shared/boot";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
@@ -115,6 +116,7 @@ registerView("settings-characters", renderCharactersSettingsView);
 registerView("settings-shortcuts", renderShortcutsView);
 registerView("settings-permissions", renderPermissionsView);
 registerView("settings-statusline", renderStatuslineView);
+registerView("settings-about", renderAboutView);
 
 const app = document.getElementById("app");
 if (!app) {
