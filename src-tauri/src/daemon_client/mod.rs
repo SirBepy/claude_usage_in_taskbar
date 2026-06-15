@@ -36,6 +36,12 @@ pub struct PersistentClient {
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
     subs: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>,
     next_id: Arc<Mutex<u64>>,
+    /// Flips to `true` when the reader task exits (pipe died). `call()` consults
+    /// it so a request issued after the connection dropped fails fast instead of
+    /// parking a `pending` sender no one will ever answer. See the reader task in
+    /// `connect` for why a dead reader must wake every waiter (the "wedged pipe"
+    /// bug: send/open/close hung + reconnect never fired until a full restart).
+    closed: tokio::sync::watch::Receiver<bool>,
 }
 
 impl PersistentClient {
@@ -64,6 +70,7 @@ impl PersistentClient {
 
         let pending_for_reader = Arc::clone(&pending);
         let subs_for_reader = Arc::clone(&subs);
+        let (closed_tx, closed_rx) = tokio::sync::watch::channel(false);
         tokio::spawn(async move {
             let mut read_half = read_half;
             loop {
@@ -89,6 +96,17 @@ impl PersistentClient {
                     }
                 }
             }
+            // The pipe died. Wake every waiter so the connection can't wedge:
+            //  - drop all `pending` oneshot senders -> in-flight `call()`s resolve
+            //    to `Err(Closed)` instead of hanging forever;
+            //  - drop all `subs` mpsc senders -> the global subscription's
+            //    `rx.recv()` returns `None`, which is the signal `daemon_link`'s
+            //    reconnect loop waits for to rebuild the connection;
+            //  - flip `closed` so any `call()` racing in after this point fails
+            //    fast rather than parking a sender no reader will ever answer.
+            pending_for_reader.lock().await.clear();
+            subs_for_reader.lock().await.clear();
+            let _ = closed_tx.send(true);
         });
 
         Ok(Self {
@@ -96,10 +114,18 @@ impl PersistentClient {
             pending,
             subs,
             next_id: Arc::new(Mutex::new(0)),
+            closed: closed_rx,
         })
     }
 
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, ClientError> {
+        // Clone the close-watch BEFORE the borrow so a reader that dies between
+        // the borrow and the `select!` below still wakes us via `changed()`
+        // (the clone's "seen" version is fixed here; any later flip is a change).
+        let mut closed = self.closed.clone();
+        if *closed.borrow() {
+            return Err(ClientError::Closed);
+        }
         let id = {
             let mut n = self.next_id.lock().await;
             *n += 1;
@@ -118,9 +144,20 @@ impl PersistentClient {
         }
         {
             let mut w = self.writer.lock().await;
-            write_frame(&mut *w, &req).await?;
+            if let Err(e) = write_frame(&mut *w, &req).await {
+                self.pending.lock().await.remove(&id);
+                return Err(e.into());
+            }
         }
-        let resp = rx.await.map_err(|_| ClientError::Closed)?;
+        // Wait for the reply, but bail the instant the connection closes so a
+        // request issued just before the reader died can't hang forever.
+        let resp = tokio::select! {
+            r = rx => r.map_err(|_| ClientError::Closed)?,
+            _ = closed.changed() => {
+                self.pending.lock().await.remove(&id);
+                return Err(ClientError::Closed);
+            }
+        };
         if let Some(err) = resp.get("error") {
             let code = err.get("code").and_then(Value::as_i64).unwrap_or(-1) as i32;
             let message = err.get("message").and_then(Value::as_str).unwrap_or("").to_string();
