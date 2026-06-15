@@ -140,6 +140,22 @@
   flex-shrink: 0;
 }
 
+/* Separator chips - visual dividers and spacers in the statusline rows */
+.sb-separator {
+  display: inline-block;
+  align-self: stretch;
+  width: 1px;
+  background: var(--color-border);
+  margin: 2px 3px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.sb-flex-sep {
+  flex: 1;
+  min-width: 4px;
+}
+
 .sb-empty {
   font-size: 0.72rem;
   color: var(--color-text-muted);

@@ -3,13 +3,14 @@
 // Tool chips are the dynamic `tool:<CanonicalName>` family and are NOT listed
 // individually here; see TOOL_CHIP_TOOLS.
 
-export type SectionKey = "model" | "git" | "session" | "tools";
+export type SectionKey = "model" | "git" | "session" | "tools" | "layout";
 
 export const SECTION_LABELS: Record<SectionKey, string> = {
   model: "Model",
   git: "Git",
   session: "Session",
   tools: "Tools",
+  layout: "Layout",
 };
 
 export interface ChipMeta {
@@ -44,15 +45,19 @@ export const STATIC_CHIPS = {
   duration:       { section: "session", icon: "ph-timer",            sample: "2m 30s",     tooltip: "Time since the session started." },
   cost:           { section: "session", icon: "ph-currency-dollar",  sample: "~$0.42",     tooltip: "Estimated session cost (local estimate, not a charge)." },
   clock:          { section: "session", icon: "ph-clock",            sample: "14:32",      tooltip: "Current wall-clock time." },
+
+  separator:      { section: "layout",  icon: "ph-minus",            sample: "|",          tooltip: "Vertical divider line between chips." },
+  flex_separator: { section: "layout",  icon: "ph-arrows-left-right", sample: "· · ·",    tooltip: "Flexible spacer: pushes chips after it to the right end." },
 } satisfies Record<string, ChipMeta>;
 
 // Canonical tool buckets that become individual `tool:<name>` chips. Mirrors
 // TALLY_TOOL_OPTIONS in session-statusbar-helpers.
-// Write folds into Edit ("File Changes"), so it is NOT its own chip; Skill +
-// AskUserQuestion render rich custom popovers (skills list / Q&A).
+// Write folds into Edit ("File Changes"), Glob folds into Grep, WebFetch +
+// WebSearch fold into Search - none of those get their own chip.
+// Skill + AskUserQuestion render rich custom popovers (skills list / Q&A).
 export const TOOL_CHIP_TOOLS = [
-  "Read", "Edit", "Grep", "Glob", "Bash",
-  "Task", "TodoWrite", "AskUserQuestion", "Skill", "WebFetch", "WebSearch",
+  "Read", "Edit", "Grep", "Bash",
+  "Task", "TodoWrite", "AskUserQuestion", "Skill", "Search",
 ] as const;
 
 export type StaticChipType = keyof typeof STATIC_CHIPS;
@@ -71,15 +76,15 @@ export function chipToolName(t: ToolChipType): string {
  *  the default-visible tool chips (AskUserQuestion + TodoWrite stay off). */
 export const DEFAULT_ROWS: ChipType[][] = [
   ["model", "effort", "branch", "repo", "context_pct", "thinking", "messages", "turns"],
-  ["tool:Read", "tool:Edit", "tool:Grep", "tool:Glob", "tool:Bash", "tool:Task", "tool:Skill", "tool:WebFetch", "tool:WebSearch"],
+  ["tool:Read", "tool:Edit", "tool:Grep", "tool:Bash", "tool:Task", "tool:Skill", "tool:Search"],
 ];
 
 export const MAX_ROWS = 5;
 
 /** True if `t` is a known static chip or any tool chip. Unknown ids are dropped
- *  on load so a stale/garbage setting never crashes the bar. `tool:Write` is
- *  retired (folded into `tool:Edit`), so a stale one is dropped on load. */
+ *  on load so a stale/garbage setting never crashes the bar. Retired chips
+ *  (folded into another bucket) are dropped on load. */
 export function isKnownChip(t: string): boolean {
-  if (t === "tool:Write") return false;
+  if (t === "tool:Write" || t === "tool:Glob" || t === "tool:WebFetch" || t === "tool:WebSearch") return false;
   return isToolChip(t) || Object.prototype.hasOwnProperty.call(STATIC_CHIPS, t);
 }

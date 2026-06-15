@@ -300,6 +300,10 @@ export class SessionStatusbar {
       case "cost": return this.renderCost();
       case "clock":
         return `<span class="sb-chip sb-clock${this.animClass("clock")}"><i class="ph ph-clock"></i><span class="sb-clock-text">${this.clockText()}</span></span>`;
+      case "separator":
+        return `<span class="sb-separator" aria-hidden="true"></span>`;
+      case "flex_separator":
+        return `<span class="sb-flex-sep" aria-hidden="true"></span>`;
       default: return "";
     }
   }

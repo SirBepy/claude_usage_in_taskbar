@@ -42,3 +42,15 @@ export function trimRows(rows: ChipType[][]): ChipType[][] {
   const kept = rows.filter((r) => r.length > 0);
   return kept.length ? kept : [[]];
 }
+
+/** Move an entire row from `fromIdx` to `toIdx` (both 0-based). No-op if
+ *  either index is out of range or they're equal. */
+export function moveRow(rows: ChipType[][], fromIdx: number, toIdx: number): ChipType[][] {
+  if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= rows.length || toIdx >= rows.length) {
+    return clone(rows);
+  }
+  const next = clone(rows);
+  const [row] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, row!);
+  return next;
+}

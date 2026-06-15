@@ -10,7 +10,7 @@ import {
 } from "../../../sessions/statusline-catalog";
 import { toolLabel, toolSummary } from "../../../../shared/chat/tool-meta";
 import { escapeHtml } from "../../../../shared/escape-html";
-import { type Pos, insertChip, moveChip, removeAt, addRow, trimRows } from "./statusline-dnd";
+import { type Pos, insertChip, moveChip, removeAt, addRow, trimRows, moveRow } from "./statusline-dnd";
 import "../../settings.css";
 import "./statusline.css";
 import "../../../sessions/session-statusbar.css";
@@ -44,7 +44,7 @@ function chipHtml(type: ChipType, cls: string, extra = ""): string {
   return `<span class="sb-chip sl-pchip ${cls}" data-type="${escapeHtml(type)}" ${extra} title="${escapeHtml(m.tooltip)}"><i class="ph ${m.icon}"></i>${escapeHtml(m.sample)}</span>`;
 }
 
-const SECTION_ORDER: SectionKey[] = ["model", "git", "session", "tools"];
+const SECTION_ORDER: SectionKey[] = ["model", "git", "session", "tools", "layout"];
 
 function paletteChipsFor(section: SectionKey): ChipType[] {
   if (section === "tools") return TOOL_CHIP_TOOLS.map((t) => `tool:${t}` as ChipType);
@@ -82,7 +82,8 @@ const SHELL = `
         </label>
       </div>
 
-      <div class="kit-section">
+      <div class="kit-section" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-secondary" id="slClearBtn" style="font-size:0.8rem;">Clear all</button>
         <button class="btn-secondary" id="slResetBtn" style="font-size:0.8rem;">Reset to defaults</button>
       </div>
     </div>
@@ -115,12 +116,22 @@ export async function renderStatuslineView(root: HTMLElement): Promise<() => voi
   let onUp: ((e: PointerEvent) => void) | null = null;
 
   function paint(): void {
+    const rowCount = rows.length;
     bar.innerHTML =
-      rows.map((row, ri) =>
-        `<div class="sb-row sl-row${row.length === 0 ? " sl-row-empty" : ""}" data-row="${ri}">`
-        + row.map((type, ci) => chipHtml(type, "sl-placed", `data-row="${ri}" data-index="${ci}"`)).join("")
-        + `</div>`
-      ).join("")
+      rows.map((row, ri) => {
+        const upBtn = ri > 0
+          ? `<button class="sl-row-btn" data-action="up" data-ri="${ri}" title="Move row up">↑</button>`
+          : `<span class="sl-row-btn-ph"></span>`;
+        const downBtn = ri < rowCount - 1
+          ? `<button class="sl-row-btn" data-action="down" data-ri="${ri}" title="Move row down">↓</button>`
+          : `<span class="sl-row-btn-ph"></span>`;
+        return `<div class="sl-row-wrap">`
+          + `<div class="sl-row-controls">${upBtn}${downBtn}</div>`
+          + `<div class="sb-row sl-row${row.length === 0 ? " sl-row-empty" : ""}" data-row="${ri}">`
+          + row.map((type, ci) => chipHtml(type, "sl-placed", `data-row="${ri}" data-index="${ci}"`)).join("")
+          + `</div>`
+          + `</div>`;
+      }).join("")
       + (rows.length < MAX_ROWS ? `<button class="sl-addrow" id="slAddRow">+ row</button>` : "");
 
     palette.innerHTML = SECTION_ORDER.map((sec) =>
@@ -141,6 +152,19 @@ export async function renderStatuslineView(root: HTMLElement): Promise<() => voi
   function wireChips(): void {
     root.querySelectorAll<HTMLElement>(".sl-pchip").forEach((chip) => {
       chip.addEventListener("pointerdown", (e) => startDrag(e, chip));
+    });
+    root.querySelectorAll<HTMLButtonElement>(".sl-row-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const ri = Number(btn.dataset.ri);
+        if (btn.dataset.action === "up" && ri > 0) {
+          rows = moveRow(rows, ri, ri - 1);
+        } else if (btn.dataset.action === "down" && ri < rows.length - 1) {
+          rows = moveRow(rows, ri, ri + 1);
+        }
+        paint();
+        persist();
+      });
     });
   }
 
@@ -226,6 +250,12 @@ export async function renderStatuslineView(root: HTMLElement): Promise<() => voi
   hideZeroBox.addEventListener("change", () => {
     hideZero = hideZeroBox.checked;
     void saveStatuslineHideZero(hideZero);
+  });
+
+  root.querySelector<HTMLButtonElement>("#slClearBtn")?.addEventListener("click", () => {
+    rows = [[]];
+    paint();
+    persist();
   });
 
   root.querySelector<HTMLButtonElement>("#slResetBtn")?.addEventListener("click", () => {

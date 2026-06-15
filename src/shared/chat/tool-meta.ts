@@ -51,6 +51,12 @@ export function toolSummary(tool: string, input: unknown): { icon: string; tool:
         return { icon: "ph-chats-circle", target: "" };
       case "Skill":
         return { icon: "ph-sparkle", target: typeof obj.skill === "string" ? obj.skill : "" };
+      case "WebFetch":
+        return { icon: "ph-globe", target: strField(obj, "url") };
+      case "WebSearch":
+        return { icon: "ph-magnifying-glass", target: strField(obj, "query") };
+      case "Search":
+        return { icon: "ph-globe", target: "" };
       default:
         return { icon: "ph-wrench", target: "" };
     }
@@ -62,11 +68,16 @@ export function toolSummary(tool: string, input: unknown): { icon: string; tool:
 // per concept, not per CLI variant: PowerShell and Bash are both "Ran"; the
 // edit family (MultiEdit/NotebookEdit) AND Write fold into "Edit" - one
 // "File Changes" bucket covers every file the turn created or modified.
+// Glob folds into Grep (both are "find things" tools).
+// WebFetch + WebSearch fold into "Search".
 const CANONICAL_TOOL: Record<string, string> = {
   PowerShell: "Bash",
   MultiEdit: "Edit",
   NotebookEdit: "Edit",
   Write: "Edit",
+  Glob: "Grep",
+  WebFetch: "Search",
+  WebSearch: "Search",
 };
 
 /** The bucket a tool groups under (Bash/PowerShell -> Bash, edit family -> Edit). */
@@ -79,12 +90,12 @@ const TOOL_LABELS: Record<string, string> = {
   Read: "Read",
   Edit: "File Changes",
   Grep: "Grep",
-  Glob: "Glob",
   Bash: "Ran",
   Task: "Subagent",
   Agent: "Subagent",
   AskUserQuestion: "Questions",
   Skill: "Skills",
+  Search: "Search",
 };
 
 /** Friendly chip label for a tool, after canonicalizing (e.g. PowerShell -> "Ran"). */
@@ -171,6 +182,14 @@ export function tallyDetail(
     case "PowerShell": {
       const label = strField(obj, "description") || strField(obj, "command");
       return label ? { key: "cmd:" + label, kind: "text", label: capTarget(label) } : null;
+    }
+    case "WebFetch": {
+      const url = strField(obj, "url");
+      return url ? { key: "fetch:" + url, kind: "text", label: capTarget(url) } : null;
+    }
+    case "WebSearch": {
+      const query = strField(obj, "query");
+      return query ? { key: "search:" + query, kind: "text", label: capTarget(query) } : null;
     }
     default:
       return null;
