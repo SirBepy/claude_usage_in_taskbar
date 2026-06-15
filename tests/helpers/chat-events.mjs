@@ -20,3 +20,8 @@ export function finalEvent(text, ts = 0) {
 export function toolUseEvent(toolName, input, id, ts = 0) {
   return { type: "tool_use", tool_name: toolName, input, id, timestamp: ts };
 }
+
+/** A daemon-synthesised user_message echo (remote_echo: true). */
+export function remoteEchoUserEvent(text, ts = 0) {
+  return { type: "user_message", content: [{ type: "text", text }], timestamp: ts, remote_echo: true };
+}

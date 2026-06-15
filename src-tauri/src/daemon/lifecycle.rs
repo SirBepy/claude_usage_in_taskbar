@@ -250,6 +250,26 @@ pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), Life
     let mut stdin = session.stdin.lock().await;
     stdin.write_all(&line).await?;
     stdin.flush().await?;
+    // Broadcast a marked user-message echo so the frontend can render the
+    // user bubble regardless of which device sent it. The `remote_echo: true`
+    // flag lets the frontend distinguish this synthesised event from the
+    // `claude --resume` history-replay user lines (which carry remote_echo:
+    // false and are dropped to avoid duplicating transcript history).
+    // The existing `sigOf` / `isLiveDuplicate` dedup gate in the event-store
+    // handles the case where the desktop's own optimistic pushSynthetic already
+    // recorded the same content sig, so both paths render exactly one bubble.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    broadcast::publish(
+        session,
+        ChatEvent::UserMessage {
+            content: vec![crate::types::chat::ContentBlock::Text { text: text.to_string() }],
+            timestamp: now_ms,
+            remote_echo: true,
+        },
+    );
     Ok(())
 }
 

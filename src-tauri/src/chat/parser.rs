@@ -252,6 +252,7 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
             vec![ChatEvent::UserMessage {
                 content: extract_content_blocks(content_val),
                 timestamp: ts,
+                remote_echo: false,
             }]
         }
         "assistant" => {

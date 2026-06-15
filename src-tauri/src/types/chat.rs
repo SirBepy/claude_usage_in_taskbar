@@ -21,6 +21,13 @@ pub enum ChatEvent {
     UserMessage {
         content: Vec<ContentBlock>,
         timestamp: i64,
+        /// True when this event was synthesised by the daemon's `send_message`
+        /// path as a marked echo (e.g. from a remote/phone send). The frontend
+        /// delivers marked echoes and drops unmarked ones (which come from
+        /// `claude --resume` history replay). `#[serde(default)]` only: ts-rs
+        /// 9/10 cannot parse `skip_serializing_if` and will break type export.
+        #[serde(default)]
+        remote_echo: bool,
     },
     AssistantMessage {
         content: Vec<ContentBlock>,
@@ -103,6 +110,7 @@ mod tests {
         let ev = ChatEvent::UserMessage {
             content: vec![ContentBlock::Text { text: "hi".into() }],
             timestamp: 1700000000,
+            remote_echo: false,
         };
         let s = serde_json::to_string(&ev).unwrap();
         let back: ChatEvent = serde_json::from_str(&s).unwrap();

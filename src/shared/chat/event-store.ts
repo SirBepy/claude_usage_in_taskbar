@@ -337,10 +337,12 @@ class SessionEventStore {
       const cur = this.cache.get(sessionId);
       if (!cur) return;
       // claude -p --resume replays the full conversation history including past
-      // user messages. Those arrive here as live events and would duplicate what
-      // pushSynthetic already added (current turn) or loadInitial loads from
-      // JSONL (history). Drop all user_message events from the live stream.
-      if (payload.type === "user_message") return;
+      // user messages (remote_echo: false). Drop those to avoid duplicating
+      // transcript history. Daemon-synthesised echoes carry remote_echo: true
+      // and are delivered so phone-originated sends render a user bubble on
+      // every client. The existing sigOf/isLiveDuplicate dedup gate handles
+      // the case where a desktop pushSynthetic already recorded the same sig.
+      if (payload.type === "user_message" && !(payload as { remote_echo?: boolean }).remote_echo) return;
       this.deliver(sessionId, payload);
     });
   }
