@@ -17,9 +17,9 @@ import {
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
-import { renderSidebar, refreshSessions, getProjectAvatarForCwd, projBadgeHtml } from "./sidebar";
+import { renderSidebar, refreshSessions, projBadgeHtml } from "./sidebar";
 import { characterForSession, characterIconUrl, loadSessionCharacters } from "./session-characters";
-import { hydrateCharacterAvatars } from "../../shared/projects";
+import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import { api } from "../../shared/api";
 import { openChangeCharacterModal } from "../../shared/change-character-modal";
 import {
@@ -177,8 +177,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
   const preload = headerIconUrl && headerCharId ? ` src="${escapeHtml(headerIconUrl)}" data-hydrated="${escapeHtml(headerCharId)}"` : "";
-  const projAvatar = getProjectAvatarForCwd(sess.cwd);
-  const headerProjBadge = projBadgeHtml(projAvatar, "session-header-proj-badge");
+  const headerProjBadge = projBadgeHtml(sess.cwd, "session-header-proj-badge");
   const headerHero = `<span class="session-header-avatar-wrap">`
     + (headerCharId
       ? `<span class="session-header-avatar header-char-clickable ${headerStatus}" title="Change character" role="button" tabindex="0">`
@@ -208,6 +207,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
 
   // Resolve the header hero avatar to its data URL (no-op when absent).
   if (headerCharId) void hydrateCharacterAvatars(pane);
+  void hydrateProjectTechIcons(pane);
 
   // Clicking the header face opens the Change Character modal for this session.
   const headerEl = pane.querySelector<HTMLElement>(".session-header");

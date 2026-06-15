@@ -16,7 +16,7 @@ import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession, headerStatusClass } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
-import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, loadProjectAvatars } from "./sidebar";
+import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu } from "./sidebar";
 import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
@@ -363,7 +363,6 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     refreshSessions(),
     invoke<boolean>("is_daemon_connected").catch(() => null),
     loadSessionCharacters(),
-    loadProjectAvatars(),
   ]);
   if (state.mountId === myMount) {
     state.daemonConnected = connected ?? null;

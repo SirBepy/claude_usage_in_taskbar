@@ -1,6 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
-import type { Avatar, Instance, ProjectGroup } from "../../types/ipc.generated";
+import type { Instance } from "../../types/ipc.generated";
 import { closeChat } from "./close-chat";
 import { isSessionClosing } from "./closing-sessions";
 import {
@@ -19,45 +19,13 @@ import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
 import { reconcileList, loadAnimEnabled, markSessionExiting } from "./sidebar-anim";
 import { characterForSession, characterIconUrl } from "./session-characters";
-import { hydrateCharacterAvatars } from "../../shared/projects";
+import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 
-// ── Project avatar cache ─────────────────────────────────────────────────────
-// Keyed by normalised (lowercased) cwd so Windows path casing doesn't matter.
-let _projectAvatarByPath: Map<string, Avatar> = new Map();
-
-export async function loadProjectAvatars(): Promise<void> {
-  try {
-    const groups = await invoke<ProjectGroup[]>("list_project_groups");
-    const next = new Map<string, Avatar>();
-    for (const g of groups) {
-      if (g.avatar.kind !== "none") next.set(g.path.toLowerCase(), g.avatar);
-    }
-    _projectAvatarByPath = next;
-  } catch {
-    // non-fatal; badge just won't appear
-  }
-}
-
-export function getProjectAvatarForCwd(cwd: string): Avatar | null {
-  return _projectAvatarByPath.get(cwd.toLowerCase()) ?? null;
-}
-
-/** Renders the project avatar as a badge span, or empty string when none.
+/** Renders the project tech-icon badge (bottom-right corner of the character portrait).
  *  Shared by the sidebar rows and the session-header badge (active-session.ts). */
-export function projBadgeHtml(avatar: Avatar | null, cls: string): string {
-  if (!avatar || avatar.kind === "none") return "";
-  if (avatar.kind === "emoji") {
-    return `<span class="${cls}" aria-hidden="true">${escapeHtml(avatar.value)}</span>`;
-  }
-  if (avatar.kind === "image") {
-    const src = escapeHtml(`file:///${avatar.value.replaceAll("\\", "/")}`);
-    return `<span class="${cls}"><img src="${src}" alt="" style="width:100%;height:100%;object-fit:cover"></span>`;
-  }
-  if (avatar.kind === "character") {
-    const id = escapeHtml(avatar.value);
-    return `<span class="${cls}"><img class="char-avatar" data-character-id="${id}" alt="" style="width:100%;height:100%;object-fit:cover;image-rendering:pixelated"></span>`;
-  }
-  return "";
+export function projBadgeHtml(cwd: string | null, cls: string): string {
+  if (!cwd) return "";
+  return `<span class="${cls}"><span class="proj-face" data-proj-face="${escapeHtml(cwd)}"><i class="ph ph-folder"></i></span></span>`;
 }
 
 /** Wrap an avatar strip + optional project badge in the positioning wrapper. */
@@ -91,7 +59,7 @@ function leadingVisual(
           <img class="char-avatar session-char-backdrop" data-character-id="${id}"${preload} alt="" aria-hidden="true">
           <img class="char-avatar session-char-img" data-character-id="${id}"${preload} alt="${id}">
         </span>`;
-  const badge = projBadgeHtml(getProjectAvatarForCwd(s.cwd), "session-proj-badge");
+  const badge = projBadgeHtml(s.cwd, "session-proj-badge");
   return avatarWrap(avatarHtml, badge);
 }
 
@@ -107,7 +75,7 @@ function draftLeadingVisual(charId: string | null | undefined, cwd: string): str
           <img class="char-avatar session-char-backdrop" data-character-id="${id}"${preload} alt="" aria-hidden="true">
           <img class="char-avatar session-char-img" data-character-id="${id}"${preload} alt="${id}">
         </span>`;
-  const badge = projBadgeHtml(getProjectAvatarForCwd(cwd), "session-proj-badge");
+  const badge = projBadgeHtml(cwd, "session-proj-badge");
   return avatarWrap(avatarHtml, badge);
 }
 
@@ -298,6 +266,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   reconcileList(listEl, entries, loadAnimEnabled());
   // Resolve hero avatar images to data URLs (idempotent per character id).
   void hydrateCharacterAvatars(listEl);
+  void hydrateProjectTechIcons(listEl);
 }
 
 // ── Per-row 3-dot context menu ───────────────────────────────────────────────
