@@ -3,6 +3,8 @@
 ## 2026-06-15 - Autopilot run: ai_todos 99, 90, 85 (project logos prioritized by Joe)
 
 RUN_LEDGER (chunk -> outcome -> sha) appended as each lands.
+- ai_todo 99 (project tech-logo face): SHIPPED. Backend ipc/project_icons.rs (get_project_tech + get_project_icon), frontend devicon-via-unpkg + 3-tier lazy hydration on the no-avatar path, wired into projects list + project-detail header. cargo build + tsc + full vitest (411) green. Live visual confirm parked to BEPY Visual QA. sha: <pending commit>
+- NOTE: the daemon permission relay (127.0.0.1:27182) intermittently errored during this run ("error sending request for url .../permissions/request") - this is exactly ai_todo 100. Retries succeeded. Flagging because it slowed the run and is worth fixing.
 
 ### 2026-06-15 - ai_todo 99 design decisions
 Decision needed: how to render project tech LOGOS when this app standardizes on Phosphor (which has no brand/tech logos), per Joe's explicit "prioritize the project logos".
