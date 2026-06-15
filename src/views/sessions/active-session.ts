@@ -32,7 +32,7 @@ import {
 import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
-import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./sessions";
+import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 
 /** Status class (st-working / st-question / …) for an open session, using the
  * same classifier the sidebar rows use so the header avatar's border colour

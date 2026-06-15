@@ -8,7 +8,7 @@ import { HeldMessages } from "../../shared/chat/held-messages";
 import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
 import { blocksToText } from "../../shared/chat/content-blocks";
 import { state, setActiveSession } from "./state";
-import { isCurrentSessionBusy, updateThinkingBar } from "./sessions";
+import { isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import type { SessionConfig } from "./model-effort-modal";
