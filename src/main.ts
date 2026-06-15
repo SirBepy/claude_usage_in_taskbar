@@ -330,3 +330,10 @@ function setupNewsBadgeAndNotifications(): void {
     setTimeout(() => toast.remove(), 5300);
   });
 }
+
+// Register the PWA service worker in browser-only mode (phone/remote client).
+// Complete no-op in the Tauri webview: __TAURI__ is present there and SW
+// registration would be irrelevant anyway (webview doesn't install PWAs).
+if (typeof window !== "undefined" && !window.__TAURI__ && "serviceWorker" in navigator) {
+  void navigator.serviceWorker.register("/sw.js");
+}

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // HttpTransport is the browser/phone transport: it maps frontend command names
 // onto the daemon's remote-access REST/WS server (see src/shared/transport.ts).
@@ -194,9 +194,101 @@ describe("HttpTransport.listen", () => {
     expect(lastWs.close).toHaveBeenCalledTimes(1);
   });
 
-  it("no-ops (no WebSocket) for non per-session channels", async () => {
-    const unlisten = await new HttpTransport().listen("instances-changed", () => {});
+  it("no-ops (no WebSocket) for unknown global channels", async () => {
+    const unlisten = await new HttpTransport().listen("some-other-channel", () => {});
     expect(lastWs).toBeUndefined();
     expect(() => unlisten()).not.toThrow();
+  });
+});
+
+describe("HttpTransport.listen — instances-changed poll", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fires cb immediately on subscribe with a list_instances fetch", async () => {
+    const instances = [{ session_id: "s1" }];
+    fetchMock.mockResolvedValue({ ok: true, json: async () => instances });
+
+    const received = [];
+    const unlisten = await new HttpTransport().listen("instances-changed", (p) => received.push(p));
+
+    // Let the immediate poll's promise resolve (advance 0ms, drain microtasks).
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(body()).toEqual({ method: "list_instances", params: null });
+    // cb is called (payload is undefined — consumers ignore it and call refreshSessions).
+    expect(received).toHaveLength(1);
+
+    unlisten();
+  });
+
+  it("polls again after 3500ms and invokes cb each tick", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+
+    const received = [];
+    const unlisten = await new HttpTransport().listen("instances-changed", () => received.push(1));
+
+    // Flush the immediate call.
+    await vi.advanceTimersByTimeAsync(0);
+    const afterImmediate = received.length;
+    expect(afterImmediate).toBe(1);
+
+    // Advance 3500ms for the first interval tick.
+    await vi.advanceTimersByTimeAsync(3500);
+
+    expect(received.length).toBeGreaterThan(afterImmediate);
+
+    unlisten();
+  });
+
+  it("unlisten stops further polls", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+
+    const received = [];
+    const unlisten = await new HttpTransport().listen("instances-changed", () => received.push(1));
+
+    // Flush immediate call.
+    await vi.advanceTimersByTimeAsync(0);
+    const countBeforeStop = received.length;
+
+    unlisten();
+
+    // Advance well past the interval — no more calls.
+    await vi.advanceTimersByTimeAsync(10000);
+
+    expect(received.length).toBe(countBeforeStop);
+  });
+
+  it("skips a tick when the previous fetch is still in flight (no overlap)", async () => {
+    let resolveFirst;
+    // First call hangs indefinitely.
+    fetchMock.mockImplementationOnce(
+      () => new Promise((res) => { resolveFirst = res; })
+    );
+    // Subsequent calls resolve normally.
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+
+    const received = [];
+    const unlisten = await new HttpTransport().listen("instances-changed", () => received.push(1));
+
+    // Immediate poll is in-flight (not resolved yet); no microtask flush yet.
+    // Advance past the interval — the interval tick should see inFlight=true and skip.
+    await vi.advanceTimersByTimeAsync(3500);
+
+    // Only the first (unresolved) fetch should have been called so far.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Resolve the first fetch — cb fires once.
+    resolveFirst({ ok: true, json: async () => [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(received.length).toBe(1);
+
+    unlisten();
   });
 });

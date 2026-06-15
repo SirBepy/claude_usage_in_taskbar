@@ -132,6 +132,30 @@ export class HttpTransport implements Transport {
   }
 
   async listen<T>(event: string, cb: (payload: T) => void): Promise<Unlisten> {
+    // ── Global session-list poll ──────────────────────────────────────────────
+    // The desktop fires a Tauri "instances-changed" event whenever the session
+    // registry mutates. On the phone there is no global WebSocket, so we
+    // substitute a 3.5-second poll: call list_instances, reshape the result to
+    // the same void-payload the consumer expects (callbacks ignore the payload
+    // and call refreshSessions() themselves), then invoke cb to trigger the same
+    // refresh flow. An in-flight guard prevents overlapping requests.
+    if (event === "instances-changed") {
+      let timerId: ReturnType<typeof setInterval> | undefined;
+      let inFlight = false;
+      const poll = (): void => {
+        if (inFlight) return;
+        inFlight = true;
+        this.call<unknown>("list_instances")
+          .then(() => { cb(undefined as unknown as T); })
+          .catch(() => { /* network blip – skip this tick */ })
+          .finally(() => { inFlight = false; });
+      };
+      // Fire once immediately so the session list populates without waiting 3.5s.
+      poll();
+      timerId = setInterval(poll, 3500);
+      return () => { clearInterval(timerId); };
+    }
+
     const chat = /^chat:(.+)$/.exec(event);
     const id = chat?.[1];
     if (!id || typeof WebSocket === "undefined" || typeof location === "undefined") {
