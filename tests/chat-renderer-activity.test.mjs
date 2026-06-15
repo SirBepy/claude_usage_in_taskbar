@@ -200,6 +200,39 @@ describe("ChatRenderer — per-type tool chips (inline strip)", () => {
     expect(container.querySelectorAll(".tool-use--file").length).toBe(0);
   });
 
+  it("highlights only the CURRENT-activity chip, not every in-flight tool", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const r = new ChatRenderer(container);
+    const mainStrip = () =>
+      Array.from(container.querySelectorAll(".tool-strip")).find((s) => !s.closest(".tool-strip-group"));
+    const running = (tool) =>
+      mainStrip().querySelector(`.tool-chip[data-tool="${tool}"]`).classList.contains("tool-chip--running");
+
+    r.handleEvent({ type: "session_started", session_id: "x", model: "m", cwd: "/", timestamp: 0 });
+    r.handleEvent(userEvent("go"));
+    // Two tools dispatched in parallel, neither has returned. Read fired first,
+    // Edit is the latest -> Edit ("Editing …") is the current activity.
+    r.handleEvent(toolUse("Read", { file_path: "/a.ts" }, "r1"));
+    r.handleEvent(toolUse("Edit", { file_path: "/b.ts", old_string: "a", new_string: "b" }, "e1"));
+
+    // Only the File-Changes (Edit) chip pulses, even though Read is also still
+    // in-flight. (The bug: every in-flight chip lit up.)
+    expect(running("Edit")).toBe(true);
+    expect(running("Read")).toBe(false);
+
+    // Activity moves to a new Read -> the single highlight follows it.
+    r.handleEvent(toolUse("Read", { file_path: "/c.ts" }, "r2"));
+    expect(running("Read")).toBe(true);
+    expect(running("Edit")).toBe(false);
+
+    // Turn closes -> nothing pulses.
+    r.handleEvent(finalEvent("done"));
+    r.handleEvent(turnUsage());
+    r.handleEvent(userEvent("next"));
+    expect(container.querySelectorAll(".tool-chip--running").length).toBe(0);
+  });
+
   it("groups a turn whose tools span a bulk-load chunk boundary into ONE strip (reload)", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

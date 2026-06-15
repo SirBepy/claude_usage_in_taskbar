@@ -128,14 +128,22 @@ describe("custom chip-panel views", () => {
 });
 
 describe("currently-working chip highlight", () => {
-  it("pulses the in-flight tool's chip until its result arrives", () => {
+  it("pulses ONLY the current-activity chip; the highlight moves with the activity", () => {
     const { r, container } = makeRenderer();
     r.handleEvent(toolUseEvent("Read", { file_path: "/a/x.ts" }, "r1"));
-    const chip = container.querySelector('.tool-chip[data-tool="Read"]');
-    expect(chip.classList.contains("tool-chip--running")).toBe(true);
+    const readChip = container.querySelector('.tool-chip[data-tool="Read"]');
+    expect(readChip.classList.contains("tool-chip--running")).toBe(true);
 
+    // The result arriving does NOT drop the pulse: "Reading …" stays the pinned
+    // current activity (same lifecycle as the activity line) until the next tool.
     r.handleEvent(toolResultEvent("r1"));
-    expect(chip.classList.contains("tool-chip--running")).toBe(false);
+    expect(readChip.classList.contains("tool-chip--running")).toBe(true);
+
+    // A new tool becomes the current activity -> the single pulse moves to it,
+    // and the previous chip stops pulsing (no more lighting up the whole strip).
+    r.handleEvent(toolUseEvent("Edit", { file_path: "/a/y.ts", old_string: "a", new_string: "b" }, "e1"));
+    expect(container.querySelector('.tool-chip[data-tool="Read"]').classList.contains("tool-chip--running")).toBe(false);
+    expect(container.querySelector('.tool-chip[data-tool="Edit"]').classList.contains("tool-chip--running")).toBe(true);
     r.detach();
   });
 

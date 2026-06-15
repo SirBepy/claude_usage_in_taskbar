@@ -103,6 +103,12 @@ export class ChatRenderer {
   }[] = [];
   private fileEdits: FileEditView[] = [];
   private lastActivity: string | null = null;
+  // Canonical tool of the CURRENT activity (the most recent tool_use, the one
+  // `lastActivity` describes, e.g. "Editing api.ts" -> "Edit"). Drives the
+  // single working-chip highlight so only the chip for what the AI is doing
+  // right now pulses - not every tool that has an in-flight call. Cleared on
+  // turn boundary / reset, same lifecycle as lastActivity.
+  private activityToolCanon: string | null = null;
   // By-type cumulative tool tally state (counts + per-target details, dedup by
   // tool_use id). Owns the data behind the statusline `Read x4 · ...` tally.
   private tallyState = new ToolTallyState();
@@ -173,6 +179,7 @@ export class ChatRenderer {
     this._cumulative = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
     this.fileEdits = [];
     this.lastActivity = null;
+    this.activityToolCanon = null;
     this.activeToolGroups.clear();
     this.pendingToolIds.clear();
     this.pendingByCanon.clear();
@@ -309,6 +316,9 @@ export class ChatRenderer {
   }
 
   private setActivity(a: string | null): void {
+    // Activity cleared (turn boundary / new assistant text) -> the working-chip
+    // highlight has nothing to track anymore.
+    if (a === null) this.activityToolCanon = null;
     if (this.lastActivity === a) return;
     this.lastActivity = a;
     this.onActivityUpdate?.(a);
@@ -327,6 +337,7 @@ export class ChatRenderer {
     this.streamingIndex = null;
     this.fileEdits = [];
     this.lastActivity = null;
+    this.activityToolCanon = null;
     this.activeToolGroups.clear();
     this.activeTurnStart = null;
     this.resetActiveTurnMeta();
@@ -538,6 +549,7 @@ export class ChatRenderer {
           this.pendingToolIds.set(ev.id, canon);
           this.pendingByCanon.set(canon, (this.pendingByCanon.get(canon) ?? 0) + 1);
         }
+        this.activityToolCanon = canonicalTool(ev.tool_name);
         this.setActivity(this.describeActivity(ev.tool_name, ev.input));
         touched = true;
         break;
@@ -843,15 +855,18 @@ export class ChatRenderer {
       footer.querySelectorAll<HTMLElement>(".tool-chip--running")
         .forEach((c) => c.classList.remove("tool-chip--running"));
     }
+    this.activityToolCanon = null;
     this.pendingToolIds.clear();
     this.pendingByCanon.clear();
   }
 
   /**
-   * Pulse the active turn's main-strip chip for any tool with an in-flight call
-   * (tool_use seen, tool_result not yet). Live only: bulk replay nets every
-   * result and the transcript is hidden until it settles, so a pulse there would
-   * be both invisible and misleading.
+   * Pulse the SINGLE main-strip chip for the AI's current activity (the tool the
+   * `lastActivity` line describes, e.g. "Editing api.ts" -> the File-Changes
+   * chip). Only that chip pulses - NOT every tool with an in-flight call, which
+   * lit up the whole strip during parallel calls / subagent turns. Live only:
+   * bulk replay nets every result and the transcript is hidden until it settles,
+   * so a pulse there would be both invisible and misleading.
    */
   private applyRunningHighlight(): void {
     if (this.liveBuffer !== null || this.activeTurnChipKey === null) return;
@@ -866,7 +881,7 @@ export class ChatRenderer {
     for (const node of strip.children) {
       if (!(node instanceof HTMLElement) || !node.classList.contains("tool-chip")) continue;
       const tool = node.dataset.tool;
-      const running = !!tool && (this.pendingByCanon.get(tool) ?? 0) > 0;
+      const running = !!tool && tool === this.activityToolCanon;
       node.classList.toggle("tool-chip--running", running);
     }
   }
