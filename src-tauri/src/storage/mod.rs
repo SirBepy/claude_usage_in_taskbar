@@ -13,7 +13,10 @@ pub mod skill_store;
 pub mod token_store;
 pub mod usage_store;
 
-pub use retention::{prune_all, Dataset, RetentionPolicies, RetentionPolicy};
+pub use retention::{
+    clear_dataset, dataset_stats, prune_all, prune_one, Dataset, DatasetStats, RetentionPolicies,
+    RetentionPolicy,
+};
 
 use anyhow::Result;
 use rusqlite::Connection;

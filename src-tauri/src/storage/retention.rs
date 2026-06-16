@@ -6,13 +6,18 @@
 
 use anyhow::Result;
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
 /// How long a dataset's rows are kept before pruning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export_to = "../../src/types/ipc.generated.ts")]
-#[serde(rename_all = "snake_case")]
+///
+/// Serializes to a compact frontend-friendly string token so the settings JSON
+/// and the dropdown share one shape: `"forever"` for [`RetentionPolicy::KeepForever`]
+/// and `"<days>d"` (e.g. `"90d"`, `"7d"`) for [`RetentionPolicy::KeepDays`]. The
+/// UI presets map Never -> `"forever"` and 1 year / 90 / 30 / 7 days ->
+/// `"365d" | "90d" | "30d" | "7d"`. ts-rs sees the type as a plain `string`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts", type = "string")]
 pub enum RetentionPolicy {
     /// Never prune.
     KeepForever,
@@ -28,6 +33,41 @@ impl RetentionPolicy {
             RetentionPolicy::KeepForever => None,
             RetentionPolicy::KeepDays(days) => Some(now - (*days as i64) * 86_400),
         }
+    }
+
+    /// The compact string token used in settings JSON / on the wire.
+    fn as_token(&self) -> String {
+        match self {
+            RetentionPolicy::KeepForever => "forever".to_string(),
+            RetentionPolicy::KeepDays(days) => format!("{days}d"),
+        }
+    }
+
+    /// Parses the compact string token back into a policy.
+    fn from_token(s: &str) -> Result<Self, String> {
+        if s == "forever" {
+            return Ok(RetentionPolicy::KeepForever);
+        }
+        if let Some(num) = s.strip_suffix('d') {
+            if let Ok(days) = num.parse::<u32>() {
+                return Ok(RetentionPolicy::KeepDays(days));
+            }
+        }
+        Err(format!("invalid retention policy token: {s:?}"))
+    }
+}
+
+impl Serialize for RetentionPolicy {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.as_token())
+    }
+}
+
+impl<'de> Deserialize<'de> for RetentionPolicy {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let raw = String::deserialize(d)?;
+        RetentionPolicy::from_token(&raw).map_err(D::Error::custom)
     }
 }
 
@@ -117,4 +157,48 @@ pub fn prune_all(conn: &Connection, policies: &RetentionPolicies) -> Result<usiz
         }
     }
     Ok(deleted)
+}
+
+/// Prunes a single dataset per `policy`. Returns rows deleted (0 for
+/// [`RetentionPolicy::KeepForever`]).
+pub fn prune_one(conn: &Connection, dataset: Dataset, policy: RetentionPolicy) -> Result<usize> {
+    let Some(cutoff) = policy.cutoff(now_unix()) else {
+        return Ok(0);
+    };
+    let sql = format!("DELETE FROM {} WHERE timestamp < ?1", dataset.table());
+    Ok(conn.execute(&sql, [cutoff])?)
+}
+
+/// Row count, plus oldest/newest unix-second timestamps for a dataset. The
+/// timestamps are `None` when the table is empty.
+pub struct DatasetStats {
+    pub record_count: u64,
+    pub oldest_entry: Option<i64>,
+    pub newest_entry: Option<i64>,
+}
+
+/// Reads `(count, min(timestamp), max(timestamp))` for one dataset in a single
+/// query. `MIN`/`MAX` over an empty table return SQL NULL, surfaced as `None`.
+pub fn dataset_stats(conn: &Connection, dataset: Dataset) -> Result<DatasetStats> {
+    let sql = format!(
+        "SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM {}",
+        dataset.table()
+    );
+    let stats = conn.query_row(&sql, [], |row| {
+        Ok(DatasetStats {
+            record_count: row.get::<_, i64>(0)? as u64,
+            oldest_entry: row.get::<_, Option<i64>>(1)?,
+            newest_entry: row.get::<_, Option<i64>>(2)?,
+        })
+    })?;
+    Ok(stats)
+}
+
+/// Deletes every row from a dataset and reclaims the freed pages via `VACUUM`.
+/// Used by the "Clear all" control. `VACUUM` cannot run inside a transaction,
+/// so it executes as its own statement after the delete commits.
+pub fn clear_dataset(conn: &Connection, dataset: Dataset) -> Result<()> {
+    conn.execute(&format!("DELETE FROM {}", dataset.table()), [])?;
+    conn.execute_batch("VACUUM")?;
+    Ok(())
 }

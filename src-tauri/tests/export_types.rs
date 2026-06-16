@@ -13,7 +13,9 @@ use claude_usage_tauri_lib::skill_usage::types::{
     InstalledSkill, InvocationCounts, InvocationSource, SkillDetail, SkillUsageEntry,
     SkillUsageEvent, SkillUsageWeek, TokenBreakdown,
 };
+use claude_usage_tauri_lib::ipc::storage::{DatasetId, DatasetInfo};
 use claude_usage_tauri_lib::slash::{SlashEntry, SlashSource};
+use claude_usage_tauri_lib::storage::{RetentionPolicies, RetentionPolicy};
 use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
 use claude_usage_tauri_lib::types::*;
 use claude_usage_tauri_lib::when_done::{ProtocolPhase, ProtocolState, TerminalAction};
@@ -58,6 +60,12 @@ fn emit_ipc_types() {
     out.push_str(&decl::<EndReason>());
     out.push_str(&decl::<AuthState>());
     out.push_str(&decl::<ChannelStatus>());
+
+    // storage / retention (referenced by Settings + storage IPC)
+    out.push_str(&decl::<RetentionPolicy>());
+    out.push_str(&decl::<RetentionPolicies>());
+    out.push_str(&decl::<DatasetId>());
+    out.push_str(&decl::<DatasetInfo>());
 
     // notifications (settings module)
     out.push_str(&decl::<DisplayMode>());

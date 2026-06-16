@@ -17,6 +17,7 @@ pub mod news;
 pub mod slash;
 pub mod files;
 pub mod skill_usage;
+pub mod storage;
 
 pub use usage::*;
 pub use settings::*;
@@ -37,6 +38,7 @@ pub use news::*;
 pub use slash::*;
 pub use files::*;
 pub use skill_usage::*;
+pub use storage::*;
 
 // Re-export test helper submodules so integration tests can reach them via
 // `claude_usage_tauri_lib::ipc::projects_test_helpers` and

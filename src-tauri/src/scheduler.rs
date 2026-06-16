@@ -206,16 +206,16 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
     }
 
     // Persist into the consolidated SQLite store. Insert the snapshot, then
-    // opportunistically prune usage per the default retention policy (90d).
+    // prune ALL THREE datasets per the user-configured retention policies read
+    // from settings (so a changed dropdown actually takes effect on the tick).
     {
         let state = app.state::<AppState>();
+        let policies = state.settings.lock().unwrap().retention;
         let mgr = state.db.lock().unwrap();
         crate::storage::usage_store::insert_snapshot(mgr.conn(), &snap)
             .map_err(|e| PollErr::Other(format!("{e:#}")))?;
-        if let Err(e) =
-            crate::storage::prune_all(mgr.conn(), &crate::storage::RetentionPolicies::default())
-        {
-            log::warn!("storage: usage prune failed: {e:#}");
+        if let Err(e) = crate::storage::prune_all(mgr.conn(), &policies) {
+            log::warn!("storage: retention prune failed: {e:#}");
         }
     }
 

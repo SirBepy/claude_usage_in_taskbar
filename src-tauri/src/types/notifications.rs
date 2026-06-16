@@ -86,6 +86,11 @@ pub struct Settings {
     pub default_character_whitelist: CharacterWhitelist,
     #[serde(rename = "sessionCharacters", default)]
     pub session_characters: std::collections::HashMap<String, String>,
+    /// Per-dataset retention policies for the SQLite storage layer. Absent in
+    /// older settings.json files; `default` fills in the legacy behavior
+    /// (usage + token = 90 days, skill events kept forever).
+    #[serde(default)]
+    pub retention: crate::storage::RetentionPolicies,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -120,6 +125,7 @@ impl Default for Settings {
             audio_output_device: None,
             default_character_whitelist: default_character_whitelist(),
             session_characters: std::collections::HashMap::new(),
+            retention: crate::storage::RetentionPolicies::default(),
             extra: serde_json::Map::new(),
         }
     }

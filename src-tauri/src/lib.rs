@@ -275,6 +275,9 @@ pub fn run() {
             ipc::frontend_ready,
             ipc::fetch_available_models,
             ipc::probe_models_availability,
+            ipc::get_storage_info,
+            ipc::set_retention_policy,
+            ipc::clear_dataset,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,
@@ -350,6 +353,19 @@ pub fn run() {
                             Err(e) => log::error!("storage: skill events import failed: {e:#}"),
                         }
                     }
+                }
+
+                // One-time startup prune of all three datasets under the
+                // user-configured retention policies (subsequent prunes run on
+                // each scheduler poll tick).
+                let policies = state.settings.lock().unwrap().retention;
+                match crate::storage::prune_all(conn, &policies) {
+                    Ok(deleted) => {
+                        if deleted > 0 {
+                            log::info!("storage: startup prune removed {deleted} row(s)");
+                        }
+                    }
+                    Err(e) => log::warn!("storage: startup prune failed: {e:#}"),
                 }
             }
 
