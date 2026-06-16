@@ -112,7 +112,10 @@ pub fn run() {
         AuthState::NeedsLogin
     };
 
-    let state = AppState::new(loaded_settings, auth);
+    // The companion SQLite store is critical (usage history lives there); a
+    // failure to open it is unrecoverable, so surface it loudly and abort.
+    let state = AppState::new(loaded_settings, auth)
+        .expect("failed to open companion database (companion.db)");
 
     #[cfg_attr(debug_assertions, allow(unused_mut))]
     let mut builder = tauri::Builder::default();
@@ -283,6 +286,32 @@ pub fn run() {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             crate::tray::setup(app.handle())?;
+
+            // One-time legacy usage import into SQLite. The importer renames the
+            // source to `.bak` on success, so the on-disk presence of
+            // `history.jsonl` is itself the idempotency gate (no separate flag).
+            // Usage only this slice; token + skill imports land in slice 2b.
+            {
+                use tauri::Manager;
+                if let Ok(history_path) = paths::history_file() {
+                    if history_path.exists() {
+                        let state = app.state::<crate::state::AppState>();
+                        let mgr = state.db.lock().unwrap();
+                        match crate::storage::migration::import_usage_jsonl(
+                            mgr.conn(),
+                            &history_path,
+                        ) {
+                            Ok(stats) => log::info!(
+                                "storage: imported usage history into SQLite (imported={}, skipped={})",
+                                stats.imported,
+                                stats.skipped,
+                            ),
+                            Err(e) => log::error!("storage: usage history import failed: {e:#}"),
+                        }
+                    }
+                }
+            }
+
             // Schedule chat-attachments GC: run once on startup, then every 24h.
             // Removes pasted-image directories whose mtime is older than 30 days.
             tauri::async_runtime::spawn(async move {

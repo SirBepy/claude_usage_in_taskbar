@@ -58,16 +58,22 @@ pub struct AppState {
     /// (sleep/shutdown when every session goes idle). At most one armed at a
     /// time; arming aborts any prior task. See `crate::when_done`.
     pub when_done: Arc<Mutex<crate::when_done::WhenDoneInner>>,
+    /// Consolidated SQLite store (usage snapshots now; token + skill datasets
+    /// wired in slice 2b). Behind a `Mutex` because `rusqlite::Connection` is
+    /// `!Sync`; every store/retention call borrows the connection briefly.
+    pub db: Mutex<crate::storage::StorageManager>,
 }
 
 impl AppState {
-    pub fn new(settings: Settings, auth_state: AuthState) -> Self {
+    pub fn new(settings: Settings, auth_state: AuthState) -> anyhow::Result<Self> {
         let audio_stream = crate::notifications::audio::AudioStreamCtrl::init(
             settings.audio_output_device.as_deref(),
         );
         let audio = crate::notifications::audio::AudioCtx::new(audio_stream.handle_arc());
         let preview = crate::notifications::audio::PreviewCtx::new(audio_stream.handle_arc());
-        Self {
+        let db_path = crate::settings::paths::companion_db()?;
+        let db = crate::storage::StorageManager::open(&db_path)?;
+        Ok(Self {
             current_usage: Mutex::new(None),
             settings: Mutex::new(settings),
             auth_state: Mutex::new(auth_state),
@@ -88,6 +94,7 @@ impl AppState {
             meeting_active: Arc::new(AtomicBool::new(false)),
             news_inflight: Arc::new(Mutex::new(std::collections::HashSet::new())),
             when_done: Arc::new(Mutex::new(crate::when_done::WhenDoneInner::default())),
-        }
+            db: Mutex::new(db),
+        })
     }
 }

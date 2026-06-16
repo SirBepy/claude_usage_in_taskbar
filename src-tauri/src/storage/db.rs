@@ -18,6 +18,12 @@ pub const SCHEMA_VERSION: i64 = 1;
 /// schema is present. The parent directory must already exist.
 pub fn open_db(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
+    // WAL lets the app and the daemon read/write concurrently without blocking
+    // each other on a single writer lock; the 5s busy_timeout makes a contended
+    // write wait-and-retry instead of failing immediately with SQLITE_BUSY.
+    // Set on every open so both processes coordinate on the same journal mode.
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "busy_timeout", 5000)?;
     init_schema(&conn)?;
     Ok(conn)
 }

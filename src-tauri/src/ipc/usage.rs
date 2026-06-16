@@ -1,6 +1,5 @@
 use crate::state::AppState;
 use crate::types::UsageSnapshot;
-use crate::{history, paths};
 use tauri::{AppHandle, State};
 
 #[tauri::command]
@@ -9,18 +8,18 @@ pub fn get_current_usage(state: State<AppState>) -> Option<UsageSnapshot> {
 }
 
 #[tauri::command]
-pub async fn get_history(limit: Option<u32>) -> Vec<UsageSnapshot> {
-    let path = match paths::history_file() { Ok(p) => p, Err(_) => return vec![] };
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut all = history::load_all(&path).unwrap_or_default();
-        if let Some(n) = limit {
-            let start = all.len().saturating_sub(n as usize);
-            all = all.split_off(start);
-        }
-        all
-    })
-    .await
-    .unwrap_or_default()
+pub fn get_history(state: State<AppState>, limit: Option<u32>) -> Vec<UsageSnapshot> {
+    // Snapshots come back ascending by timestamp (same order the legacy JSONL
+    // file produced), so a `limit` keeps the newest N by trimming the front.
+    let mut all = {
+        let mgr = state.db.lock().unwrap();
+        crate::storage::usage_store::get_all_snapshots(mgr.conn()).unwrap_or_default()
+    };
+    if let Some(n) = limit {
+        let start = all.len().saturating_sub(n as usize);
+        all = all.split_off(start);
+    }
+    all
 }
 
 #[tauri::command]

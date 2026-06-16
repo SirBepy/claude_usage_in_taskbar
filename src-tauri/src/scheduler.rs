@@ -4,7 +4,6 @@ use crate::auth;
 use crate::scraping::{fetch_usage, ScrapeError};
 use crate::state::AppState;
 use crate::types::{AuthState, UsageSnapshot};
-use crate::history;
 use crate::settings::paths;
 use crate::auth::session;
 use std::time::Duration;
@@ -206,12 +205,19 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
         }
     }
 
-    let hpath = paths::history_file()
-        .map_err(|e| PollErr::Other(format!("{e:#}")))?;
-    history::append(&hpath, &snap)
-        .map_err(|e| PollErr::Other(format!("{e:#}")))?;
-    // Opportunistic prune once per poll (fast when nothing to prune).
-    let _ = history::prune(&hpath);
+    // Persist into the consolidated SQLite store. Insert the snapshot, then
+    // opportunistically prune usage per the default retention policy (90d).
+    {
+        let state = app.state::<AppState>();
+        let mgr = state.db.lock().unwrap();
+        crate::storage::usage_store::insert_snapshot(mgr.conn(), &snap)
+            .map_err(|e| PollErr::Other(format!("{e:#}")))?;
+        if let Err(e) =
+            crate::storage::prune_all(mgr.conn(), &crate::storage::RetentionPolicies::default())
+        {
+            log::warn!("storage: usage prune failed: {e:#}");
+        }
+    }
 
     Ok(snap)
 }
