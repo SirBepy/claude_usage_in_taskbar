@@ -1,7 +1,7 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { blocksToText } from "./content-blocks";
 import { sessionEvents } from "./event-store";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken, isSilentSystemUserMessage, isNoiseAssistantText } from "./chat-transforms";
 import { highlightCodeBlocks, highlightInlineCode } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
@@ -461,6 +461,9 @@ export class ChatRenderer {
         const isCompact = isCompactUserMessage(ev.content);
         const cleaned = isCompact ? [] : cleanUserBlocks(ev.content);
         if (!isCompact && cleaned.length === 0) break;
+        // Silent system turns (e.g. rate-limit auto-continue) rotate the turn
+        // chip so usage is tracked but render no user bubble.
+        const isSilent = !isCompact && isSilentSystemUserMessage(cleaned);
         this.enqueueTurnClose();
         this.setActivity(null);
         this.setTurnStatus(null);
@@ -475,7 +478,7 @@ export class ChatRenderer {
         this.activeTurnLastTs = this.activeTurnFirstTs;
         if (isCompact) {
           this.messages.push({ kind: "system", text: "Conversation compacted", ts });
-        } else {
+        } else if (!isSilent) {
           this.messages.push({ kind: "user", content: cleaned, ts });
         }
         this.activeTurnStart = this.messages.length;
@@ -483,6 +486,22 @@ export class ChatRenderer {
         break;
       }
       case "assistant_message": {
+        if (!ev.streaming) {
+          const msgText = blocksToText(ev.content).trim();
+          if (isNoiseAssistantText(msgText)) {
+            // Internal CLI messages (e.g. "No response requested.", "[Request interrupted]").
+            // Finalize streaming state without replacing content, then skip rendering.
+            if (this.streamingIndex !== null) {
+              const existing = this.messages[this.streamingIndex] as RenderedMessage;
+              this.messages[this.streamingIndex] = { ...existing, streaming: false };
+              this.dirtyIndices.add(this.streamingIndex);
+              this.streamingIndex = null;
+            }
+            this.setTurnStatus(null);
+            touched = true;
+            break;
+          }
+        }
         const msg: RenderedMessage = {
           kind: "assistant",
           content: ev.content,

@@ -326,6 +326,24 @@ export function cleanUserBlocks(blocks: ContentBlock[]): ContentBlock[] {
   return out;
 }
 
+// Single-word "continue" messages sent by the rate-limit auto-continue system.
+// These are internal plumbing and should not render as user bubbles.
+export function isSilentSystemUserMessage(cleaned: ContentBlock[]): boolean {
+  const first = cleaned[0];
+  if (cleaned.length !== 1 || !first || first.type !== "text") return false;
+  return (first as { type: "text"; text: string }).text.trim().toLowerCase() === "continue";
+}
+
+// Assistant messages that are internal CLI noise, not real content.
+const NOISE_PATTERNS = [
+  /^no response requested\.?$/i,
+  /^\[request interrupted\]$/i,
+];
+export function isNoiseAssistantText(text: string): boolean {
+  const t = text.trim();
+  return NOISE_PATTERNS.some(re => re.test(t));
+}
+
 // Wrap `/word` tokens in <span class="slash-mention slash-<kind>"> when the
 // name is in the shared slash registry. Only matches outside <a>/<code>/<pre>
 // (markdown-it already escapes user HTML, so we walk the rendered string at
@@ -383,10 +401,16 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
       }
       const cleaned = cleanUserBlocks(ev.content);
       if (cleaned.length === 0) return null;
+      if (isSilentSystemUserMessage(cleaned)) return null;
       return { kind: "user", content: cleaned, ts };
     }
-    case "assistant_message":
+    case "assistant_message": {
+      if (!ev.streaming) {
+        const t = (ev.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { type: string; text?: string }) => b.text ?? "").join("").trim();
+        if (isNoiseAssistantText(t)) return null;
+      }
       return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
+    }
     case "tool_use":
       return { kind: "tool_use", tool: ev.tool_name, input: ev.input, id: ev.id, ts, parentToolUseId: ev.parent_tool_use_id ?? null };
     case "tool_result":
