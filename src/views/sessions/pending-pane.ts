@@ -11,6 +11,8 @@ import { state, setActiveSession } from "./state";
 import { isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions } from "./sidebar";
+import { characterForSession, characterIconUrl } from "./session-characters";
+import { hydrateCharacterAvatars } from "../../shared/projects";
 import type { SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
@@ -61,6 +63,15 @@ export async function renderPendingPane(
     `<div class="session-composer"></div>`,
   ].join("\n");
   pane.insertBefore(_pendingHeader.el, pane.firstChild);
+
+  // Show the character the user picked in the new-session modal, mirroring the
+  // sidebar draft row's data path. Without this the header keeps the bare "?"
+  // placeholder while the sidebar already shows the portrait. No status glow on
+  // a draft (nothing is in flight). Hydrate fills the icon if it isn't cached.
+  if (config.characterId) {
+    _pendingHeader.setAvatar(config.characterId, characterIconUrl(config.characterId), "", project.path);
+    void hydrateCharacterAvatars(pane);
+  }
 
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
@@ -301,7 +312,21 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
     h.setTitle(sessionSubtitle(sess));
     h.setMeta(projectName(sess));
   }
-  h.bindSession({ sessionId, readOnly: false, autoAcceptOn: isAutoAccept(sessionId) });
+  // Refresh the avatar from the now-assigned session character: covers the case
+  // where the user didn't pick one in the modal and the backend rolled one on
+  // start (the draft showed the muted placeholder until now). Only override when
+  // we actually have an id, so a not-yet-loaded char map can't clobber the
+  // portrait already shown for a user-picked character.
+  const realCharId = sess ? characterForSession(sess) : null;
+  h.bindSession({
+    sessionId,
+    readOnly: false,
+    ...(realCharId
+      ? { charId: realCharId, charUrl: characterIconUrl(realCharId), charStatus: "", cwd: sess?.cwd ? String(sess.cwd) : null }
+      : {}),
+    autoAcceptOn: isAutoAccept(sessionId),
+  });
+  if (realCharId) void hydrateCharacterAvatars(pane);
 
   const messagesEl = pane.querySelector<HTMLElement>(".session-messages");
   const renderer = state.renderer;
