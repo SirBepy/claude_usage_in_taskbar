@@ -2,6 +2,7 @@
 
 ### Urgent
 
+- `gh` CLI auth is EXPIRED (HTTP 401 Bad credentials) - run `gh auth login` to restore it. Until then the /commit build-watch can't monitor CI. The v0.1.93 release run DID trigger and was in progress: https://github.com/SirBepy/claude_usage_in_taskbar/actions/runs/27618867852 - check it's green before relying on the auto-update.
 - Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 
