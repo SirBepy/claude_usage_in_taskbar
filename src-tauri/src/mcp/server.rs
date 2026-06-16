@@ -18,10 +18,21 @@ fn read_port() -> Option<u16> {
 }
 
 /// HTTP POST helper (blocking via tokio runtime).
+/// Overall cap on a single relay POST. The daemon hooks server holds a
+/// permission/question prompt open for up to `PROMPT_TIMEOUT_SECS` (3600s, see
+/// `daemon::hooks_server::permission`) so an AFK dev can answer later, then
+/// always returns an answer or a graceful deny. This client MUST out-wait that
+/// window, otherwise it aborts mid-prompt with "error sending request" and the
+/// dev's eventual answer is dropped. 3600 + 60s slack so the server's response
+/// always lands first; still bounded so a truly-wedged server can't hang the
+/// MCP process forever.
+const RELAY_TIMEOUT_SECS: u64 = 3660;
+
 fn http_post(rt: &tokio::runtime::Runtime, url: &str, body: Value) -> Result<Value, String> {
     rt.block_on(async {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(320))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(RELAY_TIMEOUT_SECS))
             .build()
             .map_err(|e| e.to_string())?;
         let resp = client
