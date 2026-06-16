@@ -1,5 +1,5 @@
 import { html, render } from "lit-html";
-import { renderAvatar, hydrateCharacterAvatars, projectLabel } from "../../../../shared/projects";
+import { renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons, projectLabel } from "../../../../shared/projects";
 import { getProjectDetailState, getSettings } from "../../../../shared/state";
 import { api } from "../../../../shared/api";
 import { backFromSubview } from "../../../../shared/navigation";
@@ -36,10 +36,9 @@ export async function renderCharacterPickView(root: HTMLElement): Promise<() => 
   // Populate header
   const settings = getSettings();
   const configured = (settings.projects || []).find((p) => p.path === cwd);
-  const avatar = configured?.avatar || {
-    kind: "emoji" as const,
-    value: (configured?.name || cwd || "?").charAt(0),
-  };
+  // No custom avatar -> hydratable project-face placeholder (icon -> tech logo
+  // -> folder), consistent with the projects list (ai_todo 114).
+  const avatar = configured?.avatar || { kind: "none" as const };
   const aliases = settings.projectAliases || {};
 
   const titleEl = root.querySelector<HTMLElement>("#characterPickTitle");
@@ -47,10 +46,11 @@ export async function renderCharacterPickView(root: HTMLElement): Promise<() => 
 
   const avatarEl = root.querySelector<HTMLElement>("#characterPickAvatar");
   if (avatarEl) {
-    avatarEl.innerHTML = renderAvatar(avatar);
+    avatarEl.innerHTML = renderAvatar(avatar, cwd);
     if (avatar.kind === "character") {
       void hydrateCharacterAvatars(avatarEl);
     }
+    void hydrateProjectTechIcons(avatarEl);
   }
 
   const host = root.querySelector<HTMLElement>("#whitelist-editor-host");

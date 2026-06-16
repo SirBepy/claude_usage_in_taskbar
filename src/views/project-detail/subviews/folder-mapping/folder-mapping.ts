@@ -138,8 +138,8 @@ export function wireFolderMappingSubview(cwd: string): void {
 export async function renderFolderMappingView(
   root: HTMLElement,
 ): Promise<() => void> {
-  const { avatar, title } = projectSubviewHeaderData();
-  render(template(avatar, title), root);
+  const { avatar, title, cwd: headerCwd } = projectSubviewHeaderData();
+  render(template(avatar, title, headerCwd), root);
   void hydrateSubviewHeader(root);
 
   const cwd = getProjectDetailState().cwd;
@@ -154,11 +154,11 @@ export async function renderFolderMappingView(
   return () => { /* no teardown */ };
 }
 
-function template(avatar: Avatar, title: string) {
+function template(avatar: Avatar, title: string, projectPath?: string) {
   return html`
     <div class="view view-project-folder-mapping">
       <div class="view-header subview-header">
-        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
+        ${subviewHeaderTemplate(avatar, title, () => backFromSubview(), projectPath)}
       </div>
       <div class="view-body">
         <div class="section" style="margin-top:12px">

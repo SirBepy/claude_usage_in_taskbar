@@ -169,7 +169,7 @@ export async function renderSessionDetailView(
   root: HTMLElement,
 ): Promise<() => void> {
   const r = getCurrentSessionRecord() as SessionRecord | null;
-  const { avatar } = projectSubviewHeaderData();
+  const { avatar, cwd } = projectSubviewHeaderData();
   const live = isLive(r);
   const sid = r ? sessionIdOf(r) : "";
 
@@ -179,7 +179,7 @@ export async function renderSessionDetailView(
       : `Chat ${sid.slice(0, 8) || ""}`.trim() || r.date || "Session"
     : "Session";
 
-  render(template(avatar, fallbackTitle, r), root);
+  render(template(avatar, fallbackTitle, r, cwd), root);
   void hydrateSubviewHeader(root);
 
   if (!r) return () => { /* nothing */ };
@@ -241,13 +241,13 @@ function menuTemplate(r: SessionRecord | null): TemplateResult {
   `;
 }
 
-function template(avatar: Avatar, title: string, r: SessionRecord | null) {
+function template(avatar: Avatar, title: string, r: SessionRecord | null, projectPath?: string) {
   return html`
     <div class="view view-session-detail">
       <div class="view-header subview-header">
         <button class="icon-btn" title="Back" @click=${() => backFromSubview()}><i class="ph ph-arrow-left"></i></button>
         <div class="project-detail-heading">
-          <div class="avatar-mini">${unsafeHTML(renderAvatar(avatar))}</div>
+          <div class="avatar-mini">${unsafeHTML(renderAvatar(avatar, projectPath))}</div>
           <div class="project-detail-titles">
             <h2 id="sessionDetailTitle" style="font-size:0.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title=${title}>${title}</h2>
           </div>

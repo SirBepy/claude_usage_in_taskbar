@@ -49,8 +49,8 @@ async function renderAutomationForm(): Promise<void> {
 export async function renderAutomationView(
   root: HTMLElement,
 ): Promise<() => void> {
-  const { avatar, title } = projectSubviewHeaderData();
-  render(template(avatar, title), root);
+  const { avatar, title, cwd: headerCwd } = projectSubviewHeaderData();
+  render(template(avatar, title, headerCwd), root);
   void hydrateSubviewHeader(root);
 
   const automate = root.querySelector<HTMLButtonElement>("#automateChannelBtn");
@@ -118,11 +118,11 @@ export async function renderAutomationView(
   return () => { /* no teardown */ };
 }
 
-function template(avatar: Avatar, title: string) {
+function template(avatar: Avatar, title: string, projectPath?: string) {
   return html`
     <div class="view view-project-automation">
       <div class="view-header subview-header">
-        ${subviewHeaderTemplate(avatar, title, () => backFromSubview())}
+        ${subviewHeaderTemplate(avatar, title, () => backFromSubview(), projectPath)}
       </div>
       <div class="view-body">
         <section class="automation-section" id="automationSection" style="margin-top:12px">
