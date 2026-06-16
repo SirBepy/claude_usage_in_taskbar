@@ -1,5 +1,8 @@
 # Let /supervised-run host this Tauri app (daemon breakaway)
 
+## Decision (Joe, 2026-06-16)
+**Approved - fix it in the `server_supervisor` repo.** Make the supervisor grant the daemon breakaway (or not share its inherited job) so `/supervised-run` can host this Tauri app for testing. Cross-repo change: branch + build + verify in server_supervisor on its own; also handle the side bug where the supervised dev daemon seizing port 27182 wedges other sessions' relay (see context). Touching a separate repo = its own commit + verify, not bundled with claude_usage commits.
+
 ## Goal
 
 Make `cargo tauri dev` for this app run correctly under server_supervisor, so Claude can start the app for testing via `/supervised-run` instead of asking Joe to run `! cargo tauri dev`. Today the daemon gets trapped in an inherited Windows job when launched via the supervisor.

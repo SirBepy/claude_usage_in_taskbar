@@ -1,5 +1,8 @@
 # Chat msg-count stuck at 1 + surface unsent/undelivered messages
 
+## Re-scope (Joe, 2026-06-16)
+The "outbox" of piece 2 ALREADY EXISTS - it's the held-messages queue (the "N waiting" chip). Do NOT build a new one. Joe's actual current pain: **held/queued messages do not auto-deliver when the AI finishes its turn** - they should flush automatically on turn-complete but don't reliably. This is despite commit a23104a ("FIX: held messages now auto-send when Claude finishes a normal turn"), so that fix is incomplete or regressed. So piece 2 becomes: **fix the held-message auto-flush on turn completion** (overlaps ai_todo 90's held-messages e2e and the recent held-messages work). Piece 1 (the msg-count stuck at 1) stays as-is and still needs a live broken-chat daemon.log.
+
 ## Symptom (Joe, 2026-06-10)
 
 In one specific in-app chat the statusbar read `1 msg, 88 turns` even though Joe

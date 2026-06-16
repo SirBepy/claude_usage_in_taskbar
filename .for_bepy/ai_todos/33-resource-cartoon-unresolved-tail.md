@@ -1,5 +1,8 @@
 # HotS unresolved-clip tail + optional full-roster re-pull from CASC
 
+## Decision (Joe, 2026-06-16)
+**Lowest priority - leave as-is for now.** Joe doesn't recall asking for the laugh clips ("would be nice but definitely the lowest priority thing out there"). Don't spend effort here unless everything else is done; the current cropped laugh clips + working fallbacks are fine. Keep parked at the bottom of the queue.
+
 ## Goal
 Close out the few still-cropped HotS clips, and (optionally) re-pull the whole HotS roster from the authoritative local game CASC so every hero is complete - not just the ~15-clip jamiephan subset.
 
