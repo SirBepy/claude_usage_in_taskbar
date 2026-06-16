@@ -136,6 +136,21 @@ impl Settings {
         self.extra.get("pauseInMeeting").and_then(|v| v.as_bool()).unwrap_or(true)
     }
 
+    /// Whether a given character-sound slot is enabled. `camel_key` is the
+    /// slot's camelCase key (e.g. "workFinished"). Defaults to `true` (on) when
+    /// the key is absent, so existing users keep hearing every slot.
+    pub fn character_slot_enabled(&self, camel_key: &str) -> bool {
+        self.extra
+            .get("characterSoundSlots")
+            .and_then(|m| m.get(camel_key))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// Whether clicking a session in the sidebar plays its character's `select`
+    /// sound. Defaults to `false` (off) when absent.
+    pub fn select_on_session_click(&self) -> bool { self.bool_extra("selectOnSessionClick") }
+
     fn bool_extra(&self, key: &str) -> bool {
         self.extra.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
     }
@@ -236,6 +251,28 @@ mod tests {
         assert!(!s.pause_notifications_in_meeting());
         let s: Settings = serde_json::from_str(r#"{ "pauseInMeeting": true }"#).unwrap();
         assert!(s.pause_notifications_in_meeting());
+    }
+
+    #[test]
+    fn character_slot_enabled_defaults_true_when_absent() {
+        let s = Settings::default();
+        assert!(s.character_slot_enabled("workFinished"));
+        assert!(s.character_slot_enabled("death"));
+        assert!(!s.select_on_session_click());
+    }
+
+    #[test]
+    fn character_slot_enabled_reads_nested_object() {
+        let raw = r#"{
+            "characterSoundSlots": { "workFinished": false, "ready": true },
+            "selectOnSessionClick": true
+        }"#;
+        let s: Settings = serde_json::from_str(raw).unwrap();
+        assert!(!s.character_slot_enabled("workFinished"));
+        assert!(s.character_slot_enabled("ready"));
+        // Absent slot key falls back to enabled.
+        assert!(s.character_slot_enabled("death"));
+        assert!(s.select_on_session_click());
     }
 
     #[test]

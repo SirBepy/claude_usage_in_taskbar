@@ -36,6 +36,19 @@ impl Slot {
             Slot::Death         => "death",
         }
     }
+
+    /// camelCase key used in settings (`characterSoundSlots.<key>`), matching the
+    /// frontend's JS naming for the per-slot enable toggles.
+    pub fn camel_key(self) -> &'static str {
+        match self {
+            Slot::WorkFinished  => "workFinished",
+            Slot::QuestionAsked => "questionAsked",
+            Slot::Ready         => "ready",
+            Slot::Select        => "select",
+            Slot::Annoyed       => "annoyed",
+            Slot::Death         => "death",
+        }
+    }
 }
 
 /// Returns a random entry from the slice or `None` when empty.

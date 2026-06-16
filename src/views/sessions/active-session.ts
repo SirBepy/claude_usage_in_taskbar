@@ -7,6 +7,7 @@ import { Composer } from "../../shared/chat/composer";
 import { HeldMessages } from "../../shared/chat/held-messages";
 import type { ChatEvent, ContentBlock, Instance } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
+import { getSettings } from "../../shared/state";
 import {
   projectName,
   sessionSubtitle,
@@ -181,6 +182,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const headerCharId = characterForSession(sess);
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
+
+  // Opt-in cue (Settings > Sound, default off): play the character's "select"
+  // sound when a session row is clicked. Per-slot toggle + mute enforced in Rust.
+  if (headerCharId && getSettings().selectOnSessionClick === true) {
+    void api.playCharacterSlot(headerCharId, "select").catch(() => { /* best-effort */ });
+  }
 
   const header = new SessionHeader({ title: sessionSubtitle(sess), meta: projectName(sess) });
   header.onCharClick = () => { void changeCharacterForSession(sess.session_id); };

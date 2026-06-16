@@ -50,6 +50,10 @@ pub fn play_character_slot(
     if settings.mute_all() || settings.mute_sounds() {
         return Ok(());
     }
+    // Per-slot toggle (Settings > Sound). Defaults on when unset.
+    if !settings.character_slot_enabled(slot.camel_key()) {
+        return Ok(());
+    }
     let Some(c) = characters::get(&character_id) else {
         return Err(format!("unknown character: {character_id}"));
     };

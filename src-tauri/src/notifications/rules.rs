@@ -101,6 +101,17 @@ pub fn fire(
         log::debug!("notification suppressed: meeting active");
         return;
     }
+    // Per-slot character-sound toggle (Settings > Sound). work_finished /
+    // question_asked fire ONLY through this daemon-link path, so gate them here;
+    // threshold_crossed is not a character slot.
+    let slot_camel = match kind {
+        NotifKind::WorkFinished => Some("workFinished"),
+        NotifKind::QuestionAsked => Some("questionAsked"),
+        NotifKind::ThresholdCrossed => None,
+    };
+    if let Some(camel) = slot_camel {
+        if !settings_snapshot.character_slot_enabled(camel) { return; }
+    }
     let cfg: crate::tray::NotificationsConfig = (&settings_snapshot).try_into().unwrap_or_default();
     let rule = resolve_with_character(&cfg, &settings_snapshot, kind, session_id, cwd_key);
     if !rule.enabled { return; }

@@ -81,6 +81,17 @@ export function saveSettings(): void {
   const prevColorApply = (prev.colorApplyTo as Record<string, boolean | undefined>) || {};
   const prevPace = (prev.paceColors as Record<string, string | undefined>) || {};
   const prevSync = (prev.sync as Record<string, unknown>) || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" };
+  // Per-slot character-sound toggles. Default ON (absent key or unmounted Sound
+  // subview both resolve to true) so existing users keep hearing every slot.
+  const prevSlots = (prev.characterSoundSlots as Record<string, boolean | undefined>) || {};
+  const characterSoundSlots = {
+    workFinished: chkOr("soundSlotWorkFinished", prevSlots.workFinished !== false),
+    questionAsked: chkOr("soundSlotQuestionAsked", prevSlots.questionAsked !== false),
+    select: chkOr("soundSlotSelect", prevSlots.select !== false),
+    ready: chkOr("soundSlotReady", prevSlots.ready !== false),
+    death: chkOr("soundSlotDeath", prevSlots.death !== false),
+    annoyed: chkOr("soundSlotAnnoyed", prevSlots.annoyed !== false),
+  };
 
   const settings: SettingsShape = {
     theme: (() => {
@@ -134,6 +145,9 @@ export function saveSettings(): void {
     muteSystemNotifications: chkOr("muteSystemSwitch", !!prev.muteSystemNotifications),
     // Default on: absent key or unmounted subview both resolve to true.
     pauseInMeeting: chkOr("pauseInMeetingSwitch", prev.pauseInMeeting !== false),
+    characterSoundSlots,
+    // Default off: opt-in "play select when clicking a session row".
+    selectOnSessionClick: chkOr("selectOnSessionClickSwitch", !!prev.selectOnSessionClick),
     notifications: gatherNotifSettings(prev),
     projectAliases: prev.projectAliases || {},
     projectBlacklist: prev.projectBlacklist || [],
