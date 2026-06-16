@@ -2,8 +2,11 @@
 id: 112
 slug: revisit-chat-border-color-system
 title: Revisit the chat border-color system - red is overloaded
-status: open
+status: decided
 ---
+
+## Decision (Joe, 2026-06-16)
+**Closing keeps RED; "asking a question" / needs-attention moves to AMBER/yellow.** Build the coherent palette around that: red is reserved for the terminal "closing/shutting down" state, amber for "needs your input" (question/permission-pending), with the remaining states (busy, idle, error/rate-limited, remote=blue per ai_todo 113) each getting a distinct, documented hue. Implement as the single-source-of-truth CSS-prop map called for in Scope.
 
 ## Why
 Border/state colors on chat rows + panes have grown ad-hoc and now collide. Red is used for BOTH "asking a question" (needs attention) AND, as of the close-leak fix, the "closing" state. Two different meanings sharing red is confusing. Joe wants a coherent pass over ALL the chat state colors.

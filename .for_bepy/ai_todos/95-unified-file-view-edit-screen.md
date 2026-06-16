@@ -1,5 +1,8 @@
 # Unified in-app file view/edit screen
 
+## Decision (Joe, 2026-06-16)
+**Build the full unified screen (this todo), not just a read-only viewer.** It's the single destination for all file rows: in-chat Read chips, File-Changes chips, AND the tool-tally popover rows (absorbs ai_todo 35). Recommended build order: (1) read-only Shiki view slice + `read_text_file` IPC, wire all file rows to it, keep "open in VS Code" as a secondary affordance; (2) session-edit diff view; (3) inline edit. Ship incrementally but under one screen/architecture.
+
 ## Goal
 
 One in-app screen that becomes the single destination for "look at / work on a file" across the app: view the current file, view its diff(s) from this session's edits, and (future) edit it inline. The new in-chat Read and "File Changes" chip-panel rows should open THIS screen instead of shelling out to the external editor.

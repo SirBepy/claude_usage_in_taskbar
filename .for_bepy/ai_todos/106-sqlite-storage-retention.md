@@ -1,5 +1,8 @@
 # SQLite storage migration + user-controlled retention
 
+## Decision (Joe, 2026-06-16)
+**Proceed per the design spec, with the specced defaults: usage_snapshots 90d, token_records 90d, skill_events KeepForever.** Migration is non-destructive (old JSONL renamed to .bak, gated by `storage_migrated_v1`). Before pinning, run the package safety check on `rusqlite` 0.40.x (bundled) + `cargo audit` per the global Packages rule.
+
 ## Goal
 
 Replace the three JSONL/daily-file data stores with a single SQLite database, remove the hard-coded 90-day pruning cap, and add a Settings "Data" section where the user can configure per-dataset retention policies and clear data manually.

@@ -1,5 +1,8 @@
 # In-app viewer for files/images opened from the tool-tally popover
 
+## Decision (Joe, 2026-06-16)
+**Folded into ai_todo 95 (full unified file view/edit screen).** Joe chose the full unified screen over a standalone read-only viewer, so 35's read-only `read_text_file` + Shiki panel becomes the FIRST slice of that one screen (which also serves the in-chat Read / File-Changes chip rows), not a separate surface. The tool-tally popover file rows should point at the same unified screen. Keep an "open in VS Code" secondary affordance. Track + build under 95; this file can be closed once 95's viewer slice lands.
+
 ## Goal
 
 Replace the external "open in VS Code" jump with an in-app viewer, so clicking a file the agent read/edited (or an image) stays inside the Companion app instead of shelling out to `code <path>`.

@@ -2,8 +2,11 @@
 id: 102
 slug: remote-control-chats-architecture-fork
 title: Restore phone remote-control for in-app chats (architecture fork - needs Joe's decision)
-status: parked
+status: decided
 ---
+
+## Decision (Joe, 2026-06-16)
+**Path B - the app speaks claude's remote-control bridge wire protocol**, so ONE interactive session is driven by both the app and the phone (true convergence, the deferred "Phase 5b"). Keep the entire daemon epic (stdin stream-json driving, cancel-via-control_request, partial streaming, held-messages, AUQ relay) AND restore phone control. Joe accepts this is a real project: reverse-engineer / implement claude's remote-control protocol client plus an outbound channel. NOT A/C/D. Start with a spike to reverse-engineer the bridge wire protocol (capture a live interactive --remote-control session's traffic) before committing to the full client.
 
 ## Why this is parked, not done
 
