@@ -414,20 +414,23 @@ export class ChatRenderer {
   private beginRevealHold(): void {
     this.container.style.transition = "none";
     this.container.style.opacity = "0";
+    // Start slightly below resting so the reveal settles UP into place.
+    this.container.style.transform = "translateY(8px)";
   }
 
   /**
-   * Fade the assembled transcript in. Idempotent: a no-op once already shown,
-   * so the settle reveal, the safety-timeout reveal, and the detach reset can
-   * all call it freely.
+   * Fade + slide the assembled transcript in. Idempotent: a no-op once already
+   * shown, so the settle reveal, the safety-timeout reveal, and the detach reset
+   * can all call it freely.
    */
   private revealTranscript(): void {
     if (this.container.style.opacity === "" || this.container.style.opacity === "1") return;
-    // Commit the opacity:0 paint before enabling the transition, else the
-    // browser coalesces both into one frame and there is no fade.
+    // Commit the opacity:0 / offset paint before enabling the transition, else
+    // the browser coalesces both into one frame and there is no animation.
     void this.container.offsetHeight;
-    this.container.style.transition = "opacity 150ms ease";
+    this.container.style.transition = "opacity 150ms ease, transform 180ms ease";
     this.container.style.opacity = "1";
+    this.container.style.transform = "translateY(0)";
   }
 
   handleEvent(ev: ChatEvent, opts: HandleEventOpts = {}): void {

@@ -180,17 +180,20 @@ describe("pagination folds prepended turns", () => {
     // hidden so its ugly build (top-down paint, fold, snap) is never seen.
     expect(container.scrollTop).toBe(1000);
     expect(container.style.opacity).toBe("0");
+    // Held slightly below resting so the reveal settles UP into place.
+    expect(container.style.transform).toBe("translateY(8px)");
 
     // Async content (shiki highlight, image hydration) grows the height AFTER
     // that scroll, pushing the bottom out of view - simulate by resetting.
     container.scrollTop = 0;
 
     // The settle pass re-pins once that work flushes (highlight await + a
-    // macrotask), then fades the finished frame in. Without it the newest
-    // turn's chips stay cut off and the transcript stays hidden.
+    // macrotask), then fades + slides the finished frame in. Without it the
+    // newest turn's chips stay cut off and the transcript stays hidden.
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(container.scrollTop).toBe(1000);
     expect(container.style.opacity).toBe("1");
+    expect(container.style.transform).toBe("translateY(0)");
   });
 
   it("carries usage across batches for a turn that straddles them", async () => {
