@@ -16,6 +16,7 @@
 
 ### Visual QA
 
+- After the next build, confirm the chat-open snap fix (commit c012e90): open an existing chat with a long history - it should SNAP to its final state (header changes-badge shows the final count immediately, thinking bar lands on the final activity or clears if the chat is done) instead of visibly counting up / flipping through every past activity. New live turns after open should still animate the badge + thinking bar normally.
 - After the next build, confirm the 0.1.89 fix end-to-end: app boots normally, Settings > Statusline > Back works again, and Settings > About > the GitHub/YouTube dev-link buttons open in the browser (now routed through the app's `open_external` IPC).
 - After the next build, eyeball project tech-logos (ai_todo 99): projects with no custom emoji/image avatar should now show their real icon file (icon.png/logo.svg/favicon) OR a Devicon tech logo (rust/node/python/flutter/go/deno/dotnet) OR a generic folder, in BOTH the projects list and the project-detail header. Custom emoji/image/character avatars must be unchanged. Devicon loads from unpkg (needs internet on first paint). If a logo is missing, check the browser console for a devicon CSS/font load error.
 - After the next build, confirm the working-chip highlight: while a chat works, only ONE chip pulses (the current action, e.g. File Changes while "Editing x.ts") and the highlight MOVES as the activity moves - not the whole strip lit up at once.
