@@ -50,6 +50,11 @@ pub fn play_character_slot(
     if settings.mute_all() || settings.mute_sounds() {
         return Ok(());
     }
+    if settings.pause_notifications_in_meeting()
+        && state.meeting_active.load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Ok(());
+    }
     // Per-slot toggle (Settings > Sound). Defaults on when unset.
     if !settings.character_slot_enabled(slot.camel_key()) {
         return Ok(());
