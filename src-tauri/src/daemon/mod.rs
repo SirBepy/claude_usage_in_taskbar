@@ -64,7 +64,28 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
 
     let initial_settings = load_initial_settings();
     let settings_cache = SettingsCache::new(initial_settings);
-    let state = DaemonState::new(new_session_map(), settings_cache.clone());
+
+    // The daemon opens its OWN connection to the shared companion.db (the app
+    // owns the one-time JSONL->DB migration; the daemon only writes new rows).
+    // WAL + busy_timeout in storage::db::open_db let both processes coordinate.
+    // Best-effort: a failure to open must not abort the daemon (hooks, chat,
+    // channels all still work), so log and run without DB-backed token/skill
+    // persistence rather than exiting.
+    let db = match crate::settings::paths::companion_db()
+        .map_err(|e| e.into())
+        .and_then(|p| crate::storage::StorageManager::open(&p))
+    {
+        Ok(mgr) => {
+            log::info!("daemon: opened companion.db for token/skill writes");
+            Some(std::sync::Arc::new(std::sync::Mutex::new(mgr)))
+        }
+        Err(e) => {
+            log::error!("daemon: failed to open companion.db (token/skill writes disabled): {e:#}");
+            None
+        }
+    };
+
+    let state = DaemonState::with_db(new_session_map(), settings_cache.clone(), db);
 
     let mut router = Router::new();
     health::register(&mut router);

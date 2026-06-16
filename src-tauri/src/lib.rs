@@ -287,26 +287,67 @@ pub fn run() {
             }
             crate::tray::setup(app.handle())?;
 
-            // One-time legacy usage import into SQLite. The importer renames the
-            // source to `.bak` on success, so the on-disk presence of
-            // `history.jsonl` is itself the idempotency gate (no separate flag).
-            // Usage only this slice; token + skill imports land in slice 2b.
+            // One-time legacy import into SQLite for all three datasets. Each
+            // importer renames its source to `.bak` on success, so the on-disk
+            // presence of the source file is itself the idempotency gate (no
+            // separate flag). The APP owns this migration for ALL datasets
+            // (it controls startup order); the daemon only writes new rows.
             {
                 use tauri::Manager;
+                let state = app.state::<crate::state::AppState>();
+                let mgr = state.db.lock().unwrap();
+                let conn = mgr.conn();
+
+                // Usage (history.jsonl -> usage_snapshots).
                 if let Ok(history_path) = paths::history_file() {
                     if history_path.exists() {
-                        let state = app.state::<crate::state::AppState>();
-                        let mgr = state.db.lock().unwrap();
-                        match crate::storage::migration::import_usage_jsonl(
-                            mgr.conn(),
-                            &history_path,
-                        ) {
+                        match crate::storage::migration::import_usage_jsonl(conn, &history_path) {
                             Ok(stats) => log::info!(
                                 "storage: imported usage history into SQLite (imported={}, skipped={})",
                                 stats.imported,
                                 stats.skipped,
                             ),
                             Err(e) => log::error!("storage: usage history import failed: {e:#}"),
+                        }
+                    }
+                }
+
+                // Tokens (token-history.json array -> token_records).
+                if let Ok(token_path) = paths::token_history_file() {
+                    if token_path.exists() {
+                        match crate::storage::migration::import_token_history_json(conn, &token_path) {
+                            Ok(stats) => log::info!(
+                                "storage: imported token history into SQLite (imported={}, skipped={})",
+                                stats.imported,
+                                stats.skipped,
+                            ),
+                            Err(e) => log::error!("storage: token history import failed: {e:#}"),
+                        }
+                    }
+                }
+
+                // Skills (skill-usage/events-*.jsonl -> skill_events). The
+                // importer renames each daily file to `.bak`; a dir with no
+                // remaining events-*.jsonl is a clean no-op on later launches.
+                if let Ok(skill_dir) = paths::skill_usage_dir() {
+                    let has_events = std::fs::read_dir(&skill_dir)
+                        .map(|entries| {
+                            entries.flatten().any(|e| {
+                                e.file_name()
+                                    .to_str()
+                                    .map(|n| n.starts_with("events-") && n.ends_with(".jsonl"))
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false);
+                    if has_events {
+                        match crate::storage::migration::import_skill_events_dir(conn, &skill_dir) {
+                            Ok(stats) => log::info!(
+                                "storage: imported skill events into SQLite (imported={}, skipped={})",
+                                stats.imported,
+                                stats.skipped,
+                            ),
+                            Err(e) => log::error!("storage: skill events import failed: {e:#}"),
                         }
                     }
                 }

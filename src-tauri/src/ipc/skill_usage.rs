@@ -1,6 +1,6 @@
 use crate::settings::paths;
 use crate::skill_usage::store;
-use crate::skill_usage::types::{InstalledSkill, SkillDetail, SkillUsageWeek};
+use crate::skill_usage::types::{InstalledSkill, SkillDetail, SkillUsageEvent, SkillUsageWeek};
 use crate::slash::{enumerate, SlashSource};
 use crate::state::AppState;
 use std::path::PathBuf;
@@ -10,21 +10,48 @@ fn today_utc() -> String {
     chrono::Utc::now().format("%Y-%m-%d").to_string()
 }
 
+/// Unix-second cutoff for the 7-day window ending today (start of the oldest
+/// day). Skill events with `timestamp >= cutoff` belong to the window. `0` if
+/// the date math fails, which just widens the window harmlessly.
+fn week_cutoff_unix() -> i64 {
+    let today = today_utc();
+    store::week_cutoff_day(&today)
+        .map(|day| format!("{day}T00:00:00Z"))
+        .and_then(|s| crate::storage::usage_store::rfc3339_to_unix(&s).ok())
+        .unwrap_or(0)
+}
+
+/// Loads the window's skill events from the SQLite store (the daemon now writes
+/// there; the per-day JSONL files are legacy). `total_sessions` still derives
+/// from the file-based `mark_session` markers, which have no DB equivalent.
 #[tauri::command]
-pub async fn get_skill_usage_week() -> Result<SkillUsageWeek, String> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn get_skill_usage_week(state: State<'_, AppState>) -> Result<SkillUsageWeek, String> {
+    let cutoff = week_cutoff_unix();
+    let events: Vec<SkillUsageEvent> = {
+        let mgr = state.db.lock().unwrap();
+        store::get_skill_events_from_db(mgr.conn(), cutoff).map_err(|e| e.to_string())?
+    };
+    tauri::async_runtime::spawn_blocking(move || {
         let dir = paths::skill_usage_dir().map_err(|e| e.to_string())?;
-        Ok(store::get_week(&dir, &today_utc()))
+        let sessions = store::week_sessions(&dir, &today_utc());
+        Ok(store::aggregate_week(&events, &sessions))
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub async fn get_skill_usage_detail(skill: String) -> Result<SkillDetail, String> {
+pub async fn get_skill_usage_detail(
+    state: State<'_, AppState>,
+    skill: String,
+) -> Result<SkillDetail, String> {
+    let cutoff = week_cutoff_unix();
+    let events: Vec<SkillUsageEvent> = {
+        let mgr = state.db.lock().unwrap();
+        store::get_skill_events_from_db(mgr.conn(), cutoff).map_err(|e| e.to_string())?
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = paths::skill_usage_dir().map_err(|e| e.to_string())?;
-        Ok(store::get_detail(&dir, &today_utc(), &skill))
+        Ok(store::aggregate_detail(&events, &skill))
     })
     .await
     .map_err(|e| e.to_string())?

@@ -8,6 +8,7 @@ use crate::daemon::notifier::Notifier;
 use crate::daemon::session::SessionMap;
 use crate::daemon::settings_cache::SettingsCache;
 use crate::sessions::registry::Registry;
+use crate::storage::StorageManager;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -34,12 +35,33 @@ pub struct DaemonState {
     /// Signalled by the `shutdown_daemon` RPC so the main loop exits the
     /// process. `run_daemon_main` selects on `shutdown.notified()`.
     pub shutdown: Arc<Notify>,
+    /// The daemon's OWN connection to the shared `companion.db`. The app owns
+    /// the one-time JSONL->DB migration; the daemon only WRITES new rows (token
+    /// records from `/refresh`, skill events from `/hooks/stop`). WAL +
+    /// busy_timeout (set in `storage::db::open_db`) lets both processes touch the
+    /// file concurrently. `None` if the DB failed to open at daemon startup, in
+    /// which case the write paths fall back to a warn-and-skip (never a panic).
+    /// A `std::sync::Mutex` because `rusqlite::Connection` is `!Sync`; every
+    /// write locks briefly for a single synchronous INSERT and never holds the
+    /// guard across an await.
+    pub db: Option<Arc<std::sync::Mutex<StorageManager>>>,
 }
 
 impl DaemonState {
     pub fn new(
         sessions: SessionMap,
         settings: SettingsCache,
+    ) -> Arc<Self> {
+        Self::with_db(sessions, settings, None)
+    }
+
+    /// Constructor that threads in the daemon's `companion.db` handle.
+    /// `run_daemon_main` opens the store once and passes it here; tests use
+    /// [`DaemonState::new`] (no DB).
+    pub fn with_db(
+        sessions: SessionMap,
+        settings: SettingsCache,
+        db: Option<Arc<std::sync::Mutex<StorageManager>>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             sessions,
@@ -50,6 +72,7 @@ impl DaemonState {
             channels: Arc::new(ChannelsManager::new()),
             pending_prompts: Arc::new(Mutex::new(HashMap::new())),
             shutdown: Arc::new(Notify::new()),
+            db,
         })
     }
 

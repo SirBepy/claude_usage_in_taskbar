@@ -53,13 +53,29 @@ pub(super) async fn on_stop(
         .await
         .unwrap_or_default();
 
+        // mark_session stays file-based: it's a per-session/per-day dedup marker
+        // (records that a session ran AT ALL, even with zero skill events) that
+        // feeds `total_sessions`. The SQLite store has no per-session marker
+        // table, so preserving it here keeps that count correct. Skill EVENTS
+        // now go to the DB instead of the per-day events-*.jsonl files.
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         if let Err(e) = crate::skill_usage::store::mark_session(&dir, &session_id, &today) {
             log::warn!("mark_session failed: {e}");
         }
         if !events.is_empty() {
-            if let Err(e) = crate::skill_usage::store::append_events(&dir, &events) {
-                log::warn!("append_events failed: {e}");
+            if let Some(db) = state.db.clone() {
+                let _ = tokio::task::spawn_blocking(move || {
+                    let mgr = db.lock().unwrap_or_else(|p| p.into_inner());
+                    let conn = mgr.conn();
+                    for event in &events {
+                        if let Err(e) = crate::storage::skill_store::insert_skill_event(conn, event) {
+                            log::warn!("daemon: insert_skill_event failed: {e:#}");
+                        }
+                    }
+                })
+                .await;
+            } else {
+                log::warn!("daemon: companion.db unavailable; dropping {} skill event(s)", events.len());
             }
         }
         state.notifier.publish("skill_usage_changed", json!({}));

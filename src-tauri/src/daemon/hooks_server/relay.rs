@@ -3,7 +3,7 @@
 //! daemon now performs on its own.
 
 use super::HookCtx;
-use crate::settings::paths;
+use crate::storage::token_store;
 use crate::tokens as token_stats;
 use axum::{extract::State as AxState, http::StatusCode, response::IntoResponse, Json};
 use serde::Deserialize;
@@ -45,13 +45,18 @@ pub(super) async fn on_refresh(
         json!({"cwd": payload.cwd, "session_id": payload.session_id}),
     );
 
-    // Token-history append in background. Daemon owns the file write now.
+    // Token-record persist in background. The daemon now writes to the shared
+    // companion.db (was: token-history.json) via its own connection.
     if let (Some(session_id), Some(transcript_path)) =
         (payload.session_id.clone(), payload.transcript_path.clone())
     {
         let state = ctx.state.clone();
         let cwd = payload.cwd.clone();
         tokio::spawn(async move {
+            let Some(db) = state.db.clone() else {
+                // DB failed to open at daemon startup; nothing to persist to.
+                return;
+            };
             let transcript = PathBuf::from(transcript_path);
             let totals = tokio::task::spawn_blocking({
                 let t = transcript.clone();
@@ -60,9 +65,6 @@ pub(super) async fn on_refresh(
             .await
             .unwrap_or_default();
 
-            let Ok(history_path) = paths::token_history_file() else {
-                return;
-            };
             let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             let record = token_stats::TokenRecord {
                 session_id,
@@ -79,11 +81,30 @@ pub(super) async fn on_refresh(
                 live: None,
                 merged_subagents: None,
             };
-            let updated = tokio::task::spawn_blocking(move || {
-                token_stats::append_session(&history_path, record)
+
+            // Insert (idempotent on session_id, mirroring the old
+            // `append_session`) then read the full history back so the
+            // `token_history_updated` notify still carries the complete list the
+            // app expects. All DB work runs on a blocking thread holding the
+            // `std::sync::Mutex` only for synchronous statements.
+            let history = tokio::task::spawn_blocking(move || {
+                let mgr = db.lock().unwrap_or_else(|p| p.into_inner());
+                let conn = mgr.conn();
+                // Skip if this session was already recorded (append_session was
+                // a no-op on duplicate session_id; preserve that).
+                let already = token_store::get_token_records(conn, 0)
+                    .map(|recs| recs.iter().any(|r| r.session_id == record.session_id))
+                    .unwrap_or(false);
+                if !already {
+                    if let Err(e) = token_store::insert_token_record(conn, &record) {
+                        log::warn!("daemon: insert_token_record failed: {e:#}");
+                    }
+                }
+                token_store::get_token_records(conn, 0).unwrap_or_default()
             })
             .await;
-            if let Ok(Ok(history)) = updated {
+
+            if let Ok(history) = history {
                 state
                     .notifier
                     .publish("token_history_updated", json!({"history": history}));

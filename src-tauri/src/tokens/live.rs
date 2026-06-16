@@ -14,9 +14,18 @@ fn iso(t: std::time::SystemTime) -> String {
 }
 
 /// Find JSONL files modified in the last 12 hours whose session hasn't been
-/// persisted yet — the dashboard uses this to surface in-progress work.
+/// persisted yet — the dashboard uses this to surface in-progress work. Loads
+/// the persisted history from the legacy JSONL file; kept for callers/tests
+/// that still pass a path. The live IPC path uses
+/// [`active_sessions_from_history`] with records loaded from the SQLite store.
 pub fn active_sessions(history_path: &Path) -> Vec<TokenRecord> {
-    let history = load_history(history_path);
+    active_sessions_from_history(&load_history(history_path))
+}
+
+/// Same scan as [`active_sessions`] but takes the already-loaded persisted
+/// history (source-agnostic). The IPC layer feeds DB-loaded records here so the
+/// "already persisted" exclusion works against the SQLite store, not the file.
+pub fn active_sessions_from_history(history: &[TokenRecord]) -> Vec<TokenRecord> {
     let known_ids: HashSet<String> =
         history.iter().map(|r| r.session_id.clone()).collect();
 

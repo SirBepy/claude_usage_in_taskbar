@@ -6,6 +6,17 @@ use std::collections::{BTreeSet, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
+/// Loads skill events from the consolidated SQLite store with `timestamp >=
+/// since` (unix seconds), uncapped. The daemon now writes events here; this is
+/// the read path that the IPC layer feeds into [`aggregate_week`] /
+/// [`aggregate_detail`].
+pub fn get_skill_events_from_db(
+    conn: &rusqlite::Connection,
+    since: i64,
+) -> anyhow::Result<Vec<SkillUsageEvent>> {
+    crate::storage::skill_store::get_skill_events(conn, since, -1)
+}
+
 fn day_of(ts: &str) -> &str {
     ts.split('T').next().unwrap_or(ts)
 }
@@ -113,25 +124,43 @@ fn read_sessions_for_day(dir: &Path, day: &str) -> BTreeSet<String> {
 
 pub fn get_week(dir: &Path, today: &str) -> SkillUsageWeek {
     let days = last_n_days(today, 7);
+    let mut events: Vec<SkillUsageEvent> = Vec::new();
     let mut all_sessions: BTreeSet<String> = BTreeSet::new();
-    let mut per_skill: HashMap<String, (InvocationCounts, BTreeSet<String>, TokenBreakdown)> =
-        HashMap::new();
     for d in &days {
         all_sessions.extend(read_sessions_for_day(dir, d));
-        for e in read_events_for_day(dir, d) {
-            let entry = per_skill.entry(e.skill.clone()).or_default();
-            entry.0.total += 1;
-            match e.source {
-                InvocationSource::Manual => entry.0.manual += 1,
-                InvocationSource::Skill => entry.0.skill += 1,
-                InvocationSource::Auto => entry.0.auto += 1,
-            }
-            entry.1.insert(e.session_id.clone());
-            entry.2.input += e.tokens.input;
-            entry.2.output += e.tokens.output;
-            entry.2.cache_read += e.tokens.cache_read;
-            entry.2.cache_create += e.tokens.cache_create;
+        events.extend(read_events_for_day(dir, d));
+    }
+    aggregate_week(&events, &all_sessions)
+}
+
+/// Cutoff (RFC3339, day granularity) for the 7-day window ending at `today`.
+/// The oldest of the seven `last_n_days` entries, used to filter DB events.
+pub fn week_cutoff_day(today: &str) -> Option<String> {
+    last_n_days(today, 7).into_iter().min()
+}
+
+/// Aggregate a flat list of events plus a set of "active" session ids into the
+/// weekly summary. Source-agnostic: the file-backed [`get_week`] and the
+/// DB-backed IPC path both funnel through here so the output shape stays
+/// identical. `all_sessions` carries the per-session markers (sessions that ran
+/// at all, even with zero skill events) so `total_sessions` is unaffected by
+/// where the events came from.
+pub fn aggregate_week(events: &[SkillUsageEvent], all_sessions: &BTreeSet<String>) -> SkillUsageWeek {
+    let mut per_skill: HashMap<String, (InvocationCounts, BTreeSet<String>, TokenBreakdown)> =
+        HashMap::new();
+    for e in events {
+        let entry = per_skill.entry(e.skill.clone()).or_default();
+        entry.0.total += 1;
+        match e.source {
+            InvocationSource::Manual => entry.0.manual += 1,
+            InvocationSource::Skill => entry.0.skill += 1,
+            InvocationSource::Auto => entry.0.auto += 1,
         }
+        entry.1.insert(e.session_id.clone());
+        entry.2.input += e.tokens.input;
+        entry.2.output += e.tokens.output;
+        entry.2.cache_read += e.tokens.cache_read;
+        entry.2.cache_create += e.tokens.cache_create;
     }
     let mut entries: Vec<SkillUsageEntry> = per_skill
         .into_iter()
@@ -149,13 +178,31 @@ pub fn get_week(dir: &Path, today: &str) -> SkillUsageWeek {
     }
 }
 
+/// Session markers (the `mark_session` files) for the 7-day window. The DB has
+/// no per-session marker, so `total_sessions` still derives from these files.
+pub fn week_sessions(dir: &Path, today: &str) -> BTreeSet<String> {
+    let mut all: BTreeSet<String> = BTreeSet::new();
+    for d in last_n_days(today, 7) {
+        all.extend(read_sessions_for_day(dir, &d));
+    }
+    all
+}
+
 pub fn get_detail(dir: &Path, today: &str, skill: &str) -> SkillDetail {
     let days = last_n_days(today, 7);
-    let mut events: Vec<SkillUsageEvent> = days
+    let events: Vec<SkillUsageEvent> = days
         .iter()
         .flat_map(|d| read_events_for_day(dir, d))
-        .filter(|e| e.skill == skill)
         .collect();
+    aggregate_detail(&events, skill)
+}
+
+/// Filter a flat event list to one skill and tally invocation counts. The
+/// file-backed [`get_detail`] and the DB-backed IPC path share this so the
+/// output shape stays identical.
+pub fn aggregate_detail(events: &[SkillUsageEvent], skill: &str) -> SkillDetail {
+    let mut events: Vec<SkillUsageEvent> =
+        events.iter().filter(|e| e.skill == skill).cloned().collect();
     events.sort_by(|a, b| b.ts.cmp(&a.ts));
     let mut counts = InvocationCounts::default();
     for e in &events {

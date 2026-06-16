@@ -1,21 +1,37 @@
+use crate::state::AppState;
+use crate::storage::token_store;
 use crate::tokens::{self, BackfillResult, TokenRecord};
 use crate::settings::paths;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
-#[tauri::command]
-pub async fn get_token_history() -> Vec<TokenRecord> {
-    let Ok(path) = paths::token_history_file() else { return vec![] };
-    tauri::async_runtime::spawn_blocking(move || tokens::load_history(&path))
-        .await
-        .unwrap_or_default()
+/// Loads the full token history from the consolidated SQLite store (the daemon
+/// now writes records there). Filters out empty session ids to match the old
+/// JSONL `load_history` behaviour.
+fn load_history_from_db(state: &AppState) -> Vec<TokenRecord> {
+    let mgr = state.db.lock().unwrap();
+    match token_store::get_token_records(mgr.conn(), 0) {
+        Ok(records) => records
+            .into_iter()
+            .filter(|r| !r.session_id.is_empty())
+            .collect(),
+        Err(e) => {
+            log::warn!("get_token_records failed: {e:#}");
+            Vec::new()
+        }
+    }
 }
 
 #[tauri::command]
-pub async fn get_active_sessions() -> Vec<TokenRecord> {
-    let path = match paths::token_history_file() { Ok(p) => p, Err(_) => return vec![] };
-    tauri::async_runtime::spawn_blocking(move || tokens::active_sessions(&path))
+pub async fn get_token_history(state: State<'_, AppState>) -> Result<Vec<TokenRecord>, String> {
+    Ok(load_history_from_db(&state))
+}
+
+#[tauri::command]
+pub async fn get_active_sessions(state: State<'_, AppState>) -> Result<Vec<TokenRecord>, String> {
+    let history = load_history_from_db(&state);
+    tauri::async_runtime::spawn_blocking(move || tokens::active_sessions_from_history(&history))
         .await
-        .unwrap_or_default()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
