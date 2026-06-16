@@ -1,5 +1,19 @@
 # Comments for Bepy
 
+## 2026-06-16 - Autopilot run: draft-header fix + mobile single-pane (ai_todo 115)
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Draft chat header portrait: SHIPPED. The draft pane built its SessionHeader with the bare `?` placeholder and never set the avatar, so the sidebar showed the picked character but the header didn't. Set the avatar from `config.characterId` at construction (mirroring the sidebar draft row's `characterIconUrl` path) + refresh from the assigned session character on draft->real upgrade (guarded so a not-yet-loaded char map can't clobber a user-picked portrait). tsc clean (my file; only the pre-existing vendor/tauri_kit err remains). Visual confirm parked to BEPY Visual QA. sha: 526bb9a
+- ai_todo 115 (mobile sidemenu/sessions collapse): SHIPPED. Phone viewport showed the 260px list + chat cramped side-by-side. Now single-pane: list by default, chat on open, header back-arrow returns. tsc clean. sha: 2939f3d. ai_todo file deleted; live phone confirm parked to BEPY Visual QA.
+
+Decision needed: how to toggle list-vs-chat on mobile. The sessions burger ALREADY opens the GLOBAL app nav (#sidemenu), so the ai_todo's hint to "reuse openSidemenu/closeSidemenu + #sidemenuBackdrop for the session list" would double-bind the burger.
+Resolved via: direct judgment (reversible CSS; UX = your taste, didn't burn an iterate-it).
+Picked: navigation-stack pattern (single-pane swap + back button), the standard mobile-messaging UX, instead of the overlay+backdrop the hint suggested. Meets every acceptance criterion (list OR chat, tap-to-open collapses list, desktop pixel-unchanged, dashboard sidemenu untouched). Mechanism: a `data-mobile-pane` attribute on `.view-sessions` that CSS only reads inside a `@media (max-width:768px)` block, so JS never references the breakpoint and desktop is byte-identical.
+Where: src/views/sessions/{template,active-session,pending-flow,sessions}.ts + sessions.css
+Revisit: yes if you'd rather have the slide-over-overlay look than the full-pane swap - it's a CSS-only swap to change.
+
+PARKED (hard stop): ai_todo 104 = remote cockpit Phase 2 (QR pairing / device registry / revoke / kill switch). This is the security boundary for an RCE-capable endpoint and needs YOUR review + Tailscale setup; autopilot will not stand it up unattended. Phase 1 (103) shipped, Phase 3/4 (105) resolved earlier; 104 is the only remaining mobile-feature phase and it's gated on you.
+
 ## 2026-06-15 - Autopilot run: ai_todos 99, 90, 85 (project logos prioritized by Joe)
 
 RUN_LEDGER (chunk -> outcome -> sha) appended as each lands.
