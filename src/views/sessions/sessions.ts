@@ -13,7 +13,7 @@ import "./new-project-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
 import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
-import { selectSession, unwatchCurrentExternalSession, headerStatusClass } from "./active-session";
+import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
 import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
@@ -34,21 +34,6 @@ import {
   toggleViewMoreMenu,
 } from "./view-more-menu";
 
-const HEADER_STATUS_CLASSES = [
-  "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention",
-];
-
-/** Swap the header avatar's status ring class to match the session's current
- * state (working/done/question/…), so the ring colour tracks live changes
- * without re-rendering the whole header. */
-function updateHeaderAvatarStatus(pane: HTMLElement, sess: import("../../types/ipc.generated").Instance): void {
-  const heroEl = pane.querySelector<HTMLElement>(".session-header-avatar");
-  if (!heroEl) return;
-  const st = headerStatusClass(sess);
-  if (heroEl.classList.contains(st)) return;
-  heroEl.classList.remove(...HEADER_STATUS_CLASSES);
-  heroEl.classList.add(st);
-}
 
 let _pane: HTMLElement | null = null;
 let _pendingOpenPicker = false;

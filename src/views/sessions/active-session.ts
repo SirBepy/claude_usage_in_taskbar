@@ -35,6 +35,10 @@ import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 
+const HEADER_STATUS_CLASSES = [
+  "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention",
+];
+
 /** Status class (st-working / st-question / …) for an open session, using the
  * same classifier the sidebar rows use so the header avatar's border colour
  * matches the sidebar strip. Exported for the live recolour on the
@@ -47,6 +51,18 @@ export function headerStatusClass(sess: Instance): string {
     ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),
   ]);
   return statusDotClass(sess, unread, attention, question);
+}
+
+/** Swap the header avatar's status ring class without re-rendering the whole
+ * header. Called from both instances-changed and onStatusUpdate so the border
+ * stays in sync with the sidebar regardless of which event arrives first. */
+export function updateHeaderAvatarStatus(pane: HTMLElement, sess: Instance): void {
+  const heroEl = pane.querySelector<HTMLElement>(".session-header-avatar");
+  if (!heroEl) return;
+  const st = headerStatusClass(sess);
+  if (heroEl.classList.contains(st)) return;
+  heroEl.classList.remove(...HEADER_STATUS_CLASSES);
+  heroEl.classList.add(st);
 }
 
 /**
@@ -295,6 +311,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       const root = document.querySelector<HTMLElement>(".view-sessions");
       const listEl = root?.querySelector<HTMLElement>("#sessions-list");
       if (listEl) renderSidebar(listEl);
+      // Sync header avatar border immediately — don't wait for instances-changed.
+      const sess = state.sessions.find(s => s.session_id === sessionId);
+      if (sess) updateHeaderAvatarStatus(pane, sess);
       // work_finished / question_asked sounds are fired by the daemon-link
       // (notifications::rules::fire) which already resolves the character slot
       // and respects mute settings. Playing here too causes a double sound.
