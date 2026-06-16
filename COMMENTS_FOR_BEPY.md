@@ -1,5 +1,20 @@
 # Comments for Bepy
 
+## 2026-06-16 - ai_todo 106: JSONL -> SQLite storage migration (5 slices, all committed)
+
+Built the full SQLite migration after you decided the open forks (full multi-process now; defaults usage 90d / token 90d / skill forever). Done via 5 staged, cargo-check/tsc-green slices, each its own commit:
+- Slice 1 (c6fbe72): storage/ module - schema/init, retention (RetentionPolicy/Dataset/prune_all), usage/token/skill stores, JSONL/JSON importers. rusqlite 0.40 bundled (safety-checked: canonical crate, no applicable advisories, bundles SQLite 3.51).
+- Slice 2a (7a6285e): usage wired app-side; WAL + busy_timeout=5s enabled; AppState holds StorageManager; scheduler writes+prunes usage to DB; get_history reads DB; one-time history.jsonl import.
+- Slice 2b (e350ed6): the MULTI-PROCESS half. Daemon opens its OWN connection (best-effort, warn-and-skip on failure); relay.rs writes token records, stop.rs writes skill events; app reads switch to DB; skill aggregation refactored load-vs-aggregate; token dedup + notify shape preserved; skill mark_session dedup kept file-based.
+- Slice 3a (444aff3): IPC (get_storage_info / set_retention_policy / clear_dataset) + DatasetInfo/DatasetId types; RetentionPolicy compact string serde; Settings.retention persisted; prune now reads user policy across all 3 tables.
+- Slice 3b (095796a): Settings -> Data section UI (3 cards + retention dropdowns + Clear-all + size footer). Cards built as innerHTML strings (avoids the prod lit-html repeated-<select> drop, per memory).
+
+Spec deviation worth knowing: the spec assumed unix-seconds timestamps + a single writer, but the REAL data uses RFC3339 string timestamps (converted on insert) and token/skill are written by the DAEMON process - hence the multi-process WAL design you chose.
+
+NOT verified live (I can't host the app/daemon here). The migration is one-shot + irreversible-ish (renames sources to .bak) and the cross-process WAL writes need a real run - full checklist in BEPY_TODOS Manual QA. Did NOT push/deploy: rebuild+relaunch + your QA first, then /commit pushnbump.
+
+Also banked your other answers this session: 102 -> Path B (app speaks the bridge protocol), 112 -> closing=red/attention=amber, 95 -> full unified file screen (35 folded in), 45 rescoped (outbox EXISTS = held-messages; real bug is auto-flush-on-turn-complete not firing), 33 deprioritized, 87 approved (fix in server_supervisor repo). All recorded in their ai_todos. New ai_todo 116 = investigate why AUQ pickers intermittently don't render (relay wedge on port 27182). Deleted the wrong "AUQ never renders" memory.
+
 ## 2026-06-16 - Autopilot run: draft-header fix + mobile single-pane (ai_todo 115)
 
 RUN_LEDGER (chunk -> outcome -> sha):

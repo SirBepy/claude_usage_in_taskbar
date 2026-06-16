@@ -8,6 +8,11 @@
 ### Manual QA (needs relaunch / live)
 
 - After the next build+relaunch, confirm the AFK relay fix (ai_todo 100, commit 95db1c1): start an in-app chat that triggers a permission prompt OR an AskUserQuestion, then leave it unanswered for >6 minutes (past the old 320s cap). When you come back and answer, it should still go through - no "error sending request for url .../permissions/request" and no hung turn. The daemon already holds prompts for 1h; this just stops both relay clients (MCP relay + the AskUserQuestion curl hook) from giving up at 5.3 min first. Backend change - requires a daemon rebuild+relaunch to take effect.
+- **SQLite storage migration (ai_todo 106) - the big one, REBUILD + RELAUNCH required (Rust + daemon change), then verify carefully:**
+  1. **First-launch migration (one-shot, irreversible-ish):** on first run the 3 old stores get imported into `~/.claude`-equivalent `companion.db` and the SOURCES are renamed to `.bak` - `history.jsonl` -> `.bak`, `token-history.json` -> `.bak`, each `skill-usage/events-*.jsonl` -> `.bak`. Confirm the `.bak` files appeared and `companion.db` (+`-wal`/`-shm`) exists in `%APPDATA%\claude-usage-tauri\`. (If something's wrong you can restore by renaming the `.bak` back, since the code skips import when the source is absent.)
+  2. **No dashboard regression:** usage graphs, token history + active sessions, and the skill-usage week/detail all still populate (they now read from the DB, not the files). Data should match what you saw before.
+  3. **Multi-process write (the risky part):** run a REAL claude session in-app so the DAEMON fires (`/hooks/stop` etc.), then confirm new token records + skill events show up in the app's stats (daemon writes the DB, app reads it - two processes, one WAL DB). Watch `daemon.log` + the app console for any `database is locked` / SQLITE_BUSY errors (the 5s busy_timeout should prevent them, but this is the thing to watch).
+  4. **Settings -> Data section:** three cards (Usage History / Token Records / Skill Events) show record counts + date ranges + a Total size footer. Change a retention dropdown (Never / 1yr / 90d / 30d / 7d) -> it should persist and immediately prune (count drops if you shorten it). "Clear all" empties that dataset (count -> 0). 90-day auto-pruning should NOT happen unless a 90d policy is set.
 
 ### Visual QA
 
