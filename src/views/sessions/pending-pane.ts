@@ -121,14 +121,6 @@ export async function renderPendingPane(
       if (config.autoAccept !== false) setAutoAccept(realId, true);
       // Apply the character chosen in the new-session pane to the real session.
       if (config.characterId) void api.setSessionCharacter(realId, config.characterId).catch(() => {});
-      // New chat just went live: play the character's "ready" + "select" cues
-      // (best-effort; per-slot toggles + mute are enforced in the Rust command).
-      void (async () => {
-        const charId = config.characterId ?? (await api.ensureSessionCharacter(realId).catch(() => null));
-        if (!charId) return;
-        void api.playCharacterSlot(charId, "ready").catch(() => {});
-        void api.playCharacterSlot(charId, "select").catch(() => {});
-      })();
       if (unsubPlaceholderWatch) {
         try { unsubPlaceholderWatch(); } catch { /* ignore */ }
         unsubPlaceholderWatch = null;
