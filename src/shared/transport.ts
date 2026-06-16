@@ -169,18 +169,34 @@ export class HttpTransport implements Transport {
     const url =
       `${proto}://${location.host}/api/sessions/${encodeURIComponent(id)}` +
       `/stream?token=${encodeURIComponent(remoteToken())}`;
-    let closed = false;
-    const ws = new WebSocket(url);
-    ws.onmessage = (e: MessageEvent) => {
-      try {
-        cb(JSON.parse(e.data as string) as T);
-      } catch {
-        /* ignore non-JSON frames */
-      }
+    let stopped = false;
+    let ws: WebSocket;
+    let retryDelay = 1000;
+
+    const connect = (): void => {
+      if (stopped) return;
+      ws = new WebSocket(url);
+      ws.onmessage = (e: MessageEvent) => {
+        try {
+          cb(JSON.parse(e.data as string) as T);
+        } catch {
+          /* ignore non-JSON frames */
+        }
+      };
+      ws.onopen = () => { retryDelay = 1000; };
+      ws.onclose = () => {
+        // Mobile connections drop frequently (network handoff, screen sleep).
+        // Reconnect with capped exponential backoff unless unlisten() was called.
+        if (stopped) return;
+        setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 30_000);
+      };
     };
+    connect();
+
     return () => {
-      if (closed) return;
-      closed = true;
+      if (stopped) return;
+      stopped = true;
       try {
         ws.close();
       } catch {
