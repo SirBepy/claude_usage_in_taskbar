@@ -8,7 +8,12 @@
 import { invoke } from "./ipc";
 import type { TokenRecord, AliasMap } from "./tokens";
 import type { SettingsShape } from "./state";
-import type { CharacterWhitelist } from "../types/ipc.generated";
+import type {
+  CharacterWhitelist,
+  DatasetInfo,
+  DatasetId,
+  RetentionPolicy,
+} from "../types/ipc.generated";
 
 // ── Backend snapshot shape ────────────────────────────────────────────────
 
@@ -287,6 +292,20 @@ export const api = {
   piperInstallBinary: async (): Promise<{ ok: boolean; reason: string }> =>
     ({ ok: false, reason: "disabled in MVP" }),
   onPiperProgress: (_cb: (p: unknown) => void): Unlisten => () => { /* no-op */ },
+
+  // --- Storage (Settings > Data) ---
+  getStorageInfo: async (): Promise<DatasetInfo[]> => {
+    try { return (await invoke<DatasetInfo[]>("get_storage_info")) || []; }
+    catch (e) { console.error("get_storage_info failed", e); return []; }
+  },
+  setRetentionPolicy: async (dataset: DatasetId, policy: RetentionPolicy): Promise<void> => {
+    try { await invoke("set_retention_policy", { dataset, policy }); }
+    catch (e) { console.error("set_retention_policy failed", e); throw e; }
+  },
+  clearDataset: async (dataset: DatasetId): Promise<void> => {
+    try { await invoke("clear_dataset", { dataset }); }
+    catch (e) { console.error("clear_dataset failed", e); throw e; }
+  },
 
   // --- Projects ---
   listProjects: (): Promise<ProjectConfig[]> => invoke("list_projects"),
