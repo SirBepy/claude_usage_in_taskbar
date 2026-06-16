@@ -12,6 +12,8 @@ Picked: navigation-stack pattern (single-pane swap + back button), the standard 
 Where: src/views/sessions/{template,active-session,pending-flow,sessions}.ts + sessions.css
 Revisit: yes if you'd rather have the slide-over-overlay look than the full-pane swap - it's a CSS-only swap to change.
 
+- ai_todo 100 (AUQ/permission relay drops when AFK): SHIPPED. Root cause: both relay clients capped the request at 320s while the daemon holds prompts for 3600s, so an answer after 5.3 min hit the client timeout first and was dropped (the exact "error sending request for url .../permissions/request" you saw). Fixed BOTH paths - the MCP relay (mcp/server.rs http_post -> 3660s + connect_timeout) AND the AskUserQuestion PreToolUse curl hook (claude_config.rs --max-time 320 -> 3660 + --connect-timeout 10). cargo check clean. Backend change: needs rebuild+relaunch; live AFK confirm parked to BEPY Manual QA. sha: 95db1c1. ai_todo file deleted.
+
 PARKED (hard stop): ai_todo 104 = remote cockpit Phase 2 (QR pairing / device registry / revoke / kill switch). This is the security boundary for an RCE-capable endpoint and needs YOUR review + Tailscale setup; autopilot will not stand it up unattended. Phase 1 (103) shipped, Phase 3/4 (105) resolved earlier; 104 is the only remaining mobile-feature phase and it's gated on you.
 
 ## 2026-06-15 - Autopilot run: ai_todos 99, 90, 85 (project logos prioritized by Joe)

@@ -5,6 +5,10 @@
 - Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 
+### Manual QA (needs relaunch / live)
+
+- After the next build+relaunch, confirm the AFK relay fix (ai_todo 100, commit 95db1c1): start an in-app chat that triggers a permission prompt OR an AskUserQuestion, then leave it unanswered for >6 minutes (past the old 320s cap). When you come back and answer, it should still go through - no "error sending request for url .../permissions/request" and no hung turn. The daemon already holds prompts for 1h; this just stops both relay clients (MCP relay + the AskUserQuestion curl hook) from giving up at 5.3 min first. Backend change - requires a daemon rebuild+relaunch to take effect.
+
 ### Visual QA
 
 - After the next build, confirm the 0.1.89 fix end-to-end: app boots normally, Settings > Statusline > Back works again, and Settings > About > the GitHub/YouTube dev-link buttons open in the browser (now routed through the app's `open_external` IPC).
