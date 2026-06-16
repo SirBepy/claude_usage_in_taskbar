@@ -113,7 +113,7 @@ export async function refreshSessions(): Promise<void> {
         if (s.session_id !== state.selectedId) {
           unread.add(s.session_id);
         } else {
-          const isQuestion = !!s.awaiting || state.questionSessions.has(s.session_id);
+          const isQuestion = s.awaiting === "question" || state.questionSessions.has(s.session_id);
           state.heldMessages?.onCompletion(s.session_id, isQuestion);
         }
       }
