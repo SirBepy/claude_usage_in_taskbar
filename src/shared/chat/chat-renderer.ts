@@ -112,6 +112,12 @@ export class ChatRenderer {
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
   public onStatusUpdate: ((status: "done" | "question" | null) => void) | null = null;
   private turnStatus: "done" | "question" | null = null;
+  // True only while bulkLoadEvents replays HISTORY on open. During replay the
+  // per-event onActivityUpdate / onFileEditsChanged callbacks are suppressed so
+  // the header changes-badge doesn't visibly count up and the thinking bar
+  // doesn't flip through every past activity; the final state is delivered once
+  // when replay finishes. Live events (after hydration) animate normally.
+  private hydrating = false;
   private paginator: ChatPaginator;
 
   private setTurnStatus(s: "done" | "question" | null): void {
@@ -311,7 +317,9 @@ export class ChatRenderer {
     if (a === null) this.activityToolCanon = null;
     if (this.lastActivity === a) return;
     this.lastActivity = a;
-    this.onActivityUpdate?.(a);
+    // Suppressed during history replay; the final activity is fired once when
+    // bulkLoadEvents finishes (see `hydrating`).
+    if (!this.hydrating) this.onActivityUpdate?.(a);
   }
 
   async loadHistory(events: ChatEvent[]): Promise<void> {
@@ -339,6 +347,9 @@ export class ChatRenderer {
     this.onToolTally?.(this.tallyState.build());
     this.onActivityUpdate?.(null);
     this.container.innerHTML = "";
+    // Replay history with the per-event header/thinking-bar callbacks gated; the
+    // accumulated final state is fired once below (after the chunk loop).
+    this.hydrating = true;
     // Hold the transcript hidden while it assembles. The build is visibly ugly
     // - rows paint top-down, fold into chips, the view snaps to the bottom, and
     // shiki recolors code - all in ~100ms. We reveal the finished frame in one
@@ -346,7 +357,7 @@ export class ChatRenderer {
     this.beginRevealHold();
     const CHUNK = 8;
     for (let i = 0; i < events.length; i += CHUNK) {
-      if (this._bulkGen !== myGen) { this.liveBuffer = null; return; }
+      if (this._bulkGen !== myGen) { this.liveBuffer = null; this.hydrating = false; return; }
       for (let j = i; j < Math.min(i + CHUNK, events.length); j++) {
         this.handleEvent(events[j]!, { silent: true, skipScroll: true });
       }
@@ -355,7 +366,15 @@ export class ChatRenderer {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     }
-    if (this._bulkGen !== myGen) { this.liveBuffer = null; return; }
+    if (this._bulkGen !== myGen) { this.liveBuffer = null; this.hydrating = false; return; }
+    // History replay is done: deliver the FINAL header badge + thinking-bar
+    // state in ONE shot (per-event updates were gated above so the badge didn't
+    // count up and the bar didn't flip through every past activity). A done turn
+    // leaves lastActivity null -> the bar clears; a still-busy turn shows its
+    // last activity, and buffered live events below take over from there.
+    this.hydrating = false;
+    this.onFileEditsChanged?.(this.getFileEdits());
+    this.onActivityUpdate?.(this.lastActivity);
     // The final turn of the load never gets a closing user_message: settle its
     // meta row from whatever usage accumulated (re-settleable if the session
     // is live and more usage streams in after this).
@@ -554,7 +573,9 @@ export class ChatRenderer {
         const view = parseFileEdit(ev.tool_name, ev.input);
         if (view) {
           this.fileEdits.push(view);
-          this.onFileEditsChanged?.(this.getFileEdits());
+          // Suppressed during history replay so the header badge doesn't count
+          // up; the final total is fired once when bulkLoadEvents finishes.
+          if (!this.hydrating) this.onFileEditsChanged?.(this.getFileEdits());
         }
         {
           const t = this.tallyState.tallyToolUse(ev.tool_name, ev.input, ev.id);
