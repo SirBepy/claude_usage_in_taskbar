@@ -21,6 +21,7 @@ pub mod settings;
 pub mod skill_usage;
 pub mod slash;
 pub mod state;
+pub mod storage;
 pub mod system_control;
 pub mod tokens;
 pub mod tray;

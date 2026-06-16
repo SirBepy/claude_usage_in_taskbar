@@ -27,6 +27,12 @@ pub fn token_history_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("token-history.json"))
 }
 
+/// SQLite store consolidating usage / token / skill history. Lives in the same
+/// data dir as the other persisted files.
+pub fn companion_db() -> Result<PathBuf> {
+    Ok(data_dir()?.join("companion.db"))
+}
+
 pub fn sounds_dir() -> anyhow::Result<std::path::PathBuf> {
     // In dev: tauri/assets/sounds. In bundle: resource dir beside the exe.
     let exe = std::env::current_exe()?;
