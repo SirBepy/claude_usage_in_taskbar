@@ -144,6 +144,11 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
 }
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
+  // Mobile single-pane: opening a chat reveals the chat pane (CSS only acts on
+  // this attribute inside the ≤768px media query, so desktop is unaffected).
+  // Set before the same-session early return so re-tapping the open chat from
+  // the list overlay still switches away from the list.
+  document.querySelector(".view-sessions")?.setAttribute("data-mobile-pane", "chat");
   if (state.selectedId === sessionId) return;
   // Unwatch any previously watched session if we're switching to a different one.
   if (_watchedId && _watchedId !== sessionId) {

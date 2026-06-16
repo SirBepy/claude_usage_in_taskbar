@@ -14,6 +14,13 @@ export function template() {
         >
           <i class="ph ph-list"></i>
         </button>
+        <button
+          class="icon-btn sessions-back"
+          id="sessionsBackBtn"
+          title="Back to chats list"
+        >
+          <i class="ph ph-arrow-left"></i>
+        </button>
         <h2>Chats</h2>
         <button
           class="icon-btn more-btn"

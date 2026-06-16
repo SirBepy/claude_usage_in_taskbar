@@ -1249,3 +1249,44 @@
   font-size: 12px;
   font-family: "Fira Code", ui-monospace, monospace;
 }
+
+/* ── Mobile (remote cockpit): collapse the two-pane layout to a single pane ──
+   A phone viewport can't fit the 260px session list beside the chat, so both
+   render cramped. Show ONE pane at a time: the list by default, the chat once a
+   session is opened, with a header back button to return. Driven entirely by
+   the data-mobile-pane attribute on .view-sessions (set in JS on open / back).
+   Desktop never matches this query, so its layout is byte-unchanged. */
+
+/* The back button belongs only to the mobile single-pane flow — hidden
+   everywhere except mobile chat mode (revealed by the rule inside the query). */
+.sessions-back {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .view-sessions .view-body.sessions-layout {
+    position: relative;
+  }
+
+  /* Each pane fills the body; the attribute decides which one is shown. */
+  .sessions-sidebar {
+    width: 100%;
+    flex-shrink: 1;
+    border-right: none;
+  }
+  .session-pane {
+    width: 100%;
+  }
+
+  /* Default / list mode: list visible, chat hidden. */
+  .view-sessions:not([data-mobile-pane="chat"]) .session-pane {
+    display: none;
+  }
+  /* Chat mode: chat visible, list hidden, back button revealed. */
+  .view-sessions[data-mobile-pane="chat"] .sessions-sidebar {
+    display: none;
+  }
+  .view-sessions[data-mobile-pane="chat"] .sessions-back {
+    display: inline-flex;
+  }
+}

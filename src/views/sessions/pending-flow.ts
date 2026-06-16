@@ -165,6 +165,9 @@ export async function launchNewSession(
   // Re-render sidebar to show the pending row.
   const root = document.querySelector<HTMLElement>(".view-sessions");
   if (root) {
+    // Mobile single-pane: a new draft reveals the chat pane (desktop ignores
+    // this attribute — it only drives the ≤768px media query).
+    root.setAttribute("data-mobile-pane", "chat");
     const listEl = root.querySelector<HTMLElement>("#sessions-list");
     if (listEl) renderSidebar(listEl);
   }

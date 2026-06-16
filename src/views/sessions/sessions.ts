@@ -424,6 +424,11 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     newBtn.addEventListener("click", () => void startNewSession(pane));
   }
 
+  // Mobile back button: return from the chat pane to the session list overlay.
+  // Only visible on ≤768px in chat mode (CSS-driven); a no-op on desktop.
+  const backBtn = root.querySelector<HTMLButtonElement>("#sessionsBackBtn");
+  backBtn?.addEventListener("click", () => view.setAttribute("data-mobile-pane", "list"));
+
 
   const sortSelect = root.querySelector<HTMLSelectElement>("#sessions-sort");
   if (sortSelect) {
