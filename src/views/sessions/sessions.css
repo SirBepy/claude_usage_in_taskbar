@@ -1,3 +1,19 @@
+/* ── Session state color tokens (single source of truth) ─────────────────── */
+:root {
+  --st-working:       #fbbf24;
+  --st-working-glow:  rgba(251,191,36,0.60);
+  --st-done:          #4ade80;
+  --st-done-glow:     rgba(74,222,128,0.50);
+  --st-question:      #f59e0b;
+  --st-question-glow: rgba(245,158,11,0.55);
+  --st-attention:     #ef4444;
+  --st-attention-glow:rgba(239,68,68,0.65);
+  --st-external:      #60a5fa;
+  --st-external-glow: rgba(96,165,250,0.50);
+  --st-your-turn:     rgba(255,255,255,0.22);
+  --st-your-turn-glow:rgba(255,255,255,0.10);
+}
+
 .view-sessions .view-body.sessions-layout {
   display: flex;
   height: calc(100vh - 56px);
@@ -158,12 +174,12 @@
   flex-shrink: 0;
 }
 
-.session-state-icon.s-green  { color: #4ade80; }
-.session-state-icon.s-yellow { color: #fbbf24; }
-.session-state-icon.s-red    { color: #ef4444; }
-.session-state-icon.s-blue   { color: #60a5fa; }
-.session-state-icon.s-amber  { color: #f59e0b; }
-.session-state-icon.s-muted  { color: #8b91a0; }
+.session-state-icon.s-working   { color: var(--st-working); }
+.session-state-icon.s-done      { color: var(--st-done); }
+.session-state-icon.s-attention { color: var(--st-attention); }
+.session-state-icon.s-external  { color: var(--st-external); }
+.session-state-icon.s-question  { color: var(--st-question); }
+.session-state-icon.s-your-turn { color: #8b91a0; }
 
 .sessions-list li.active .session-state-icon { color: var(--color-background) !important; opacity: 0.9; }
 
@@ -173,12 +189,12 @@
 }
 
 /* Dot mode overrides (when icons are disabled) */
-.session-status-dot.st-working   { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.6); }
-.session-status-dot.st-done      { background: #fbbf24; box-shadow: 0 0 5px rgba(251,191,36,0.5); }
-.session-status-dot.st-question  { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.6); }
+.session-status-dot.st-working   { background: var(--st-working);   box-shadow: 0 0 6px var(--st-working-glow); }
+.session-status-dot.st-done      { background: var(--st-done);      box-shadow: 0 0 5px var(--st-done-glow); }
+.session-status-dot.st-question  { background: var(--st-question);  box-shadow: 0 0 6px var(--st-question-glow); }
 .session-status-dot.st-your-turn { background: #8b91a0; }
-.session-status-dot.st-external  { background: #60a5fa; box-shadow: 0 0 5px rgba(96,165,250,0.5); }
-.session-status-dot.st-attention { background: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.7); animation: attention-pulse 1.4s ease-in-out infinite; }
+.session-status-dot.st-external  { background: var(--st-external);  box-shadow: 0 0 5px var(--st-external-glow); }
+.session-status-dot.st-attention { background: var(--st-attention); box-shadow: 0 0 6px var(--st-attention-glow); animation: attention-pulse 1.4s ease-in-out infinite; }
 
 /* ── Hero avatar: full-height strip flush to the row's left edge ─────────── */
 /* The strip cancels the row's vertical + left padding so the portrait bleeds
@@ -224,12 +240,12 @@
    leftward over the portrait, biasing it left — hence the gradient instead, so
    the portrait stays visually centered. */
 .session-avatar { --st-color: rgba(255,255,255,0.14); --st-glow: rgba(255,255,255,0.10); }
-.session-avatar.st-question  { --st-color: #f59e0b; --st-glow: rgba(245,158,11,0.55); }
-.session-avatar.st-external  { --st-color: #60a5fa; --st-glow: rgba(96,165,250,0.50); }
-.session-avatar.st-done      { --st-color: #fbbf24; --st-glow: rgba(251,191,36,0.50); }
-.session-avatar.st-your-turn { --st-color: rgba(255,255,255,0.22); --st-glow: rgba(255,255,255,0.10); }
-.session-avatar.st-working   { --st-color: #4ade80; --st-glow: rgba(74,222,128,0.60); }
-.session-avatar.st-attention { --st-color: #ef4444; --st-glow: rgba(239,68,68,0.65); }
+.session-avatar.st-question  { --st-color: var(--st-question);  --st-glow: var(--st-question-glow); }
+.session-avatar.st-external  { --st-color: var(--st-external);  --st-glow: var(--st-external-glow); }
+.session-avatar.st-done      { --st-color: var(--st-done);      --st-glow: var(--st-done-glow); }
+.session-avatar.st-your-turn { --st-color: var(--st-your-turn); --st-glow: var(--st-your-turn-glow); }
+.session-avatar.st-working   { --st-color: var(--st-working);   --st-glow: var(--st-working-glow); }
+.session-avatar.st-attention { --st-color: var(--st-attention); --st-glow: var(--st-attention-glow); }
 
 .session-avatar::before {
   content: "";
@@ -333,15 +349,15 @@
   align-items: center;
   justify-content: center;
 }
-.session-header-avatar.st-question  { border-color: #f59e0b; box-shadow: 0 0 6px 1px rgba(245,158,11,0.55); }
-.session-header-avatar.st-external  { border-color: #60a5fa; box-shadow: 0 0 6px 1px rgba(96,165,250,0.5); }
-.session-header-avatar.st-done      { border-color: #fbbf24; box-shadow: 0 0 5px 1px rgba(251,191,36,0.5); }
-.session-header-avatar.st-your-turn { border-color: rgba(255,255,255,0.22); }
-.session-header-avatar.st-working   { border-color: #4ade80; animation: header-char-pulse 1.5s ease-in-out infinite; }
-.session-header-avatar.st-attention { border-color: #ef4444; animation: header-char-pulse 1.3s ease-in-out infinite; }
+.session-header-avatar.st-question  { border-color: var(--st-question);  box-shadow: 0 0 6px 1px var(--st-question-glow); }
+.session-header-avatar.st-external  { border-color: var(--st-external);  box-shadow: 0 0 6px 1px var(--st-external-glow); }
+.session-header-avatar.st-done      { border-color: var(--st-done);      box-shadow: 0 0 5px 1px var(--st-done-glow); }
+.session-header-avatar.st-your-turn { border-color: var(--st-your-turn); }
+.session-header-avatar.st-working   { border-color: var(--st-working);   animation: header-char-pulse 1.5s ease-in-out infinite; }
+.session-header-avatar.st-attention { border-color: var(--st-attention); animation: header-char-pulse 1.3s ease-in-out infinite; }
 @keyframes header-char-pulse {
-  0%, 100% { box-shadow: 0 0 4px 0 rgba(74,222,128,0.4); }
-  50%      { box-shadow: 0 0 9px 2px rgba(74,222,128,0.85); }
+  0%, 100% { box-shadow: 0 0 4px 0 var(--st-working-glow); }
+  50%      { box-shadow: 0 0 9px 2px var(--st-working-glow); }
 }
 .session-header-avatar.st-attention {
   animation-name: header-char-pulse-red;

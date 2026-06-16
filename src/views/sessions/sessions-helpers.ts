@@ -148,24 +148,24 @@ export function statusIndicator(
   }
   // icons mode
   if (needsAttention) {
-    return `<i class="session-state-icon ph ph-shield-warning s-red attention-pulse" title="${tooltip}"></i>`;
+    return `<i class="session-state-icon ph ph-shield-warning s-attention attention-pulse" title="${tooltip}"></i>`;
   }
   if (i.kind === "external") {
-    return `<i class="session-state-icon ph ph-eye s-blue" title="${tooltip}"></i>`;
+    return `<i class="session-state-icon ph ph-eye s-external" title="${tooltip}"></i>`;
   }
   if (i.kind === "automated") {
-    return `<i class="session-state-icon ph ph-robot s-blue" title="${tooltip}"></i>`;
+    return `<i class="session-state-icon ph ph-robot s-external" title="${tooltip}"></i>`;
   }
   if (i.busy) {
-    return `<i class="session-state-icon ph ph-spinner s-green spinning" title="${tooltip}"></i>`;
+    return `<i class="session-state-icon ph ph-spinner s-working spinning" title="${tooltip}"></i>`;
   }
   if (isQuestion) {
-    return `<i class="session-state-icon ph ph-chat-circle-dots s-amber" title="${tooltip}"></i>`;
+    return `<i class="session-state-icon ph ph-chat-circle-dots s-question" title="${tooltip}"></i>`;
   }
   if (unread.has(i.session_id)) {
-    return `<i class="session-state-icon ph ph-check-circle s-yellow" title="${tooltip}"></i>`;
+    return `<i class="session-state-icon ph ph-check-circle s-done" title="${tooltip}"></i>`;
   }
   // Done / your turn: a calm muted check, NOT the old red exclamation. The red
   // alarm is reserved for genuine permission prompts (attention-pulse above).
-  return `<i class="session-state-icon ph ph-check s-muted" title="${tooltip}"></i>`;
+  return `<i class="session-state-icon ph ph-check s-your-turn" title="${tooltip}"></i>`;
 }
