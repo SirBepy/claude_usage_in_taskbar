@@ -334,14 +334,21 @@ export function isSilentSystemUserMessage(cleaned: ContentBlock[]): boolean {
   return (first as { type: "text"; text: string }).text.trim().toLowerCase() === "continue";
 }
 
-// Assistant messages that are internal CLI noise, not real content.
-const NOISE_PATTERNS = [
-  /^no response requested\.?$/i,
-  /^\[request interrupted\]$/i,
+// Assistant messages that are internal CLI noise. Returns a display label for
+// the system notice, or null if the text is real assistant content.
+const NOISE_PATTERNS: [RegExp, string][] = [
+  [/^no response requested\.?$/i, "No response requested"],
+  [/^\[request interrupted\]$/i, "Request interrupted"],
 ];
-export function isNoiseAssistantText(text: string): boolean {
+export function noiseAssistantLabel(text: string): string | null {
   const t = text.trim();
-  return NOISE_PATTERNS.some(re => re.test(t));
+  for (const [re, label] of NOISE_PATTERNS) {
+    if (re.test(t)) return label;
+  }
+  return null;
+}
+export function isNoiseAssistantText(text: string): boolean {
+  return noiseAssistantLabel(text) !== null;
 }
 
 // Wrap `/word` tokens in <span class="slash-mention slash-<kind>"> when the
@@ -401,13 +408,14 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
       }
       const cleaned = cleanUserBlocks(ev.content);
       if (cleaned.length === 0) return null;
-      if (isSilentSystemUserMessage(cleaned)) return null;
+      if (isSilentSystemUserMessage(cleaned)) return { kind: "system", text: "Continuing session…", ts };
       return { kind: "user", content: cleaned, ts };
     }
     case "assistant_message": {
       if (!ev.streaming) {
         const t = (ev.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { type: string; text?: string }) => b.text ?? "").join("").trim();
-        if (isNoiseAssistantText(t)) return null;
+        const label = noiseAssistantLabel(t);
+        if (label !== null) return { kind: "system", text: label, ts };
       }
       return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
     }
