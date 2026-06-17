@@ -40,10 +40,18 @@ pub(super) async fn on_refresh(
     );
 
     // Tell the app to kick a poll + play a sound. App handles audio + scraper.
-    ctx.state.notifier.publish(
-        "refresh_requested",
-        json!({"cwd": payload.cwd, "session_id": payload.session_id}),
-    );
+    // Skip for daemon-managed sessions: lifecycle.rs already fires `turn_sound`
+    // when the `result` line is detected, so publishing here would double the sound.
+    let is_daemon_session = payload.session_id
+        .as_deref()
+        .map(|id| ctx.state.sessions.contains_key(id))
+        .unwrap_or(false);
+    if !is_daemon_session {
+        ctx.state.notifier.publish(
+            "refresh_requested",
+            json!({"cwd": payload.cwd, "session_id": payload.session_id}),
+        );
+    }
 
     // Token-record persist in background. The daemon now writes to the shared
     // companion.db (was: token-history.json) via its own connection.
