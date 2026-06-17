@@ -2,6 +2,7 @@ import { invoke } from "../../shared/ipc";
 import { positionDropdown } from "./position-dropdown";
 import { isAutoAccept, setAutoAccept, autoAcceptParked } from "./permission-modal";
 import { closeChat } from "./close-chat";
+import { state } from "./state";
 
 // The ⋮ "More options" dropdown shared by the active-session header and a
 // freshly-started chat header, so both surfaces show the exact same menu
@@ -33,6 +34,7 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
     }
     items.push(`<button class="smore-item" data-action="change-character"><i class="ph ph-user-switch"></i>Change character</button>`);
     items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Open in Terminal</button>`);
+    items.push(`<button class="smore-item" data-action="vscode"><i class="ph ph-code"></i>Open in VS Code</button>`);
     items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
     if (!readOnly) {
       items.push(`<div class="smore-sep"></div>`);
@@ -75,6 +77,14 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
           try { await invoke<void>("open_session_in_terminal", { sessionId }); }
           catch (err) { alert(`Failed to open terminal: ${err}`); }
           break;
+        case "vscode": {
+          const cwd = state.sessions.find(s => s.session_id === sessionId)?.cwd;
+          if (cwd) {
+            try { await invoke<void>("open_in_vscode", { path: String(cwd) }); }
+            catch { /* silently ignore — code may not be installed */ }
+          }
+          break;
+        }
         case "detach":
           try { await invoke<void>("detach_window", { sessionId }); }
           catch (err) { console.warn("[sessions] detach_window unavailable", err); }

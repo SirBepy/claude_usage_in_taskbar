@@ -362,20 +362,6 @@ export function openCtxMenu(
     menu.appendChild(dashItem);
   }
 
-  // "Open in VS Code"
-  const codeItem = document.createElement("button");
-  codeItem.className = "session-ctx-item";
-  codeItem.innerHTML = '<i class="ph ph-code"></i> Open in VS Code';
-  codeItem.addEventListener("click", async () => {
-    closeCtxMenu();
-    try {
-      await invoke<void>("open_in_vscode", { path: String(sess.cwd) });
-    } catch {
-      /* silently ignore — code may not be installed */
-    }
-  });
-  menu.appendChild(codeItem);
-
   // "Copy PID" — only if session has a pid
   if (sess.pid) {
     const pidItem = document.createElement("button");
