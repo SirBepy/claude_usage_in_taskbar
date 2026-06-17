@@ -257,6 +257,7 @@ pub fn run() {
             ipc::open_session_in_terminal,
             ipc::open_in_editor,
             ipc::read_image_file,
+            ipc::read_text_file,
             ipc::get_git_info,
             ipc::get_git_dirty,
             ipc::context_status,

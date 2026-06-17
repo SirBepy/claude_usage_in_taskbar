@@ -120,21 +120,21 @@ describe("per-tool chips", () => {
     expect(texts).toEqual(["foo.*bar"]);
   });
 
-  it("calls open_in_editor with the file path on a file row click", () => {
+  it("opens the in-app file viewer (read_text_file) on a file row click", () => {
     const calls = [];
-    ipcMock.impl = async (cmd, args) => { calls.push([cmd, args]); return null; };
+    ipcMock.impl = async (cmd, args) => { calls.push([cmd, args]); return { content: "", truncated: false }; };
     const { el, sb } = mount();
     sb.updateToolTally(sampleTally());
     openChip(el, "Read");
     document.body.querySelector(".sb-tally-file").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(calls).toContainEqual(["open_in_editor", { path: "/proj/src/a.ts" }]);
+    expect(calls).toContainEqual(["read_text_file", { path: "/proj/src/a.ts" }]);
   });
 });
 
 describe("custom-view provider (reuses the in-chat views)", () => {
-  it("renders the provider HTML for custom tools and opens files in the editor", () => {
+  it("renders the provider HTML for custom tools and opens files in the in-app viewer", () => {
     const calls = [];
-    ipcMock.impl = async (cmd, args) => { calls.push([cmd, args]); return null; };
+    ipcMock.impl = async (cmd, args) => { calls.push([cmd, args]); return { content: "", truncated: false }; };
     const { el, sb } = mount([["tool:Read", "tool:Skill", "tool:AskUserQuestion"]]);
     sb.setToolViewProvider((tool) => {
       if (tool === "Read") return '<button class="tool-file-row" data-path="/p/x.ts"><span class="tool-file-name">x.ts</span></button>';
@@ -160,7 +160,7 @@ describe("custom-view provider (reuses the in-chat views)", () => {
     const fileRow = document.body.querySelector(".sb-tally-popover .tool-file-row");
     expect(fileRow).not.toBeNull();
     fileRow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(calls).toContainEqual(["open_in_editor", { path: "/p/x.ts" }]);
+    expect(calls).toContainEqual(["read_text_file", { path: "/p/x.ts" }]);
   });
 
   it("falls back to the target list when no provider is set", () => {

@@ -7,9 +7,9 @@ import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
 import { toolSummary, canonicalTool, type ToolTally } from "./tool-meta";
-import { invoke } from "../ipc";
 import { ToolTallyState } from "./tool-tally-state";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
+import { openFileViewer } from "./file-viewer";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { renderCustomToolView } from "./tool-views";
 import { ChatPaginator } from "./chat-pagination";
@@ -954,13 +954,13 @@ export class ChatRenderer {
   }
 
   // Custom chip-panel file rows (Read / File Changes) open their target in the
-  // editor. Interim behavior until the unified file view/edit screen lands
-  // (see .for_bepy/ai_todos): one click -> open_in_editor.
+  // in-app read-only file viewer (ai_todo 95 slice 1). The external-editor jump
+  // is preserved via the "Open in VS Code" button in the viewer header.
   private handleToolFileClick = (e: MouseEvent): void => {
     const row = (e.target as HTMLElement).closest<HTMLElement>(".tool-file-row[data-path]");
     if (!row) return;
     const path = row.dataset.path;
-    if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[chat] open_in_editor failed", err));
+    if (path) openFileViewer(path);
   };
 
   private handleToolChipClick = (e: MouseEvent): void => {

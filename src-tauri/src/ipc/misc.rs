@@ -218,6 +218,49 @@ pub async fn read_image_file(
 }
 
 
+/// Max bytes `read_text_file` returns. Files larger than this are returned
+/// truncated (capped prefix + `truncated: true`) so the in-app read-only file
+/// viewer never tries to highlight a multi-megabyte blob. Mirrors the spirit
+/// of `read_image_file` (which reads any absolute path the agent surfaced).
+const TEXT_FILE_CAP_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+
+#[derive(serde::Serialize, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct TextFileData {
+    pub content: String,
+    pub truncated: bool,
+}
+
+/// Read an arbitrary local text file for the in-app read-only file viewer.
+/// Like `read_image_file`, this reads any absolute path the agent surfaced
+/// (not sandboxed). The read is capped at `TEXT_FILE_CAP_BYTES`: a larger file
+/// yields the capped prefix with `truncated: true`. Decoding is lossy UTF-8 so
+/// binary-ish files produce replacement characters instead of panicking.
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<TextFileData, String> {
+    use std::io::Read;
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = std::path::PathBuf::from(&path)
+            .canonicalize()
+            .map_err(|e| format!("file not found: {e}"))?;
+        let file = std::fs::File::open(&target).map_err(|e| e.to_string())?;
+        // Read one byte past the cap so we can tell "exactly at cap" from
+        // "larger than cap".
+        let mut buf = Vec::new();
+        file.take((TEXT_FILE_CAP_BYTES + 1) as u64)
+            .read_to_end(&mut buf)
+            .map_err(|e| e.to_string())?;
+        let truncated = buf.len() > TEXT_FILE_CAP_BYTES;
+        if truncated {
+            buf.truncate(TEXT_FILE_CAP_BYTES);
+        }
+        let content = String::from_utf8_lossy(&buf).into_owned();
+        Ok(TextFileData { content, truncated })
+    })
+    .await
+    .map_err(|e| format!("read_text_file join error: {e}"))?
+}
+
 #[derive(serde::Serialize, ts_rs::TS)]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct GitInfo {

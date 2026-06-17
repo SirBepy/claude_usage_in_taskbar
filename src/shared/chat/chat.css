@@ -874,6 +874,149 @@
   margin: 0;
 }
 
+/* Read-only in-app file viewer (ai_todo 95 slice 1) */
+
+.file-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-viewer-panel {
+  display: flex;
+  flex-direction: column;
+  width: 86vw;
+  max-width: 1100px;
+  height: 86vh;
+  background: #1e1e1e;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.file-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #252526;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+
+.file-viewer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #d4d4d4;
+}
+
+.file-viewer-title i {
+  flex: 0 0 auto;
+  color: #9aa0a6;
+}
+
+.file-viewer-name {
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.file-viewer-path {
+  color: #8a8f94;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.file-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.file-viewer-ext {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #d4d4d4;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.file-viewer-ext:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.file-viewer-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  padding: 0;
+}
+
+.file-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.file-viewer-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 14px 16px;
+}
+
+.file-viewer-body pre {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.file-viewer-plain {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #d4d4d4;
+}
+
+.file-viewer-loading,
+.file-viewer-error {
+  color: #9aa0a6;
+  padding: 8px;
+  font-size: 0.85rem;
+}
+
+.file-viewer-error {
+  color: #f28b82;
+}
+
+.file-viewer-truncated {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 196, 0, 0.12);
+  color: #e0b341;
+  font-size: 0.8rem;
+}
+
 /* Post-send attachment chips (inside user messages) */
 
 .attachment-chip {

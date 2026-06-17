@@ -1,6 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { openLightbox } from "../../shared/chat/lightbox";
+import { openFileViewer } from "../../shared/chat/file-viewer";
 import { toolSummary, toolLabel, type ToolTally } from "../../shared/chat/tool-meta";
 import { CUSTOM_VIEW_TOOLS } from "../../shared/chat/tool-views";
 import "./session-tally.css";
@@ -127,18 +128,21 @@ export class ToolTallyRow {
       pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
     }
 
+    // File rows now open the in-app read-only file viewer (ai_todo 95 slice 1).
+    // The external-editor jump is preserved via the "Open in VS Code" button in
+    // the viewer header.
     pop.querySelectorAll<HTMLElement>(".sb-tally-file").forEach((row) => {
       row.addEventListener("click", () => {
         const path = row.dataset.path;
-        if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[statusbar] open_in_editor failed", err));
+        if (path) openFileViewer(path);
       });
     });
 
-    // Shared custom-view file rows (Read / File Changes) open in the editor too.
+    // Shared custom-view file rows (Read / File Changes) open in the viewer too.
     pop.querySelectorAll<HTMLElement>(".tool-file-row[data-path]").forEach((row) => {
       row.addEventListener("click", () => {
         const path = row.dataset.path;
-        if (path) void invoke<void>("open_in_editor", { path }).catch((err) => console.error("[statusbar] open_in_editor failed", err));
+        if (path) openFileViewer(path);
       });
     });
 

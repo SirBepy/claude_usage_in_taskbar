@@ -6,7 +6,7 @@
 //! ourselves by composing each type's `decl()` into a single output.
 
 use claude_usage_tauri_lib::context_status::ContextStatus;
-use claude_usage_tauri_lib::ipc::misc::GitInfo;
+use claude_usage_tauri_lib::ipc::misc::{GitInfo, TextFileData};
 use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
 use claude_usage_tauri_lib::skill_usage::types::{
@@ -74,6 +74,7 @@ fn emit_ipc_types() {
 
     // misc IPC
     out.push_str(&decl::<GitInfo>());
+    out.push_str(&decl::<TextFileData>());
     out.push_str(&decl::<ContextStatus>());
 
     // tokens
