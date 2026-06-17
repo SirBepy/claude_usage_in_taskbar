@@ -128,9 +128,12 @@ export class SessionStatusbar {
     } catch { /* transient - keep last known counts */ }
   }
 
-  private async refreshContextStatus(): Promise<void> {
+  private async refreshContextStatus(allowRetry = true): Promise<void> {
     const sid = this.sessionId;
     if (!sid) return;
+    // Capture hasUsage before the await: if the turn just completed and the
+    // JSONL hasn't been flushed yet, we get null back and need a retry.
+    const hadUsage = this.meta.hasUsage;
     try {
       const r = await invoke<ContextStatus | null>("context_status", { sessionId: sid });
       if (this.sessionId !== sid) return;
@@ -138,6 +141,13 @@ export class SessionStatusbar {
         this.ctxStatus = r;
         ctxStatusCache.set(sid, r);
         this.render();
+      } else if (allowRetry && hadUsage && !this.ctxStatus) {
+        // Turn completed (hasUsage=true) but the transcript JSONL may not have
+        // been flushed to disk yet (claude CLI can write stdout before the file).
+        // Retry once after 1.5 s to resolve the write-buffer race.
+        setTimeout(() => {
+          if (this.sessionId === sid && !this.ctxStatus) void this.refreshContextStatus(false);
+        }, 1500);
       }
     } catch { /* command may predate this binary, or transient - keep fallback */ }
   }
@@ -198,6 +208,14 @@ export class SessionStatusbar {
     this.render();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
+    // Fallback for fast turns that complete before the JS event-store listener
+    // is set up (the live turn_usage event is dropped). Re-check after 3 s; by
+    // then any fast turn is done and the JSONL is definitely flushed.
+    if (this.wantsContext() && id && !id.startsWith("pending-")) {
+      setTimeout(() => {
+        if (this.sessionId === id && !this.ctxStatus) void this.refreshContextStatus();
+      }, 3000);
+    }
   }
 
   setReadOnlyEffort(readOnly: boolean): void {
