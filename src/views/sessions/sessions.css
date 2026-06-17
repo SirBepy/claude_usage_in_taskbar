@@ -4,8 +4,11 @@
   --st-working-glow:  rgba(251,191,36,0.60);
   --st-done:          #4ade80;
   --st-done-glow:     rgba(74,222,128,0.50);
-  --st-question:      #f59e0b;
-  --st-question-glow: rgba(245,158,11,0.55);
+  /* Question = "Claude is waiting on you" -> red, same hue as a pending prompt,
+     so it reads as clearly actionable. The old orange sat too close to the
+     working amber; there is intentionally no separate orange state anymore. */
+  --st-question:      #ef4444;
+  --st-question-glow: rgba(239,68,68,0.55);
   --st-attention:     #ef4444;
   --st-attention-glow:rgba(239,68,68,0.65);
   --st-external:      #60a5fa;
