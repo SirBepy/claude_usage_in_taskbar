@@ -14,9 +14,16 @@
 
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
+
+/// A boxed, owned future the engine seams hand back. The phase machine awaits
+/// these without caring whether the body is the real daemon client or a test
+/// stub.
+type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// The terminal action to perform once every session has been closed.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
@@ -324,28 +331,101 @@ fn is_cancelled(app: &AppHandle) -> bool {
     inner.state.phase == ProtocolPhase::Disarmed
 }
 
-/// The engine task. Runs until the action fires, the protocol is cancelled, or
-/// the runaway guard trips.
+/// The integration seams the phase machine drives, behind owned closures so the
+/// production path can wire the real AppHandle + daemon client while a test wires
+/// recording stubs. Every external effect run_engine performs (reading live
+/// instances, resolving prompts, injecting /close, emitting state, checking
+/// cancellation, firing the terminal action) goes through exactly one of these.
+struct EngineDeps {
+    /// Snapshot of the live (not-ended) `(session_id, busy)` pairs. Mirrors
+    /// `live_busy_map` in production; a test can mutate its source between ticks.
+    busy_map: Box<dyn Fn() -> Vec<(String, bool)> + Send>,
+    /// Whether every live session is idle. Mirrors the inline
+    /// `all_sessions_idle(&cached_instances)` check.
+    all_idle: Box<dyn Fn() -> bool + Send>,
+    /// Live (not-ended) session ids, in order. Mirrors `live_session_ids`.
+    live_ids: Box<dyn Fn() -> Vec<String> + Send>,
+    /// Auto-resolve every pending daemon prompt (permission/question). Async.
+    auto_resolve: Box<dyn Fn() -> BoxFut<'static, ()> + Send>,
+    /// Inject `/close` into one session; true on a successful send. Async.
+    inject_close: Box<dyn Fn(String) -> BoxFut<'static, bool> + Send>,
+    /// Mutate the stored ProtocolState and emit `when-done-state`. Mirrors
+    /// `update_and_emit`; returns the new state.
+    mutate_and_emit: Box<dyn Fn(&mut dyn FnMut(&mut ProtocolState)) -> ProtocolState + Send>,
+    /// Whether cancel was requested (stored phase forced to Disarmed).
+    is_cancelled: Box<dyn Fn() -> bool + Send>,
+    /// Perform the terminal action (sleep/shutdown). Returns its Result so the
+    /// caller logs a failure exactly as the production path does.
+    terminal: Box<dyn Fn(TerminalAction) -> Result<(), String> + Send>,
+}
+
+impl EngineDeps {
+    /// Wire the real production seams from an AppHandle. This is the only place
+    /// that touches AppState / the daemon client / system_control, so the
+    /// production behavior is identical to the pre-refactor inline body.
+    fn production(app: AppHandle) -> Self {
+        let app_busy = app.clone();
+        let app_idle = app.clone();
+        let app_ids = app.clone();
+        let app_resolve = app.clone();
+        let app_close = app.clone();
+        let app_emit = app.clone();
+        let app_cancel = app.clone();
+        Self {
+            busy_map: Box::new(move || live_busy_map(&app_busy)),
+            all_idle: Box::new(move || {
+                let state = app_idle.state::<AppState>();
+                let guard = state.cached_instances.lock().unwrap();
+                all_sessions_idle(&guard)
+            }),
+            live_ids: Box::new(move || live_session_ids(&app_ids)),
+            auto_resolve: Box::new(move || {
+                let app = app_resolve.clone();
+                Box::pin(async move { auto_resolve_prompts(&app).await })
+            }),
+            inject_close: Box::new(move |session_id| {
+                let app = app_close.clone();
+                Box::pin(async move { inject_close(&app, &session_id).await })
+            }),
+            mutate_and_emit: Box::new(move |f| update_and_emit(&app_emit, f)),
+            is_cancelled: Box::new(move || is_cancelled(&app_cancel)),
+            terminal: Box::new(|action| match action {
+                TerminalAction::Sleep => crate::system_control::sleep_pc(),
+                TerminalAction::Shutdown => crate::system_control::shutdown_pc(),
+            }),
+        }
+    }
+}
+
+/// The engine task. Thin production wiring: build the real seams, then run the
+/// phase machine. All behavior lives in `run_engine_with_deps`.
 async fn run_engine(app: AppHandle, action: TerminalAction) {
+    run_engine_with_deps(EngineDeps::production(app), action).await;
+}
+
+/// The phase machine: Watching -> Closing -> CountingDown -> Firing. Drives only
+/// through `deps`, so it is identical for production and tests. Runs until the
+/// action fires, the protocol is cancelled, or the runaway guard trips.
+async fn run_engine_with_deps(deps: EngineDeps, action: TerminalAction) {
     // --- Phase: Watching. Wait for all sessions idle, auto-resolving prompts. ---
     let mut no_progress_since = Instant::now();
     let mut last_idle_signature: Option<Vec<(String, bool)>> = None;
 
     loop {
-        if is_cancelled(&app) {
+        if (deps.is_cancelled)() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(TICK_MS)).await;
-        if is_cancelled(&app) {
+        if (deps.is_cancelled)() {
             return;
         }
 
-        auto_resolve_prompts(&app).await;
+        (deps.auto_resolve)().await;
 
-        let busy_map = live_busy_map(&app);
+        let busy_map = (deps.busy_map)();
         let waiting: Vec<String> = waiting_on_ids(&busy_map);
 
-        update_and_emit(&app, |s| {
+        (deps.mutate_and_emit)(&mut |s| {
             s.phase = ProtocolPhase::Watching;
             s.waiting_on = waiting.clone();
         });
@@ -359,42 +439,37 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
             log_comment(
                 "[when-done] aborted: no progress in Watching for 3 min (sessions never went idle); disarming",
             );
-            update_and_emit(&app, |s| {
+            (deps.mutate_and_emit)(&mut |s| {
                 *s = ProtocolState::disarmed();
             });
             return;
         }
 
         // All live sessions idle? (Empty list counts as idle: nothing to wait on.)
-        let guard_idle = {
-            let state = app.state::<AppState>();
-            let guard = state.cached_instances.lock().unwrap();
-            all_sessions_idle(&guard)
-        };
-        if guard_idle {
+        if (deps.all_idle)() {
             break;
         }
     }
 
-    if is_cancelled(&app) {
+    if (deps.is_cancelled)() {
         return;
     }
 
     // --- Phase: Closing. Inject /close into each live session, wait for each. ---
-    let targets = live_session_ids(&app);
-    update_and_emit(&app, |s| {
+    let targets = (deps.live_ids)();
+    (deps.mutate_and_emit)(&mut |s| {
         s.phase = ProtocolPhase::Closing;
         s.waiting_on = targets.clone();
     });
 
     for session_id in &targets {
-        if is_cancelled(&app) {
+        if (deps.is_cancelled)() {
             return;
         }
-        let sent = inject_close(&app, session_id).await;
+        let sent = (deps.inject_close)(session_id.clone()).await;
         if !sent {
             // Couldn't inject (gone or send failed): treat as done, drop it.
-            update_and_emit(&app, |s| {
+            (deps.mutate_and_emit)(&mut |s| {
                 s.waiting_on.retain(|id| id != session_id);
             });
             continue;
@@ -406,15 +481,15 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
         let started = Instant::now();
         let mut saw_busy = false;
         loop {
-            if is_cancelled(&app) {
+            if (deps.is_cancelled)() {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(TICK_MS)).await;
             // Keep auto-resolving prompts during close turns (e.g. /close that
             // triggers a tool needing permission).
-            auto_resolve_prompts(&app).await;
+            (deps.auto_resolve)().await;
 
-            let busy_map = live_busy_map(&app);
+            let busy_map = (deps.busy_map)();
             let present = busy_map
                 .iter()
                 .find(|(id, _)| id == session_id)
@@ -431,17 +506,17 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
             }
         }
 
-        update_and_emit(&app, |s| {
+        (deps.mutate_and_emit)(&mut |s| {
             s.waiting_on.retain(|id| id != session_id);
         });
     }
 
-    if is_cancelled(&app) {
+    if (deps.is_cancelled)() {
         return;
     }
 
     // --- Phase: CountingDown. 30s, decrement + emit each second. ---
-    update_and_emit(&app, |s| {
+    (deps.mutate_and_emit)(&mut |s| {
         s.phase = ProtocolPhase::CountingDown;
         s.countdown_remaining_secs = Some(COUNTDOWN_SECS);
         s.waiting_on.clear();
@@ -449,33 +524,30 @@ async fn run_engine(app: AppHandle, action: TerminalAction) {
 
     let mut remaining = COUNTDOWN_SECS;
     while let Some(next) = next_countdown(remaining) {
-        if is_cancelled(&app) {
+        if (deps.is_cancelled)() {
             return;
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
-        if is_cancelled(&app) {
+        if (deps.is_cancelled)() {
             return;
         }
         remaining = next;
-        update_and_emit(&app, |s| {
+        (deps.mutate_and_emit)(&mut |s| {
             s.countdown_remaining_secs = Some(remaining);
         });
     }
 
-    if is_cancelled(&app) {
+    if (deps.is_cancelled)() {
         return;
     }
 
     // --- Phase: Firing. Emit, then perform the terminal action. ---
-    update_and_emit(&app, |s| {
+    (deps.mutate_and_emit)(&mut |s| {
         s.phase = ProtocolPhase::Firing;
         s.countdown_remaining_secs = Some(0);
     });
 
-    let result = match action {
-        TerminalAction::Sleep => crate::system_control::sleep_pc(),
-        TerminalAction::Shutdown => crate::system_control::shutdown_pc(),
-    };
+    let result = (deps.terminal)(action);
     if let Err(e) = result {
         log_comment(&format!("[when-done] terminal action failed: {e}"));
         log::error!("when_done: terminal action failed: {e}");
@@ -746,5 +818,233 @@ mod tests {
 
         assert_eq!(default_question_answers(None), json!({}));
         assert_eq!(default_question_answers(Some(&json!("not-an-array"))), json!({}));
+    }
+
+    // --- run_engine_with_deps integration ----------------------------------
+    //
+    // Drives the whole phase machine through recording stubs instead of the real
+    // AppHandle / daemon / system_control. tokio's paused clock makes the 1s
+    // ticks + 30s countdown resolve instantly (the std::time::Instant runaway and
+    // per-session timeout guards use wall-clock, so they stay un-tripped). The
+    // stubs RECORD calls; the terminal stub never actually sleeps/shuts down.
+
+    use std::sync::{Arc, Mutex};
+
+    /// Mutable world the test drives between engine ticks: the live
+    /// `(session_id, busy)` snapshot the seams read, plus the recorded effects.
+    struct World {
+        /// Current live sessions. The test mutates this to simulate sessions
+        /// going idle and /close turns running.
+        busy_map: Vec<(String, bool)>,
+        /// Phases observed via mutate_and_emit, in order. Drives the
+        /// progression assertion.
+        phases: Vec<ProtocolPhase>,
+        /// How many times the terminal action fired, and with what action.
+        terminal_calls: Vec<TerminalAction>,
+        /// How many /close injections happened, by session id.
+        closed: Vec<String>,
+        /// Set true to make is_cancelled report cancellation from the next check.
+        cancelled: bool,
+        /// When true, mutate_and_emit arms `cancelled` once the countdown has
+        /// ticked at least once. Lets a test cancel mid-countdown.
+        cancel_on_countdown: bool,
+        /// The engine's stored ProtocolState, mutated by mutate_and_emit exactly
+        /// as the real AppState-held copy would be.
+        state: ProtocolState,
+    }
+
+    impl Default for World {
+        fn default() -> Self {
+            Self {
+                busy_map: Vec::new(),
+                phases: Vec::new(),
+                terminal_calls: Vec::new(),
+                closed: Vec::new(),
+                cancelled: false,
+                cancel_on_countdown: false,
+                state: ProtocolState::disarmed(),
+            }
+        }
+    }
+
+    impl World {
+        fn live_idle(&self) -> bool {
+            self.busy_map.iter().all(|(_, busy)| !*busy)
+        }
+    }
+
+    /// Build EngineDeps backed by a shared `World`. A `tick` hook lets the test
+    /// mutate the world each time the engine reads the busy map, so the
+    /// simulation advances in lock-step with the phase machine.
+    fn deps_for(
+        world: Arc<Mutex<World>>,
+        // Called every time the engine reads busy_map; returns the next snapshot
+        // to install. Lets the test stage "now everything is idle", then "the
+        // close turn went busy", then "idle again".
+        tick: Arc<Mutex<dyn FnMut(&mut World) + Send>>,
+    ) -> EngineDeps {
+        let w_busy = world.clone();
+        let tick_busy = tick.clone();
+        let w_idle = world.clone();
+        let w_ids = world.clone();
+        let w_resolve = world.clone();
+        let w_close = world.clone();
+        let w_emit = world.clone();
+        let w_cancel = world.clone();
+        let w_term = world.clone();
+
+        EngineDeps {
+            busy_map: Box::new(move || {
+                let mut g = w_busy.lock().unwrap();
+                (tick_busy.lock().unwrap())(&mut g);
+                g.busy_map.clone()
+            }),
+            all_idle: Box::new(move || w_idle.lock().unwrap().live_idle()),
+            live_ids: Box::new(move || {
+                w_ids
+                    .lock()
+                    .unwrap()
+                    .busy_map
+                    .iter()
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            }),
+            auto_resolve: Box::new(move || {
+                let _w = w_resolve.clone();
+                Box::pin(async move {
+                    // No-op for the test; the real seam talks to the daemon.
+                })
+            }),
+            inject_close: Box::new(move |session_id| {
+                let w = w_close.clone();
+                Box::pin(async move {
+                    w.lock().unwrap().closed.push(session_id);
+                    true
+                })
+            }),
+            mutate_and_emit: Box::new(move |f| {
+                let mut g = w_emit.lock().unwrap();
+                f(&mut g.state);
+                let phase = g.state.phase;
+                if g.phases.last() != Some(&phase) {
+                    g.phases.push(phase);
+                }
+                // Self-cancel hook: once the countdown is under way and at least
+                // one second has ticked off, arm cancellation. Lets a test prove
+                // the CountingDown loop short-circuits BEFORE Firing without
+                // needing the busy_map tick (which the countdown loop never
+                // reads).
+                if g.cancel_on_countdown
+                    && phase == ProtocolPhase::CountingDown
+                    && g.state.countdown_remaining_secs.unwrap_or(COUNTDOWN_SECS) < COUNTDOWN_SECS
+                {
+                    g.cancelled = true;
+                }
+                g.state.clone()
+            }),
+            is_cancelled: Box::new(move || w_cancel.lock().unwrap().cancelled),
+            terminal: Box::new(move |action| {
+                w_term.lock().unwrap().terminal_calls.push(action);
+                Ok(())
+            }),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_run_progresses_through_phases_and_fires_terminal_once() {
+        // Start with one busy session. The tick hook walks the world through:
+        //   1. busy   -> Watching keeps waiting,
+        //   2. idle   -> Watching breaks, Closing injects /close,
+        //   3. busy   -> close turn started (saw_busy latches),
+        //   4. idle   -> close turn complete, then CountingDown -> Firing.
+        let world = Arc::new(Mutex::new(World {
+            busy_map: vec![("s1".to_string(), true)],
+            ..Default::default()
+        }));
+
+        // Sequence of busy-flags to install on successive busy_map reads. Once
+        // exhausted, the session stays idle.
+        let steps = Arc::new(Mutex::new(vec![true, false, true, false]));
+        let steps_for_tick = steps.clone();
+        let tick: Arc<Mutex<dyn FnMut(&mut World) + Send>> =
+            Arc::new(Mutex::new(move |w: &mut World| {
+                if let Some(next) = {
+                    let mut s = steps_for_tick.lock().unwrap();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.remove(0))
+                    }
+                } {
+                    w.busy_map = vec![("s1".to_string(), next)];
+                }
+            }));
+
+        let deps = deps_for(world.clone(), tick);
+        run_engine_with_deps(deps, TerminalAction::Sleep).await;
+
+        let g = world.lock().unwrap();
+        // Phase progression: Watching -> Closing -> CountingDown -> Firing.
+        assert_eq!(
+            g.phases,
+            vec![
+                ProtocolPhase::Watching,
+                ProtocolPhase::Closing,
+                ProtocolPhase::CountingDown,
+                ProtocolPhase::Firing,
+            ],
+            "phase progression"
+        );
+        // /close was injected exactly once, into the live session.
+        assert_eq!(g.closed, vec!["s1".to_string()], "close injection");
+        // Terminal action fired EXACTLY ONCE, with the armed action.
+        assert_eq!(
+            g.terminal_calls,
+            vec![TerminalAction::Sleep],
+            "terminal fires exactly once"
+        );
+        // Countdown ran to completion.
+        assert_eq!(g.state.countdown_remaining_secs, Some(0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancel_mid_countdown_short_circuits_and_terminal_never_fires() {
+        // No busy sessions: Watching breaks on the first idle check, Closing has
+        // nothing to inject, so we reach CountingDown immediately. `cancel_on_
+        // countdown` flips `cancelled` true once the countdown has ticked at
+        // least once, so the engine returns mid-countdown, before Firing.
+        let world = Arc::new(Mutex::new(World {
+            busy_map: vec![], // empty -> all idle -> straight to closing/countdown
+            cancel_on_countdown: true,
+            ..Default::default()
+        }));
+
+        // No-op tick: the world's busy/idle shape never changes.
+        let tick: Arc<Mutex<dyn FnMut(&mut World) + Send>> =
+            Arc::new(Mutex::new(|_w: &mut World| {}));
+
+        let deps = deps_for(world.clone(), tick);
+        run_engine_with_deps(deps, TerminalAction::Shutdown).await;
+
+        let g = world.lock().unwrap();
+        // The countdown was entered (proving this is a mid-countdown cancel, not
+        // an early abort).
+        assert!(
+            g.phases.contains(&ProtocolPhase::CountingDown),
+            "should have reached CountingDown before cancel, phases: {:?}",
+            g.phases
+        );
+        // Terminal action MUST NOT have fired.
+        assert!(
+            g.terminal_calls.is_empty(),
+            "cancel must short-circuit before Firing, got {:?}",
+            g.terminal_calls
+        );
+        // Firing must never have been entered.
+        assert!(
+            !g.phases.contains(&ProtocolPhase::Firing),
+            "Firing phase must not be reached after cancel, phases: {:?}",
+            g.phases
+        );
     }
 }

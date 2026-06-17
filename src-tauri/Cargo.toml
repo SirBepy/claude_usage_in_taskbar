@@ -86,6 +86,10 @@ libc = "0.2"
 [dev-dependencies]
 tempfile = "3"
 mockito = "1"
+# test-util enables tokio's paused clock (start_paused) so the when_done engine
+# integration test fast-forwards its 1s ticks + 30s countdown instead of waiting
+# real wall-clock seconds. Dev-only: not pulled into the release binary.
+tokio = { version = "1", features = ["test-util"] }
 
 [profile.release]
 codegen-units = 1
