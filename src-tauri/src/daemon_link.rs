@@ -227,6 +227,29 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
             }
         }
         "skill_usage_changed" => { let _ = app.emit("skill-usage-changed", serde_json::json!({})); }
+        // Character turn sound: the daemon fires this when an in-app chat finishes
+        // a turn (done / plain-text question) or surfaces an AskUserQuestion. We
+        // map it to the existing notification path so it resolves the session
+        // character + slot and respects mute/meeting/per-slot gating.
+        "turn_sound" => {
+            let session_id = params.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let kind = match params.get("awaiting").and_then(|v| v.as_str()) {
+                Some("done") => Some(crate::notifications::NotifKind::WorkFinished),
+                Some("question") => Some(crate::notifications::NotifKind::QuestionAsked),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                let name = cwd.as_deref().and_then(crate::notifications::project_name_from_cwd);
+                crate::notifications::fire(
+                    app,
+                    kind,
+                    crate::notifications::NotifContext { name, percent: None },
+                    session_id.as_deref(),
+                    cwd.as_deref(),
+                );
+            }
+        }
         "refresh_requested" => {
             let app2 = app.clone();
             let cwd = params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());

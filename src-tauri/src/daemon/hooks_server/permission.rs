@@ -79,6 +79,11 @@ pub(super) async fn on_question_request(
     // the lossy notifier broadcast drops the frame.
     ctx.state.add_prompt(&body.id, "question-requested", payload.clone()).await;
     let subs = ctx.state.notifier.publish("question_request", payload);
+    // Character "asking" sound (see `ask_question_decision` for the rationale).
+    ctx.state.notifier.publish(
+        "turn_sound",
+        json!({ "session_id": body.session_id, "awaiting": "question" }),
+    );
     log::info!(
         "[perm-relay] published question_request id={} session={:?} -> {} subscriber(s)",
         body.id, body.session_id, subs
@@ -139,6 +144,14 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     // the lossy notifier broadcast drops the frame.
     ctx.state.add_prompt(&id, "question-requested", payload.clone()).await;
     ctx.state.notifier.publish("question_request", payload);
+    // Character "asking" sound. An AskUserQuestion turn does NOT end with an
+    // `awaiting:question` result (claude continues after the deny-feedback), so
+    // the turn-done path in `lifecycle.rs` never fires it; fire it here as the
+    // card surfaces. The app maps this to `notifications::fire(QuestionAsked)`.
+    ctx.state.notifier.publish(
+        "turn_sound",
+        json!({ "session_id": session_id, "awaiting": "question" }),
+    );
 
     // `answers`: an object (possibly empty) iff the user actually responded;
     // Null iff the prompt timed out with no response. The distinction matters -

@@ -191,6 +191,22 @@ pub async fn spawn_session(
                         }
                         broadcast::publish(&pump_session, ev);
                         if let Some(awaiting) = turn_done_awaiting {
+                            // Character "work finished" / "asking" sound. The in-app chat's
+                            // turn completion is NOT covered by the global Stop/Notification
+                            // hooks (those only drive skill-usage + external sessions), so
+                            // fire the sound here off the same `result` line that sets
+                            // awaiting. The app maps this to `notifications::fire`, which
+                            // resolves the session character + slot + mute/meeting gating.
+                            if matches!(awaiting.as_deref(), Some("done") | Some("question")) {
+                                state_for_pump.notifier.publish(
+                                    "turn_sound",
+                                    serde_json::json!({
+                                        "session_id": pump_session.session_id,
+                                        "cwd": pump_session.cwd.to_string_lossy(),
+                                        "awaiting": awaiting.as_deref(),
+                                    }),
+                                );
+                            }
                             state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
                             state_for_pump.registry.set_busy(&pump_session.session_id, false);
                             state_for_pump.notifier.publish(
