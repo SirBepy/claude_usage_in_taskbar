@@ -80,11 +80,20 @@ impl PersistentClient {
                 };
                 if frame.get("method").is_some() {
                     // Server-to-client notification.
-                    // Empty string is the global slot for daemon-wide notifications.
-                    let session_id = frame.pointer("/params/session_id")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
+                    // Only `chat_event` is session-scoped; route it to the
+                    // per-session subscriber registered by `attach_session`.
+                    // All other notifications (turn_sound, instances_changed,
+                    // refresh_requested, etc.) are global — even when they carry
+                    // a session_id as data — and must reach the global slot ("").
+                    let method = frame.get("method").and_then(Value::as_str).unwrap_or("");
+                    let session_id = if method == "chat_event" {
+                        frame.pointer("/params/session_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string()
+                    } else {
+                        String::new()
+                    };
                     let subs = subs_for_reader.lock().await;
                     if let Some(tx) = subs.get(&session_id) {
                         let _ = tx.send(frame).await;
