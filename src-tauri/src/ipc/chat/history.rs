@@ -220,10 +220,22 @@ pub async fn list_history(
     search: Option<String>,
     limit: u32,
     offset: u32,
+    state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<Vec<crate::types::chat::HistoryEntry>, String> {
     let projects_dir = crate::tokens::claude_projects_dir().ok_or("no home dir")?;
+    // Collect live session IDs so we can exclude them from history.
+    let live_ids: std::collections::HashSet<String> = state
+        .cached_instances
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|i| i.ended_at.is_none())
+        .map(|i| i.session_id.clone())
+        .collect();
     tauri::async_runtime::spawn_blocking(move || {
-        collect_history(&projects_dir, project_id, search, limit, offset)
+        let mut entries = collect_history(&projects_dir, project_id, search, limit, offset);
+        entries.retain(|e| !live_ids.contains(&e.session_id));
+        entries
     })
     .await
     .map_err(|e| format!("join: {}", e))
