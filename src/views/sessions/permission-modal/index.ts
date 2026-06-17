@@ -113,11 +113,20 @@ export function installPermissionModalListener(): void {
           allowPermission(payload, "background respond_permission");
           return;
         }
-        // Switched-away busy chat: park the prompt and mark the row so the
-        // daemon oneshot isn't left hanging. Replayed on selectSession.
-        storePendingPrompt(payload.session_id, { kind: "permission", payload });
-        rerenderSidebar();
-        console.warn("[perm-gate] PARKED permission-requested for backgrounded chat", { eventSessionId: payload.session_id, tool: payload.tool_name, ...gateDiag() });
+        // Switched-away chat: try a saved Always-Allow rule FIRST so a chat the
+        // user already granted access to doesn't park a red prompt off-screen.
+        // autoAllowIfRemembered returns false for question-shaped / destructive /
+        // unmatched, which then falls through to parking. Replayed on selectSession.
+        const sid = payload.session_id;
+        void (async () => {
+          if (await autoAllowIfRemembered(payload)) {
+            console.debug("[perm-rules] background auto-allow", payload.tool_name, "for", sid);
+            return;
+          }
+          storePendingPrompt(sid, { kind: "permission", payload });
+          rerenderSidebar();
+          console.warn("[perm-gate] PARKED permission-requested for backgrounded chat", { eventSessionId: sid, tool: payload.tool_name, ...gateDiag() });
+        })();
       } else {
         console.warn("[perm-gate] DROPPED permission-requested (no session_id)", { tool: payload.tool_name, ...gateDiag() });
       }
