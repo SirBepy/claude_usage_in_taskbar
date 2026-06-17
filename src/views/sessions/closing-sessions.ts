@@ -17,3 +17,7 @@ export function unmarkSessionClosing(id: string): void {
 export function isSessionClosing(id: string): boolean {
   return _closing.has(id);
 }
+
+export function getClosingSet(): Set<string> {
+  return _closing;
+}

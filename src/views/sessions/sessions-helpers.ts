@@ -66,18 +66,30 @@ export function sortSessions(
   unread: Set<string>,
   attention: Set<string>,
   question: Set<string>,
+  closing: Set<string> = new Set(),
 ): Instance[] {
   const copy = sessions.slice();
+  const closingLast = (a: Instance, b: Instance): number => {
+    const ac = closing.has(a.session_id) ? 1 : 0;
+    const bc = closing.has(b.session_id) ? 1 : 0;
+    return ac - bc;
+  };
   if (sort === "name") {
     return copy.sort((a, b) =>
+      closingLast(a, b) ||
       projectName(a).localeCompare(projectName(b), undefined, { sensitivity: "base" })
     );
   }
   if (sort === "recent") {
-    return copy.sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? ""));
+    return copy.sort((a, b) =>
+      closingLast(a, b) ||
+      (b.started_at ?? "").localeCompare(a.started_at ?? "")
+    );
   }
   // status sort
   return copy.sort((a, b) => {
+    const cl = closingLast(a, b);
+    if (cl !== 0) return cl;
     const pa = statusPriority(a, unread, attention, question);
     const pb = statusPriority(b, unread, attention, question);
     if (pa !== pb) return pa - pb;

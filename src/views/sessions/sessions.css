@@ -429,6 +429,7 @@
 .sessions-list li.closing {
   box-shadow: inset 3px 0 0 #ef4444;
   animation: closing-pulse 1.2s ease-in-out infinite;
+  opacity: 0.5;
 }
 .sessions-list li.closing .session-row-project::after {
   content: " · closing…";

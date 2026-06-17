@@ -3,7 +3,7 @@ import { positionDropdown } from "./position-dropdown";
 import { invoke } from "../../shared/ipc";
 import type { Instance } from "../../types/ipc.generated";
 import { closeChat } from "./close-chat";
-import { isSessionClosing } from "./closing-sessions";
+import { isSessionClosing, getClosingSet } from "./closing-sessions";
 import {
   projectName,
   sessionSubtitle,
@@ -166,7 +166,7 @@ export function renderSidebar(listEl: HTMLElement): void {
     sessionSubtitle(s).toLowerCase().includes(filter)
   );
 
-  const sorted = sortSessions(filtered, sort, unread, attention, question);
+  const sorted = sortSessions(filtered, sort, unread, attention, question, getClosingSet());
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
   const isManualSlots = getChatSlotMode() === "manual";
