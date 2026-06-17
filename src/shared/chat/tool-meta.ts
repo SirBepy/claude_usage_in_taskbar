@@ -22,7 +22,42 @@ function capTarget(target: string): string {
   return target.length > TARGET_MAX ? target.slice(0, TARGET_MAX) + "…" : target;
 }
 
+// MCP tools arrive as `mcp__<server>__<tool>` (raw) and we canonicalize them to
+// `mcp:<server>` so every tool from one server folds into a single bucket/chip
+// named after the server (e.g. all `mcp__playwright__*` -> "Playwright"). Both
+// forms are recognised since toolSummary/toolLabel get called with either.
+function parseMcp(tool: string): { server: string } | null {
+  if (tool.startsWith("mcp__")) {
+    const parts = tool.split("__");
+    return parts.length >= 3 && parts[1] ? { server: parts[1] } : null;
+  }
+  if (tool.startsWith("mcp:")) {
+    const server = tool.slice(4);
+    return server ? { server } : null;
+  }
+  return null;
+}
+
+/** "playwright" -> "Playwright", "cc_companion" -> "Cc Companion". */
+function prettyMcpServer(server: string): string {
+  return server
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** The sub-tool of a raw `mcp__server__some_action` -> "some action". */
+function prettyMcpAction(tool: string): string {
+  if (!tool.startsWith("mcp__")) return "";
+  return tool.split("__").slice(2).join("__").replace(/_/g, " ");
+}
+
 export function toolSummary(tool: string, input: unknown): { icon: string; tool: string; target: string } {
+  const mcp = parseMcp(tool);
+  if (mcp) {
+    return { icon: "ph-plugs-connected", tool: prettyMcpServer(mcp.server), target: capTarget(prettyMcpAction(tool)) };
+  }
   const obj = asObj(input);
   const { icon, target } = ((): { icon: string; target: string } => {
     switch (tool) {
@@ -80,8 +115,11 @@ const CANONICAL_TOOL: Record<string, string> = {
   WebSearch: "Search",
 };
 
-/** The bucket a tool groups under (Bash/PowerShell -> Bash, edit family -> Edit). */
+/** The bucket a tool groups under (Bash/PowerShell -> Bash, edit family -> Edit,
+ *  every mcp__server__* -> mcp:server). */
 export function canonicalTool(tool: string): string {
+  const mcp = parseMcp(tool);
+  if (mcp) return "mcp:" + mcp.server;
   return CANONICAL_TOOL[tool] ?? tool;
 }
 
@@ -101,6 +139,8 @@ const TOOL_LABELS: Record<string, string> = {
 /** Friendly chip label for a tool, after canonicalizing (e.g. PowerShell -> "Ran"). */
 export function toolLabel(tool: string): string {
   const c = canonicalTool(tool);
+  const mcp = parseMcp(c);
+  if (mcp) return prettyMcpServer(mcp.server);
   return TOOL_LABELS[c] ?? c;
 }
 
