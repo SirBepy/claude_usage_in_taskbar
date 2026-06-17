@@ -1,5 +1,21 @@
 # Comments for Bepy
 
+## 2026-06-17 - /autopilot run: 2 UI tweaks + autopilotable ai_todos
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- UI: move "Open in VS Code" from sidebar row menu to chat header menu -> d426179
+- UI: effort chip light-purple (was grey), ctx% green by default -> 971515f
+- ai_todo 112 (chat-state color palette, Joe-decided): single-source --chat-state-* map, red now means closing ONLY, question=amber, busy=teal, done=green, remote=blue -> 7d45293. ai_todo deleted; Visual QA added.
+- ai_todo 32 (when_done integration test): behavior-preserving effect-seam refactor (EngineDeps closures) + 2 executing tokio paused-clock tests (full phase progression fires terminal once; cancel short-circuits). Scoped test 16 passed. -> b8e7799. ai_todo deleted (fully verified, no live action).
+- ai_todo 95 slice 1 (absorbed ai_todo 35): in-app read-only Shiki file viewer + read_text_file IPC (2MB cap); all file-row clicks (chat chips + tool-tally) re-pointed to it, "Open in VS Code" kept secondary. -> 731d0e6. ai_todo 95 updated (slices 2/3 remain); ai_todo 35 deleted; Visual QA added.
+
+Decision needed: should ai_todo 81 (tauri_kit cleanup) auto-run?
+Resolved via: direct judgment (Hard Stop - hard-to-reverse shared-lib blast radius)
+Picked: PARKED after a read-only audit. Reason: the audit's "unused -> delete" verdict was scoped to claude_usage only; the settings/updater/window/meeting crates + ~14 frontend modules are exactly what the OTHER consumer (pomodoro-overlay, which pins this submodule) uses - its settings root.ts hardcodes Pomodoro categories. Deleting them unattended would break pomodoro. Where: ai_todo 81 (full findings + the meeting-fork decision baked in for the next pass).
+Revisit: yes - needs the pomodoro repo open + your call on the meeting fork; then it's a real cleanup.
+
+VERIFICATION: each code chunk passed its fast-check floor (pnpm tsc --noEmit clean except the known pre-existing vendor/tauri_kit/.../stack.ts(47,36) error; cargo build clean; scoped when_done test + tally vitest green). NOT live-verified (can't host the app/daemon here) - the visual bits (palette, chip colors, file viewer) are in BEPY_TODOS Visual QA for you. Did NOT push/deploy.
+
 ## 2026-06-16 - ai_todo 106: JSONL -> SQLite storage migration (5 slices, all committed)
 
 Built the full SQLite migration after you decided the open forks (full multi-process now; defaults usage 90d / token 90d / skill forever). Done via 5 staged, cargo-check/tsc-green slices, each its own commit:
