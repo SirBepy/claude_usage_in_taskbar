@@ -1,20 +1,64 @@
-/* ── Session state color tokens (single source of truth) ─────────────────── */
+/* ── Chat-state color system (single source of truth) ────────────────────────
+   ai_todo 112: every distinct chat state gets ONE documented hue. No two
+   distinct states may share a border/row colour by accident. Each render site
+   (sidebar dot, sidebar icon, avatar strip, header ring, closing bar) reads
+   from the --chat-state-* tokens below via the --st-* bindings - never a
+   hard-coded hex.
+
+   STATE          HUE     HEX        MEANING
+   ───────────────────────────────────────────────────────────────────────────
+   closing        red     #ef4444    Terminal: /close running, process dying.
+                                      RED IS RESERVED FOR THIS STATE ONLY.
+   needs-input    amber   #fbbf24    Claude is blocked on YOU: a question, a
+                                      parked permission prompt, or attention.
+                                      (question + attention share this family.)
+   busy           teal    #2dd4bf    Claude is actively running a turn.
+   done           green   #4ade80    Turn finished, unread response waiting.
+   your-turn      grey    rgba(...)   Idle, read - your move, no alarm.
+   external       blue    #60a5fa    External / automated (read-only) session.
+   remote         blue    #38bdf8    Remote (phone-driven) chat. ai_todo 113
+                                      will apply this as a blanket border
+                                      override; token reserved here so the slot
+                                      is documented (sky-blue, distinct from the
+                                      external azure so the two never collide).
+   error          orange  #fb923c    Reserved: rate-limited / errored row. No
+                                      render site binds this yet (the rate-limit
+                                      banner is a global banner, not a row), but
+                                      the hue is reserved so it can't be reused.
+   ─────────────────────────────────────────────────────────────────────────── */
 :root {
-  --st-working:       #fbbf24;
-  --st-working-glow:  rgba(251,191,36,0.60);
-  --st-done:          #4ade80;
-  --st-done-glow:     rgba(74,222,128,0.50);
-  /* Question = "Claude is waiting on you" -> red, same hue as a pending prompt,
-     so it reads as clearly actionable. The old orange sat too close to the
-     working amber; there is intentionally no separate orange state anymore. */
-  --st-question:      #ef4444;
-  --st-question-glow: rgba(239,68,68,0.55);
-  --st-attention:     #ef4444;
-  --st-attention-glow:rgba(239,68,68,0.65);
-  --st-external:      #60a5fa;
-  --st-external-glow: rgba(96,165,250,0.50);
-  --st-your-turn:     rgba(255,255,255,0.22);
-  --st-your-turn-glow:rgba(255,255,255,0.10);
+  --chat-state-closing:      #ef4444;
+  --chat-state-closing-glow: rgba(239,68,68,0.55);
+  --chat-state-needs-input:      #fbbf24;
+  --chat-state-needs-input-glow: rgba(251,191,36,0.60);
+  --chat-state-busy:      #2dd4bf;
+  --chat-state-busy-glow: rgba(45,212,191,0.55);
+  --chat-state-done:      #4ade80;
+  --chat-state-done-glow: rgba(74,222,128,0.50);
+  --chat-state-your-turn:      rgba(255,255,255,0.22);
+  --chat-state-your-turn-glow: rgba(255,255,255,0.10);
+  --chat-state-external:      #60a5fa;
+  --chat-state-external-glow: rgba(96,165,250,0.50);
+  --chat-state-remote:      #38bdf8;
+  --chat-state-remote-glow: rgba(56,189,248,0.50);
+  --chat-state-error:      #fb923c;
+  --chat-state-error-glow: rgba(251,146,60,0.50);
+
+  /* Per-render-class bindings. These map the st-* classes the render sites
+     emit onto the documented state hues above. Question + attention both bind
+     to needs-input (amber); only closing is red. */
+  --st-working:       var(--chat-state-busy);
+  --st-working-glow:  var(--chat-state-busy-glow);
+  --st-done:          var(--chat-state-done);
+  --st-done-glow:     var(--chat-state-done-glow);
+  --st-question:      var(--chat-state-needs-input);
+  --st-question-glow: var(--chat-state-needs-input-glow);
+  --st-attention:     var(--chat-state-needs-input);
+  --st-attention-glow:var(--chat-state-needs-input-glow);
+  --st-external:      var(--chat-state-external);
+  --st-external-glow: var(--chat-state-external-glow);
+  --st-your-turn:     var(--chat-state-your-turn);
+  --st-your-turn-glow:var(--chat-state-your-turn-glow);
 }
 
 .view-sessions .view-body.sessions-layout {
@@ -381,11 +425,12 @@
   50%      { box-shadow: 0 0 9px 2px var(--st-working-glow); }
 }
 .session-header-avatar.st-attention {
-  animation-name: header-char-pulse-red;
+  animation-name: header-char-pulse-attention;
 }
-@keyframes header-char-pulse-red {
-  0%, 100% { box-shadow: 0 0 4px 0 rgba(239,68,68,0.45); }
-  50%      { box-shadow: 0 0 9px 2px rgba(239,68,68,0.9); }
+/* Needs-input (amber) attention pulse for the open-chat header ring. */
+@keyframes header-char-pulse-attention {
+  0%, 100% { box-shadow: 0 0 4px 0 var(--chat-state-needs-input-glow); }
+  50%      { box-shadow: 0 0 9px 2px var(--chat-state-needs-input); }
 }
 /* Blurred backdrop behind the sharp portrait — fills transparent hexagon
    corners with hero colours instead of the app background. */
@@ -422,14 +467,15 @@
 }
 
 /* A chat that parked a permission/question prompt while backgrounded. Pulse
-   the icon and tint the row so the user knows to click in and answer. */
-.session-state-icon.attention-pulse { color: #f59e0b; animation: attention-pulse 1.4s ease-in-out infinite; }
+   the icon and tint the row so the user knows to click in and answer. This is
+   the needs-input (amber) family - NOT red. Red is reserved for closing. */
+.session-state-icon.attention-pulse { color: var(--chat-state-needs-input); animation: attention-pulse 1.4s ease-in-out infinite; }
 
 .sessions-list li.needs-attention {
-  background: rgba(245,158,11,0.12);
-  box-shadow: inset 3px 0 0 #f59e0b;
+  background: color-mix(in srgb, var(--chat-state-needs-input) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--chat-state-needs-input);
 }
-.sessions-list li.needs-attention:hover { background: rgba(245,158,11,0.2); }
+.sessions-list li.needs-attention:hover { background: color-mix(in srgb, var(--chat-state-needs-input) 20%, transparent); }
 .sessions-list li.needs-attention.active { background: var(--color-primary); box-shadow: none; }
 .sessions-list li.needs-attention.active .session-state-icon.attention-pulse {
   color: var(--color-background) !important;
@@ -442,20 +488,20 @@
 
 /* `/close` in progress: the chat stays VISIBLE with a red, pulsing left bar
    until the session is actually ended (daemon process killed), instead of
-   vanishing up front. Red currently overlaps the attention state - flagged for
-   a color-system pass (ai_todo 112). */
+   vanishing up front. RED IS RESERVED FOR THIS TERMINAL STATE - the needs-input
+   states are amber, so the closing bar is now unambiguous (ai_todo 112). */
 .sessions-list li.closing {
-  box-shadow: inset 3px 0 0 #ef4444;
+  box-shadow: inset 3px 0 0 var(--chat-state-closing);
   animation: closing-pulse 1.2s ease-in-out infinite;
   opacity: 0.5;
 }
 .sessions-list li.closing .session-row-project::after {
   content: " · closing…";
-  color: #ef4444;
+  color: var(--chat-state-closing);
 }
 @keyframes closing-pulse {
-  0%, 100% { box-shadow: inset 3px 0 0 rgba(239,68,68,0.55); }
-  50% { box-shadow: inset 3px 0 0 rgba(239,68,68,1); }
+  0%, 100% { box-shadow: inset 3px 0 0 var(--chat-state-closing-glow); }
+  50% { box-shadow: inset 3px 0 0 var(--chat-state-closing); }
 }
 
 /* 3-dot menu button */
@@ -606,9 +652,10 @@
 }
 
 /* Daemon stayed unreachable past the stall threshold: amber warning instead
-   of the eternal spinner. Same amber as the "answer me" sidebar flag. */
+   of the eternal spinner. Reuses the needs-input amber (the "answer me" flag);
+   this is a boot indicator, not a per-row chat state. */
 .session-empty--stalled {
-  color: #f59e0b;
+  color: var(--chat-state-needs-input);
   font-style: normal;
   max-width: 360px;
   margin: auto;
