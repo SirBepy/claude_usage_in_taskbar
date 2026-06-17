@@ -87,6 +87,19 @@ export function clearPendingPrompt(sessionId: string): void {
   _pendingPrompts.delete(sessionId);
 }
 
+/** Remove whichever parked prompt carries this prompt id, if any. Keyed by the
+ *  payload id (not session) so the reliable `prompt-resolved` poll - which only
+ *  knows the id - can drop a park once its prompt leaves the daemon's pending
+ *  list (answered, denied, or timed out). */
+export function clearPendingPromptById(id: string): void {
+  for (const [sessionId, prompt] of _pendingPrompts) {
+    if (prompt.payload.id === id) {
+      _pendingPrompts.delete(sessionId);
+      return;
+    }
+  }
+}
+
 /** Session ids with a parked prompt - the sidebar marks these as needing
  *  attention. */
 export function pendingPromptSessionIds(): Set<string> {

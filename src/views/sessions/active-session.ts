@@ -45,7 +45,11 @@ const HEADER_STATUS_CLASSES = [
  * instances-changed event. */
 export function headerStatusClass(sess: Instance): string {
   const unread = loadUnreadSet();
+  // A prompt shown for the currently-viewed chat is parked so it survives a
+  // switch-away, but its card is already on screen - don't also alarm its own
+  // row. Backgrounded chats with parked prompts still badge.
   const attention = pendingPromptSessionIds();
+  if (state.selectedId) attention.delete(state.selectedId);
   const question = new Set<string>([
     ...state.questionSessions,
     ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),

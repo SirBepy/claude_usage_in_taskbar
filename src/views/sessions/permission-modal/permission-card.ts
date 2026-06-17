@@ -3,10 +3,16 @@ import { escapeHtml } from "../../../shared/escape-html";
 import { buildRule, describeRule, isDestructive, withAddedRule } from "../permission-rules";
 import { clearHost, ensureHost, renderCardShell } from "./host";
 import { extractQuestions, formatAnswersAsMessage, renderQuestionUI } from "./question-ui";
-import { resolveCwdForSession } from "./gating";
+import { resolveCwdForSession, storePendingPrompt } from "./gating";
 import type { PermissionRequestedPayload } from "./types";
 
 export function showPermissionCard(payload: PermissionRequestedPayload): void {
+  // Park the prompt while it's on screen so a chat switch-and-back re-surfaces
+  // it instead of leaving the daemon turn hung (see showQuestionCard). Cleared
+  // when the prompt resolves via the `prompt-resolved` poll.
+  if (payload.session_id) {
+    storePendingPrompt(payload.session_id, { kind: "permission", payload });
+  }
   // Question-shaped permission? Render the question UI directly. On submit,
   // route answers back as a deny.message so headless claude reads them as
   // user feedback (this is the only channel claude -p has for built-in

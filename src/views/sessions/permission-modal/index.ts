@@ -27,6 +27,7 @@ import {
   gateDiag,
   storePendingPrompt,
   takePendingPrompt,
+  clearPendingPromptById,
 } from "./gating";
 import type { PermissionRequestedPayload, Question, QuestionRequestedPayload } from "./types";
 
@@ -58,6 +59,13 @@ function rerenderSidebar(): void {
 }
 
 function showQuestionCard(payload: QuestionRequestedPayload): void {
+  // Park the prompt while it's on screen so switching chats and back re-surfaces
+  // it (the reliable poll only emits each id once, so a card torn down by
+  // navigation is otherwise lost while the daemon turn hangs). Cleared when the
+  // prompt resolves (see the `prompt-resolved` listener).
+  if (payload.session_id) {
+    storePendingPrompt(payload.session_id, { kind: "question", payload });
+  }
   const questions: Question[] = Array.isArray(payload.questions)
     ? payload.questions
     : [payload.questions];
@@ -153,7 +161,13 @@ export function installPermissionModalListener(): void {
   // (daemon_link.rs), so it survives the lossy broadcast.
   ev.listen<{ id: string }>("prompt-resolved", (event) => {
     const id = event.payload?.id;
-    if (id) dismissQuestionCard(id);
+    if (id) {
+      dismissQuestionCard(id);
+      // Drop the park now that the daemon no longer holds this prompt, so it
+      // can't re-surface on a later switch-back, and clear the row's marker.
+      clearPendingPromptById(id);
+      rerenderSidebar();
+    }
   });
 }
 

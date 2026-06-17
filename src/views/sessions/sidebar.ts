@@ -134,7 +134,10 @@ export function renderSidebar(listEl: HTMLElement): void {
   const filter = state.filter.toLowerCase();
   const pending = state.pendingNewSession;
   const unread = loadUnreadSet();
+  // The viewed chat's parked prompt is already shown as a card; don't also flag
+  // its row with the attention alarm (backgrounded parked prompts still badge).
   const attention = pendingPromptSessionIds();
+  if (state.selectedId) attention.delete(state.selectedId);
   // Union: renderer-detected (opened sessions) + registry-backed (all sessions incl. background).
   const question = new Set<string>([
     ...state.questionSessions,
