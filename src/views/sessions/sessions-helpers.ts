@@ -60,6 +60,22 @@ export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<st
   return "Done - your turn";
 }
 
+/** Maps a session to its display segment index.
+ *  0=Input Needed, 1=Done, 2=In Progress, 3=Closing */
+export function sessionSegment(
+  s: Instance,
+  unread: Set<string>,
+  attention: Set<string>,
+  question: Set<string>,
+  closing: Set<string>,
+): number {
+  if (closing.has(s.session_id)) return 3;
+  const priority = statusPriority(s, unread, attention, question);
+  if (priority === 0 || priority === 1) return 0; // Input Needed
+  if (priority === 2 || priority === 5) return 2; // In Progress
+  return 1; // Done
+}
+
 export function sortSessions(
   sessions: Instance[],
   sort: SessionSort,

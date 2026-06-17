@@ -87,6 +87,24 @@
   background: var(--color-surface);
 }
 
+.sessions-list li.session-group-header {
+  padding: 10px 12px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted, #666);
+  border-bottom: none;
+  cursor: default;
+  pointer-events: none;
+  user-select: none;
+  display: block;
+}
+
+.sessions-list li.session-group-header:hover {
+  background: transparent;
+}
+
 .sessions-list li.active {
   background: var(--color-primary);
   color: var(--color-background);

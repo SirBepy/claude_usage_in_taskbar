@@ -10,6 +10,7 @@ import {
   statusIndicator,
   statusDotClass,
   sortSessions,
+  sessionSegment,
   loadUnreadSet,
   saveUnreadSet,
   loadSort,
@@ -166,7 +167,8 @@ export function renderSidebar(listEl: HTMLElement): void {
     sessionSubtitle(s).toLowerCase().includes(filter)
   );
 
-  const sorted = sortSessions(filtered, sort, unread, attention, question, getClosingSet());
+  const closing = getClosingSet();
+  const sorted = sortSessions(filtered, sort, unread, attention, question, closing);
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
   const isManualSlots = getChatSlotMode() === "manual";
@@ -230,31 +232,47 @@ export function renderSidebar(listEl: HTMLElement): void {
     });
   }
 
-  for (const [i, s] of sorted.entries()) {
-    const isActive = s.session_id === state.selectedId;
-    const needsAttention = attention.has(s.session_id);
-    const isClosing = isSessionClosing(s.session_id);
-    const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml);
-    let kbdHint = "";
-    if (isManualSlots) {
-      const slot = slotBySession[s.session_id];
-      if (slot) kbdHint = ` data-kbd-hint="${slot}"`;
-    } else {
-      if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
-    }
+  const SEGMENT_LABELS = ["Input Needed", "Done", "In Progress", "Closing"];
+  const segmented: Map<number, typeof sorted> = new Map([[0, []], [1, []], [2, []], [3, []]]);
+  for (const s of sorted) {
+    segmented.get(sessionSegment(s, unread, attention, question, closing))!.push(s);
+  }
+
+  let sessionIndex = 0;
+  for (const seg of [0, 1, 2, 3]) {
+    const group = segmented.get(seg)!;
+    if (group.length === 0) continue;
     entries.push({
-      key: `s:${s.session_id}`,
-      html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
-        ${leadingVisual(s, indicator, unread, attention, question)}
-        <div class="session-row-text">
-          <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}</span>
-          <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>
-        </div>
-        <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
-          <i class="ph ph-dots-three-vertical"></i>
-        </button>
-      </li>`,
+      key: `__seg:${seg}__`,
+      html: `<li class="session-group-header" data-row-key="__seg:${seg}__">${SEGMENT_LABELS[seg]}</li>`,
     });
+    for (const s of group) {
+      const i = sessionIndex++;
+      const isActive = s.session_id === state.selectedId;
+      const needsAttention = attention.has(s.session_id);
+      const isClosing = isSessionClosing(s.session_id);
+      const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml);
+      let kbdHint = "";
+      if (isManualSlots) {
+        const slot = slotBySession[s.session_id];
+        if (slot) kbdHint = ` data-kbd-hint="${slot}"`;
+      } else {
+        if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
+      }
+      entries.push({
+        key: `s:${s.session_id}`,
+        html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
+          ${leadingVisual(s, indicator, unread, attention, question)}
+          <div class="session-row-text">
+            <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}</span>
+            <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>
+          </div>
+          <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
+            <i class="ph ph-dots-three-vertical"></i>
+          </button>
+        </li>`,
+      });
+    }
   }
 
   if (entries.length === 0 && state.daemonConnected === true) {
