@@ -12,7 +12,7 @@ import { isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar"
 import { projectName, sessionSubtitle } from "./sessions-helpers";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { characterForSession, characterIconUrl } from "./session-characters";
-import { hydrateCharacterAvatars } from "../../shared/projects";
+import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import type { SessionConfig } from "./model-effort-modal";
 import { isAutoAccept, setAutoAccept } from "./permission-modal";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
@@ -71,7 +71,10 @@ export async function renderPendingPane(
   if (config.characterId) {
     _pendingHeader.setAvatar(config.characterId, characterIconUrl(config.characterId), "", project.path);
     void hydrateCharacterAvatars(pane);
+  } else {
+    _pendingHeader.setAvatar(null, null, "", project.path);
   }
+  void hydrateProjectTechIcons(pane);
 
   const sbHost = pane.querySelector<HTMLElement>(".session-statusbar-host");
   if (sbHost) {
@@ -327,6 +330,7 @@ function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {
     autoAcceptOn: isAutoAccept(sessionId),
   });
   if (realCharId) void hydrateCharacterAvatars(pane);
+  void hydrateProjectTechIcons(pane);
 
   const messagesEl = pane.querySelector<HTMLElement>(".session-messages");
   const renderer = state.renderer;
