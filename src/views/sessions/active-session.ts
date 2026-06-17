@@ -374,22 +374,40 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         markSessionClosing(sessionId);
         const listEl = document.querySelector<HTMLElement>("#sessions-list");
         if (listEl) renderSidebar(listEl);
+
+        // Wait for the /close turn to actually finish before tearing down.
+        // send_message resolves immediately (stdin write), so .finally() would
+        // have killed the process before the skill ran. Instead, subscribe and
+        // finalize only on turn_usage (turn complete) or session_ended (crash).
+        const finalize = () => {
+          removeBackgroundSession(sessionId);
+          invoke<void>("clear_session", { sessionId })
+            .catch(() => {})
+            .finally(() => {
+              unmarkSessionClosing(sessionId);
+              if (state.selectedId === sessionId) {
+                dismountActivePane({ rerenderSidebar: true });
+              } else {
+                const el = document.querySelector<HTMLElement>("#sessions-list");
+                if (el) renderSidebar(el);
+              }
+            });
+        };
+
+        let finalized = false;
+        const unsub = sessionEvents.subscribe(sessionId, (ev) => {
+          if (ev.type === "turn_usage" || ev.type === "session_ended") {
+            if (finalized) return;
+            finalized = true;
+            unsub();
+            finalize();
+          }
+        });
+
         invoke<void>("send_message", { sessionId, cwd, blocks })
-          .catch(err => console.error("[sessions] background /close send_message failed", err))
-          .finally(() => {
-            removeBackgroundSession(sessionId);
-            // End for real (kills the process), THEN remove from the UI.
-            invoke<void>("clear_session", { sessionId })
-              .catch(() => {})
-              .finally(() => {
-                unmarkSessionClosing(sessionId);
-                if (state.selectedId === sessionId) {
-                  dismountActivePane({ rerenderSidebar: true });
-                } else {
-                  const el = document.querySelector<HTMLElement>("#sessions-list");
-                  if (el) renderSidebar(el);
-                }
-              });
+          .catch(err => {
+            console.error("[sessions] background /close send_message failed", err);
+            if (!finalized) { finalized = true; unsub(); finalize(); }
           });
         return;
       }
