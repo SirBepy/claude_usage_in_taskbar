@@ -109,12 +109,13 @@
 }
 
 .sb-chip.sb-model { color: var(--color-primary); border-color: rgba(157, 125, 252, 0.2); }
+.sb-chip.sb-effort { color: #c4b5fd; border-color: rgba(196, 181, 253, 0.25); }
 .sb-chip.sb-branch { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
 .sb-chip.sb-repo { color: var(--color-text-muted); }
 .sb-chip.sb-folder { color: var(--color-text-muted); }
 .sb-chip.sb-folder-btn { cursor: pointer; }
 .sb-chip.sb-folder-btn:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.08); border-color: var(--color-border); }
-.sb-chip.sb-context { color: var(--color-text-muted); }
+.sb-chip.sb-context { color: #34d399; border-color: rgba(52, 211, 153, 0.25); }
 .sb-chip.sb-context.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.3); }
 .sb-chip.sb-context.danger { color: #f87171; border-color: rgba(248, 113, 113, 0.3); }
 .sb-chip.sb-thinking.active { color: #a78bfa; border-color: rgba(167, 139, 250, 0.3); }
