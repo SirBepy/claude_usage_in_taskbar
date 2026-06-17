@@ -334,10 +334,25 @@ export function isSilentSystemUserMessage(cleaned: ContentBlock[]): boolean {
   return (first as { type: "text"; text: string }).text.trim().toLowerCase() === "continue";
 }
 
+// The resume system injects "Continue from where you left off." as a user turn
+// when a chat is continued (e.g. after a restart). The user never typed it, so
+// it must not render as a user bubble - drop it entirely; the assistant's
+// "Continuing chat" notice is the visible resume marker.
+export function isResumeContinuationUserMessage(cleaned: ContentBlock[]): boolean {
+  const first = cleaned[0];
+  if (cleaned.length !== 1 || !first || first.type !== "text") return false;
+  return /^continue from where you left off\.?$/i.test(
+    (first as { type: "text"; text: string }).text.trim(),
+  );
+}
+
 // Assistant messages that are internal CLI noise. Returns a display label for
 // the system notice, or null if the text is real assistant content.
 const NOISE_PATTERNS: [RegExp, string][] = [
-  [/^no response requested\.?$/i, "No response requested"],
+  // Emitted when a session is resumed with nothing new to do (e.g. continuing a
+  // chat after a restart). Shown as "Continuing chat" rather than the raw
+  // "No response requested." so it reads as the resume marker, not an error.
+  [/^no response requested\.?$/i, "Continuing chat"],
   [/^\[request interrupted\]$/i, "Request interrupted"],
 ];
 export function noiseAssistantLabel(text: string): string | null {
@@ -408,6 +423,7 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
       }
       const cleaned = cleanUserBlocks(ev.content);
       if (cleaned.length === 0) return null;
+      if (isResumeContinuationUserMessage(cleaned)) return null;
       if (isSilentSystemUserMessage(cleaned)) return { kind: "system", text: "Continuing session…", ts };
       return { kind: "user", content: cleaned, ts };
     }

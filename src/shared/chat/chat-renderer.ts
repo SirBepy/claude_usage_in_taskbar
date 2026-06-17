@@ -1,7 +1,7 @@
 import type { ChatEvent } from "../../types/ipc.generated";
 import { blocksToText } from "./content-blocks";
 import { sessionEvents } from "./event-store";
-import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken, isSilentSystemUserMessage, noiseAssistantLabel } from "./chat-transforms";
+import { cleanUserBlocks, wrapBlockquotes, RenderedMessage, renderMessage, isCompactUserMessage, isBoundaryMessage, detectStatusToken, isSilentSystemUserMessage, isResumeContinuationUserMessage, noiseAssistantLabel } from "./chat-transforms";
 import { highlightCodeBlocks, highlightInlineCode } from "./code-highlighter";
 import { armLazyDiffEnhance } from "./diff-enhancer";
 import { hydrateAttachments } from "./attachment-hydrator";
@@ -480,6 +480,9 @@ export class ChatRenderer {
         const isCompact = isCompactUserMessage(ev.content);
         const cleaned = isCompact ? [] : cleanUserBlocks(ev.content);
         if (!isCompact && cleaned.length === 0) break;
+        // Drop the resume system's "Continue from where you left off." turn - the
+        // user never typed it; the assistant's "Continuing chat" notice is the marker.
+        if (!isCompact && isResumeContinuationUserMessage(cleaned)) break;
         // Silent system turns (e.g. rate-limit auto-continue) rotate the turn
         // chip so usage is tracked but render no user bubble.
         const isSilent = !isCompact && isSilentSystemUserMessage(cleaned);
