@@ -130,6 +130,29 @@ export class HttpTransport implements Transport {
           before_seq: args.beforeSeq ?? args.before_seq ?? null,
           message_limit: args.messageLimit ?? args.message_limit ?? 20,
         });
+      case "character_asset_url":
+        return this.rpc<T>("character_asset_url", {
+          character_id: args.characterId ?? args.character_id,
+          file: args.file,
+        });
+      case "resolve_whitelist_characters":
+        return this.rpc<T>("resolve_whitelist_characters", {
+          project_id: args.projectId ?? args.project_id,
+        });
+      case "list_projects":
+        return this.rpc<T>("list_projects", {});
+      case "project_last_activity_at":
+        return this.rpc<T>("project_last_activity_at", {
+          cwd: args.cwd,
+        });
+      case "get_project_tech":
+        return this.rpc<T>("get_project_tech", {
+          root: args.root,
+        });
+      case "get_project_icon":
+        return this.rpc<T>("get_project_icon", {
+          root: args.root,
+        });
       // Safe-default stubs: the daemon doesn't serve these (app-process-only
       // commands), but boot reads them unconditionally. Return empty/null so
       // boot continues rather than leaving the app in a stuck state.
