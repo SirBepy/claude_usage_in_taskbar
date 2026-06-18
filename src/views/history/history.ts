@@ -11,6 +11,8 @@ import "../../shared/chat/chat.css";
 import "./history.css";
 import type { HistoryEntry } from "../../types/ipc.generated";
 import { cwdToProjectName } from "../sessions/sessions-helpers";
+import { projBadgeHtml } from "../sessions/sidebar";
+import { hydrateProjectTechIcons } from "../../shared/projects";
 
 interface HistoryState {
   mountId: number;
@@ -96,12 +98,16 @@ function renderList(listEl: HTMLElement): void {
       `<li data-session-id="${escapeHtml(e.session_id)}" class="${
         e.session_id === state.selectedId ? "active" : ""
       }">
-        <div class="history-row-title">${escapeHtml(cwdToProjectName(e.cwd))}</div>
-        <div class="history-row-meta">${formatTime(e.ended_at ?? e.started_at)}</div>
+        ${projBadgeHtml(e.cwd, "history-proj-icon")}
+        <div class="history-row-text">
+          <div class="history-row-title">${escapeHtml(cwdToProjectName(e.cwd))}</div>
+          <div class="history-row-meta">${formatTime(e.ended_at ?? e.started_at)}</div>
+        </div>
       </li>`,
     );
   }
   listEl.innerHTML = html.join("");
+  void hydrateProjectTechIcons(listEl);
 }
 
 function renderListLoading(listEl: HTMLElement): void {
