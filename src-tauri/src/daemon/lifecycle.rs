@@ -148,6 +148,12 @@ pub async fn spawn_session(
         let mut ctx = ParserContext::new_live();
         let mut buf_reader = BufReader::new(stdout);
         let mut line_buf = Vec::new();
+        // True once the current turn has streamed at least one content delta,
+        // meaning it is a live turn (not a replayed history result line from
+        // `--resume`). Reset to false after each TurnUsage so each turn is
+        // evaluated independently. Without this guard, resumed sessions fire one
+        // sound per prior completed turn on top of the real one.
+        let mut saw_stream_turn = false;
         loop {
             line_buf.clear();
             match buf_reader.read_until(b'\n', &mut line_buf).await {
@@ -174,6 +180,11 @@ pub async fn spawn_session(
                         if matches!(ev, ChatEvent::SessionStarted { .. }) {
                             continue;
                         }
+                        // A streaming AssistantMessage marks the current turn as
+                        // live (not a replayed history line from --resume).
+                        if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
+                            saw_stream_turn = true;
+                        }
                         // A `result` line parses to TurnUsage and marks the turn
                         // complete: update awaiting status, clear busy, and
                         // broadcast the registry change.
@@ -197,7 +208,10 @@ pub async fn spawn_session(
                             // fire the sound here off the same `result` line that sets
                             // awaiting. The app maps this to `notifications::fire`, which
                             // resolves the session character + slot + mute/meeting gating.
-                            if matches!(awaiting.as_deref(), Some("done") | Some("question")) {
+                            // Guard on saw_stream_turn so replayed history result lines
+                            // (emitted by claude on --resume before the live turn starts)
+                            // don't each trigger their own sound.
+                            if saw_stream_turn && matches!(awaiting.as_deref(), Some("done") | Some("question")) {
                                 state_for_pump.notifier.publish(
                                     "turn_sound",
                                     serde_json::json!({
@@ -207,6 +221,7 @@ pub async fn spawn_session(
                                     }),
                                 );
                             }
+                            saw_stream_turn = false;
                             state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
                             state_for_pump.registry.set_busy(&pump_session.session_id, false);
                             state_for_pump.notifier.publish(
