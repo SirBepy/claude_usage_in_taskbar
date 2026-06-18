@@ -61,6 +61,8 @@ export function updateThinkingBar(): void {
   // drafting so "Cancel turn" never shows when there's no turn to cancel.
   const cancelBtn = pane.querySelector<HTMLButtonElement>(".cancel-btn");
   if (cancelBtn) cancelBtn.toggleAttribute("hidden", !busy);
+  const pauseBtn = pane.querySelector<HTMLButtonElement>(".thinking-pause-btn");
+  if (pauseBtn) pauseBtn.toggleAttribute("hidden", !(busy && !hasHeld));
 
   if (!busy && !hasHeld) {
     bar.setAttribute("hidden", "");

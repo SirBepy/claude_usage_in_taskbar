@@ -921,6 +921,16 @@
   color: #f87171;
 }
 
+.smore-has-sub {
+  justify-content: flex-start;
+}
+
+.smore-sub-caret {
+  margin-left: auto;
+  font-size: 0.78rem !important;
+  opacity: 0.5;
+}
+
 .smore-item.smore-danger i {
   color: #f87171;
 }
@@ -1099,6 +1109,34 @@
 @keyframes thinking-pulse {
   0%, 100% { opacity: 0.35; }
   50%       { opacity: 1; }
+}
+
+.thinking-pause-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  opacity: 0.65;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.thinking-pause-btn:hover {
+  opacity: 1;
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
+.thinking-pause-btn i {
+  font-size: 1rem;
 }
 
 .session-composer {

@@ -59,10 +59,16 @@ export async function renderPendingPane(
     `    <p>Type a message below to start a new session in <strong>${escapeHtml(project.name)}</strong>.</p>`,
     `  </div>`,
     `</div>`,
-    `<div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span></div>`,
+    `<div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span><button class="thinking-pause-btn icon-btn" title="Stop turn" hidden><i class="ph ph-stop-circle"></i></button></div>`,
     `<div class="session-composer"></div>`,
   ].join("\n");
   pane.insertBefore(_pendingHeader.el, pane.firstChild);
+
+  pane.querySelector<HTMLButtonElement>(".thinking-pause-btn")?.addEventListener("click", async () => {
+    const cancelTarget = state.pendingNewSession?.realId || placeholderId;
+    try { await invoke<void>("cancel_turn", { sessionId: cancelTarget }); }
+    catch (err) { console.error("[sessions] cancel_turn failed", err); }
+  });
 
   // Show the character the user picked in the new-session modal, mirroring the
   // sidebar draft row's data path. Without this the header keeps the bare "?"
