@@ -113,6 +113,48 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             async move { Ok(json!(state.registry.list())) }
         });
     }
+    // Read-only character list, exposed over the remote-access API so the phone
+    // client can render session avatars without a Tauri runtime. `characters::list()`
+    // reads the shared on-disk characters dir (process-local cache, shared files),
+    // so it works fine from the daemon process. Same serde shape as the
+    // `list_characters` Tauri command (frontend `Character[]`).
+    {
+        router.register("list_characters", move |_params, _ctx| {
+            async move { Ok(json!(crate::characters::list())) }
+        });
+    }
+    // Read-only project-groups list, mirroring the `list_project_groups` Tauri
+    // command's JSON shape (frontend `ProjectGroup[]`). Reuses the same PURE
+    // `build_groups` helper; inputs are sourced daemon-side: `projects` from the
+    // in-memory settings cache, `instances` from the registry snapshot (same as
+    // `list_instances`), and `token_history` loaded from disk.
+    {
+        let state = state.clone();
+        router.register("list_project_groups", move |_params, _ctx| {
+            let state = state.clone();
+            async move {
+                let projects = state.settings.snapshot().projects;
+                let instances = state.registry.list();
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let groups = tokio::task::spawn_blocking(move || {
+                    let token_history = match crate::settings::paths::token_history_file() {
+                        Ok(p) => crate::tokens::load_history(&p),
+                        Err(_) => Vec::new(),
+                    };
+                    let mut groups = crate::ipc::project_groups::groups_test_helpers::build_groups(
+                        &projects, &token_history, &instances, now_ms,
+                    );
+                    for g in &mut groups {
+                        g.path_exists = std::path::Path::new(&g.path).exists();
+                    }
+                    groups
+                })
+                .await
+                .map_err(|e| RpcError::internal(format!("join: {e}")))?;
+                Ok(json!(groups))
+            }
+        });
+    }
     // Paginated transcript reader exposed over the remote-access API so that the
     // phone/browser client can load past conversation history without a Tauri
     // runtime. Reuses the same JSONL logic as the desktop `load_history_page`
