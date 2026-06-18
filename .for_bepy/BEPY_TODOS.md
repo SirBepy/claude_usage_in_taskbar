@@ -4,6 +4,7 @@
 
 - Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
+- SECURITY pass: eyeball the remote SAFE_METHODS allowlist diff from the 2026-06-18 run (8 read-only methods added in src-tauri/src/daemon/remote_server.rs). Autopilot judged these safe (all read-only, no new RCE surface) but the allowlist IS the security boundary, so confirm.
 
 ### Manual QA (needs relaunch / live)
 
@@ -64,6 +65,12 @@ curl.exe -i http://127.0.0.1:27183/api/sessions                                 
 curl.exe -H "Authorization: Bearer <TOKEN>" http://127.0.0.1:27183/api/sessions  # -> JSON session list
 ```
 
-KNOWN DEGRADES (parked in ai_todo 105, not bugs): starting a NEW chat from the phone isn't wired yet (open existing ones); image attachments send as text-only; permission/AUQ prompts don't yet auto-surface on the phone; usage/token dashboards + custom settings (models/presets) are app-side only (phone uses defaults). Tell me if any of these matter and I'll prioritize them.
+NEW THIS RUN (2026-06-18, shas 755503e/5d40acf/5006e03/10b106d) - now wired, verify live after redeploy:
+- **View Characters on phone:** open the sidemenu (new "Chats" entry sits near Home) -> Characters. The list AND each character's icon should render (icons come over the new character_asset_url RPC).
+- **View Projects on phone:** sidemenu -> Projects. Cards render with their avatar / tech logo (get_project_icon / get_project_tech RPCs) and 7d tokens.
+- **Start a NEW chat from the phone:** the new-chat project picker opens, pick a project -> model/effort -> it starts a chat and you can send messages. (start_session is now mapped client-side; it was already server-allowlisted.) Degrades gracefully where a method is still app-only (see below) - it should never hard-crash.
+- **"Chats" in the sidemenu** navigates to the in-app sessions view; the sessions-view burger (☰) opens the sidemenu so you can hop back to Characters/Projects/etc.
+
+STILL DEGRADES (not bugs, lower priority - tell me if they matter): image attachments send as text-only; permission/AUQ prompts don't yet auto-surface on the phone; usage/token dashboards are app-side only; the new-chat character pane may be empty + model-availability gating is off (probe_models_availability not exposed) so all models look selectable; the picker's "New project" / "Open folder" footer buttons throw on tap (native FS, no phone equivalent) - see ai_todo for these follow-ups.
 
 **Security:** unchanged - localhost-bound (nothing reachable until `tailscale serve`), only the token hash is stored (delete `remote-access-token.txt` after copying), every `/api` route is token-gated fail-closed, dangerous daemon methods blocked by an allowlist. The SPA HTML/JS is served unauthenticated (no secrets in it; it authes every API call with the token).

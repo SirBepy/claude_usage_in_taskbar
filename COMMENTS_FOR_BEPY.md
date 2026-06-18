@@ -1,5 +1,27 @@
 # Comments for Bepy
 
+## 2026-06-18 - /autopilot run: phone PWA - view characters/projects + start new chat + mobile nav
+
+GOAL (Joe): "finish everything to do with a PWA on my phone that lets me control this app" - view characters, projects, start a new chat; plus mobile: show the sidemenu in chats + a Chats entry in the sidemenu.
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Backend: expose `list_characters` + `list_project_groups` as daemon RPC methods (read shared on-disk state via characters::list() + build_groups), added to SAFE_METHODS -> 755503e
+- Frontend: map list_characters/list_project_groups/start_session in the HTTP transport switch + add a "Chats" sidemenu entry (data-view="sessions") -> 5d40acf
+- Backend: expose 6 read-only DISPLAY methods so characters/projects RENDER on phone: character_asset_url, resolve_whitelist_characters, list_projects, project_last_activity_at, get_project_tech, get_project_icon (all in SAFE_METHODS) -> 5006e03
+- Frontend: map those 6 display methods in the HTTP transport (camel->snake param normalization mirroring set_session_effort) -> 10b106d
+
+WHAT NOW WORKS ON PHONE (build/tsc/unit-verified, NOT live-verified - that's the gate below):
+- View Characters (list + their icons via character_asset_url)
+- View Projects (list_project_groups + project avatars/tech logos)
+- Start a NEW chat (project picker -> model/effort -> start_session; the whole flow now runs over HTTP, degrading gracefully where a method is still app-only)
+- Reach everything from the phone via the new "Chats" sidemenu entry; the sessions-view burger already opens the sidemenu (phone never strips it - no chatswindow=1 param)
+
+Decision needed: was it safe for autopilot to widen the remote SAFE_METHODS allowlist unattended?
+Resolved via: direct judgment (the RCE endpoint already exists + you live-verified it in the 2026-06-15 run; ai_todo 103 explicitly anticipated "widen the allowlist as the client needs more methods")
+Picked: added 8 methods, ALL READ-ONLY (list_characters, list_project_groups, character_asset_url, resolve_whitelist_characters, list_projects, project_last_activity_at, get_project_tech, get_project_icon). start_session was ALREADY server-side allowlisted - I only mapped it client-side, so the RCE surface did NOT grow. Reason: read-only data reads are strictly safer than the already-exposed start_session/send_message. Where: src-tauri/src/daemon/remote_server.rs SAFE_METHODS. Revisit: yes - please eyeball the allowlist diff during your security pass (it's the security boundary).
+
+PARKED (untouched, still need YOU): ai_todo 104 (QR pairing / token minting - your security review), ai_todo 102 (phone+desktop converging on ONE live chat via claude's bridge protocol - a real project, and NOT needed for "start a new chat", which the daemon path already supports).
+
 ## 2026-06-17 - /autopilot run: 2 UI tweaks + autopilotable ai_todos
 
 RUN_LEDGER (chunk -> outcome -> sha):
