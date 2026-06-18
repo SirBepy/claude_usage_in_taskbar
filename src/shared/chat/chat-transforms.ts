@@ -189,6 +189,10 @@ export interface RenderedMessage {
    *  Equals the tool_use id of the parent Agent/Task dispatch. Null for
    *  main-agent tool calls. */
   parentToolUseId?: string | null;
+  /** True for system messages that originated from noiseAssistantLabel (e.g.
+   *  "Request interrupted by user"). Used to position the chips footer BEFORE
+   *  these labels rather than after them. */
+  noiseLabel?: boolean;
 }
 
 /**
@@ -354,7 +358,7 @@ const NOISE_PATTERNS: [RegExp, string][] = [
   // chat after a restart). Shown as "Continuing chat" rather than the raw
   // "No response requested." so it reads as the resume marker, not an error.
   [/^no response requested\.?$/i, "Continuing chat"],
-  [/^\[request interrupted\]$/i, "Request interrupted"],
+  [/^\[request interrupted( by user)?\]$/i, "Request interrupted by user"],
 ];
 export function noiseAssistantLabel(text: string): string | null {
   const t = text.trim();
@@ -432,7 +436,7 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
       if (!ev.streaming) {
         const t = (ev.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { type: string; text?: string }) => b.text ?? "").join("").trim();
         const label = noiseAssistantLabel(t);
-        if (label !== null) return { kind: "system", text: label, ts };
+        if (label !== null) return { kind: "system", text: label, ts, noiseLabel: true };
       }
       return { kind: "assistant", content: ev.content, streaming: ev.streaming, ts };
     }

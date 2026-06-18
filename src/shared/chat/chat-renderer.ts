@@ -522,7 +522,7 @@ export class ChatRenderer {
               this.dirtyIndices.add(this.streamingIndex);
               this.streamingIndex = null;
             }
-            this.messages.push({ kind: "system", text: noiseLabel, ts });
+            this.messages.push({ kind: "system", text: noiseLabel, ts, noiseLabel: true });
             this.setTurnStatus(null);
             touched = true;
             break;
@@ -900,9 +900,15 @@ export class ChatRenderer {
     this.activeToolGroups.clear();
     this.activeTurnSettled = false;
     if (this.activeTurnChipKey !== null) {
+      const turnStart = this.activeTurnStart ?? this.messages.length;
+      // Trim trailing noise-tail messages (e.g. "Request interrupted by user")
+      // from the turn range so the chips footer lands BEFORE them, keeping the
+      // visual order: chips → divider label → next user message.
+      let end = this.messages.length;
+      while (end > turnStart && this.messages[end - 1]?.noiseLabel) end--;
       this.closeTurnQueue.push({
-        start: this.activeTurnStart ?? this.messages.length,
-        end: this.messages.length,
+        start: turnStart,
+        end,
         chipKey: this.activeTurnChipKey,
         usage: this.activeTurnUsage,
         tsSpanMs: this.activeTurnTsSpan(),
