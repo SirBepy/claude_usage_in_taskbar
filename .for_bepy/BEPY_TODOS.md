@@ -39,17 +39,12 @@
 
 The stub console is GONE - the daemon now serves the **real chat UI** as an installable PWA. The whole core loop is built + unit/build-verified, but NONE of it is live-verified (only you can phone-test it). This is the gate.
 
-REQUIRED FIRST: **redeploy + update.** The running daemon still serves the OLD stub until its binary is rebuilt with the embedded SPA. Run `/commit pushnbump` then let the app auto-update (or rebuild). The new daemon binds `127.0.0.1:27183` as before.
+REQUIRED FIRST: **redeploy + update.** The running daemon still serves the old binary until rebuilt. Pushed as v0.1.98 (2026-06-18) - let the app auto-update (or rebuild). The daemon binds `127.0.0.1:27183` as before.
 
-1. One-time on the PC, expose it on your tailnet (the daemon logs this exact line on startup):
-   ```
-   tailscale serve --bg --https=443 http://127.0.0.1:27183
-   ```
-2. Get the token (persists across restarts):
-   ```
-   Get-Content "$env:APPDATA\claude-usage-tauri\remote-access-token.txt"
-   ```
-3. On your phone (same tailnet), open `https://<your-pc-magicdns-name>/`. If it's a fresh phone you get a token-entry screen (paste the token); if you used the old stub the token is already in localStorage. You should land in the **real app UI**.
+NEW (2026-06-18, no more manual tailscale command): pairing is now a Settings screen + QR.
+1. In the app: **Settings -> Remote access** (System section, phone icon). Flip the **toggle on** - the app runs `tailscale serve --https=443 http://127.0.0.1:27183` for you (Tailscale must be running/signed in; the screen warns if not). Leave it on and it re-applies every app launch.
+2. A **QR code** appears. On your phone (same tailnet) scan it with the camera - it opens `https://<your-pc>/?token=<token>` and the SPA auto-captures the token (strips it from the URL) so you land straight in the app, signed in. No manual paste.
+3. Fallbacks if the camera route fails: the screen has a **Regenerate token** button (kills old QRs) that shows the new token to copy; the old paste-the-token gate still works too. (Legacy `remote-access-token.txt` also still exists.)
 
 VERIFY (the things that couldn't be tested headless):
 - The real chat UI loads (not the old raw console), session list shows, and it stays live (polls every ~3.5s).
@@ -73,4 +68,4 @@ NEW THIS RUN (2026-06-18, shas 755503e/5d40acf/5006e03/10b106d) - now wired, ver
 
 STILL DEGRADES (not bugs, lower priority - tell me if they matter): image attachments send as text-only; permission/AUQ prompts don't yet auto-surface on the phone; usage/token dashboards are app-side only; the new-chat character pane may be empty + model-availability gating is off (probe_models_availability not exposed) so all models look selectable; the picker's "New project" / "Open folder" footer buttons throw on tap (native FS, no phone equivalent) - see ai_todo for these follow-ups.
 
-**Security:** unchanged - localhost-bound (nothing reachable until `tailscale serve`), only the token hash is stored (delete `remote-access-token.txt` after copying), every `/api` route is token-gated fail-closed, dangerous daemon methods blocked by an allowlist. The SPA HTML/JS is served unauthenticated (no secrets in it; it authes every API call with the token).
+**Security:** localhost-bound (nothing reachable until the Remote access toggle runs `tailscale serve`; toggle defaults OFF), every `/api` route is token-gated fail-closed, dangerous daemon methods blocked by the allowlist. The SPA HTML/JS is served unauthenticated (no secrets in it; it authes every API call with the token). CHANGED 2026-06-18 (your choice - static-token QR): `remote-access.json` now stores the **plaintext token** alongside the hash so the QR can be shown anytime - so anyone who can read that file OR glance at the QR on your Settings screen has full access. Acceptable for a sole-user private tailnet; use Regenerate to rotate. Also eyeball the 8 read-only methods added to the SAFE_METHODS allowlist (the security boundary).
