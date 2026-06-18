@@ -182,6 +182,13 @@ export function renderSidebar(listEl: HTMLElement): void {
 
   const entries: Array<{ key: string; html: string }> = [];
 
+  if (pending || state.parkedDrafts.length > 0) {
+    entries.push({
+      key: "__seg:draft__",
+      html: `<li class="session-group-header" data-row-key="__seg:draft__">Draft</li>`,
+    });
+  }
+
   if (pending) {
     const isPendingActive = state.selectedId === pending.placeholderId;
     const activeCls = isPendingActive ? "active" : "";
