@@ -72,21 +72,7 @@ pub const HOOK_PORT: u16 = 27182;
 /// class of failure.
 pub async fn bind_hook_listener(port: u16) -> std::io::Result<TcpListener> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawSocket;
-        use windows::Win32::Foundation::{
-            SetHandleInformation, HANDLE, HANDLE_FLAGS, HANDLE_FLAG_INHERIT,
-        };
-        // SAFETY: the raw socket is owned by `listener`, which outlives the call.
-        let _ = unsafe {
-            SetHandleInformation(
-                HANDLE(listener.as_raw_socket() as _),
-                HANDLE_FLAG_INHERIT.0,
-                HANDLE_FLAGS(0),
-            )
-        };
-    }
+    crate::util::process::mark_listener_non_inheritable(&listener);
     Ok(listener)
 }
 

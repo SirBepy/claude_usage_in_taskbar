@@ -35,6 +35,36 @@ pub fn hide_console_tokio(cmd: &mut tokio::process::Command) {
     }
 }
 
+/// Strip the inherit flag from a bound TCP listener's socket so it does NOT
+/// leak into daemon-spawned children. The daemon spawns children with piped
+/// stdio, which on Windows forces `bInheritHandles=TRUE`: every inheritable
+/// handle in this process is copied into every child (chat `claude -p`
+/// processes, pty channels, and their MCP grandchildren). If a listen socket
+/// leaks, killing the daemon leaves the port bound by its surviving children
+/// and no new daemon can ever rebind it (the 2026-06-12 port-hostage incident).
+/// Call this right after binding, before any child is spawned. No-op off Windows.
+pub fn mark_listener_non_inheritable(listener: &tokio::net::TcpListener) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawSocket;
+        use windows::Win32::Foundation::{
+            SetHandleInformation, HANDLE, HANDLE_FLAGS, HANDLE_FLAG_INHERIT,
+        };
+        // SAFETY: the raw socket is owned by `listener`, which outlives the call.
+        let _ = unsafe {
+            SetHandleInformation(
+                HANDLE(listener.as_raw_socket() as _),
+                HANDLE_FLAG_INHERIT.0,
+                HANDLE_FLAGS(0),
+            )
+        };
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = listener;
+    }
+}
+
 /// Whether a process with `pid` is currently alive. Centralizes the sysinfo
 /// dance so the `refresh_processes` / `Pid::from_u32` contract lives in one
 /// place. Used by the daemon lockfile's stale-vs-live reclaim.

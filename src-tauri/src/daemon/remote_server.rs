@@ -106,6 +106,12 @@ pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf, router: crate::daemon::
                 return;
             }
         };
+        // Strip the inherit flag so this socket never leaks into daemon-spawned
+        // children (piped stdio forces handle inheritance on Windows). Without
+        // this, an orphaned child holds 27183 after the daemon dies and every
+        // request hangs with no response - the port-hostage incident, here for
+        // the remote port. Mirrors the hook listener's protection.
+        crate::util::process::mark_listener_non_inheritable(&listener);
         let ctx = Arc::new(RemoteCtx { state, app_data, router });
         let app = build_router(ctx);
         log::info!(
