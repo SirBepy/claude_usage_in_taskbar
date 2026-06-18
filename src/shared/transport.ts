@@ -84,6 +84,22 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("list_instances", null);
       case "list_pending_prompts":
         return this.rpc<T>("list_pending_prompts", null);
+      case "list_characters":
+        return this.rpc<T>("list_characters", null);
+      case "list_project_groups":
+        return this.rpc<T>("list_project_groups", null);
+      case "start_session":
+        // Daemon expects snake_case; tolerate camelCase from callers (matches
+        // the set_session_effort normalization pattern above). Params forwarded
+        // mirror the desktop call site in pending-pane.ts.
+        return this.rpc<T>("start_session", {
+          cwd: args.cwd,
+          prompt: args.prompt,
+          model: args.model,
+          effort: args.effort,
+          remote: args.remote,
+          placeholder_id: args.placeholderId ?? args.placeholder_id,
+        });
       case "set_session_effort":
         return this.rpc<T>("set_session_effort", {
           session_id: args.session_id ?? args.sessionId,
