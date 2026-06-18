@@ -37,6 +37,7 @@ interface LegacyGlobals {
   setupLegendToggles?: () => void;
   applyLineVisibility?: () => void;
   wireBarsMore?: (container: HTMLElement) => void;
+  setupChartHover?: () => void;
 }
 
 function g(): LegacyGlobals {
@@ -54,7 +55,7 @@ let sessionPageOffset = 0;
 let weeklyPageOffset = 0;
 
 // Element-flag shims to track wired handlers without "any" sprinkles
-type Wired = Element & { _wired?: boolean; _legWired?: boolean; _pageWired?: boolean };
+type Wired = Element & { _wired?: boolean; _legWired?: boolean; _pageWired?: boolean; _hoverWired?: boolean };
 function wired(el: Element): Wired { return el as Wired; }
 
 // Types for list sort state
@@ -428,24 +429,57 @@ function buildChart(
     pts.unshift({ t: minT, s: 0, w: 0 });
   }
 
-  const makeLine = (key: "s" | "w", color: string, lineName: string): string => {
+  const lineColor = lineKey === "s" ? "#9d7dfc" : "#6e8fff";
+  const lineName = lineKey === "s" ? "session" : "weekly";
+
+  const makeLine = (key: "s" | "w", color: string, name: string): string => {
     const f = pts.filter((p) => p[key] !== null && p[key] !== undefined) as Array<Pt & { s: number; w: number }>;
-    if (f.length === 0) return `<g data-line="${lineName}"></g>`;
+    if (f.length === 0) return `<g data-line="${name}"></g>`;
     if (f.length === 1) {
       const first = f[0]!;
-      return `<circle data-line="${lineName}" cx="${px(first.t).toFixed(1)}" cy="${py(first[key]).toFixed(1)}" r="2.5" fill="${color}"/>`;
+      return `<circle data-line="${name}" cx="${px(first.t).toFixed(1)}" cy="${py(first[key]).toFixed(1)}" r="2.5" fill="${color}"/>`;
     }
-    const d = f.map((p, i) => `${i === 0 ? "M" : "L"}${px(p.t).toFixed(1)},${py(p[key]).toFixed(1)}`).join(" ");
-    return `<path data-line="${lineName}" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const cPts = f.map((p) => ({ x: px(p.t), y: py(p[key]) }));
+    let d = `M${cPts[0]!.x.toFixed(1)},${cPts[0]!.y.toFixed(1)}`;
+    for (let i = 0; i < cPts.length - 1; i++) {
+      const p0 = cPts[Math.max(0, i - 1)]!;
+      const p1 = cPts[i]!;
+      const p2 = cPts[i + 1]!;
+      const p3 = cPts[Math.min(cPts.length - 1, i + 2)]!;
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return `<path data-line="${name}" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
   };
 
+  const hoverPts = pts
+    .filter((p) => p[lineKey] !== null && p[lineKey] !== undefined)
+    .map((p) => `${p.t}:${p[lineKey]}`)
+    .join(";");
+  const windowType = windowMs <= 12 * 3_600_000 ? "session" : "weekly";
+
+  const hoverGroup =
+    `<g id="${svgId}-hover" style="pointer-events:none;display:none">` +
+    `<line id="${svgId}-hline" x1="0" x2="0" y1="${MT}" y2="${MT + PH}" stroke="#4a4870" stroke-width="1" stroke-dasharray="3,2"/>` +
+    `<circle id="${svgId}-hdot" cx="0" cy="0" r="3.5" fill="${lineColor}" stroke="#1e1d30" stroke-width="1.5"/>` +
+    `<rect id="${svgId}-hbox" rx="5" ry="5" fill="#1a1928" stroke="#2d2c44" stroke-width="1"/>` +
+    `<text id="${svgId}-hlabel" fill="#8885aa" font-size="10" font-family="DM Sans, system-ui"></text>` +
+    `<text id="${svgId}-hval" fill="${lineColor}" font-size="12" font-family="Fira Code, monospace" font-weight="600"></text>` +
+    `</g>` +
+    `<rect id="${svgId}-overlay" x="${ML}" y="${MT}" width="${PW}" height="${PH}" fill="transparent" style="cursor:crosshair"/>`;
+
   return (
-    `<svg id="${svgId}" viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">` +
+    `<svg id="${svgId}" viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible"` +
+    ` data-hover-pts="${hoverPts}" data-min-t="${minT}" data-max-t="${maxT}" data-window-type="${windowType}" data-line-color="${lineColor}">` +
     gridLines +
     `<line x1="${ML}" x2="${ML}" y1="${MT}" y2="${MT + PH}" stroke="#2d2c44" stroke-width="1"/>` +
     tickItems.join("") +
     refLine +
-    (lineKey === "s" ? makeLine("s", "#9d7dfc", "session") : makeLine("w", "#6e8fff", "weekly")) +
+    makeLine(lineKey, lineColor, lineName) +
+    hoverGroup +
     `</svg>`
   );
 }
@@ -493,6 +527,124 @@ export function setupPaginationButtons(container?: HTMLElement | null): void {
       }
       refreshDashboard();
     };
+  });
+}
+
+// ── Chart hover tooltips ──────────────────────────────────────────────────
+
+function formatHoverLabel(t: number, windowType: string): string {
+  const d = new Date(t);
+  if (windowType === "session") {
+    const hh = d.getHours().toString().padStart(2, "0");
+    const mm = d.getMinutes().toString().padStart(2, "0");
+    return `${hh}:${mm}`;
+  }
+  const day = d.toLocaleDateString("en-US", { weekday: "short" });
+  const m = d.getMonth() + 1;
+  const dy = d.getDate();
+  return `${day} ${m}/${dy}`;
+}
+
+export function setupChartHover(): void {
+  const W = 420, H = 172;
+  const ML = 30, MR = 8, MT = 8, MB = 42;
+  const PW = W - ML - MR;
+  const PH = H - MT - MB;
+
+  document.querySelectorAll<SVGElement>("svg[data-hover-pts]").forEach((svg) => {
+    const w = wired(svg as unknown as Element);
+    if (w._hoverWired) return;
+    w._hoverWired = true;
+
+    const svgId = svg.id;
+    const overlay = document.getElementById(`${svgId}-overlay`);
+    if (!overlay) return;
+
+    const ptsRaw = svg.dataset["hoverPts"] || "";
+    const minT = parseInt(svg.dataset["minT"] || "0");
+    const maxT = parseInt(svg.dataset["maxT"] || "1");
+    const windowType = svg.dataset["windowType"] || "session";
+    const color = svg.dataset["lineColor"] || "#9d7dfc";
+    const tRange = maxT - minT || 1;
+
+    const hoverPts: Array<{ t: number; v: number }> = ptsRaw
+      ? ptsRaw.split(";").map((s) => {
+          const [ts, vs] = s.split(":");
+          return { t: parseInt(ts!), v: parseFloat(vs!) };
+        }).filter((p) => !isNaN(p.t) && !isNaN(p.v))
+      : [];
+
+    const hoverGroup = document.getElementById(`${svgId}-hover`);
+    const hline = document.getElementById(`${svgId}-hline`);
+    const hdot = document.getElementById(`${svgId}-hdot`);
+    const hbox = document.getElementById(`${svgId}-hbox`);
+    const hlabel = document.getElementById(`${svgId}-hlabel`);
+    const hval = document.getElementById(`${svgId}-hval`);
+    if (!hoverGroup || !hline || !hdot || !hbox || !hlabel || !hval) return;
+
+    overlay.addEventListener("mousemove", (e: Event) => {
+      const me = e as MouseEvent;
+      const rect = svg.getBoundingClientRect();
+      const svgX = (me.clientX - rect.left) * (W / rect.width);
+      const t = minT + ((svgX - ML) / PW) * tRange;
+
+      let v = 0;
+      if (hoverPts.length === 0) return;
+      if (hoverPts.length === 1) {
+        v = hoverPts[0]!.v;
+      } else {
+        let lo = hoverPts[0]!, hi = hoverPts[hoverPts.length - 1]!;
+        for (let i = 0; i < hoverPts.length - 1; i++) {
+          if (hoverPts[i]!.t <= t && hoverPts[i + 1]!.t >= t) {
+            lo = hoverPts[i]!;
+            hi = hoverPts[i + 1]!;
+            break;
+          }
+        }
+        const frac = hi.t === lo.t ? 0 : (t - lo.t) / (hi.t - lo.t);
+        v = lo.v + frac * (hi.v - lo.v);
+      }
+      v = Math.max(0, Math.min(100, v));
+
+      const cx = ML + ((t - minT) / tRange) * PW;
+      const cy = MT + (1 - v / 100) * PH;
+
+      hline.setAttribute("x1", cx.toFixed(1));
+      hline.setAttribute("x2", cx.toFixed(1));
+      hdot.setAttribute("cx", cx.toFixed(1));
+      hdot.setAttribute("cy", cy.toFixed(1));
+      hdot.setAttribute("fill", color);
+
+      const label = formatHoverLabel(t, windowType);
+      const valText = `${Math.round(v)}%`;
+      hlabel.textContent = label;
+      hval.textContent = valText;
+
+      const tipW = Math.max(label.length * 6.2, valText.length * 7.8) + 18;
+      const tipH = 34;
+      let tipX = cx + 10;
+      if (tipX + tipW > W - MR) tipX = cx - tipW - 10;
+      let tipY = cy - tipH - 6;
+      if (tipY < MT) tipY = cy + 8;
+
+      hbox.setAttribute("x", tipX.toFixed(1));
+      hbox.setAttribute("y", tipY.toFixed(1));
+      hbox.setAttribute("width", tipW.toFixed(1));
+      hbox.setAttribute("height", tipH.toFixed(1));
+      const midX = (tipX + tipW / 2).toFixed(1);
+      hlabel.setAttribute("x", midX);
+      hlabel.setAttribute("y", (tipY + 13).toFixed(1));
+      hlabel.setAttribute("text-anchor", "middle");
+      hval.setAttribute("x", midX);
+      hval.setAttribute("y", (tipY + 27).toFixed(1));
+      hval.setAttribute("text-anchor", "middle");
+
+      hoverGroup.style.display = "";
+    });
+
+    overlay.addEventListener("mouseleave", () => {
+      hoverGroup.style.display = "none";
+    });
   });
 }
 
@@ -672,6 +824,7 @@ function openGraphDetail(listId: string): void {
   wireDetailNav(container, config.metric, config.kind);
   wireProjectListClicks(container, refreshDashboard);
   wireBarsMore(container);
+  setupChartHover();
   showView("graph-detail");
 }
 
@@ -741,6 +894,7 @@ function renderGraphDetailFromCurrent(metric: "session" | "weekly", kind: "chart
   wireDetailNav(container, metric, kind);
   wireProjectListClicks(container, refreshDashboard);
   wireBarsMore(container);
+  setupChartHover();
 }
 
 // ── Bars "show more" link wiring ──────────────────────────────────────────
@@ -960,6 +1114,7 @@ export function renderStatistics(history: UsageRecord[]): void {
   setupLegendToggles();
   applyLineVisibility();
   setupPaginationButtons();
+  setupChartHover();
   wireBarsMore(statisticsContent);
   wirePinButtons(statisticsContent, { onHomeUnpin: false });
 }
@@ -996,6 +1151,7 @@ void cacheEffPct;
 (window as unknown as LegacyGlobals).setupLegendToggles = setupLegendToggles;
 (window as unknown as LegacyGlobals).applyLineVisibility = applyLineVisibility;
 (window as unknown as LegacyGlobals).wireBarsMore = wireBarsMore;
+(window as unknown as LegacyGlobals).setupChartHover = setupChartHover;
 
 // ── View render ───────────────────────────────────────────────────────────
 
