@@ -38,7 +38,10 @@ export async function openModelEffortModal(
 ): Promise<SessionConfig | null> {
   let settings: Record<string, unknown> = {};
   try {
-    settings = await invoke<Record<string, unknown>>("get_settings");
+    // The remote (phone) transport resolves get_settings to null rather than
+    // throwing, so `?? {}` is load-bearing: without it readPresets(null) throws
+    // on `.effortPresets` and the whole new-chat flow dead-ends back to the list.
+    settings = (await invoke<Record<string, unknown> | null>("get_settings")) ?? {};
   } catch {
     // ignore — fall back to defaults
   }
@@ -322,7 +325,7 @@ export async function openModelEffortModal(
 
     async function persistChoice(): Promise<void> {
       try {
-        const cur = await invoke<Record<string, unknown>>("get_settings");
+        const cur = (await invoke<Record<string, unknown> | null>("get_settings")) ?? {};
         const lc = (cur["projectLastChoice"] && typeof cur["projectLastChoice"] === "object")
           ? { ...(cur["projectLastChoice"] as Record<string, unknown>) }
           : {};
