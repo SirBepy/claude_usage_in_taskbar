@@ -251,11 +251,38 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         }
         "user" => {
             let Some(content_val) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
-            vec![ChatEvent::UserMessage {
+            let mut evs = vec![ChatEvent::UserMessage {
                 content: extract_content_blocks(content_val),
                 timestamp: ts,
                 remote_echo: false,
-            }]
+            }];
+            // AUQ answers arrive as tool_result blocks inside a user message.
+            // Emit a ToolResult event for each so the question card re-renders.
+            if let Some(arr) = content_val.as_array() {
+                for item in arr {
+                    if item.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+                        continue;
+                    }
+                    let tool_use_id = item.get("tool_use_id")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let text = item.get("content")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let is_error = item.get("is_error")
+                        .and_then(|b| b.as_bool())
+                        .unwrap_or(false);
+                    evs.push(ChatEvent::ToolResult {
+                        tool_use_id,
+                        output: ContentBlock::Text { text },
+                        is_error,
+                        timestamp: ts,
+                    });
+                }
+            }
+            evs
         }
         "assistant" => {
             // The transcript JSONL stores every claude reply as `assistant` lines
@@ -630,6 +657,24 @@ mod tests {
         );
         // tool_use-only turn still reports usage (context window must update).
         assert!(evs.iter().any(|e| matches!(e, ChatEvent::TurnUsage { .. })));
+    }
+
+    #[test]
+    fn user_message_with_tool_result_block_emits_tool_result_event() {
+        // AUQ answers arrive as tool_result blocks inside a user message.
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_auq","content":"The user answered the question(s):\nQ: Tabs or spaces?\nA: Spaces","is_error":true}]},"timestamp":5}"#;
+        let evs = parse_line(line);
+        let tool_result = evs.iter().find_map(|e| match e {
+            ChatEvent::ToolResult { tool_use_id, output, .. } => Some((tool_use_id.as_str(), output)),
+            _ => None,
+        });
+        assert!(tool_result.is_some(), "must emit a ToolResult event");
+        let (id, output) = tool_result.unwrap();
+        assert_eq!(id, "toolu_auq");
+        match output {
+            ContentBlock::Text { text } => assert!(text.contains("Spaces"), "answer text preserved"),
+            _ => panic!("expected text output"),
+        }
     }
 
     #[test]
