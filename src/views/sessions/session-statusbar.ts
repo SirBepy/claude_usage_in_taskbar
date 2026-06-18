@@ -15,6 +15,7 @@ import {
   metaCache,
   countsCache,
   ctxStatusCache,
+  fetchGitInfo,
   type SessionCounts,
   type StatusbarOptions,
 } from "./session-statusbar-helpers";
@@ -152,6 +153,16 @@ export class SessionStatusbar {
     } catch { /* command may predate this binary, or transient - keep fallback */ }
   }
 
+  private async refreshGitInfo(): Promise<void> {
+    const cwd = this.cwd;
+    if (!cwd) return;
+    try {
+      const info = await fetchGitInfo(cwd);
+      if (this.cwd !== cwd) return;
+      this.updateGitInfo(info);
+    } catch { /* transient */ }
+  }
+
   // Uncommitted-file count for the `dirty` chip. cwd-based (not session-based),
   // so it is not reset on setSessionId. Mirrors refreshCounts.
   private async refreshDirty(): Promise<void> {
@@ -167,12 +178,14 @@ export class SessionStatusbar {
   }
 
   updateMeta(meta: SessionMeta): void {
+    const turnJustCompleted = !this.meta.hasUsage && meta.hasUsage;
     this.meta = meta;
     this.metaLoaded = true;
     if (this.sessionId) metaCache.set(this.sessionId, meta);
     this.render();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
+    if (turnJustCompleted && this.cwd) void this.refreshGitInfo();
   }
 
   updateGitInfo(info: GitInfo): void {
