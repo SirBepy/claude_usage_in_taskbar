@@ -173,18 +173,20 @@ impl ParserContext {
     }
 }
 
-/// Returns the last `<cc-status:done|question>` marker found in `text`, or
-/// `None` if no marker is present.
+/// Returns the last `<cc-status:done|question|waiting>` marker found in `text`,
+/// or `None` if no marker is present. "waiting" = Claude finished its part but
+/// is parked on an external process (CI / a long command) it will resume on.
 fn detect_awaiting(text: &str) -> Option<String> {
     let lower = text.to_lowercase();
-    let q_pos = lower.rfind("<cc-status:question>");
-    let d_pos = lower.rfind("<cc-status:done>");
-    match (q_pos, d_pos) {
-        (Some(q), Some(d)) => Some(if q > d { "question" } else { "done" }.into()),
-        (Some(_), None) => Some("question".into()),
-        (None, Some(_)) => Some("done".into()),
-        (None, None) => None,
-    }
+    [
+        (lower.rfind("<cc-status:question>"), "question"),
+        (lower.rfind("<cc-status:done>"), "done"),
+        (lower.rfind("<cc-status:waiting>"), "waiting"),
+    ]
+    .into_iter()
+    .filter_map(|(pos, label)| pos.map(|p| (p, label)))
+    .max_by_key(|(p, _)| *p)
+    .map(|(_, label)| label.to_string())
 }
 
 /// Extracts the visible text from one stream-json line if it is a
@@ -905,6 +907,18 @@ mod tests {
         let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
         match usage {
             Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("done")),
+            _ => panic!("expected TurnUsage"),
+        }
+    }
+
+    #[test]
+    fn result_line_detects_waiting_awaiting() {
+        let mut ctx = ParserContext::new_live();
+        let line = r#"{"type":"result","subtype":"success","result":"Kicked off CI, watching it. <cc-status:waiting>","total_cost_usd":0.0,"duration_ms":100,"usage":{"input_tokens":10,"output_tokens":5},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("waiting")),
             _ => panic!("expected TurnUsage"),
         }
     }

@@ -39,16 +39,17 @@ const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 const PASTED_LOG_RE = /<pasted-log id="([^"]+)" name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log:\1>|<pasted-log name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log>/g;
 
 // Turn-status marker injected via `--append-system-prompt` (see
-// daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>` or
-// `<cc-status:question>`. The app reads it for the sidebar state and must never
-// display it. STATUS_TOKEN_RE matches a complete marker anywhere;
+// daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>`,
+// `<cc-status:question>`, or `<cc-status:waiting>` (parked on an external
+// process it will resume on). The app reads it for the sidebar state and must
+// never display it. STATUS_TOKEN_RE matches a complete marker anywhere;
 // STATUS_TAIL_RE matches an incomplete trailing fragment (a streamed prefix of
 // the marker) so the token never flashes mid-stream. The tail pattern is the
-// literal "<cc-status:done|question>" with every position optional, anchored to
-// end-of-text, with a mandatory leading "<c" to avoid eating a lone trailing
-// "<".
-const STATUS_TOKEN_RE = /<cc-status:(?:done|question)>/gi;
-const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
+// literal "<cc-status:done|question|waiting>" with every position optional,
+// anchored to end-of-text, with a mandatory leading "<c" to avoid eating a lone
+// trailing "<".
+const STATUS_TOKEN_RE = /<cc-status:(?:done|question|waiting)>/gi;
+const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?|w(?:a(?:i(?:t(?:i(?:n(?:g)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
 
 // Title marker injected alongside the status marker (see daemon/lifecycle.rs).
 // Claude emits `<cc-title:Some Title>` each turn; the title is read off the
@@ -77,10 +78,10 @@ export function stripStatusToken(text: string): string {
 }
 
 /** Last status marker in `text`, or null if none. */
-export function detectStatusToken(text: string): "done" | "question" | null {
-  const matches = [...text.matchAll(/<cc-status:(done|question)>/gi)];
+export function detectStatusToken(text: string): "done" | "question" | "waiting" | null {
+  const matches = [...text.matchAll(/<cc-status:(done|question|waiting)>/gi)];
   if (matches.length === 0) return null;
-  return matches[matches.length - 1]![1]!.toLowerCase() as "done" | "question";
+  return matches[matches.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting";
 }
 
 function renderTextBlock(rawText: string, breaks = false): string {

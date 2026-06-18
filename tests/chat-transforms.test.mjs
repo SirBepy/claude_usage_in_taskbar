@@ -186,6 +186,17 @@ describe("status marker", () => {
     expect(detectStatusToken("blah <cc-status:question>")).toBe("question");
     expect(detectStatusToken("nope")).toBe(null);
   });
+  it("detects and strips the waiting marker", () => {
+    expect(detectStatusToken("Kicked off CI. <cc-status:waiting>")).toBe("waiting");
+    const html = renderBlocks([{ type: "text", text: "Watching the build.\n<cc-status:waiting>" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("Watching the build");
+  });
+  it("never leaks a partial waiting marker mid-stream", () => {
+    const html = renderBlocks([{ type: "text", text: "Watching the build.\n<cc-status:wait" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("Watching the build");
+  });
 });
 
 describe("title marker — XML form", () => {

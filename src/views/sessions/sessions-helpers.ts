@@ -46,6 +46,8 @@ export function statusPriority(i: Instance, unread: Set<string>, attention: Set<
   if (i.kind === "external" || i.kind === "automated") return 5;
   if (i.busy) return 2;
   if (question.has(i.session_id)) return 1;
+  // Parked on an external process (CI / long command): an in-progress flavor.
+  if (i.awaiting === "waiting") return 2;
   if (unread.has(i.session_id)) return 3;
   return 4;
 }
@@ -56,6 +58,7 @@ export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<st
   if (i.kind === "automated") return "Automated session (remote-controlled)";
   if (i.busy) return "Claude is running";
   if (question.has(i.session_id)) return "Claude asked a question - click to answer";
+  if (i.awaiting === "waiting") return "Waiting on an external process (CI / a long command)";
   if (unread.has(i.session_id)) return "Claude responded - click to read";
   return "Done - your turn";
 }
@@ -154,6 +157,7 @@ export function statusDotClass(
   if (i.kind === "external" || i.kind === "automated") return "st-external";
   if (i.busy) return "st-working";
   if (question.has(i.session_id)) return "st-question";
+  if (i.awaiting === "waiting") return "st-waiting";
   if (unread.has(i.session_id)) return "st-done";
   return "st-your-turn";
 }
@@ -189,6 +193,9 @@ export function statusIndicator(
   }
   if (isQuestion) {
     return `<i class="session-state-icon ph ph-chat-circle-dots s-question" title="${tooltip}"></i>`;
+  }
+  if (i.awaiting === "waiting") {
+    return `<i class="session-state-icon ph ph-hourglass-medium s-waiting" title="${tooltip}"></i>`;
   }
   if (unread.has(i.session_id)) {
     return `<i class="session-state-icon ph ph-check-circle s-done" title="${tooltip}"></i>`;

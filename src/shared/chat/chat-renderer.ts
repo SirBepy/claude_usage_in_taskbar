@@ -110,8 +110,8 @@ export class ChatRenderer {
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
   public onToolTally: ((t: ToolTally) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
-  public onStatusUpdate: ((status: "done" | "question" | null) => void) | null = null;
-  private turnStatus: "done" | "question" | null = null;
+  public onStatusUpdate: ((status: "done" | "question" | "waiting" | null) => void) | null = null;
+  private turnStatus: "done" | "question" | "waiting" | null = null;
   // True only while bulkLoadEvents replays HISTORY on open. During replay the
   // per-event onActivityUpdate / onFileEditsChanged callbacks are suppressed so
   // the header changes-badge doesn't visibly count up and the thinking bar
@@ -120,7 +120,7 @@ export class ChatRenderer {
   private hydrating = false;
   private paginator: ChatPaginator;
 
-  private setTurnStatus(s: "done" | "question" | null): void {
+  private setTurnStatus(s: "done" | "question" | "waiting" | null): void {
     if (this.turnStatus === s) return;
     this.turnStatus = s;
     this.onStatusUpdate?.(s);

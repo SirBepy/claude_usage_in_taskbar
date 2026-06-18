@@ -41,6 +41,9 @@
   --chat-state-external-glow: rgba(96,165,250,0.50);
   --chat-state-remote:      #38bdf8;
   --chat-state-remote-glow: rgba(56,189,248,0.50);
+  /* Parked on an external process (CI / a long command): indigo + hourglass. */
+  --chat-state-waiting:      #818cf8;
+  --chat-state-waiting-glow: rgba(129,140,248,0.50);
   --chat-state-error:      #fb923c;
   --chat-state-error-glow: rgba(251,146,60,0.50);
 
@@ -53,6 +56,8 @@
   --st-done-glow:     var(--chat-state-done-glow);
   --st-question:      var(--chat-state-needs-input);
   --st-question-glow: var(--chat-state-needs-input-glow);
+  --st-waiting:       var(--chat-state-waiting);
+  --st-waiting-glow:  var(--chat-state-waiting-glow);
   --st-attention:     var(--chat-state-needs-input);
   --st-attention-glow:var(--chat-state-needs-input-glow);
   --st-external:      var(--chat-state-external);
@@ -244,6 +249,7 @@
 .session-state-icon.s-attention { color: var(--st-attention); }
 .session-state-icon.s-external  { color: var(--st-external); }
 .session-state-icon.s-question  { color: var(--st-question); }
+.session-state-icon.s-waiting    { color: var(--st-waiting); }
 .session-state-icon.s-your-turn { color: #8b91a0; }
 
 .sessions-list li.active .session-state-icon { color: var(--color-background) !important; opacity: 0.9; }
@@ -257,6 +263,7 @@
 .session-status-dot.st-working   { background: var(--st-working);   box-shadow: 0 0 6px var(--st-working-glow); }
 .session-status-dot.st-done      { background: var(--st-done);      box-shadow: 0 0 5px var(--st-done-glow); }
 .session-status-dot.st-question  { background: var(--st-question);  box-shadow: 0 0 6px var(--st-question-glow); }
+.session-status-dot.st-waiting   { background: var(--st-waiting);   box-shadow: 0 0 6px var(--st-waiting-glow); }
 .session-status-dot.st-your-turn { background: #8b91a0; }
 .session-status-dot.st-external  { background: var(--st-external);  box-shadow: 0 0 5px var(--st-external-glow); }
 .session-status-dot.st-attention { background: var(--st-attention); box-shadow: 0 0 6px var(--st-attention-glow); animation: attention-pulse 1.4s ease-in-out infinite; }
@@ -306,6 +313,7 @@
    the portrait stays visually centered. */
 .session-avatar { --st-color: rgba(255,255,255,0.14); --st-glow: rgba(255,255,255,0.10); }
 .session-avatar.st-question  { --st-color: var(--st-question);  --st-glow: var(--st-question-glow); }
+.session-avatar.st-waiting   { --st-color: var(--st-waiting);   --st-glow: var(--st-waiting-glow); }
 .session-avatar.st-external  { --st-color: var(--st-external);  --st-glow: var(--st-external-glow); }
 .session-avatar.st-done      { --st-color: var(--st-done);      --st-glow: var(--st-done-glow); }
 .session-avatar.st-your-turn { --st-color: var(--st-your-turn); --st-glow: var(--st-your-turn-glow); }
@@ -415,6 +423,7 @@
   justify-content: center;
 }
 .session-header-avatar.st-question  { border-color: var(--st-question);  box-shadow: 0 0 6px 1px var(--st-question-glow); }
+.session-header-avatar.st-waiting   { border-color: var(--st-waiting);   box-shadow: 0 0 6px 1px var(--st-waiting-glow); }
 .session-header-avatar.st-external  { border-color: var(--st-external);  box-shadow: 0 0 6px 1px var(--st-external-glow); }
 .session-header-avatar.st-done      { border-color: var(--st-done);      box-shadow: 0 0 5px 1px var(--st-done-glow); }
 .session-header-avatar.st-your-turn { border-color: var(--st-your-turn); }
