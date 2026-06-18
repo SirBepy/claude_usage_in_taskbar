@@ -87,6 +87,7 @@ const SAFE_METHODS: &[&str] = &[
     "list_project_groups",
     "character_asset_url",
     "resolve_whitelist_characters",
+    "list_session_characters",
     "list_projects",
     "project_last_activity_at",
     "get_project_tech",

@@ -264,6 +264,19 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             async move { Ok(json!(state.settings.snapshot().projects)) }
         });
     }
+    // Mirrors `list_session_characters` -> { session_id: character_id }. The
+    // Tauri command prunes dead sessions before returning; the daemon skips the
+    // prune (a read-only display fetch) and returns the full snapshot map. Stale
+    // ids are harmless: the frontend only looks up live session ids. Without this
+    // the phone sidebar + chat header show the "?" placeholder for every session
+    // because the per-session character map never loads (missing avatars).
+    {
+        let state = state.clone();
+        router.register("list_session_characters", move |_params, _ctx| {
+            let state = state.clone();
+            async move { Ok(json!(state.settings.snapshot().session_characters)) }
+        });
+    }
     // Mirrors `project_last_activity_at` (params: cwd) -> i64. PURE fs read of
     // the max *.jsonl mtime under ~/.claude/projects/<encoded-cwd>/.
     router.register("project_last_activity_at", move |params, _ctx| {

@@ -13,7 +13,18 @@ RUN_LEDGER (chunk -> outcome -> sha):
 
 GATE: the app must be running (cargo tauri dev in a normal terminal - supervised-run's job object blocks the daemon's chat spawning, and I can't spawn the GUI from a non-interactive runner). Regenerated remote-access token (deleted stale remote-access.json + token.txt; daemon mints fresh on launch) so Playwright can auth.
 
-STILL TO DO (needs live app): repro bug 3 root cause (the 06-18 run wired the new-chat flow over HTTP but it was NEVER live-verified - this is that flow breaking); confirm bug 4 "missing icons" (Phosphor/devicon font - need browser console); verify bugs 1 + 4-attachments live.
+LIVE-VERIFIED via Playwright against the standalone daemon on 127.0.0.1:27183 (I ran cc-companion-daemon.exe directly - it's headless, no GUI needed, reads real app-data from disk; this sidesteps the can't-spawn-the-GUI block entirely). All 3 bugs FIXED + confirmed:
+- Bug 1: no hook modal on the phone home screen. CONFIRMED.
+- Bug 3: project-picker -> model modal now OPENS (was a hard crash). Root cause: HttpTransport RESOLVES get_settings to null (doesn't throw), so the modal's try/catch didn't catch it and readPresets(null) threw on `.effortPresets`, aborting startNewSession back to the list. Fix: `?? {}` guard at the two get_settings call sites in model-effort-modal.ts. CONFIRMED (modal renders presets + sliders + Qhira portrait).
+- Bug 4: was THREE distinct "missing images" gaps, all now render:
+  (a) in-chat pasted attachments - read_attachment exposed as daemon RPC (verified end-to-end: returns image/png data; path-traversal still rejected with 500).
+  (b) per-session character avatars in the sidebar + chat header - list_session_characters was app-only, so every row/header showed the "?" placeholder. Exposed it as a daemon RPC (returns the session_id->character_id map from the settings snapshot, no prune - read-only display). CONFIRMED: li-ming portrait now renders on session a75df948 in both sidebar + header.
+  (c) Phosphor icons were NEVER actually broken (tool chips, status bar, composer all render) - the "missing icons" was the avatars in (b) reading as blank/placeholder.
+
+FOLLOW-UPS (not fixed, not in the 3 bugs - logged for a later pass):
+- The PWA service worker cache name `claude-companion-v1` is static across releases, so a phone can serve a STALE bundle after an app update until the SW cache is manually cleared (I hit this repeatedly during testing). Bump the cache name per release or add skipWaiting/clients.claim.
+- Opening a read-only / external session opens a WS to /api/sessions/<id>/stream which 404s (session not in the live map) and retries forever with backoff - console-noisy + battery drain on the phone. Gate the WS to live sessions only, or have the daemon close it cleanly.
+- Dashboard usage/token charts + news are still app-only on the phone (get_history/get_token_history/get_active_sessions/list_news degrade to empty) - known parked parity gap (ai_todo 105), not one of the 3 reported bugs.
 
 ## 2026-06-18 - /autopilot run: phone PWA - view characters/projects + start new chat + mobile nav
 

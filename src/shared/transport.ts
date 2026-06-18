@@ -143,6 +143,11 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("resolve_whitelist_characters", {
           project_id: args.projectId ?? args.project_id,
         });
+      case "list_session_characters":
+        // Per-session character map { session_id: character_id }; drives the
+        // sidebar + chat-header avatars. Without it every row shows the "?"
+        // placeholder on the phone.
+        return this.rpc<T>("list_session_characters", null);
       case "list_projects":
         return this.rpc<T>("list_projects", {});
       case "project_last_activity_at":
