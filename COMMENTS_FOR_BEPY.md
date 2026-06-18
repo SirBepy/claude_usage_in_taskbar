@@ -1,5 +1,20 @@
 # Comments for Bepy
 
+## 2026-06-19 - /autopilot: phone parity bugs (hook popup / missing images / new-chat dead-end)
+
+GOAL (Joe): make the remote phone view mirror the desktop. Three reported bugs: (1) "inject the hook" modal pops on the phone home screen; (2) chat shows missing images + icons; (3) new-chat project picker opens but selecting a project does NOT open the model modal - falls back to the chats view.
+
+Testing surface: localhost:27183 (the daemon's remote server serves the SAME embedded dist bundle + HttpTransport the phone loads over tailscale - faithful repro without the tunnel). Iteration loop: pnpm build + reload (debug rust-embed reads dist/ from disk, no relaunch needed for frontend).
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Bug 1 FIXED (frontend, staged): maybeShowHookModal now returns early when isRemote(). Root cause: get_hook_registration_state throws RemoteUnavailableError on the phone -> api catch returns {registered:false,declined:false} -> modal shows. Added isTauri()/isRemote() helpers to transport.ts as the single source of truth. (boot.ts, transport.ts)
+- Bug 4 partial FIX (staged, daemon + frontend): exposed read_attachment as a daemon RPC (registry.rs) + SAFE_METHODS + HttpTransport mapping. Root cause: in-chat pasted image attachments call read_attachment which threw on the phone -> caught -> rendered a ph-warning chip instead of the image. SAFE because read_attachment canonicalizes + rejects paths outside chat-attachments/ (NOT arbitrary read). read_image_file deliberately NOT exposed (reads arbitrary paths = RCE).
+- VERIFIED so far: daemon cargo check clean; vite build clean; src/ tsc clean (only pre-existing vendor/tauri_kit stack.ts:47 error remains).
+
+GATE: the app must be running (cargo tauri dev in a normal terminal - supervised-run's job object blocks the daemon's chat spawning, and I can't spawn the GUI from a non-interactive runner). Regenerated remote-access token (deleted stale remote-access.json + token.txt; daemon mints fresh on launch) so Playwright can auth.
+
+STILL TO DO (needs live app): repro bug 3 root cause (the 06-18 run wired the new-chat flow over HTTP but it was NEVER live-verified - this is that flow breaking); confirm bug 4 "missing icons" (Phosphor/devicon font - need browser console); verify bugs 1 + 4-attachments live.
+
 ## 2026-06-18 - /autopilot run: phone PWA - view characters/projects + start new chat + mobile nav
 
 GOAL (Joe): "finish everything to do with a PWA on my phone that lets me control this app" - view characters, projects, start a new chat; plus mobile: show the sidemenu in chats + a Chats entry in the sidemenu.

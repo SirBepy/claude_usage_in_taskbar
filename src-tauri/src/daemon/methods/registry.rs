@@ -208,6 +208,23 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             Ok(json!(url))
         }
     });
+    // Mirrors `read_attachment` (params: path) -> { mime, base64 }. Lets the
+    // phone render pasted chat-image attachments. The underlying fn canonicalizes
+    // the path and rejects anything outside <app-data>/chat-attachments/, so this
+    // is NOT an arbitrary-file-read primitive despite taking a path. (Distinct
+    // from `read_image_file`, deliberately NOT exposed: it reads arbitrary paths.)
+    router.register("read_attachment", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct P { path: String }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let data = crate::ipc::chat::attachments::read_attachment(p.path)
+                .await
+                .map_err(RpcError::internal)?;
+            Ok(json!(data))
+        }
+    });
     // Mirrors `resolve_whitelist_characters` (params: project_id) -> Vec<Character>.
     // Reads the project's whitelist + default whitelist from the settings
     // snapshot, then whitelist::resolve over characters::list().

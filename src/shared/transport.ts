@@ -135,6 +135,10 @@ export class HttpTransport implements Transport {
           character_id: args.characterId ?? args.character_id,
           file: args.file,
         });
+      case "read_attachment":
+        // Pasted chat-image attachments. The daemon path-validates against the
+        // chat-attachments dir, so a malicious path can't read arbitrary files.
+        return this.rpc<T>("read_attachment", { path: args.path });
       case "resolve_whitelist_characters":
         return this.rpc<T>("resolve_whitelist_characters", {
           project_id: args.projectId ?? args.project_id,

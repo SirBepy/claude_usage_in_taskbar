@@ -82,6 +82,7 @@ const SAFE_METHODS: &[&str] = &[
     "respond_question",
     "set_session_effort",
     "load_history_page",
+    "read_attachment",
     "list_characters",
     "list_project_groups",
     "character_asset_url",
