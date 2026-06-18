@@ -87,6 +87,60 @@ pub async fn paste_attachment(
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Copy a file dropped from the OS into the chat-attachments dir, returning
+/// the dest path + MIME + base64 so the composer can display it inline.
+/// Used by the Tauri drag-drop event path (tauri://drop gives file paths,
+/// not File blobs, so the standard paste_attachment flow doesn't apply).
+#[tauri::command]
+pub async fn paste_attachment_from_path(
+    session_id: String,
+    path: String,
+) -> Result<AttachmentFromPathResult, String> {
+    use base64::Engine;
+    validate_session_id(&session_id)?;
+    let src = std::path::PathBuf::from(&path);
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        _ => "application/octet-stream",
+    }
+    .to_string();
+    let bytes = std::fs::read(&src).map_err(|e| format!("cannot read file: {e}"))?;
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let root = crate::settings::paths::data_dir().map_err(|e| e.to_string())?;
+    let dir = root.join("chat-attachments").join(&session_id);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let filename = format!("{}.{}", uuid::Uuid::new_v4(), ext);
+    let dest = dir.join(&filename);
+    std::fs::copy(&src, &dest).map_err(|e| format!("cannot copy file: {e}"))?;
+    Ok(AttachmentFromPathResult {
+        path: dest.to_string_lossy().to_string(),
+        mime,
+        base64,
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct AttachmentFromPathResult {
+    pub path: String,
+    pub mime: String,
+    pub base64: String,
+}
+
 #[derive(serde::Serialize)]
 pub struct AttachmentData {
     pub mime: String,

@@ -531,27 +531,23 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     }
   });
 
-  const onViewDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer?.types.includes("Files")) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    view.classList.add("drag-over");
-  };
-  const onViewDragLeave = (e: DragEvent) => {
-    if (e.relatedTarget && view.contains(e.relatedTarget as Node)) return;
-    view.classList.remove("drag-over");
-  };
-  const onViewDrop = async (e: Event) => {
-    e.preventDefault();
-    view.classList.remove("drag-over");
-    const drag = e as DragEvent;
-    if (!drag.dataTransfer?.files.length) return;
-    if (!state.composer) return;
-    await state.composer.dropFiles(Array.from(drag.dataTransfer.files));
-  };
-  view.addEventListener("dragover", onViewDragOver);
-  view.addEventListener("dragleave", onViewDragLeave);
-  view.addEventListener("drop", onViewDrop);
+  let unlistenDragEnter: (() => void) | null = null;
+  let unlistenDragLeave: (() => void) | null = null;
+  let unlistenFileDrop: (() => void) | null = null;
+  void (async () => {
+    if (!ev?.listen) return;
+    [unlistenDragEnter, unlistenDragLeave, unlistenFileDrop] = await Promise.all([
+      ev.listen("tauri://drag-enter", () => { view.classList.add("drag-over"); }),
+      ev.listen("tauri://drag-leave", () => { view.classList.remove("drag-over"); }),
+      ev.listen<{ paths: string[] }>("tauri://drop", (e) => {
+        view.classList.remove("drag-over");
+        if (!state.composer || !e.payload.paths.length) return;
+        void (async (composer, paths) => {
+          for (const path of paths) await composer.attachFromPath(path);
+        })(state.composer, e.payload.paths);
+      }),
+    ]);
+  })();
 
   const onSessionClosed = (e: Event) => {
     const { sessionId } = (e as CustomEvent<{ sessionId: string }>).detail;
@@ -567,9 +563,9 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
   return () => {
     document.removeEventListener("cc:session-closed", onSessionClosed);
-    view.removeEventListener("dragover", onViewDragOver);
-    view.removeEventListener("dragleave", onViewDragLeave);
-    view.removeEventListener("drop", onViewDrop);
+    if (unlistenDragEnter) { try { unlistenDragEnter(); } catch { /* ignore */ } unlistenDragEnter = null; }
+    if (unlistenDragLeave) { try { unlistenDragLeave(); } catch { /* ignore */ } unlistenDragLeave = null; }
+    if (unlistenFileDrop) { try { unlistenFileDrop(); } catch { /* ignore */ } unlistenFileDrop = null; }
     view.classList.remove("drag-over");
     for (let i = 1; i <= 9; i++) {
       shortcuts.unregister(`open-chat-${i}`);

@@ -244,6 +244,7 @@ pub fn run() {
             ipc::clear_session,
             ipc::paste_image,
             ipc::paste_attachment,
+            ipc::paste_attachment_from_path,
             ipc::read_attachment,
             ipc::takeover_manual,
             ipc::load_history,

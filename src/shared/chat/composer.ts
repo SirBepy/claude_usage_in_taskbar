@@ -359,6 +359,29 @@ export class Composer {
     }
   }
 
+  async attachFromPath(srcPath: string): Promise<void> {
+    const filename = srcPath.split(/[\\/]/).pop() ?? srcPath;
+    let result: { path: string; mime: string; base64: string } | null = null;
+    if (this.sessionId) {
+      try {
+        result = await invoke<{ path: string; mime: string; base64: string }>(
+          "paste_attachment_from_path",
+          { sessionId: this.sessionId, path: srcPath },
+        );
+      } catch (err) {
+        console.warn("[Composer] paste_attachment_from_path failed:", err);
+      }
+    }
+    this.attachments.push({
+      filename,
+      mime: result?.mime ?? "application/octet-stream",
+      data: result?.base64 ?? "",
+      path: result?.path ?? null,
+    });
+    this.renderAttachments();
+    this.persistAttachments();
+  }
+
   private renderAttachments(): void {
     if (!this.attachmentsEl) return;
     this.attachmentsEl.innerHTML = "";
