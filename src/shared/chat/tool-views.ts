@@ -166,15 +166,37 @@ export function renderQuestionCardHtml(m: RenderedMessage): string {
   if (questions.length === 0) {
     return `<div class="tool-qa"><div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div></div>`;
   }
-  const answers = m.text ? parseAnswers(m.text) : null;
+  // Detect resolution from the absorbed tool_result text produced by the Rust
+  // format_answers fn: "dismissed" = skipped, "timed out" = timeout, else parse Q/A.
+  let resolution: "pending" | "answered" | "skipped" | "timed-out" = "pending";
+  let answers: Map<string, string> | null = null;
+  if (m.text !== undefined) {
+    if (m.text.includes("timed out")) {
+      resolution = "timed-out";
+    } else if (m.text.includes("dismissed")) {
+      resolution = "skipped";
+    } else {
+      answers = parseAnswers(m.text);
+      if (answers.size > 0) resolution = "answered";
+    }
+  }
   return questions.map((q) => {
     const header = q.header
       ? `<div class="tool-qa-header">${escapeHtml(q.header)}</div>`
       : "";
-    const ans = answers?.get(q.question);
-    const answerHtml = ans
-      ? `<div class="tool-qa-a"><i class="ph ph-arrow-bend-down-right"></i><span>${escapeHtml(ans)}</span></div>`
-      : `<div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div>`;
+    let answerHtml: string;
+    if (resolution === "answered" && answers) {
+      const ans = answers.get(q.question);
+      answerHtml = ans
+        ? `<div class="tool-qa-a"><i class="ph ph-arrow-bend-down-right"></i><span>${escapeHtml(ans)}</span></div>`
+        : `<div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div>`;
+    } else if (resolution === "skipped") {
+      answerHtml = `<div class="tool-qa-a tool-qa-a--skipped"><i class="ph ph-x-circle"></i><span>Skipped</span></div>`;
+    } else if (resolution === "timed-out") {
+      answerHtml = `<div class="tool-qa-a tool-qa-a--timed-out"><i class="ph ph-timer"></i><span>Timed out</span></div>`;
+    } else {
+      answerHtml = `<div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div>`;
+    }
     return `<div class="tool-qa">${header}<div class="tool-qa-q">${escapeHtml(q.question)}</div>${answerHtml}</div>`;
   }).join("");
 }
