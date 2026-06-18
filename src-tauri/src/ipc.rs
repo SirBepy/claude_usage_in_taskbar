@@ -18,6 +18,7 @@ pub mod slash;
 pub mod files;
 pub mod skill_usage;
 pub mod storage;
+pub mod remote_access;
 
 pub use usage::*;
 pub use settings::*;
@@ -39,6 +40,7 @@ pub use slash::*;
 pub use files::*;
 pub use skill_usage::*;
 pub use storage::*;
+pub use remote_access::*;
 
 // Re-export test helper submodules so integration tests can reach them via
 // `claude_usage_tauri_lib::ipc::projects_test_helpers` and

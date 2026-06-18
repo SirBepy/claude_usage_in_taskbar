@@ -63,6 +63,8 @@ portable-pty = "0.8"
 scraper = { version = "0.20", default-features = false }
 notify = "6"
 rusqlite = { version = "0.40", features = ["bundled"] }
+# QR pairing for remote-access (SVG render only; no `image` feature needed).
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

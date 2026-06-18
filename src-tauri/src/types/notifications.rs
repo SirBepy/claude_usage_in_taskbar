@@ -91,6 +91,11 @@ pub struct Settings {
     /// (usage + token = 90 days, skill events kept forever).
     #[serde(default)]
     pub retention: crate::storage::RetentionPolicies,
+    /// Whether the phone remote-access reverse proxy (`tailscale serve`) is
+    /// enabled. Absent in older settings files; `default` (false) keeps remote
+    /// access off until the user opts in from Settings.
+    #[serde(default)]
+    pub remote_access_enabled: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -126,6 +131,7 @@ impl Default for Settings {
             default_character_whitelist: default_character_whitelist(),
             session_characters: std::collections::HashMap::new(),
             retention: crate::storage::RetentionPolicies::default(),
+            remote_access_enabled: false,
             extra: serde_json::Map::new(),
         }
     }

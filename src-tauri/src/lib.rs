@@ -280,6 +280,10 @@ pub fn run() {
             ipc::get_storage_info,
             ipc::set_retention_policy,
             ipc::clear_dataset,
+            ipc::set_remote_access_enabled,
+            ipc::remote_access_status,
+            ipc::regenerate_remote_token,
+            ipc::remote_access_qr,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,
@@ -403,6 +407,18 @@ pub fn run() {
             {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(auto_update_loop(h));
+            }
+            // Re-apply the phone remote-access reverse proxy if the user left it
+            // on. Best-effort + off-thread: a missing/disconnected tailscale just
+            // logs a warning, never blocks or panics startup.
+            {
+                let enabled = app
+                    .state::<crate::state::AppState>()
+                    .settings
+                    .lock()
+                    .unwrap()
+                    .remote_access_enabled;
+                crate::ipc::remote_access::reapply_on_boot(enabled);
             }
             crate::scheduler::spawn(app.handle().clone());
             crate::news::spawn_poll_loop(app.handle().clone());
