@@ -1,8 +1,10 @@
 import { html, render } from "lit-html";
+import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
 import { invoke } from "../../shared/ipc";
 import { ensureModalHost, closeModal } from "../../shared/modal";
 import type { ProjectGroup } from "../../types/ipc.generated";
 import { openNewProjectModal, isNewProjectModalOpen } from "./new-project-modal";
+import { renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 
 export type SortChoice = "name" | "recent";
 export const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
@@ -192,9 +194,12 @@ export function openProjectPickerModal(
                         }}
                         @click=${() => { if (p.path_exists !== false) finish({ path: p.path, name: p.name }); }}
                       >
-                        <span class="project-picker-name">${p.name}</span>
-                        <span class="project-picker-path">${p.path}</span>
-                        ${p.path_exists === false ? html`<span class="project-picker-missing-msg">This folder doesn't exist</span>` : ""}
+                        <div class="project-picker-avatar">${unsafeHTML(renderAvatar(p.avatar, p.path))}</div>
+                        <div class="project-picker-info">
+                          <span class="project-picker-name">${p.name}</span>
+                          <span class="project-picker-path">${p.path}</span>
+                          ${p.path_exists === false ? html`<span class="project-picker-missing-msg">This folder doesn't exist</span>` : ""}
+                        </div>
                       </li>
                     `,
                   )}
@@ -233,6 +238,8 @@ export function openProjectPickerModal(
         </div>
       `;
       render(tpl, host);
+      hydrateProjectTechIcons(host).catch(() => {});
+      hydrateCharacterAvatars(host).catch(() => {});
       // Autofocus the search input on first render. Re-focus on subsequent
       // renders only if focus was already inside the modal (avoid stealing
       // focus from the dropdown).
