@@ -326,6 +326,26 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       if (e.payload.connected) {
         state.daemonSetupStalled = false;
         disarmSetupStallTimer();
+        // Re-sync on reconnect: the seed `instances-changed` from fetch_and_reseed_instances
+        // fires before the JS listener at line 336 is registered and is silently lost.
+        // Calling refreshSessions() here (after daemon-status-changed, which fires after
+        // instances-changed in the Rust sequence) guarantees we get the live busy flags.
+        void (async () => {
+          await refreshSessions();
+          if (state.mountId !== myMount) return;
+          renderSidebar(listEl);
+          updateThinkingBar();
+          // If the initial mount's session restore failed (cached_instances was empty
+          // at that point), try again now that the daemon is connected.
+          if (!state.selectedId && !state.pendingNewSession) {
+            const lastId = loadLastSelectedSession();
+            if (lastId && state.sessions.find(s => s.session_id === lastId)) {
+              await selectSession(lastId, pane);
+              if (state.mountId !== myMount) return;
+              updateThinkingBar();
+            }
+          }
+        })();
       } else {
         armSetupStallTimer(listEl, pane, myMount);
       }
@@ -354,6 +374,16 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
       renderSidebar(listEl);
       updateThinkingBar();
+      // If the initial mount's session restore failed (daemon not yet connected),
+      // restore now on the first instances-changed that populates the list.
+      if (!state.selectedId && !state.pendingNewSession) {
+        const lastId = loadLastSelectedSession();
+        if (lastId && state.sessions.find(s => s.session_id === lastId)) {
+          await selectSession(lastId, pane);
+          if (state.mountId !== myMount) return;
+          updateThinkingBar();
+        }
+      }
       // Live-update the pane header title when the session name resolves, and
       // recolour the header avatar's status ring (busy -> done, etc.).
       if (state.selectedId && !state.pendingNewSession) {
