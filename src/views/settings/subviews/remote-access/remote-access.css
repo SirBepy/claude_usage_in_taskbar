@@ -1,0 +1,75 @@
+/* Remote access subview. Shared .kit-* / .btn-* rules live in the kit; only the
+ * view-specific bits live here. */
+
+.ra-explainer {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.ra-statusline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.ra-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ra-status-warn { color: var(--warning, #e0a83a); }
+.ra-status-ok { color: var(--primary); }
+.ra-status-dim { color: var(--text-dim); }
+
+.ra-url {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.ra-qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 8px;
+  padding: 14px;
+  margin: 4px 0 8px;
+  min-height: 80px;
+}
+
+.ra-qr svg {
+  display: block;
+  width: 180px;
+  height: 180px;
+}
+
+.ra-qr-fallback {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.ra-caption {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.ra-token-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}

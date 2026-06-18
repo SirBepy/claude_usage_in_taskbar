@@ -35,6 +35,7 @@ import { renderShortcutsView } from "./views/settings/subviews/shortcuts/shortcu
 import { renderPermissionsView } from "./views/settings/subviews/permissions/permissions";
 import { renderStatuslineView } from "./views/settings/subviews/statusline/statusline";
 import { renderAboutView } from "./views/settings/subviews/about/about";
+import { renderRemoteAccessView } from "./views/settings/subviews/remote-access/remote-access";
 import { initBoot } from "./shared/boot";
 import { ensureRemoteToken } from "./shared/remote-gate";
 import { showView } from "./shared/navigation";
@@ -118,6 +119,7 @@ registerView("settings-shortcuts", renderShortcutsView);
 registerView("settings-permissions", renderPermissionsView);
 registerView("settings-statusline", renderStatuslineView);
 registerView("settings-about", renderAboutView);
+registerView("settings-remote-access", renderRemoteAccessView);
 
 const app = document.getElementById("app");
 if (!app) {

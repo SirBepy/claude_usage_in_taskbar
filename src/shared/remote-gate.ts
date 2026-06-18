@@ -22,6 +22,12 @@ export function ensureRemoteToken(): boolean {
   // Never gate inside the Tauri webview.
   if (typeof window !== "undefined" && window.__TAURI__) return true;
 
+  // QR-scan auto-pair: if the phone opened https://<host>/?token=<TOKEN> (from
+  // scanning the desktop's QR), capture the token into localStorage and strip it
+  // from the URL so it isn't left in the address bar / history. Runs before the
+  // token check below so a freshly-paired device passes the gate on first load.
+  captureRemoteTokenFromUrl();
+
   // Check for an existing token.
   let token = "";
   try {
@@ -35,6 +41,48 @@ export function ensureRemoteToken(): boolean {
   // No token found - render the gate and halt boot.
   renderTokenGate();
   return false;
+}
+
+/**
+ * Capture a `token` query param into localStorage (under REMOTE_TOKEN_KEY) and
+ * strip it from the URL via history.replaceState. Harmless no-op inside the
+ * Tauri webview, in node/test environments (no window/location/URL), or when the
+ * URL carries no token param.
+ */
+function captureRemoteTokenFromUrl(): void {
+  if (typeof window !== "undefined" && window.__TAURI__) return;
+  if (
+    typeof window === "undefined" ||
+    typeof location === "undefined" ||
+    typeof URL === "undefined"
+  ) {
+    return;
+  }
+
+  let token = "";
+  try {
+    token = new URL(location.href).searchParams.get("token")?.trim() ?? "";
+  } catch {
+    return;
+  }
+  if (!token) return;
+
+  try {
+    localStorage.setItem(REMOTE_TOKEN_KEY, token);
+  } catch {
+    // localStorage unavailable - leave the param in place; the gate still runs.
+    return;
+  }
+
+  // Strip ?token=... (and any other params) so the secret isn't left visible.
+  try {
+    const url = new URL(location.href);
+    url.searchParams.delete("token");
+    const clean = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "") + url.hash;
+    history.replaceState(null, "", clean);
+  } catch {
+    // replaceState unsupported - acceptable; token is already stored.
+  }
 }
 
 function renderTokenGate(): void {

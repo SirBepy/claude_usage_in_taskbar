@@ -151,6 +151,15 @@ export interface ProjectGroup {
 export interface InstanceInfo { [k: string]: unknown; }
 export interface AuthStatus { state?: string; [k: string]: unknown; }
 
+// Remote-access (Settings > Remote access). Loose local interface, mirroring the
+// app-process command's return shape; not a ts-rs generated type.
+export interface RemoteAccessStatus {
+  enabled: boolean;
+  tailscale_up: boolean;
+  serve_running: boolean;
+  url: string | null;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────
 
 export const api = {
@@ -377,6 +386,15 @@ export const api = {
     try { return await invoke<InstanceTokenStats>("instance_token_stats", { sessionId }); }
     catch (e) { console.error("instance_token_stats failed", e); return { tokens: 0, turns: 0 }; }
   },
+
+  // --- Remote access (Settings > Remote access) ---
+  setRemoteAccessEnabled: (enabled: boolean): Promise<void> =>
+    invoke("set_remote_access_enabled", { enabled }),
+  remoteAccessStatus: (): Promise<RemoteAccessStatus> =>
+    invoke("remote_access_status"),
+  regenerateRemoteToken: (): Promise<string> =>
+    invoke("regenerate_remote_token"),
+  remoteAccessQr: (): Promise<string> => invoke("remote_access_qr"),
 
   // --- Hook registration ---
   getHookRegistrationState: async (): Promise<HookRegistrationState> => {

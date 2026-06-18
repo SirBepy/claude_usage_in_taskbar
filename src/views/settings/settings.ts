@@ -180,6 +180,7 @@ export async function renderSettingsView(
   const navCharacters = root.querySelector<HTMLElement>("#nav-characters");
   const navShortcuts = root.querySelector<HTMLElement>("#nav-shortcuts");
   const navStatusline = root.querySelector<HTMLElement>("#nav-statusline");
+  const navRemoteAccess = root.querySelector<HTMLElement>("#nav-remote-access");
   const navAbout = root.querySelector<HTMLElement>("#nav-about");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
   if (navThemes) navThemes.onclick = () => g().navigateTo("settings-themes");
@@ -190,6 +191,7 @@ export async function renderSettingsView(
   if (navCharacters) navCharacters.onclick = () => g().navigateTo("settings-characters");
   if (navShortcuts) navShortcuts.onclick = () => g().navigateTo("settings-shortcuts");
   if (navStatusline) navStatusline.onclick = () => g().navigateTo("settings-statusline");
+  if (navRemoteAccess) navRemoteAccess.onclick = () => g().navigateTo("settings-remote-access");
   if (navAbout) navAbout.onclick = () => g().navigateTo("settings-about");
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
@@ -262,6 +264,10 @@ function template() {
           </div>
           <div class="kit-row kit-nav-row" id="nav-shortcuts">
             <span class="kit-row-label">Shortcuts</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
+          <div class="kit-row kit-nav-row" id="nav-remote-access">
+            <span class="kit-row-label"><i class="ph ph-device-mobile"></i> Remote access</span>
             <span class="kit-nav-arrow">›</span>
           </div>
           <div class="kit-row">
