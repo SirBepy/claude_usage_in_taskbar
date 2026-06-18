@@ -31,6 +31,7 @@ import { renderProjectDetailContent } from "../views/project-detail/project-deta
 import * as shortcuts from "./shortcuts";
 import { triggerNewSessionGlobal } from "../views/sessions/sessions";
 import { showView } from "./navigation";
+import { isRemote } from "./transport";
 
 function activeViewName(): string {
   return window.location.hash.replace(/^#/, "") || "dashboard";
@@ -141,6 +142,12 @@ function showHookModal(): void {
 }
 
 async function maybeShowHookModal(): Promise<void> {
+  // Hook registration installs a SessionStart hook on THIS machine so local
+  // `claude` instances surface in the app. It is meaningless on the remote
+  // phone browser (which has no local machine to instrument) and the RPC isn't
+  // served there, so the desktop-only check below keeps the modal from popping
+  // on the phone home screen. The phone mirrors the desktop's state instead.
+  if (isRemote()) return;
   const state = await api.getHookRegistrationState();
   if (!state || state.registered || state.declined) return;
   showHookModal();

@@ -291,12 +291,21 @@ let active: Transport | null = null;
  */
 export function getTransport(): Transport {
   if (!active) {
-    // Branch on the presence of the Tauri runtime global (injected by the
-    // webview, never present in a plain browser) - ai_todo 105.
-    const hasTauri = typeof window !== "undefined" && !!window.__TAURI__;
-    active = hasTauri ? new TauriTransport() : new HttpTransport();
+    active = isTauri() ? new TauriTransport() : new HttpTransport();
   }
   return active;
+}
+
+/** True inside the Tauri desktop webview (the runtime global is injected by the
+ *  webview, never present in a plain browser). The single source of truth for
+ *  "am I the desktop app vs the remote phone browser" - ai_todo 105. */
+export function isTauri(): boolean {
+  return typeof window !== "undefined" && !!window.__TAURI__;
+}
+
+/** Inverse of {@link isTauri}: true in the remote (phone) browser PWA. */
+export function isRemote(): boolean {
+  return !isTauri();
 }
 
 /** Test-only: clear the cached transport so a test can re-resolve it. */
