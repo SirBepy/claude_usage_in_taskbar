@@ -84,6 +84,12 @@ const SAFE_METHODS: &[&str] = &[
     "load_history_page",
     "list_characters",
     "list_project_groups",
+    "character_asset_url",
+    "resolve_whitelist_characters",
+    "list_projects",
+    "project_last_activity_at",
+    "get_project_tech",
+    "get_project_icon",
 ];
 
 /// Start the remote-access server. Best-effort: a bind failure disables remote
@@ -443,6 +449,12 @@ mod tests {
             "load_history_page",
             "list_characters",
             "list_project_groups",
+            "character_asset_url",
+            "resolve_whitelist_characters",
+            "list_projects",
+            "project_last_activity_at",
+            "get_project_tech",
+            "get_project_icon",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }

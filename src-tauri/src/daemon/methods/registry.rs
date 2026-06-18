@@ -189,4 +189,102 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             .map_err(|e| RpcError::internal(e))
         }
     });
+    // Read-only character/project asset + metadata methods exposed over the
+    // remote-access API so the phone client renders avatars/icons/whitelists
+    // without a Tauri runtime. Each mirrors the same-named Tauri command's JSON
+    // shape and sources its inputs daemon-side (shared on-disk character files,
+    // the settings snapshot, ~/.claude/projects mtimes). No Tauri AppState used.
+
+    // Mirrors `character_asset_url` (params: character_id, file) -> Option<String>
+    // data URL. Pure: characters::get + assets::file_data_url_at on shared files.
+    router.register("character_asset_url", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct P { character_id: String, file: String }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let url = crate::characters::get(&p.character_id)
+                .and_then(|c| crate::characters::assets::file_data_url_at(&c.asset_path(&p.file)));
+            Ok(json!(url))
+        }
+    });
+    // Mirrors `resolve_whitelist_characters` (params: project_id) -> Vec<Character>.
+    // Reads the project's whitelist + default whitelist from the settings
+    // snapshot, then whitelist::resolve over characters::list().
+    {
+        let state = state.clone();
+        router.register("resolve_whitelist_characters", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct P { project_id: String }
+                let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let s = state.settings.snapshot();
+                let proj_wl = s
+                    .projects
+                    .iter()
+                    .find(|pc| pc.id == p.project_id)
+                    .map(|pc| pc.whitelist.clone())
+                    .unwrap_or(crate::types::CharacterWhitelist::Default);
+                let default_wl = s.default_character_whitelist.clone();
+                let all = crate::characters::list();
+                let resolved_ids = crate::characters::whitelist::resolve(&proj_wl, &default_wl, &all);
+                let resolved: Vec<_> = resolved_ids
+                    .iter()
+                    .filter_map(|id| crate::characters::get(id))
+                    .collect();
+                Ok(json!(resolved))
+            }
+        });
+    }
+    // Mirrors `list_projects` -> Vec<ProjectConfig>. The Tauri command returns
+    // `settings.projects.clone()`; the daemon reads the same from its snapshot.
+    {
+        let state = state.clone();
+        router.register("list_projects", move |_params, _ctx| {
+            let state = state.clone();
+            async move { Ok(json!(state.settings.snapshot().projects)) }
+        });
+    }
+    // Mirrors `project_last_activity_at` (params: cwd) -> i64. PURE fs read of
+    // the max *.jsonl mtime under ~/.claude/projects/<encoded-cwd>/.
+    router.register("project_last_activity_at", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct P { cwd: String }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            let secs = tokio::task::spawn_blocking(move || {
+                crate::ipc::project_groups::latest_jsonl_mtime_in_projects_dir(
+                    std::path::Path::new(&p.cwd),
+                )
+            })
+            .await
+            .map_err(|e| RpcError::internal(format!("join: {e}")))?;
+            Ok(json!(secs))
+        }
+    });
+    // Mirrors `get_project_tech` (params: root) -> Option<String>. PURE
+    // file-existence checks for stack marker files.
+    router.register("get_project_tech", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct P { root: String }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            Ok(json!(crate::ipc::project_icons::get_project_tech(p.root)))
+        }
+    });
+    // Mirrors `get_project_icon` (params: root) -> Option<AttachmentData>. PURE
+    // fs read of the first matching icon candidate, inlined as {mime, base64}.
+    router.register("get_project_icon", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct P { root: String }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            Ok(json!(crate::ipc::project_icons::get_project_icon(p.root).await))
+        }
+    });
 }

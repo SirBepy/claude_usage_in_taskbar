@@ -157,7 +157,7 @@ pub async fn project_last_activity_at(cwd: String) -> Result<i64, String> {
 /// `~/.claude/projects/<encoded-cwd>/`. 0 if dir absent, unreadable, or
 /// has no jsonl files. Errors are swallowed - this is best-effort sort
 /// metadata, not load-bearing.
-fn latest_jsonl_mtime_in_projects_dir(cwd: &Path) -> i64 {
+pub fn latest_jsonl_mtime_in_projects_dir(cwd: &Path) -> i64 {
     let Some(home) = dirs::home_dir() else { return 0 };
     let encoded = crate::tokens::encode_cwd_as_project_dir(cwd);
     let dir = home.join(".claude").join("projects").join(encoded);
