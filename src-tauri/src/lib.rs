@@ -256,6 +256,7 @@ pub fn run() {
             ipc::detach_window,
             ipc::reattach_window,
             ipc::open_session_in_terminal,
+            ipc::open_terminal_in_directory,
             ipc::open_in_editor,
             ipc::read_image_file,
             ipc::read_text_file,

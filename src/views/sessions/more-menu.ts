@@ -33,7 +33,8 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
       items.push(`<button class="smore-item smore-auto-accept${autoOn ? " is-on" : ""}" data-action="auto-accept"><i class="ph ph-shield-check"></i>Auto-accept${autoOn ? '<span class="smore-check-dot"></span>' : ""}</button>`);
     }
     items.push(`<button class="smore-item" data-action="change-character"><i class="ph ph-user-switch"></i>Change character</button>`);
-    items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Open in Terminal</button>`);
+    items.push(`<button class="smore-item" data-action="terminal"><i class="ph ph-terminal-window"></i>Move Session to Terminal</button>`);
+    items.push(`<button class="smore-item" data-action="terminal-dir"><i class="ph ph-folder-open"></i>Open terminal in directory</button>`);
     items.push(`<button class="smore-item" data-action="vscode"><i class="ph ph-code"></i>Open in VS Code</button>`);
     items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
     if (!readOnly) {
@@ -77,6 +78,14 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
           try { await invoke<void>("open_session_in_terminal", { sessionId }); }
           catch (err) { alert(`Failed to open terminal: ${err}`); }
           break;
+        case "terminal-dir": {
+          const cwd = state.sessions.find(s => s.session_id === sessionId)?.cwd;
+          if (cwd) {
+            try { await invoke<void>("open_terminal_in_directory", { path: String(cwd) }); }
+            catch (err) { alert(`Failed to open terminal: ${err}`); }
+          }
+          break;
+        }
         case "vscode": {
           const cwd = state.sessions.find(s => s.session_id === sessionId)?.cwd;
           if (cwd) {

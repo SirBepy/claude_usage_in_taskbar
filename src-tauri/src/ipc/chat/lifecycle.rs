@@ -111,6 +111,78 @@ pub async fn open_session_in_terminal(
     Ok(())
 }
 
+/// Open a plain terminal in a directory without attaching any claude session.
+#[tauri::command]
+pub async fn open_terminal_in_directory(path: String) -> Result<(), String> {
+    let dir = std::path::Path::new(&path);
+    if !dir.exists() {
+        return Err(format!("directory does not exist: {path}"));
+    }
+    spawn_terminal_in_dir(dir).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
+    use std::process::Command;
+    let cwd_str = cwd.to_string_lossy().to_string();
+    let wt_result = Command::new("wt.exe")
+        .args(["-d", &cwd_str])
+        .spawn();
+    if wt_result.is_ok() {
+        return Ok(());
+    }
+    Command::new("cmd.exe")
+        .arg("/C")
+        .arg("start")
+        .arg("")
+        .arg("cmd.exe")
+        .current_dir(cwd)
+        .spawn()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
+    use std::process::Command;
+    let cwd_esc = cwd.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "tell application \"Terminal\" to do script \"cd \\\"{cwd_esc}\\\"\""
+    );
+    Command::new("osascript").arg("-e").arg(&script).spawn()?;
+    let _ = Command::new("osascript")
+        .arg("-e")
+        .arg("tell application \"Terminal\" to activate")
+        .spawn();
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
+    use std::process::Command;
+    let cwd_str = cwd.to_string_lossy().to_string();
+    let candidates: &[(&str, &[&str])] = &[
+        ("gnome-terminal", &["--working-directory"]),
+        ("konsole", &["--workdir"]),
+        ("xfce4-terminal", &["--working-directory"]),
+        ("xterm", &[]),
+    ];
+    for (bin, dir_flag) in candidates {
+        let mut cmd = Command::new(bin);
+        if dir_flag.is_empty() {
+            cmd.current_dir(cwd);
+        } else {
+            cmd.arg(format!("{}={}", dir_flag[0], cwd_str));
+        }
+        if cmd.spawn().is_ok() {
+            return Ok(());
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "no supported terminal emulator found",
+    ))
+}
+
 #[cfg(target_os = "windows")]
 fn spawn_terminal_for_session(
     session_id: &str,
