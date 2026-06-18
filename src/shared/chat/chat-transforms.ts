@@ -174,7 +174,7 @@ function pastedLogChipHtml(name: string, body: string): string {
 }
 
 export interface RenderedMessage {
-  kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification";
+  kind: "system" | "user" | "assistant" | "tool_use" | "tool_result" | "notification" | "question";
   content?: ContentBlock[];
   text?: string;
   tool?: string;

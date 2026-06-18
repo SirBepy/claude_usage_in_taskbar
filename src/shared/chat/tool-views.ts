@@ -156,6 +156,30 @@ export function renderQuestionsView(messages: RenderedMessage[], start: number, 
 }
 
 /**
+ * Render a standalone AUQ question card for a kind:"question" message.
+ * The message carries the raw AUQ input in `m.input` and the answer text
+ * in `m.text` once the tool_result has been absorbed. Called directly from
+ * buildMessageEl in chat-renderer, bypassing renderMessage entirely.
+ */
+export function renderQuestionCardHtml(m: RenderedMessage): string {
+  const questions = extractAskQuestions(m.input);
+  if (questions.length === 0) {
+    return `<div class="tool-qa"><div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div></div>`;
+  }
+  const answers = m.text ? parseAnswers(m.text) : null;
+  return questions.map((q) => {
+    const header = q.header
+      ? `<div class="tool-qa-header">${escapeHtml(q.header)}</div>`
+      : "";
+    const ans = answers?.get(q.question);
+    const answerHtml = ans
+      ? `<div class="tool-qa-a"><i class="ph ph-arrow-bend-down-right"></i><span>${escapeHtml(ans)}</span></div>`
+      : `<div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div>`;
+    return `<div class="tool-qa">${header}<div class="tool-qa-q">${escapeHtml(q.question)}</div>${answerHtml}</div>`;
+  }).join("");
+}
+
+/**
  * Render a custom tool's view for `tool` (a canonical key) over [start, end), or
  * null when the tool has no custom view. "" means "custom view, but nothing to
  * show in this range" - callers can render their own empty state.

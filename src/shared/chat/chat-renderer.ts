@@ -11,7 +11,7 @@ import { ToolTallyState } from "./tool-tally-state";
 import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
 import { openFileViewer } from "./file-viewer";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
-import { renderCustomToolView } from "./tool-views";
+import { renderCustomToolView, renderQuestionCardHtml } from "./tool-views";
 import { ChatPaginator } from "./chat-pagination";
 import { TurnFooterRegistry, type TurnChipKey, type TurnUsageTotals } from "./turn-chips";
 
@@ -565,6 +565,32 @@ export class ChatRenderer {
         break;
       }
       case "tool_use": {
+        // AUQ becomes a visual turn-splitter (question card) instead of a chip.
+        // Only top-level AUQ calls get the card treatment; nested subagent calls
+        // fall through to the normal chip path.
+        if (ev.tool_name === "AskUserQuestion" && !ev.parent_tool_use_id) {
+          this.enqueueTurnClose();
+          this.messages.push({
+            kind: "question",
+            tool: "AskUserQuestion",
+            input: ev.input,
+            id: ev.id,
+            ts,
+            parentToolUseId: null,
+          });
+          // Open a fresh sub-turn for post-question chips.
+          this.activeTurnChipKey = ++this._chipKeySeq;
+          this.activeTurnStart = this.messages.length;
+          this.activeTurnStreamedText = "";
+          this.activeTurnStartedAtMs = Date.now();
+          this.activeTurnUsage = null;
+          this.activeTurnFirstTs = ts > 0 ? ts : 0;
+          this.activeTurnLastTs = this.activeTurnFirstTs;
+          this.activityToolCanon = null;
+          this.setActivity("Waiting for your answer…");
+          touched = true;
+          break;
+        }
         this.messages.push({
           kind: "tool_use",
           tool: ev.tool_name,
@@ -590,6 +616,20 @@ export class ChatRenderer {
         break;
       }
       case "tool_result": {
+        // If this result is the answer to an AUQ question card, absorb it into
+        // the card (update its text and dirty-flag for re-render) instead of
+        // adding a raw tool_result row.
+        const qIdx = this.messages.findIndex(
+          (m) => m.kind === "question" && m.id === ev.tool_use_id,
+        );
+        if (qIdx >= 0) {
+          const ansText = ev.output?.type === "text" ? ev.output.text : "";
+          this.messages[qIdx] = { ...this.messages[qIdx]!, text: ansText };
+          this.dirtyIndices.add(qIdx);
+          this.onToolTally?.(this.tallyState.build());
+          touched = true;
+          break;
+        }
         this.messages.push({
           kind: "tool_result",
           tool_use_id: ev.tool_use_id,
@@ -992,6 +1032,12 @@ export class ChatRenderer {
   };
 
   private buildMessageEl(m: RenderedMessage): HTMLElement {
+    if (m.kind === "question") {
+      const el = document.createElement("div");
+      el.className = "msg question-card";
+      el.innerHTML = renderQuestionCardHtml(m);
+      return el;
+    }
     const wrap = document.createElement("div");
     wrap.innerHTML = renderMessage(m);
     const el = wrap.firstElementChild as HTMLElement;

@@ -781,6 +781,21 @@
 }
 .tool-qa-a--pending > .ph { color: var(--color-text-muted); }
 
+/* AUQ question card: rendered as a centered first-class message that splits
+   the chip strips before/after the question. Reuses .tool-qa internals. */
+.msg.question-card {
+  align-self: center;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0;
+  max-width: 460px;
+  width: 90%;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
 /* Per-subagent chip: descriptions can be long, so cap + ellipsize the label
    and lead with the robot icon so it reads as "a subagent", not a tool. */
 .tool-chip--agent .tool-chip-label {
