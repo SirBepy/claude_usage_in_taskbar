@@ -148,14 +148,7 @@ describe("HttpTransport get_settings safe default", () => {
     const result = await t.call("get_settings");
     expect(result).toBeNull();
   });
-
-  it("returns [] for get_history instead of throwing RemoteUnavailableError", async () => {
-    globalThis.window = {};
-    globalThis.localStorage = makeLocalStorage({ [REMOTE_TOKEN_KEY]: "tok" });
-
-    const { HttpTransport } = await import("../src/shared/transport.ts");
-    const t = new HttpTransport();
-    const result = await t.call("get_history");
-    expect(result).toEqual([]);
-  });
+  // get_history is no longer a safe-default stub: it forwards to the daemon's
+  // rpc (usage history from the shared db). That forwarding is covered in
+  // tests/transport-http.test.mjs with a mocked fetch.
 });

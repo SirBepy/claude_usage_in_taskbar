@@ -157,7 +157,8 @@ describe("HttpTransport.call mapping", () => {
   });
 
   it("throws RemoteUnavailableError for commands with no remote path", async () => {
-    await expect(new HttpTransport().call("start_session", {})).rejects.toBeInstanceOf(
+    // poll_now is a CDP scrape that only the desktop app process can run.
+    await expect(new HttpTransport().call("poll_now", {})).rejects.toBeInstanceOf(
       RemoteUnavailableError,
     );
   });
@@ -167,9 +168,22 @@ describe("HttpTransport.call mapping", () => {
     expect(result).toBeNull();
   });
 
-  it("returns [] for get_history (safe-default, no throw) so boot degrades cleanly", async () => {
-    const result = await new HttpTransport().call("get_history");
-    expect(result).toEqual([]);
+  it("forwards get_history to the rpc with a null limit (usage history from the daemon db)", async () => {
+    await new HttpTransport().call("get_history");
+    expect(url()).toBe("/api/rpc");
+    expect(body()).toEqual({ method: "get_history", params: { limit: null } });
+  });
+
+  it("forwards get_token_history to the rpc", async () => {
+    await new HttpTransport().call("get_token_history");
+    expect(url()).toBe("/api/rpc");
+    expect(body()).toEqual({ method: "get_token_history", params: null });
+  });
+
+  it("forwards get_active_sessions to the rpc", async () => {
+    await new HttpTransport().call("get_active_sessions");
+    expect(url()).toBe("/api/rpc");
+    expect(body()).toEqual({ method: "get_active_sessions", params: null });
   });
 
   it("throws on a non-ok HTTP response", async () => {

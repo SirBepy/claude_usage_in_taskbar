@@ -44,6 +44,35 @@ class TauriTransport implements Transport {
 /** localStorage key holding the per-device bearer token the user pasted/paired. */
 export const REMOTE_TOKEN_KEY = "rc_token";
 
+/** sessionStorage flag set when a stored token was rejected (401) so the token
+ *  gate can explain "expired / changed" instead of looking like a first pairing. */
+export const REMOTE_TOKEN_EXPIRED_KEY = "rc_token_expired";
+
+/** True once we've reacted to a 401 this page-load, so a burst of concurrent
+ *  failing requests (e.g. the 3.5s poll plus a view's fetches) triggers exactly
+ *  one token-clear + reload rather than a reload storm. */
+let authFailureHandled = false;
+
+/**
+ * React to a rejected bearer token (HTTP 401 from the daemon): the stored token
+ * is stale or was rotated. Clear it, flag the reason, and reload so the boot
+ * path renders the token gate with an "expired" message instead of every view
+ * silently showing empty data (which is indistinguishable from "no data").
+ * One-shot per page-load; a no-op in non-browser (test) environments.
+ */
+function handleAuthFailure(): void {
+  if (authFailureHandled) return;
+  authFailureHandled = true;
+  if (typeof window === "undefined" || typeof location === "undefined") return;
+  try {
+    localStorage.removeItem(REMOTE_TOKEN_KEY);
+    sessionStorage.setItem(REMOTE_TOKEN_EXPIRED_KEY, "1");
+  } catch {
+    /* storage unavailable - the reload still drops us at the gate */
+  }
+  location.reload();
+}
+
 function remoteToken(): string {
   try {
     return localStorage.getItem(REMOTE_TOKEN_KEY) ?? "";
@@ -162,18 +191,21 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("get_project_icon", {
           root: args.root,
         });
-      // Safe-default stubs: the daemon doesn't serve these (app-process-only
-      // commands), but boot reads them unconditionally. Return empty/null so
-      // boot continues rather than leaving the app in a stuck state.
+      // Usage + token history: served from the daemon's shared companion.db so
+      // the phone homescreen + statistics populate (the daemon is the writer).
+      case "get_history":
+        return this.rpc<T>("get_history", { limit: args.limit ?? null });
+      case "get_token_history":
+        return this.rpc<T>("get_token_history", null);
+      case "get_active_sessions":
+        return this.rpc<T>("get_active_sessions", null);
+      // Safe-default stub: the daemon doesn't serve this (app-process-only),
+      // but boot reads it unconditionally. Return null so boot continues.
       case "get_settings":
         // Boot already handles null gracefully (boot.ts `if (s)` guard).
         return null as unknown as T;
-      case "get_history":
-        // Usage history unavailable on the phone; boot treats [] as "no data".
-        return [] as unknown as T;
-      // No remote path yet: new-session orchestration (start_session), takeover,
-      // editor/window/local-FS, file watchers, token history.
-      // Degrade clearly.
+      // No remote path: poll_now (a CDP scrape needing Chrome), takeover,
+      // editor/window/local-FS commands, and file watchers. Degrade clearly.
       default:
         throw new RemoteUnavailableError(command);
     }
@@ -269,6 +301,7 @@ export class HttpTransport implements Transport {
       headers: this.headers(),
       body: JSON.stringify({ text }),
     });
+    if (res.status === 401) handleAuthFailure();
     if (!res.ok) throw new Error(`send failed: ${res.status}`);
     return sessionId as unknown as T;
   }
@@ -279,6 +312,7 @@ export class HttpTransport implements Transport {
       headers: this.headers(),
       body: JSON.stringify({ method, params }),
     });
+    if (res.status === 401) handleAuthFailure();
     if (!res.ok) throw new Error(`rpc ${method} failed: ${res.status}`);
     return (await res.json()) as T;
   }

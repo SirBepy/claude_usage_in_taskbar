@@ -92,6 +92,10 @@ const SAFE_METHODS: &[&str] = &[
     "project_last_activity_at",
     "get_project_tech",
     "get_project_icon",
+    // Read-only usage/token history for the remote homescreen + statistics.
+    "get_history",
+    "get_token_history",
+    "get_active_sessions",
 ];
 
 /// Start the remote-access server. Best-effort: a bind failure disables remote
@@ -463,6 +467,9 @@ mod tests {
             "project_last_activity_at",
             "get_project_tech",
             "get_project_icon",
+            "get_history",
+            "get_token_history",
+            "get_active_sessions",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }

@@ -10,7 +10,20 @@
  * This is a complete NO-OP inside the Tauri webview (window.__TAURI__ present).
  */
 
-import { REMOTE_TOKEN_KEY } from "./transport";
+import { REMOTE_TOKEN_KEY, REMOTE_TOKEN_EXPIRED_KEY } from "./transport";
+
+/** True when the previous token was rejected (401) and cleared by the transport,
+ *  so the gate explains "expired / changed" rather than a plain first pairing.
+ *  Reads-and-clears the one-shot flag. */
+function consumeExpiredFlag(): boolean {
+  try {
+    const expired = sessionStorage.getItem(REMOTE_TOKEN_EXPIRED_KEY) === "1";
+    if (expired) sessionStorage.removeItem(REMOTE_TOKEN_EXPIRED_KEY);
+    return expired;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Ensure a remote bearer token is present in localStorage when running in a
@@ -112,13 +125,16 @@ function renderTokenGate(): void {
     "color:#e0e1f0",
   ].join(";");
 
+  const expired = consumeExpiredFlag();
+
   const heading = document.createElement("h2");
-  heading.textContent = "Enter access token";
+  heading.textContent = expired ? "Session expired" : "Enter access token";
   heading.style.cssText = "margin:0 0 8px;font-size:1.15rem;font-weight:600;color:#fff";
 
   const hint = document.createElement("p");
-  hint.textContent =
-    "Paste the token from remote-access-token.txt on your desktop to connect to your Claude companion.";
+  hint.textContent = expired
+    ? "Your access token was rejected (it changed or was regenerated on the desktop). Re-scan the QR in Settings > Remote access, or paste the new token from remote-access-token.txt."
+    : "Paste the token from remote-access-token.txt on your desktop to connect to your Claude companion.";
   hint.style.cssText = "margin:0 0 20px;font-size:.85rem;line-height:1.5;color:#8b8fa8";
 
   const input = document.createElement("input");

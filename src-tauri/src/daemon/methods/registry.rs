@@ -317,4 +317,84 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             Ok(json!(crate::ipc::project_icons::get_project_icon(p.root).await))
         }
     });
+    // ── Usage + token history (homescreen / stats on the phone) ───────────────
+    // All three read the SAME shared `companion.db` the desktop app reads, via
+    // the daemon's own connection (`state.db`). They mirror the Tauri commands
+    // `get_history` / `get_token_history` / `get_active_sessions` so the remote
+    // homescreen, statistics, and projects views populate without a Tauri
+    // runtime. The daemon is the writer of these records, so the data is always
+    // present; `poll_now` (a CDP scrape) stays app-process-only by design.
+
+    // Mirrors `get_history` (params: { limit }) -> Vec<UsageSnapshot>. Snapshots
+    // come back ascending by timestamp; `limit` keeps the newest N (trim front).
+    {
+        let state = state.clone();
+        router.register("get_history", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                #[derive(serde::Deserialize, Default)]
+                struct P { limit: Option<u32> }
+                let p: P = serde_json::from_value(params.unwrap_or(Value::Null)).unwrap_or_default();
+                let Some(db) = state.db.clone() else { return Ok(json!([])) };
+                let snaps = tokio::task::spawn_blocking(move || {
+                    let mgr = db.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut all = crate::storage::usage_store::get_all_snapshots(mgr.conn())
+                        .unwrap_or_default();
+                    if let Some(n) = p.limit {
+                        let start = all.len().saturating_sub(n as usize);
+                        all = all.split_off(start);
+                    }
+                    all
+                })
+                .await
+                .map_err(|e| RpcError::internal(format!("join: {e}")))?;
+                Ok(json!(snaps))
+            }
+        });
+    }
+    // Mirrors `get_token_history` -> Vec<TokenRecord>, filtering empty session
+    // ids to match the desktop's `load_history_from_db` behaviour.
+    {
+        let state = state.clone();
+        router.register("get_token_history", move |_params, _ctx| {
+            let state = state.clone();
+            async move {
+                let Some(db) = state.db.clone() else { return Ok(json!([])) };
+                let records = tokio::task::spawn_blocking(move || {
+                    let mgr = db.lock().unwrap_or_else(|e| e.into_inner());
+                    crate::storage::token_store::get_token_records(mgr.conn(), 0)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|r| !r.session_id.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .await
+                .map_err(|e| RpcError::internal(format!("join: {e}")))?;
+                Ok(json!(records))
+            }
+        });
+    }
+    // Mirrors `get_active_sessions` -> Vec<TokenRecord>: the in-flight usage
+    // derived from the same history (live token merge on the homescreen/stats).
+    {
+        let state = state.clone();
+        router.register("get_active_sessions", move |_params, _ctx| {
+            let state = state.clone();
+            async move {
+                let Some(db) = state.db.clone() else { return Ok(json!([])) };
+                let active = tokio::task::spawn_blocking(move || {
+                    let mgr = db.lock().unwrap_or_else(|e| e.into_inner());
+                    let history = crate::storage::token_store::get_token_records(mgr.conn(), 0)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|r| !r.session_id.is_empty())
+                        .collect::<Vec<_>>();
+                    crate::tokens::active_sessions_from_history(&history)
+                })
+                .await
+                .map_err(|e| RpcError::internal(format!("join: {e}")))?;
+                Ok(json!(active))
+            }
+        });
+    }
 }
