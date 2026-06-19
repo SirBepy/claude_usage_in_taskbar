@@ -523,6 +523,12 @@ export class ChatRenderer {
               this.dirtyIndices.add(this.streamingIndex);
               this.streamingIndex = null;
             }
+            // When a "Continuing session…" marker was just emitted (rate-limit
+            // auto-continue silent user turn), the assistant "Continuing chat"
+            // fires immediately after for the same resume event. Suppress the
+            // duplicate so only one resume notice shows.
+            const prevMsg = this.messages[this.messages.length - 1];
+            if (prevMsg?.kind === "system" && prevMsg.text === "Continuing session…") break;
             this.messages.push({ kind: "system", text: noiseLabel, ts, noiseLabel: true });
             this.setTurnStatus(null);
             touched = true;
