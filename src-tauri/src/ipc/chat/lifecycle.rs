@@ -121,113 +121,66 @@ pub async fn open_terminal_in_directory(path: String) -> Result<(), String> {
     spawn_terminal_in_dir(dir).map_err(|e| e.to_string())
 }
 
-#[cfg(target_os = "windows")]
-fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
-    use std::process::Command;
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let wt_result = Command::new("wt.exe")
-        .args(["-d", &cwd_str])
-        .spawn();
-    if wt_result.is_ok() {
-        return Ok(());
-    }
-    Command::new("cmd.exe")
-        .arg("/C")
-        .arg("start")
-        .arg("")
-        .arg("cmd.exe")
-        .current_dir(cwd)
-        .spawn()?;
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
-    use std::process::Command;
-    let cwd_esc = cwd.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
-    let script = format!(
-        "tell application \"Terminal\" to do script \"cd \\\"{cwd_esc}\\\"\""
-    );
-    Command::new("osascript").arg("-e").arg(&script).spawn()?;
-    let _ = Command::new("osascript")
-        .arg("-e")
-        .arg("tell application \"Terminal\" to activate")
-        .spawn();
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
-    use std::process::Command;
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let candidates: &[(&str, &[&str])] = &[
-        ("gnome-terminal", &["--working-directory"]),
-        ("konsole", &["--workdir"]),
-        ("xfce4-terminal", &["--working-directory"]),
-        ("xterm", &[]),
-    ];
-    for (bin, dir_flag) in candidates {
-        let mut cmd = Command::new(bin);
-        if dir_flag.is_empty() {
-            cmd.current_dir(cwd);
-        } else {
-            cmd.arg(format!("{}={}", dir_flag[0], cwd_str));
-        }
-        if cmd.spawn().is_ok() {
-            return Ok(());
-        }
-    }
-    Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "no supported terminal emulator found",
-    ))
-}
-
-#[cfg(target_os = "windows")]
+/// Open `claude --resume <id>` in an external terminal in the session's cwd.
 fn spawn_terminal_for_session(
     session_id: &str,
     cwd: &std::path::Path,
 ) -> std::io::Result<()> {
+    open_terminal(cwd, Some(&format!("claude --resume {session_id}")))
+}
+
+/// Open a plain terminal in `cwd` with no attached command.
+fn spawn_terminal_in_dir(cwd: &std::path::Path) -> std::io::Result<()> {
+    open_terminal(cwd, None)
+}
+
+/// Single per-platform terminal opener. `initial_cmd`, when present, is the
+/// shell command run in the new terminal (e.g. `claude --resume <id>`); when
+/// `None`, an empty interactive terminal is opened in `cwd`.
+///
+/// Platform behavior:
+/// - Windows: prefers Windows Terminal (`wt.exe`); falls back to `cmd.exe`.
+/// - macOS: `osascript` driving Terminal.app.
+/// - Linux: tries `gnome-terminal`, `konsole`, `xfce4-terminal`, `xterm` in order.
+#[cfg(target_os = "windows")]
+fn open_terminal(cwd: &std::path::Path, initial_cmd: Option<&str>) -> std::io::Result<()> {
     use std::process::Command;
     let cwd_str = cwd.to_string_lossy().to_string();
     // Try Windows Terminal first.
-    let wt_result = Command::new("wt.exe")
-        .args([
-            "-d",
-            &cwd_str,
-            "cmd.exe",
-            "/K",
-            &format!("claude --resume {session_id}"),
-        ])
-        .spawn();
-    if wt_result.is_ok() {
+    let mut wt = Command::new("wt.exe");
+    wt.args(["-d", &cwd_str]);
+    if let Some(cmd) = initial_cmd {
+        wt.args(["cmd.exe", "/K", cmd]);
+    }
+    if wt.spawn().is_ok() {
         return Ok(());
     }
     // Fall back to bare cmd.exe in a new console window.
-    Command::new("cmd.exe")
-        .arg("/C")
-        .arg("start")
-        .arg("")
-        .arg("cmd.exe")
-        .arg("/K")
-        .arg(format!("claude --resume {session_id}"))
-        .current_dir(cwd)
-        .spawn()?;
+    let mut fallback = Command::new("cmd.exe");
+    fallback.arg("/C").arg("start").arg("").arg("cmd.exe");
+    if let Some(cmd) = initial_cmd {
+        fallback.arg("/K").arg(cmd);
+    }
+    fallback.current_dir(cwd).spawn()?;
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn spawn_terminal_for_session(
-    session_id: &str,
-    cwd: &std::path::Path,
-) -> std::io::Result<()> {
+fn open_terminal(cwd: &std::path::Path, initial_cmd: Option<&str>) -> std::io::Result<()> {
     use std::process::Command;
     // AppleScript escaping: backslash + double-quotes.
     let cwd_esc = cwd.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
-    let id_esc = session_id.replace('\\', "\\\\").replace('"', "\\\"");
-    let script = format!(
-        "tell application \"Terminal\" to do script \"cd \\\"{cwd_esc}\\\" && claude --resume {id_esc}\""
-    );
+    let script = match initial_cmd {
+        Some(cmd) => {
+            let cmd_esc = cmd.replace('\\', "\\\\").replace('"', "\\\"");
+            format!(
+                "tell application \"Terminal\" to do script \"cd \\\"{cwd_esc}\\\" && {cmd_esc}\""
+            )
+        }
+        None => format!(
+            "tell application \"Terminal\" to do script \"cd \\\"{cwd_esc}\\\"\""
+        ),
+    };
     Command::new("osascript").arg("-e").arg(&script).spawn()?;
     // Bring Terminal.app forward.
     let _ = Command::new("osascript")
@@ -238,47 +191,37 @@ fn spawn_terminal_for_session(
 }
 
 #[cfg(target_os = "linux")]
-fn spawn_terminal_for_session(
-    session_id: &str,
-    cwd: &std::path::Path,
-) -> std::io::Result<()> {
+fn open_terminal(cwd: &std::path::Path, initial_cmd: Option<&str>) -> std::io::Result<()> {
     use std::process::Command;
     let cwd_str = cwd.to_string_lossy().to_string();
-    let candidates: &[(&str, &[&str])] = &[
-        ("gnome-terminal", &["--working-directory"]),
-        ("konsole", &["--workdir"]),
-        ("xfce4-terminal", &["--working-directory"]),
-        ("xterm", &[]),
-    ];
-    for (bin, dir_flag) in candidates {
+    let run = initial_cmd.map(|c| format!("{c}; exec bash"));
+    let candidates = ["gnome-terminal", "konsole", "xfce4-terminal", "xterm"];
+    for bin in candidates {
         let mut cmd = Command::new(bin);
         match bin {
-            &"gnome-terminal" => {
-                cmd.arg(format!("{}={}", dir_flag[0], cwd_str))
-                    .arg("--")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(format!("claude --resume {session_id}; exec bash"));
+            "gnome-terminal" => {
+                cmd.arg(format!("--working-directory={cwd_str}"));
+                if let Some(r) = &run {
+                    cmd.arg("--").arg("bash").arg("-c").arg(r);
+                }
             }
-            &"konsole" => {
-                cmd.arg(dir_flag[0])
-                    .arg(&cwd_str)
-                    .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(format!("claude --resume {session_id}; exec bash"));
+            "konsole" => {
+                cmd.arg("--workdir").arg(&cwd_str);
+                if let Some(r) = &run {
+                    cmd.arg("-e").arg("bash").arg("-c").arg(r);
+                }
             }
-            &"xfce4-terminal" => {
-                cmd.arg(format!("{}={}", dir_flag[0], cwd_str))
-                    .arg("-e")
-                    .arg(format!("bash -c 'claude --resume {session_id}; exec bash'"));
+            "xfce4-terminal" => {
+                cmd.arg(format!("--working-directory={cwd_str}"));
+                if let Some(r) = &run {
+                    cmd.arg("-e").arg(format!("bash -c '{r}'"));
+                }
             }
             _ => {
-                cmd.current_dir(cwd)
-                    .arg("-e")
-                    .arg("bash")
-                    .arg("-c")
-                    .arg(format!("claude --resume {session_id}; exec bash"));
+                cmd.current_dir(cwd);
+                if let Some(r) = &run {
+                    cmd.arg("-e").arg("bash").arg("-c").arg(r);
+                }
             }
         }
         if cmd.spawn().is_ok() {
