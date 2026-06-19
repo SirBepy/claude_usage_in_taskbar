@@ -1,0 +1,405 @@
+// Event dispatch for ChatRenderer (ai_todo 123). The per-event state machine
+// (handleChatEvent) + the history bulk replay (bulkLoadEvents), split out of
+// chat-renderer.ts. Free functions taking the renderer `r`, sharing its
+// instance state with chat-dom-renderer.ts; behavior is byte-identical to the
+// pre-split methods.
+
+import type { ChatEvent } from "../../types/ipc.generated";
+import { blocksToText } from "./content-blocks";
+import {
+  cleanUserBlocks,
+  isCompactUserMessage,
+  detectStatusToken,
+  isSilentSystemUserMessage,
+  isResumeContinuationUserMessage,
+  noiseAssistantLabel,
+  RenderedMessage,
+} from "./chat-transforms";
+import { parseFileEdit } from "./file-edits";
+import { canonicalTool } from "./tool-meta";
+import {
+  describeActivity,
+  flushRender,
+  scrollToBottom,
+  isNearBottom,
+  enqueueTurnClose,
+  ensureActiveTurnFooter,
+  activeTurnTsSpan,
+  beginRevealHold,
+  foldLeadingPartialTurn,
+  scrollToBottomWhenSettled,
+} from "./chat-dom-renderer";
+import type { ChatRenderer } from "./chat-renderer";
+
+export interface HandleEventOpts {
+  /** Skip DOM updates; caller will batch-render later via flushRender. */
+  silent?: boolean;
+  /** Skip auto-scroll-to-bottom. */
+  skipScroll?: boolean;
+}
+
+export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEventOpts = {}): void {
+  const ts = "timestamp" in ev ? Number((ev as { timestamp: bigint }).timestamp) : Date.now();
+  // Capture before mutating: if the user had scrolled up to read history, we
+  // preserve their position instead of yanking them to the bottom on a live
+  // update. Sending a user_message leaves them at the bottom anyway, so the
+  // gate naturally re-engages auto-scroll for their own messages.
+  const wasAtBottom = isNearBottom(r);
+  let touched = false;
+  switch (ev.type) {
+    case "session_started":
+      r.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
+      r.onMetaUpdate?.(r.getMeta());
+      r.messages.push({
+        kind: "system",
+        text: `Session started${ev.model ? ` (${ev.model})` : ""}`,
+        ts,
+      });
+      touched = true;
+      break;
+    case "user_message": {
+      // Only a message the USER actually sent (or a compaction) is a turn
+      // boundary. Real streams deliver every tool result as a user-role
+      // line whose blocks the parser drops (content empty) - rotating the
+      // turn for those split the footer per tool cycle ("tokens split up
+      // per answer"). Decide visibility FIRST, rotate after.
+      const isCompact = isCompactUserMessage(ev.content);
+      const cleaned = isCompact ? [] : cleanUserBlocks(ev.content);
+      if (!isCompact && cleaned.length === 0) break;
+      // Drop the resume system's "Continue from where you left off." turn - the
+      // user never typed it; the assistant's "Continuing chat" notice is the marker.
+      if (!isCompact && isResumeContinuationUserMessage(cleaned)) break;
+      // Silent system turns (e.g. rate-limit auto-continue) rotate the turn
+      // chip so usage is tracked but render no user bubble.
+      const isSilent = !isCompact && isSilentSystemUserMessage(cleaned);
+      enqueueTurnClose(r);
+      r.setActivity(null);
+      r.setTurnStatus(null);
+      // Open a new turn footer. The key is a sequence counter (unique even
+      // when tests freeze system time); the wall-clock start drives the
+      // live elapsed display.
+      r.activeTurnChipKey = ++r._chipKeySeq;
+      r.activeTurnStreamedText = "";
+      r.activeTurnStartedAtMs = Date.now();
+      r.activeTurnUsage = null;
+      r.activeTurnFirstTs = ts > 0 ? ts : 0;
+      r.activeTurnLastTs = r.activeTurnFirstTs;
+      if (isCompact) {
+        r.messages.push({ kind: "system", text: "Conversation compacted", ts });
+      } else if (isSilent) {
+        r.messages.push({ kind: "system", text: "Continuing session…", ts });
+      } else {
+        r.messages.push({ kind: "user", content: cleaned, ts });
+      }
+      r.activeTurnStart = r.messages.length;
+      touched = true;
+      break;
+    }
+    case "assistant_message": {
+      if (!ev.streaming) {
+        const msgText = blocksToText(ev.content).trim();
+        const noiseLabel = noiseAssistantLabel(msgText);
+        if (noiseLabel !== null) {
+          // Internal CLI messages become inline system notices.
+          // Finalize any in-progress streaming bubble first.
+          if (r.streamingIndex !== null) {
+            const existing = r.messages[r.streamingIndex] as RenderedMessage;
+            r.messages[r.streamingIndex] = { ...existing, streaming: false };
+            r.dirtyIndices.add(r.streamingIndex);
+            r.streamingIndex = null;
+          }
+          // When a "Continuing session…" marker was just emitted (rate-limit
+          // auto-continue silent user turn), the assistant "Continuing chat"
+          // fires immediately after for the same resume event. Suppress the
+          // duplicate so only one resume notice shows.
+          const prevMsg = r.messages[r.messages.length - 1];
+          if (prevMsg?.kind === "system" && prevMsg.text === "Continuing session…") break;
+          r.messages.push({ kind: "system", text: noiseLabel, ts, noiseLabel: true });
+          r.setTurnStatus(null);
+          touched = true;
+          break;
+        }
+      }
+      const msg: RenderedMessage = {
+        kind: "assistant",
+        content: ev.content,
+        streaming: ev.streaming,
+        ts,
+      };
+      if (ev.streaming) {
+        if (r.streamingIndex !== null) {
+          r.messages[r.streamingIndex] = msg;
+          r.dirtyIndices.add(r.streamingIndex);
+        } else {
+          r.streamingIndex = r.messages.length;
+          r.messages.push(msg);
+        }
+      } else {
+        if (r.streamingIndex !== null) {
+          r.messages[r.streamingIndex] = msg;
+          r.dirtyIndices.add(r.streamingIndex);
+          r.streamingIndex = null;
+        } else {
+          r.messages.push(msg);
+        }
+      }
+      if (!ev.streaming) {
+        const joined = blocksToText(ev.content);
+        r.setTurnStatus(detectStatusToken(joined));
+      }
+      // Update live token estimate from accumulated streamed assistant text
+      if (r.activeTurnChipKey !== null) {
+        const joined = blocksToText(ev.content);
+        r.activeTurnStreamedText = joined;
+        r.turnFooters.updateLiveTokenEstimate(r.activeTurnChipKey, joined);
+      }
+      touched = true;
+      break;
+    }
+    case "tool_use": {
+      // AUQ becomes a visual turn-splitter (question card) instead of a chip.
+      // Only top-level AUQ calls get the card treatment; nested subagent calls
+      // fall through to the normal chip path.
+      if (ev.tool_name === "AskUserQuestion" && !ev.parent_tool_use_id) {
+        enqueueTurnClose(r);
+        r.messages.push({
+          kind: "question",
+          tool: "AskUserQuestion",
+          input: ev.input,
+          id: ev.id,
+          ts,
+          parentToolUseId: null,
+        });
+        // Open a fresh sub-turn for post-question chips.
+        r.activeTurnChipKey = ++r._chipKeySeq;
+        r.activeTurnStart = r.messages.length;
+        r.activeTurnStreamedText = "";
+        r.activeTurnStartedAtMs = Date.now();
+        r.activeTurnUsage = null;
+        r.activeTurnFirstTs = ts > 0 ? ts : 0;
+        r.activeTurnLastTs = r.activeTurnFirstTs;
+        r.activityToolCanon = null;
+        r.setActivity("Waiting for your answer…");
+        touched = true;
+        break;
+      }
+      r.messages.push({
+        kind: "tool_use",
+        tool: ev.tool_name,
+        input: ev.input,
+        id: ev.id,
+        ts,
+        parentToolUseId: ev.parent_tool_use_id ?? null,
+      });
+      const view = parseFileEdit(ev.tool_name, ev.input);
+      if (view) {
+        r.fileEdits.push(view);
+        // Suppressed during history replay so the header badge doesn't count
+        // up; the final total is fired once when bulkLoadEvents finishes.
+        if (!r.hydrating) r.onFileEditsChanged?.(r.getFileEdits());
+      }
+      {
+        const t = r.tallyState.tallyToolUse(ev.tool_name, ev.input, ev.id);
+        if (t) r.onToolTally?.(t);
+      }
+      r.activityToolCanon = canonicalTool(ev.tool_name);
+      r.setActivity(describeActivity(ev.tool_name, ev.input));
+      touched = true;
+      break;
+    }
+    case "tool_result": {
+      // If this result is the answer to an AUQ question card, absorb it into
+      // the card (update its text and dirty-flag for re-render) instead of
+      // adding a raw tool_result row.
+      const qIdx = r.messages.findIndex(
+        (m) => m.kind === "question" && m.id === ev.tool_use_id,
+      );
+      if (qIdx >= 0) {
+        const ansText = ev.output?.type === "text" ? ev.output.text : "";
+        r.messages[qIdx] = { ...r.messages[qIdx]!, text: ansText };
+        r.dirtyIndices.add(qIdx);
+        r.onToolTally?.(r.tallyState.build());
+        touched = true;
+        break;
+      }
+      r.messages.push({
+        kind: "tool_result",
+        tool_use_id: ev.tool_use_id,
+        output: ev.output,
+        is_error: ev.is_error,
+        ts,
+      });
+      // The tally counts didn't change, but a result can complete a custom
+      // view (e.g. an AskUserQuestion answer): nudge the statusline so an open
+      // popover re-renders from the now-updated messages.
+      r.onToolTally?.(r.tallyState.build());
+      touched = true;
+      break;
+    }
+    case "notification":
+      r.messages.push({ kind: "notification", text: ev.body, ts: Date.now() });
+      touched = true;
+      break;
+    case "session_ended":
+      enqueueTurnClose(r);
+      r.messages.push({
+        kind: "system",
+        text: `Session ended${ev.exit_code !== null ? ` (exit ${ev.exit_code})` : ""}`,
+        ts,
+      });
+      touched = true;
+      break;
+    case "turn_usage": {
+      const totalCtx = Number(ev.input_tokens) + Number(ev.cache_creation_input_tokens) + Number(ev.cache_read_input_tokens);
+      console.debug("[ctx] turn_usage", { model: ev.model, input: Number(ev.input_tokens), cacheCreate: Number(ev.cache_creation_input_tokens), cacheRead: Number(ev.cache_read_input_tokens), output: Number(ev.output_tokens), totalCtx });
+      r.meta.inputTokens = totalCtx;
+      r.meta.totalCostUsd += ev.total_cost_usd;
+      r.meta.hasUsage = true;
+      if (ev.has_thinking) r.meta.hasThinking = true;
+      if (ev.model) r.meta.model = ev.model;
+      r._cumulative.input += Number(ev.input_tokens) || 0;
+      r._cumulative.output += Number(ev.output_tokens) || 0;
+      r._cumulative.cacheCreate += Number(ev.cache_creation_input_tokens) || 0;
+      r._cumulative.cacheRead += Number(ev.cache_read_input_tokens) || 0;
+      r._cumulative.costUsd += Number(ev.total_cost_usd) || 0;
+      r._cumulative.turns += 1;
+      r.onMetaUpdate?.(r.getMeta());
+      // A turn boundary is the next USER message, not this usage event - so we
+      // settle the turn (stop the shimmer) but keep it OPEN. Live emits one
+      // usage at turn end; history emits one per assistant line, and closing
+      // here would orphan the turn's remaining tool rows on reload (the "chips
+      // vanish when I reopen the chat" bug).
+      //
+      // Only the AUTHORITATIVE end-of-turn usage settles the working shimmer.
+      // An open chat runs the frontend transcript watcher alongside the runner
+      // stream; the watcher re-parses each assistant line (history mode) and
+      // emits a usage event per line with duration_ms 0, MID-TURN. Settling on
+      // those makes a live turn look done between assistant lines (gray border,
+      // no activity text, frozen tokens during a long tool call). The runner's
+      // real turn-end usage carries a non-zero duration_ms; bulk replay
+      // (opts.silent) is already-complete history, so settle as before.
+      if (opts.silent || Number(ev.duration_ms) > 0) {
+        r.activeTurnSettled = true;
+      }
+      // Accumulate the turn's COMBINED usage. History replays one usage
+      // event per assistant line: output/cache/cost sum, input is the
+      // latest (context size), duration keeps the max (only live's single
+      // result event carries a real one). The meta row freezes from these
+      // totals - at turn close for history, right here for live.
+      if (r.activeTurnChipKey !== null) {
+        const u = r.activeTurnUsage ?? {
+          durationMs: 0, outputTokens: 0, inputTokens: 0,
+          cacheCreate: 0, cacheRead: 0, costUsd: 0,
+        };
+        u.outputTokens += Number(ev.output_tokens) || 0;
+        u.inputTokens = Number(ev.input_tokens) || u.inputTokens;
+        u.cacheCreate += Number(ev.cache_creation_input_tokens) || 0;
+        u.cacheRead += Number(ev.cache_read_input_tokens) || 0;
+        u.costUsd += Number(ev.total_cost_usd) || 0;
+        u.durationMs = Math.max(u.durationMs, Number(ev.duration_ms) || 0);
+        r.activeTurnUsage = u;
+        // Live path: settle immediately so the row stops ticking the moment
+        // usage lands. Watched external sessions stream one usage per
+        // assistant line; each re-settle overwrites with the bigger sums.
+        if (!opts.silent) {
+          ensureActiveTurnFooter(r);
+          r.turnFooters.settleMetaRow(r.activeTurnChipKey, {
+            ...u,
+            durationMs: u.durationMs > 0 ? u.durationMs : activeTurnTsSpan(r),
+          });
+        }
+      }
+      if (!opts.silent) {
+        flushRender(r);
+      }
+      return;
+    }
+    default:
+      break;
+  }
+  if (!touched) return;
+  // Track the turn's timestamp span (history duration fallback). Live
+  // events carry timestamp 0 and never move these.
+  if (ts > 0 && r.activeTurnChipKey !== null) {
+    if (r.activeTurnFirstTs === 0) r.activeTurnFirstTs = ts;
+    if (ts > r.activeTurnLastTs) r.activeTurnLastTs = ts;
+  }
+  if (!opts.silent) {
+    flushRender(r);
+    if (!opts.skipScroll && wasAtBottom) scrollToBottom(r);
+  }
+}
+
+export async function bulkLoadEvents(r: ChatRenderer, events: ChatEvent[]): Promise<void> {
+  const myGen = ++r._bulkGen;
+  r.liveBuffer = [];
+  r.messages = [];
+  r.messageEls = [];
+  r.dirtyIndices.clear();
+  r.streamingIndex = null;
+  r.fileEdits = [];
+  r.lastActivity = null;
+  r.activityToolCanon = null;
+  r.activeToolGroups.clear();
+  r.activeTurnStart = null;
+  r.resetActiveTurnMeta();
+  r.turnFooters.clear();
+  r.closeTurnQueue = [];
+  r.paginator.resetTurnCarry();
+  r.tallyState.reset();
+  r.onFileEditsChanged?.([]);
+  r.onToolTally?.(r.tallyState.build());
+  r.onActivityUpdate?.(null);
+  r.container.innerHTML = "";
+  // Replay history with the per-event header/thinking-bar callbacks gated; the
+  // accumulated final state is fired once below (after the chunk loop).
+  r.hydrating = true;
+  // Hold the transcript hidden while it assembles. The build is visibly ugly
+  // - rows paint top-down, fold into chips, the view snaps to the bottom, and
+  // shiki recolors code - all in ~100ms. We reveal the finished frame in one
+  // fade once the settle pass has folded, pinned, and highlighted it.
+  beginRevealHold(r);
+  const CHUNK = 8;
+  for (let i = 0; i < events.length; i += CHUNK) {
+    if (r._bulkGen !== myGen) { r.liveBuffer = null; r.hydrating = false; return; }
+    for (let j = i; j < Math.min(i + CHUNK, events.length); j++) {
+      handleChatEvent(r, events[j]!, { silent: true, skipScroll: true });
+    }
+    flushRender(r);
+    if (i + CHUNK < events.length) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  if (r._bulkGen !== myGen) { r.liveBuffer = null; r.hydrating = false; return; }
+  // History replay is done: deliver the FINAL header badge + thinking-bar
+  // state in ONE shot (per-event updates were gated above so the badge didn't
+  // count up and the bar didn't flip through every past activity). A done turn
+  // leaves lastActivity null -> the bar clears; a still-busy turn shows its
+  // last activity, and buffered live events below take over from there.
+  r.hydrating = false;
+  r.onFileEditsChanged?.(r.getFileEdits());
+  r.onActivityUpdate?.(r.lastActivity);
+  // The final turn of the load never gets a closing user_message: settle its
+  // meta row from whatever usage accumulated (re-settleable if the session
+  // is live and more usage streams in after this).
+  if (r.activeTurnChipKey !== null && r.activeTurnUsage) {
+    const u = r.activeTurnUsage;
+    r.turnFooters.settleMetaRow(r.activeTurnChipKey, {
+      ...u,
+      durationMs: u.durationMs > 0 ? u.durationMs : activeTurnTsSpan(r),
+    });
+  }
+  foldLeadingPartialTurn(r);
+  scrollToBottom(r);
+  const buffered = r.liveBuffer;
+  r.liveBuffer = null;
+  for (const ev of buffered) {
+    handleChatEvent(r, ev);
+  }
+  // The scroll above runs before async content settles: shiki code
+  // highlighting and attachment/image hydration grow the transcript height
+  // AFTER it, so the newest turn's chips ended up cut off below the fold on
+  // open. Re-pin to the bottom once that settles. Generation-guarded so a
+  // newer load/attach started in the meantime never gets yanked.
+  void scrollToBottomWhenSettled(r, myGen);
+}
