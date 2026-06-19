@@ -90,10 +90,10 @@ export async function openModelEffortModal(
     function pickCharacter(excludeId: string | null): void {
       if (!pool || pool.length === 0) return;
 
-      // Live-taken: ids held by live sessions of THIS project
+      // Live-taken: ids held by any live session (global dedup)
       const liveTaken = new Set(
         state.sessions
-          .filter((s) => s.project_id === projectId && !s.ended_at && !(s as { end_reason?: unknown }).end_reason)
+          .filter((s) => !s.ended_at && !(s as { end_reason?: unknown }).end_reason)
           .map((s) => characterForSession(s))
           .filter((id): id is string => id !== null),
       );
@@ -115,7 +115,7 @@ export async function openModelEffortModal(
       const pane = overlay.querySelector<HTMLElement>(".me-char-pane");
       if (!pane) return;
 
-      if (projectId === null || (pool !== null && pool.length === 0)) {
+      if (pool !== null && pool.length === 0) {
         pane.innerHTML = `<div class="me-char-empty">No characters available</div>`;
         return;
       }
@@ -363,23 +363,18 @@ export async function openModelEffortModal(
     renderBody();
 
     // ── Load character pool in background ────────────────────────────────────
-    if (projectId !== null) {
-      api.resolveWhitelistCharacters(projectId)
-        .then((chars) => {
-          pool = chars;
-          if (pool.length > 0) {
-            pickCharacter(null); // initial pick (plays sound)
-          }
-          renderCharPane();
-        })
-        .catch(() => {
-          pool = []; // treat as unavailable
-          renderCharPane();
-        });
-    } else {
-      pool = [];
-      // no need to re-render; renderBody already emitted "No characters available" state
-    }
+    api.resolveWhitelistCharacters(projectId ?? "")
+      .then((chars) => {
+        pool = chars;
+        if (pool.length > 0) {
+          pickCharacter(null); // initial pick (plays sound)
+        }
+        renderCharPane();
+      })
+      .catch(() => {
+        pool = []; // treat as unavailable
+        renderCharPane();
+      });
 
     // ── Probe model availability in background ────────────────────────────────
     // Probe needs full ids (count_tokens rejects bare family aliases), so map

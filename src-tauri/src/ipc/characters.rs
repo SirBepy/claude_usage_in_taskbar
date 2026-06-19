@@ -199,13 +199,13 @@ pub fn ensure_session_character(
     let all = characters::list();
     let resolved = whitelist::resolve(&proj_wl, &s.default_character_whitelist, &all);
 
-    // Chars taken by OTHER live sessions in the same project.
+    // Chars taken by any OTHER live session (global dedup across all projects).
     let live_taken: HashSet<String> = state
         .cached_instances
         .lock()
         .unwrap()
         .iter()
-        .filter(|i| i.project_id == *project_id && i.session_id != session_id && i.end_reason.is_none())
+        .filter(|i| i.session_id != session_id && i.end_reason.is_none())
         .filter_map(|i| s.session_characters.get(&i.session_id).cloned())
         .collect();
 
