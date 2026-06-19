@@ -798,6 +798,7 @@
   margin-top: 6px;
   margin-bottom: 6px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 /* Per-subagent chip: descriptions can be long, so cap + ellipsize the label
