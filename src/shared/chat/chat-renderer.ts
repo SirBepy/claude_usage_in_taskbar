@@ -8,7 +8,7 @@ import { hydrateAttachments } from "./attachment-hydrator";
 import { parseFileEdit, type FileEditView } from "./file-edits";
 import { toolSummary, canonicalTool, type ToolTally } from "./tool-meta";
 import { ToolTallyState } from "./tool-tally-state";
-import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick } from "./chat-click-handlers";
+import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick, handleTableFullscreen } from "./chat-click-handlers";
 import { openFileViewer } from "./file-viewer";
 import { applyTurnCollapse, groupToolRange, clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { renderCustomToolView, renderQuestionCardHtml } from "./tool-views";
@@ -138,6 +138,7 @@ export class ChatRenderer {
     this.container.addEventListener("click", handleSlashClick);
     this.container.addEventListener("click", handleAttachmentClick);
     this.container.addEventListener("click", handlePastedLogClick);
+    this.container.addEventListener("click", handleTableFullscreen);
     this.container.addEventListener("click", this.handleToolChipClick);
     this.container.addEventListener("click", this.handleToolFileClick);
     this.paginator = new ChatPaginator(container, {

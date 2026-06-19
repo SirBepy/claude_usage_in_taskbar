@@ -3,6 +3,50 @@ import { openLightbox } from "./lightbox";
 import { chipToLightboxContent } from "./attachment-hydrator";
 import { showView } from "../navigation";
 
+let tableOverlay: HTMLDivElement | null = null;
+
+function closeTableOverlay(): void {
+  if (!tableOverlay) return;
+  tableOverlay.remove();
+  tableOverlay = null;
+  document.removeEventListener("keydown", onTableEsc);
+}
+
+function onTableEsc(e: KeyboardEvent): void {
+  if (e.key === "Escape") closeTableOverlay();
+}
+
+export function handleTableFullscreen(e: MouseEvent): void {
+  const btn = (e.target as Element).closest<HTMLButtonElement>(".table-fs-btn");
+  if (!btn) return;
+  const wrap = btn.closest<HTMLElement>(".table-wrap");
+  const table = wrap?.querySelector("table");
+  if (!table) return;
+
+  closeTableOverlay();
+
+  tableOverlay = document.createElement("div");
+  tableOverlay.className = "table-overlay";
+  tableOverlay.addEventListener("click", (ev) => {
+    if (ev.target === tableOverlay) closeTableOverlay();
+  });
+
+  const close = document.createElement("button");
+  close.className = "table-overlay-close";
+  close.setAttribute("aria-label", "Close");
+  close.innerHTML = '<i class="ph ph-x"></i>';
+  close.addEventListener("click", closeTableOverlay);
+
+  const inner = document.createElement("div");
+  inner.className = "table-overlay-inner";
+  inner.appendChild(table.cloneNode(true));
+
+  tableOverlay.appendChild(close);
+  tableOverlay.appendChild(inner);
+  document.body.appendChild(tableOverlay);
+  document.addEventListener("keydown", onTableEsc);
+}
+
 export function handlePastedLogClick(e: MouseEvent): void {
   const chip = (e.target as Element).closest<HTMLElement>(".pasted-log-chip");
   if (!chip) return;

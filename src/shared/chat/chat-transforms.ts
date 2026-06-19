@@ -12,6 +12,9 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: false,
 });
+// .md is the Moldova ccTLD — linkify-it treats "CLAUDE.md" as a bare URL.
+// Disable it so filenames never become links.
+md.linkify.tlds("md", false);
 
 // User messages: render single newlines as hard breaks so a multi-line message
 // the user typed (Shift+Enter) keeps its line breaks instead of collapsing into
@@ -23,6 +26,7 @@ const mdBreaks = new MarkdownIt({
   typographer: false,
   breaks: true,
 });
+mdBreaks.linkify.tlds("md", false);
 
 // Matches <file:PATH> or <file:PATH::DISPLAYNAME> tokens in user message text.
 // Group 1 = path, group 2 = display name (optional).
@@ -246,9 +250,17 @@ export function renderMessage(m: RenderedMessage): string {
   }
 }
 
+const TABLE_RE = /<table[\s\S]*?<\/table>/gi;
+
+function wrapTables(html: string): string {
+  return html.replace(TABLE_RE, (t) =>
+    `<div class="table-wrap"><button class="table-fs-btn" aria-label="Fullscreen table"><i class="ph ph-arrows-out"></i></button>${t}</div>`
+  );
+}
+
 function renderMarkdown(text: string, breaks = false): string {
   const inst = breaks ? mdBreaks : md;
-  return linkifyInlineCodeUrls(highlightSlashMentions(inst.render(text)), inst);
+  return wrapTables(linkifyInlineCodeUrls(highlightSlashMentions(inst.render(text)), inst));
 }
 
 // markdown-it linkifies bare URLs in normal text, but a URL the model wraps in
