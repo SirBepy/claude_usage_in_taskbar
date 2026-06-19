@@ -6,7 +6,9 @@
 //! ourselves by composing each type's `decl()` into a single output.
 
 use claude_usage_tauri_lib::context_status::ContextStatus;
-use claude_usage_tauri_lib::ipc::misc::{AiTodoEntry, GitInfo, TextFileData};
+use claude_usage_tauri_lib::ipc::ai_todos::AiTodoEntry;
+use claude_usage_tauri_lib::ipc::git::GitInfo;
+use claude_usage_tauri_lib::ipc::misc::TextFileData;
 use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
 use claude_usage_tauri_lib::skill_usage::types::{
