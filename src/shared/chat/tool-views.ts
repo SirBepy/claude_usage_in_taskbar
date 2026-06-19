@@ -97,13 +97,25 @@ function parseAnswers(text: string): Map<string, string> {
   const map = new Map<string, string>();
   const lines = text.split(/\r?\n/);
   let pendingQ: string | null = null;
+  let pendingA: string[] | null = null;
+  const flush = () => {
+    if (pendingQ !== null && pendingA !== null) {
+      map.set(pendingQ, pendingA.join("\n").trim());
+    }
+    pendingQ = null;
+    pendingA = null;
+  };
   for (const line of lines) {
-    if (line.startsWith("Q: ")) pendingQ = line.slice(3).trim();
-    else if (line.startsWith("A: ") && pendingQ !== null) {
-      map.set(pendingQ, line.slice(3).trim());
-      pendingQ = null;
+    if (line.startsWith("Q: ")) {
+      flush();
+      pendingQ = line.slice(3).trim();
+    } else if (line.startsWith("A: ") && pendingQ !== null) {
+      pendingA = [line.slice(3)];
+    } else if (pendingA !== null) {
+      pendingA.push(line);
     }
   }
+  flush();
   return map;
 }
 
