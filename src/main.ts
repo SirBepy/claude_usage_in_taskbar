@@ -38,6 +38,7 @@ import { renderAboutView } from "./views/settings/subviews/about/about";
 import { renderRemoteAccessView } from "./views/settings/subviews/remote-access/remote-access";
 import { initBoot } from "./shared/boot";
 import { ensureRemoteToken } from "./shared/remote-gate";
+import { isRemote } from "./shared/transport";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
 import { installPermissionModalListener, setSidebarRerenderHook, setSelectedSessionId } from "./views/sessions/permission-modal";
@@ -233,6 +234,11 @@ if (!ensureRemoteToken()) {
       closeSidemenu();
     };
   });
+
+  if (!isRemote()) {
+    const chatsNavItem = document.getElementById("sm-chats");
+    if (chatsNavItem) chatsNavItem.style.display = "none";
+  }
 
   // Static legacy back buttons still present in index.html.
   const graphBackBtn = document.getElementById("graphDetailBackBtn");
