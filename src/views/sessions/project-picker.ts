@@ -8,6 +8,13 @@ import { renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons } from "
 
 export type SortChoice = "name" | "recent" | "todos";
 export const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
+export const SHOW_TODOS_STORAGE_KEY = "claude_companion_sessions_modal_show_todos";
+
+const SORT_LABELS: Record<SortChoice, string> = {
+  name: "Name (A-Z)",
+  recent: "Most recent",
+  todos: "Most todos",
+};
 
 export function readStoredSort(): SortChoice {
   try {
@@ -19,6 +26,18 @@ export function readStoredSort(): SortChoice {
 
 export function writeStoredSort(choice: SortChoice): void {
   try { localStorage.setItem(SORT_STORAGE_KEY, choice); }
+  catch { /* ignore */ }
+}
+
+export function readShowTodos(): boolean {
+  try {
+    const v = localStorage.getItem(SHOW_TODOS_STORAGE_KEY);
+    return v !== "false";
+  } catch { return true; }
+}
+
+export function writeShowTodos(show: boolean): void {
+  try { localStorage.setItem(SHOW_TODOS_STORAGE_KEY, String(show)); }
   catch { /* ignore */ }
 }
 
@@ -68,6 +87,8 @@ export function openProjectPickerModal(
     };
 
     let sort: SortChoice = readStoredSort();
+    let showTodos: boolean = readShowTodos();
+    let optionsOpen = false;
     let filter = "";
     // Keyboard-navigable highlight. Always points at a row in the current
     // filtered/sorted `computeRows()` output. Reset to 0 whenever filter or
@@ -116,23 +137,30 @@ export function openProjectPickerModal(
         >
           <header class="modal-header">
             <h3>Pick project</h3>
-            <select
-              class="project-picker-sort"
-              .value=${sort}
-              @change=${(e: Event) => {
-                const v = (e.target as HTMLSelectElement).value;
-                if (v === "name" || v === "recent" || v === "todos") {
-                  sort = v;
-                  writeStoredSort(sort);
-                  selectedIdx = 0;
-                  renderModal();
-                }
-              }}
-            >
-              <option value="name">Name (A-Z)</option>
-              <option value="recent">Most recent</option>
-              <option value="todos">Most todos</option>
-            </select>
+            <div class="project-picker-options-wrap">
+              <button
+                class="project-picker-options-btn${optionsOpen ? " active" : ""}"
+                title="Sort &amp; display options"
+                @click=${(e: Event) => { e.stopPropagation(); optionsOpen = !optionsOpen; renderModal(); }}
+              ><i class="ph ph-sliders-horizontal"></i></button>
+              ${optionsOpen ? html`
+                <div class="project-picker-options-overlay" @click=${() => { optionsOpen = false; renderModal(); }}></div>
+                <div class="project-picker-options-panel">
+                  <div class="options-section-label">Sort</div>
+                  ${(["name", "recent", "todos"] as SortChoice[]).map(v => html`
+                    <label class="options-radio">
+                      <input type="radio" name="pp-sort" .checked=${sort === v} @change=${() => { sort = v; writeStoredSort(v); selectedIdx = 0; renderModal(); }}>
+                      ${SORT_LABELS[v]}
+                    </label>
+                  `)}
+                  <div class="options-divider"></div>
+                  <label class="options-toggle">
+                    <input type="checkbox" .checked=${showTodos} @change=${(e: Event) => { showTodos = (e.target as HTMLInputElement).checked; writeShowTodos(showTodos); renderModal(); }}>
+                    Show todos counter
+                  </label>
+                </div>
+              ` : ""}
+            </div>
           </header>
           <div class="modal-body project-picker-body">
             <input
@@ -219,7 +247,7 @@ export function openProjectPickerModal(
                           <span class="project-picker-path">${p.path}</span>
                           ${p.path_exists === false ? html`<span class="project-picker-missing-msg">This folder doesn't exist</span>` : ""}
                         </div>
-                        ${todoCount > 0 ? html`<span class="project-picker-todo-badge">${todoCount}</span>` : ""}
+                        ${showTodos && todoCount > 0 ? html`<span class="project-picker-todo-badge">${todoCount}</span>` : ""}
                       </li>
                     `;}
                   )}
