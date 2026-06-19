@@ -5,6 +5,7 @@ import { sessionEvents } from "../../shared/chat/event-store";
 import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { Composer } from "../../shared/chat/composer";
 import { HeldMessages } from "../../shared/chat/held-messages";
+import { setFileEditsProvider } from "../../shared/chat/file-viewer";
 import type { ChatEvent, ContentBlock, Instance } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import { getSettings } from "../../shared/state";
@@ -302,6 +303,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       panel.onUpdate(edits);
       header.setChangesBadge(dedupeByPath(edits).length);
     };
+    // Let the file viewer's Diff tab resolve this session's edits for any file.
+    setFileEditsProvider(() => renderer.getFileEdits());
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
     // Track Claude's self-reported turn status for this session so the sidebar
     // shows an amber "answer me" flag for questions and a calm icon otherwise.

@@ -261,6 +261,19 @@ pub async fn read_text_file(path: String) -> Result<TextFileData, String> {
     .map_err(|e| format!("read_text_file join error: {e}"))?
 }
 
+/// Overwrite a local text file from the in-app file editor (ai_todo 95 slice 3).
+/// The counterpart to `read_text_file`: writes any absolute path the agent
+/// surfaced (not sandboxed). The frontend only enables editing for files that
+/// were read whole (not truncated), so a save can never drop a capped tail.
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::write(&path, content).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("write_text_file join error: {e}"))?
+}
+
 #[tauri::command]
 pub fn piper_status() -> crate::notifications::piper::PiperStatus {
     crate::notifications::piper::status()

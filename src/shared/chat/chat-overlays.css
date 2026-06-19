@@ -212,6 +212,96 @@
   font-size: 0.8rem;
 }
 
+.file-viewer-ext:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* File / Diff tab bar (ai_todo 95 slices 2-3). Hidden when the session never
+   edited this file (only the read-only File view is shown). */
+.file-viewer-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px 0;
+  background: #252526;
+  flex: 0 0 auto;
+}
+
+.file-viewer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #9aa0a6;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.file-viewer-tab:hover {
+  color: #d4d4d4;
+}
+
+.file-viewer-tab--active {
+  color: #fff;
+  border-bottom-color: var(--color-primary);
+}
+
+.file-viewer-tab-diff {
+  display: inline-flex;
+  gap: 4px;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 0.74rem;
+}
+
+.file-viewer-diff {
+  display: block;
+}
+
+/* Inline editor (slice 3): fills the viewer body. */
+.file-viewer-edit {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 60vh;
+  box-sizing: border-box;
+  resize: none;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.file-viewer-edit:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* Stacked per-file diff (shared edit-window renderer). Lives here, not
+   sessions.css, so the file viewer's Diff tab is styled when opened from the
+   history window too (which imports only chat.css). The changes-panel sheet
+   in the sessions view still gets these via its chat.css import. */
+.stacked-diff-file { margin-bottom: 16px; }
+.stacked-diff-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--color-background);
+  border-radius: 4px 4px 0 0;
+  font-size: 12px;
+  font-family: "Fira Code", ui-monospace, monospace;
+}
+
 /* ── Edit window (inline tool-call preview) ──────────────────────────── */
 .edit-window {
   margin: 6px 0;
