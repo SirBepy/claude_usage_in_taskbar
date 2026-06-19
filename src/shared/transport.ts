@@ -107,10 +107,35 @@ export class RemoteUnavailableError extends Error {
  * tasks #2/#4; until then opening an EXISTING session + sending is the path.)
  */
 export class HttpTransport implements Transport {
+  // Session ids the daemon will NOT live-stream: external + automated sessions
+  // aren't in the daemon's hosted-session registry, so `GET /stream` 404s for
+  // them. Opening a WS there just 404-loops forever via the onclose backoff
+  // (their content loads via load_history_page instead). Populated from every
+  // list_instances result; "known non-streamable" semantics so a live session
+  // we haven't polled yet still opens its WS (no live-stream regression).
+  private nonStreamable = new Set<string>();
+
+  private noteStreamability(instances: unknown): void {
+    if (!Array.isArray(instances)) return;
+    for (const inst of instances) {
+      const rec = inst as { session_id?: unknown; kind?: unknown };
+      if (typeof rec.session_id !== "string") continue;
+      if (rec.kind === "external" || rec.kind === "automated") {
+        this.nonStreamable.add(rec.session_id);
+      } else {
+        // interactive (or took-over external -> interactive): it can stream now.
+        this.nonStreamable.delete(rec.session_id);
+      }
+    }
+  }
+
   async call<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
     switch (command) {
-      case "list_instances":
-        return this.rpc<T>("list_instances", null);
+      case "list_instances": {
+        const instances = await this.rpc<unknown>("list_instances", null);
+        this.noteStreamability(instances);
+        return instances as T;
+      }
       case "list_pending_prompts":
         return this.rpc<T>("list_pending_prompts", null);
       case "list_characters":
@@ -243,6 +268,13 @@ export class HttpTransport implements Transport {
       // the WS already carries the turn; global channels have no global WS yet,
       // task #5), or no browser WS/location in this environment (node tests).
       // A real browser always has both; degrade to no-op otherwise.
+      return () => {};
+    }
+    if (this.nonStreamable.has(id)) {
+      // A read-only / external session has no daemon broadcast; the WS would
+      // 404 and the onclose backoff would retry it forever (console-noisy,
+      // battery/network drain). Its transcript already loaded via
+      // load_history_page, so there is nothing live to attach to.
       return () => {};
     }
     const proto = location.protocol === "https:" ? "wss" : "ws";

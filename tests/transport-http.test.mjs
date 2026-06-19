@@ -213,6 +213,41 @@ describe("HttpTransport.listen", () => {
     expect(lastWs).toBeUndefined();
     expect(() => unlisten()).not.toThrow();
   });
+
+  it("skips the WS for external/automated (read-only) sessions, opens it for interactive", async () => {
+    const t = new HttpTransport();
+    // A list_instances result teaches the transport which sessions can't stream
+    // (external/automated aren't in the daemon's hosted registry -> /stream 404s).
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        { session_id: "live-1", kind: "interactive" },
+        { session_id: "ext-1", kind: "external" },
+        { session_id: "auto-1", kind: "automated" },
+      ],
+    });
+    await t.call("list_instances");
+
+    // External + automated: no WebSocket opened (would 404-loop forever).
+    const u1 = await t.listen("chat:ext-1", () => {});
+    expect(lastWs).toBeUndefined();
+    const u2 = await t.listen("chat:auto-1", () => {});
+    expect(lastWs).toBeUndefined();
+    expect(() => { u1(); u2(); }).not.toThrow();
+
+    // Interactive (daemon-hosted): WS opens as before.
+    const u3 = await t.listen("chat:live-1", () => {});
+    expect(lastWs).toBeDefined();
+    expect(lastWs.url).toContain("/api/sessions/live-1/stream");
+    u3();
+  });
+
+  it("opens the WS for a session never seen in a list (no false-skip / live regression)", async () => {
+    const unlisten = await new HttpTransport().listen("chat:unseen-9", () => {});
+    expect(lastWs).toBeDefined();
+    expect(lastWs.url).toContain("/api/sessions/unseen-9/stream");
+    unlisten();
+  });
 });
 
 describe("HttpTransport.listen — instances-changed poll", () => {
