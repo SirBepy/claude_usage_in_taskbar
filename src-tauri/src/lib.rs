@@ -263,6 +263,8 @@ pub fn run() {
             ipc::get_git_info,
             ipc::get_git_dirty,
             ipc::context_status,
+            ipc::count_ai_todos,
+            ipc::list_ai_todos,
             ipc::respond_permission,
             ipc::respond_question,
             ipc::list_news,

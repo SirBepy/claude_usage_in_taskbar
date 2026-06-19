@@ -6,13 +6,13 @@ import type { ProjectGroup } from "../../types/ipc.generated";
 import { openNewProjectModal, isNewProjectModalOpen } from "./new-project-modal";
 import { renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 
-export type SortChoice = "name" | "recent";
+export type SortChoice = "name" | "recent" | "todos";
 export const SORT_STORAGE_KEY = "claude_companion_sessions_modal_sort";
 
 export function readStoredSort(): SortChoice {
   try {
     const v = localStorage.getItem(SORT_STORAGE_KEY);
-    if (v === "name" || v === "recent") return v;
+    if (v === "name" || v === "recent" || v === "todos") return v;
   } catch { /* localStorage may throw in private mode; ignore */ }
   return "name";
 }
@@ -34,21 +34,28 @@ export async function pickProject(): Promise<{ path: string; name: string } | nu
     return null;
   }
 
-  // Fetch latest .jsonl mtime per project for the "Most recent" sort.
-  // Best-effort: failures fall back to 0 (sorts to bottom).
-  const mtimes = await Promise.all(
-    projects.map((p) =>
-      invoke<number>("project_last_activity_at", { cwd: p.path })
-        .catch(() => 0),
+  // Fetch latest .jsonl mtime per project for the "Most recent" sort and
+  // ai_todos counts for the "Most todos" sort. Both are best-effort.
+  const [mtimes, todoCounts] = await Promise.all([
+    Promise.all(
+      projects.map((p) =>
+        invoke<number>("project_last_activity_at", { cwd: p.path }).catch(() => 0),
+      ),
     ),
-  );
+    Promise.all(
+      projects.map((p) =>
+        invoke<number>("count_ai_todos", { cwd: p.path }).catch(() => 0),
+      ),
+    ),
+  ]);
 
-  return openProjectPickerModal(projects, mtimes);
+  return openProjectPickerModal(projects, mtimes, todoCounts);
 }
 
 export function openProjectPickerModal(
   projects: ProjectGroup[],
   mtimes: number[],
+  todoCounts: number[] = [],
 ): Promise<{ path: string; name: string } | null> {
   return new Promise((resolve) => {
     const host = ensureModalHost();
@@ -76,6 +83,14 @@ export function openProjectPickerModal(
       );
       if (sort === "name") {
         rows = rows.slice().sort((a, b) => a.name.localeCompare(b.name));
+      } else if (sort === "todos") {
+        rows = rows.slice().sort((a, b) => {
+          const ai = projects.indexOf(a);
+          const bi = projects.indexOf(b);
+          const ac = todoCounts[ai] ?? 0;
+          const bc = todoCounts[bi] ?? 0;
+          return bc - ac; // descending: most todos first
+        });
       } else {
         // "recent": use mtimes index lookup. Items with mtime=0 sort last.
         rows = rows.slice().sort((a, b) => {
@@ -106,7 +121,7 @@ export function openProjectPickerModal(
               .value=${sort}
               @change=${(e: Event) => {
                 const v = (e.target as HTMLSelectElement).value;
-                if (v === "name" || v === "recent") {
+                if (v === "name" || v === "recent" || v === "todos") {
                   sort = v;
                   writeStoredSort(sort);
                   selectedIdx = 0;
@@ -116,6 +131,7 @@ export function openProjectPickerModal(
             >
               <option value="name">Name (A-Z)</option>
               <option value="recent">Most recent</option>
+              <option value="todos">Most todos</option>
             </select>
           </header>
           <div class="modal-body project-picker-body">
@@ -182,7 +198,10 @@ export function openProjectPickerModal(
               ${rows.length === 0
                 ? html`<li class="project-picker-empty">No matches</li>`
                 : rows.map(
-                    (p, i) => html`
+                    (p, i) => {
+                      const pIdx = projects.indexOf(p);
+                      const todoCount = todoCounts[pIdx] ?? 0;
+                      return html`
                       <li
                         class="project-picker-row ${i === Math.min(selectedIdx, rows.length - 1) ? "selected" : ""} ${p.path_exists === false ? "project-picker-row--missing" : ""}"
                         data-row-idx=${i}
@@ -200,8 +219,9 @@ export function openProjectPickerModal(
                           <span class="project-picker-path">${p.path}</span>
                           ${p.path_exists === false ? html`<span class="project-picker-missing-msg">This folder doesn't exist</span>` : ""}
                         </div>
+                        ${todoCount > 0 ? html`<span class="project-picker-todo-badge">${todoCount}</span>` : ""}
                       </li>
-                    `,
+                    `;}
                   )}
             </ul>
           </div>

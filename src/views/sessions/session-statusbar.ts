@@ -4,7 +4,7 @@ import { type ToolTally } from "../../shared/chat/tool-meta";
 import { formatTokenCount } from "../../shared/chat/turn-chips";
 import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
-import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
+import type { AiTodoEntry, GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
 import { type ChipType, isToolChip, chipToolName } from "./statusline-catalog";
 import {
@@ -58,6 +58,9 @@ export class SessionStatusbar {
   // Uncommitted-file count for the `dirty` chip (via get_git_dirty IPC, cwd-based).
   private dirtyCount: number | null = null;
   private dirtyLoaded = false;
+  private aiTodoFiles: AiTodoEntry[] = [];
+  private aiTodosLoaded = false;
+  private aiTodosPopoverOpen = false;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
@@ -107,6 +110,7 @@ export class SessionStatusbar {
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
     if (this.hasChip("dirty")) void this.refreshDirty();
+    if (this.hasChip("ai_todos") && this.cwd) void this.refreshAiTodos();
   }
 
   private hasChip(type: string): boolean {
@@ -175,6 +179,26 @@ export class SessionStatusbar {
       this.dirtyLoaded = true;
       this.render();
     } catch { /* transient - keep last known */ }
+  }
+
+  private async refreshAiTodos(): Promise<void> {
+    const cwd = this.cwd;
+    if (!cwd) return;
+    try {
+      const files = await invoke<AiTodoEntry[]>("list_ai_todos", { cwd });
+      if (this.cwd !== cwd) return;
+      this.aiTodoFiles = files;
+      this.aiTodosLoaded = true;
+      this.render();
+    } catch { /* transient - keep last known */ }
+  }
+
+  private renderAiTodos(): string {
+    if (!this.cwd) return "";
+    if (!this.aiTodosLoaded) return this.skeletonChip("ai_todos", "sb-ai-todos", "ph-check-square", "55px");
+    const n = this.aiTodoFiles.length;
+    if (n === 0) return "";
+    return `<span class="sb-chip sb-ai-todos sb-ai-todos-btn${this.animClass("ai_todos")}" role="button" tabindex="0" title="${n} AI todo${n === 1 ? "" : "s"} in .for_bepy/ai_todos"><i class="ph ph-check-square"></i>${n} todo${n === 1 ? "" : "s"}</span>`;
   }
 
   updateMeta(meta: SessionMeta): void {
@@ -339,6 +363,7 @@ export class SessionStatusbar {
       case "cost": return this.renderCost();
       case "clock":
         return `<span class="sb-chip sb-clock${this.animClass("clock")}"><i class="ph ph-clock"></i><span class="sb-clock-text">${this.clockText()}</span></span>`;
+      case "ai_todos": return this.renderAiTodos();
       case "separator":
         return `<span class="sb-separator" aria-hidden="true"></span>`;
       case "flex_separator":
@@ -434,10 +459,20 @@ export class SessionStatusbar {
       </div>
     ` : "";
 
+    const aiTodosPopoverHtml = this.aiTodosPopoverOpen && this.aiTodoFiles.length > 0 ? `
+      <div class="sb-ai-todos-popover">
+        <div class="sb-ai-todos-popover-header">AI Todos (${this.aiTodoFiles.length})</div>
+        <div class="sb-ai-todos-popover-list">
+          ${this.aiTodoFiles.map((f) => `<div class="sb-ai-todos-popover-file" role="button" tabindex="0" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</div>`).join("")}
+        </div>
+      </div>
+    ` : "";
+
     this.container.innerHTML = `
       <div class="sb-rows">${rowsHtml || '<span class="sb-empty">No chips</span>'}</div>
       ${effortPopoverHtml}
       ${modelPopoverHtml}
+      ${aiTodosPopoverHtml}
     `;
 
     this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
@@ -500,6 +535,32 @@ export class SessionStatusbar {
         }
       };
       setTimeout(() => document.addEventListener("click", closeOnOutsideModel), 0);
+    }
+
+    this.container.querySelector<HTMLElement>(".sb-ai-todos-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.aiTodosPopoverOpen = !this.aiTodosPopoverOpen;
+      this.effortPopoverOpen = false;
+      this.modelPopoverOpen = false;
+      this.render();
+    });
+
+    this.container.querySelectorAll<HTMLElement>(".sb-ai-todos-popover-file").forEach((el) => {
+      el.addEventListener("click", () => {
+        const p = el.dataset.path;
+        if (p) void invoke<void>("open_in_editor", { path: p });
+      });
+    });
+
+    if (this.aiTodosPopoverOpen) {
+      const closeOnOutsideAiTodos = (e: MouseEvent) => {
+        if (!this.container.contains(e.target as Node)) {
+          this.aiTodosPopoverOpen = false;
+          this.render();
+          document.removeEventListener("click", closeOnOutsideAiTodos);
+        }
+      };
+      setTimeout(() => document.addEventListener("click", closeOnOutsideAiTodos), 0);
     }
   }
 }

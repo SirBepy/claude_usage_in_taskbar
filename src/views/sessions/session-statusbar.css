@@ -223,3 +223,50 @@
   color: var(--color-text-muted);
   line-height: 1.4;
 }
+
+.sb-chip.sb-ai-todos { color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
+.sb-chip.sb-ai-todos-btn { cursor: pointer; }
+.sb-chip.sb-ai-todos-btn:hover { background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.35); }
+
+.sb-ai-todos-popover {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 0;
+  min-width: 280px;
+  max-width: 420px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+}
+
+.sb-ai-todos-popover-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 2px 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sb-ai-todos-popover-file {
+  font-size: 0.75rem;
+  font-family: 'Fira Code', monospace;
+  color: var(--color-text);
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-ai-todos-popover-file:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fbbf24;
+}

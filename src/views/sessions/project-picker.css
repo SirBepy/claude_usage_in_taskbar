@@ -163,6 +163,18 @@
   font-style: italic;
   list-style: none;
 }
+.project-picker-todo-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  white-space: nowrap;
+}
 .project-picker-modal .modal-footer {
   padding: 10px 16px;
   border-top: 1px solid var(--color-border, #2e2e40);
