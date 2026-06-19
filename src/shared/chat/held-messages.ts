@@ -80,7 +80,7 @@ export class HeldMessages {
     this.clearDeferRetry();
     this.attached = opts;
     this.expanded = false;
-    this.renderChip();
+    opts.onChange();
   }
 
   /** Migrate a held set when a pending placeholder id becomes the real session
