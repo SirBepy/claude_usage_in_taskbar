@@ -8,6 +8,8 @@
 
 ### Manual QA (needs relaunch / live)
 
+- **PHONE, after the v0.1.103 auto-update + re-pair (commits 8ea2533 / 89ee237):** fixes "nothing works on my phone". (1) **Homescreen populates** - usage cards (5h/weekly) + statistics render from the daemon's companion.db (new get_history / get_token_history / get_active_sessions RPCs); shows what the desktop last scraped (the phone can't poll itself). (2) **Re-pair works again** - Settings > Remote access QR reproduces the live token even when the daemon (not the app) minted it (falls back to remote-access-token.txt). (3) **Stale token no longer fails silently** - a rotated token now hits a "Session expired" gate (re-scan the QR) instead of empty screens. Verify: homescreen shows history; then regenerate the token on desktop + reload the phone -> expired gate -> re-scan -> recovers.
+
 - After next build+relaunch, confirm ctx% chip fix (commit f79c534): open a New chat, send a message, wait for the response - the ctx% chip should appear in the statusbar WITHOUT needing to navigate away and back. Works via a 1.5s JSONL-flush retry and a 3s fast-response fallback in `setSessionId`.
 
 - After the next build+relaunch, confirm the AFK relay fix (ai_todo 100, commit 95db1c1): start an in-app chat that triggers a permission prompt OR an AskUserQuestion, then leave it unanswered for >6 minutes (past the old 320s cap). When you come back and answer, it should still go through - no "error sending request for url .../permissions/request" and no hung turn. The daemon already holds prompts for 1h; this just stops both relay clients (MCP relay + the AskUserQuestion curl hook) from giving up at 5.3 min first. Backend change - requires a daemon rebuild+relaunch to take effect.
