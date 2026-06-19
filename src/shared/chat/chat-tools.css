@@ -1,0 +1,392 @@
+/* Tool rows + inline tool chip strip, custom chip-panel views (Read / File
+ * Changes / Skills / Questions), AskUserQuestion inline rendering, and the
+ * per-turn footer chips. Split out of chat.css. */
+
+/* Collapsed, expandable tool rows (native <details>/<summary>). */
+.tool-row > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.tool-row > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-row-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  border-radius: 4px;
+}
+.tool-row-summary:hover {
+  background: var(--color-surface);
+}
+.tool-row-summary .ph {
+  flex: 0 0 auto;
+}
+.tool-row-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.tool-row-target {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+/* ── AskUserQuestion inline rendering ──────────────────────────────────────────── */
+
+.ask-user-question {
+  background: var(--color-surface-2, #1e1e1e);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.1));
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.ask-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary, #888);
+  margin-bottom: 10px;
+}
+
+.ask-question-block {
+  margin-bottom: 12px;
+}
+
+.ask-question-text {
+  font-size: 14px;
+  color: var(--color-text-primary, #e0e0e0);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.ask-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Inline tool chip strip (Read x4, Grep x5, ...) ─────────────────────── */
+
+.tool-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+  padding: 0 2px;
+}
+
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 100px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-family: inherit;
+  user-select: none;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.tool-chip:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-border) 60%, var(--color-surface-alt));
+}
+
+.tool-chip--active {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
+  border-color: var(--color-primary);
+}
+
+@keyframes tool-chip-flash {
+  0% { background: color-mix(in srgb, var(--color-primary) 30%, var(--color-surface)); }
+  100% { background: var(--color-surface-alt); }
+}
+.tool-chip--highlight {
+  animation: tool-chip-flash 0.6s ease-out forwards;
+}
+.tool-chip--active.tool-chip--highlight { animation: none; }
+
+/* "Currently working" chip: the tool whose call is in flight right now (a
+   tool_use with no result yet). Primary-color fill + a soft pulsing ring, held
+   for as long as the call runs. The flash animation is the one-shot bump; this
+   is the persistent state, so it wins. */
+@keyframes tool-chip-working {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 40%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 0%, transparent); }
+}
+.tool-chip--running,
+.tool-chip--running.tool-chip--highlight {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-primary) 24%, var(--color-surface));
+  border-color: var(--color-primary);
+  animation: tool-chip-working 1.4s ease-in-out infinite;
+}
+
+.tool-chip i { font-size: 0.85rem; }
+
+.tool-chip-label { font-weight: 600; }
+
+.tool-chip-count { opacity: 0.8; }
+
+.tool-strip-panel {
+  margin: 2px 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tool-strip-group .tool-row {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+  margin: 0;
+}
+
+.tool-strip-group .tool-row:last-child {
+  border-bottom: none;
+}
+
+/* File-edit cards folded into a chip bucket: drop the inline-chat margins so
+   they sit flush like the compact rows, separated by the same hairline. */
+.tool-strip-group .tool-use--file {
+  margin: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+.tool-strip-group .tool-use--file:last-child {
+  border-bottom: none;
+}
+.tool-strip-group .tool-use--file .edit-window {
+  margin: 0;
+}
+
+/* Nested drill-down strips (Subagent > per-subagent > tool-type). A faint
+   tinted band + padding visually separates each deeper control row. */
+.tool-strip-group .tool-strip {
+  padding: 5px 7px;
+  margin: 0;
+  background: color-mix(in srgb, var(--color-border) 16%, transparent);
+}
+.tool-strip-group .tool-strip-panel {
+  margin: 0 7px 7px;
+}
+
+/* Custom chip-panel views (Read / File Changes / Skills / Questions): clean
+   aggregated lists, not the generic stack of raw tool rows. */
+.tool-strip-group[data-custom-view] {
+  padding: 3px;
+}
+
+.tool-file-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+.tool-file-row:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+.tool-file-row > .ph {
+  font-size: 0.95rem;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+.tool-file-name {
+  font-weight: 600;
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+.tool-file-path {
+  flex: 1;
+  min-width: 0;
+  opacity: 0.55;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-file-count {
+  flex-shrink: 0;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+.tool-skill-row > .ph {
+  font-size: 0.95rem;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.tool-skill-name { font-weight: 600; }
+.tool-skill-row .tool-file-count { margin-left: auto; }
+
+.tool-qa {
+  padding: 7px 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+.tool-qa:last-child { border-bottom: none; }
+.tool-qa-header {
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+  margin-bottom: 2px;
+}
+.tool-qa-q {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+.tool-qa-a {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--color-text);
+}
+.tool-qa-a > .ph {
+  color: var(--color-primary);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.tool-qa-a--pending,
+.tool-qa-a--skipped,
+.tool-qa-a--timed-out {
+  opacity: 0.6;
+  font-style: italic;
+}
+.tool-qa-a--pending > .ph,
+.tool-qa-a--skipped > .ph,
+.tool-qa-a--timed-out > .ph { color: var(--color-text-muted); }
+
+/* AUQ question card: rendered as a centered first-class message that splits
+   the chip strips before/after the question. Reuses .tool-qa internals. */
+.msg.question-card {
+  align-self: center;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0;
+  max-width: 460px;
+  width: 90%;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Per-subagent chip: descriptions can be long, so cap + ellipsize the label
+   and lead with the robot icon so it reads as "a subagent", not a tool. */
+.tool-chip--agent .tool-chip-label {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Working messages: dimmed during active turn and inside open details. */
+.msg--working {
+  opacity: 0.55;
+}
+
+/* Read-only option labels (inline rendering; interaction is in the modal) */
+.ask-option-label {
+  display: inline-block;
+  background: var(--color-surface-3, #2a2a2a);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.15));
+  border-radius: 6px;
+  color: var(--color-text-secondary, #c0c0c0);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ── Per-turn footer: meta row (tokens + time) above the tool chip strip ── */
+
+/* Plain two-row block, no card chrome (user explicitly does not want a box):
+   row 1 = meta chips (tokens + time), row 2 = the clickable tool strip. */
+.turn-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 14px;
+}
+
+/* A turn with no usage and no tools leaves its footer empty - hide the box. */
+.turn-footer:empty {
+  display: none;
+}
+
+/* The footer's flex gap owns the spacing between its DIRECT rows (nested
+   subagent strips keep their own .tool-strip-group styling). */
+.turn-footer > .tool-strip {
+  margin: 0;
+  padding: 0;
+}
+
+.turn-footer > .tool-strip-panel {
+  margin: 0;
+}
+
+.turn-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.turn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 0.70rem;
+  font-family: inherit;
+  user-select: none;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.turn-chip i {
+  font-size: 0.80rem;
+  opacity: 0.75;
+}
+
+.turn-chip--hidden {
+  display: none;
+}
+
+/* Tooltip on hover for the chip row (full breakdown). */
+.turn-meta-chips[title]:hover {
+  cursor: help;
+}

@@ -1,0 +1,770 @@
+/* Chat message bubbles, markdown element styling, tables/table overlay, and
+ * the composer + attachments. Split out of chat.css. */
+
+/* Inline `/slash-command` mention coloring. Source kind comes from the shared
+ * slash registry; unknown names stay plain text. Future: clickable -> skills
+ * detail page. */
+.slash-mention {
+  font-family: var(--font-mono, ui-monospace, "Cascadia Code", Consolas, monospace);
+  font-size: 0.92em;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.slash-mention.slash-builtin {
+  color: #7cb6ff;
+  background: rgba(124, 182, 255, 0.10);
+  border-color: rgba(124, 182, 255, 0.25);
+}
+.slash-mention.slash-user-command,
+.slash-mention.slash-project-command {
+  color: #6ed6c8;
+  background: rgba(110, 214, 200, 0.10);
+  border-color: rgba(110, 214, 200, 0.25);
+}
+.slash-mention.slash-plugin-command {
+  color: #f0b67f;
+  background: rgba(240, 182, 127, 0.10);
+  border-color: rgba(240, 182, 127, 0.25);
+}
+.slash-mention.slash-user-skill,
+.slash-mention.slash-plugin-skill {
+  color: #c794f5;
+  background: rgba(199, 148, 245, 0.12);
+  border-color: rgba(199, 148, 245, 0.30);
+}
+.slash-mention[data-skill-target] {
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.slash-mention[data-skill-target]:hover {
+  color: #e4ccff;
+  background: rgba(199, 148, 245, 0.22);
+  border-color: rgba(199, 148, 245, 0.55);
+}
+
+/* Composer highlight-backdrop slash coloring. COLOR ONLY (no font/padding/border
+ * changes) so the backdrop stays glyph-aligned with the textarea. Mirrors the
+ * sent-message .slash-mention palette so the live preview matches the result. */
+.cm-slash-builtin { color: #7cb6ff; }
+.cm-slash-user-command,
+.cm-slash-project-command { color: #6ed6c8; }
+.cm-slash-plugin-command { color: #f0b67f; }
+.cm-slash-user-skill,
+.cm-slash-plugin-skill { color: #c794f5; }
+
+.msg {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  /* Long unbroken strings (file paths, hashes, no-space prose) must wrap so
+     the message bubble can't extend past the pane width. overflow-wrap is
+     better-behaved than word-break for natural-language text. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.msg.user {
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface-alt));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+  align-self: flex-end;
+  max-width: 85%;
+  margin-left: 32px;
+}
+
+/* Long user messages (pasted/typed walls) collapse to ~10 lines behind a
+   toggle. Content sits in an overflow-hidden body; the toggle is a sibling so
+   it stays visible. */
+.msg.user.has-clamp { display: flex; flex-direction: column; }
+.msg.user.has-clamp .msg-clamp-body {
+  max-height: 220px;
+  overflow: hidden;
+  position: relative;
+}
+.msg.user.has-clamp.expanded .msg-clamp-body { max-height: none; }
+.msg.user.has-clamp .msg-clamp-body::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46px;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--color-primary) 16%, var(--color-surface-alt)));
+  pointer-events: none;
+}
+.msg.user.has-clamp.expanded .msg-clamp-body::after { display: none; }
+.msg-clamp-toggle {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.msg-clamp-toggle:hover { text-decoration: underline; }
+
+/* Markdown lists default to padding-left: 40px which pushes long items past
+   the bubble's right edge. Trim the indent and let list-position render the
+   marker inside the padding box. */
+.msg ul,
+.msg ol {
+  padding-left: 22px;
+  margin: 6px 0;
+}
+
+.msg li {
+  margin: 2px 0;
+}
+
+.msg li > p {
+  margin: 0;
+}
+
+/* Markdown tables: horizontally scrollable, no word-wrap in cells. */
+.table-wrap {
+  position: relative;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.table-wrap:hover .table-fs-btn {
+  opacity: 1;
+}
+
+.table-fs-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  padding: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 1;
+}
+
+.table-fs-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.msg table {
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
+.msg th,
+.msg td {
+  padding: 5px 12px;
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.msg thead tr {
+  background: var(--color-surface-alt);
+  font-weight: 600;
+}
+
+.msg tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+/* Fullscreen table overlay */
+.table-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  padding: 56px 24px 24px;
+}
+
+.table-overlay-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  padding: 0;
+}
+
+.table-overlay-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.table-overlay-inner {
+  overflow: auto;
+  flex: 1;
+  border-radius: 6px;
+}
+
+.table-overlay-inner table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  width: max-content;
+  min-width: 100%;
+}
+
+.table-overlay-inner th,
+.table-overlay-inner td {
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: left;
+  color: #e0e0e0;
+}
+
+.table-overlay-inner thead tr {
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  color: #fff;
+}
+
+.table-overlay-inner tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.table-overlay-inner tbody tr:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Paragraph spacing inside chat bubbles — breathing room between paras while
+   trimming the trailing margin on the last one to keep bubble padding tight. */
+.msg p {
+  margin: 0 0 8px 0;
+}
+.msg p:last-child {
+  margin-bottom: 0;
+}
+
+/* Headings — scale them down from browser defaults so they fit a chat bubble. */
+.msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 {
+  margin: 10px 0 4px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.msg h1 { font-size: 1.15rem; }
+.msg h2 { font-size: 1.05rem; }
+.msg h3 { font-size: 0.96rem; }
+.msg h4, .msg h5, .msg h6 { font-size: 0.88rem; }
+
+/* Blockquote — left-bar style, muted text. */
+.msg blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.msg blockquote p { margin: 0; }
+
+/* Horizontal rule — subtle divider. */
+.msg hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 10px 0;
+}
+
+/* Inline code — background pill so it reads as code without the full block. */
+.msg :not(pre) > code {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 0.83em;
+}
+
+.msg.assistant {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  position: relative;
+  align-self: flex-start;
+  /* fit-content gives the bubble a definite width (= content size, capped by
+     max-width) so child percentage widths resolve and pre.shiki's overflow-x:
+     auto scrollbar fires instead of the pre spilling past the bubble edge. */
+  width: fit-content;
+  max-width: 92%;
+  margin-right: 32px;
+}
+
+.msg.assistant:hover .msg-copy-btn {
+  opacity: 1;
+}
+
+.msg.assistant.streaming::after {
+  content: " …";
+  color: var(--color-primary);
+}
+
+.msg.system {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  text-align: center;
+  background: transparent;
+  padding: 4px;
+}
+
+.msg.tool-use {
+  background: var(--color-surface-alt);
+  border-left: 3px solid var(--color-primary);
+  font-size: 0.82rem;
+}
+
+.msg.tool-use pre {
+  margin: 6px 0 0;
+  padding: 6px;
+  background: var(--color-background);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: "Fira Code", monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+
+.msg.tool-result {
+  background: var(--color-surface);
+  border-left: 3px solid var(--color-success);
+}
+
+.msg.tool-result.error {
+  border-left-color: var(--color-danger);
+}
+
+.msg.notification {
+  background: var(--color-surface-alt);
+  border-left: 3px solid var(--color-primary);
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.copyable-block {
+  position: relative;
+  margin: 6px 0;
+}
+
+/* Inline code copy — a <span> wrapper around <code> that shows a tiny copy
+   button on hover without breaking the surrounding paragraph flow. */
+.inline-code-wrap {
+  display: inline-block;
+  position: relative;
+}
+
+.inline-code-wrap .copy-btn {
+  top: 50%;
+  right: -24px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+}
+
+.inline-code-wrap .copy-btn i {
+  font-size: 10px;
+}
+
+.inline-code-wrap:hover .copy-btn {
+  opacity: 1;
+}
+
+.card-block {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  padding-right: 36px;
+}
+
+.card-block blockquote {
+  margin: 0;
+  padding: 0;
+  border-left: none;
+  color: var(--color-text);
+  font-style: normal;
+}
+
+.card-block blockquote p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.msg a {
+  color: var(--color-primary);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  padding-bottom: 1px;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  border-radius: 2px;
+}
+
+.msg a:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.msg a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  padding: 0;
+  z-index: 1;
+}
+
+.copyable-block:hover .copy-btn {
+  opacity: 1;
+}
+
+.copy-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.copy-btn.copied {
+  color: var(--color-success);
+}
+
+.copy-btn i {
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+}
+
+.block.code {
+  background: var(--color-background);
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: "Fira Code", monospace;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+/* Shiki-highlighted code blocks. The wrap div carries our background;
+ * the inner <pre class="shiki"> from shiki only contributes tokenized spans.
+ * Margin is on the .copyable-block parent; this div has none. */
+.block.code.shiki-wrap {
+  padding: 0;
+  overflow: hidden;
+  margin: 0;
+}
+
+.block.code.shiki-wrap pre.shiki {
+  margin: 0;
+  padding: 10px;
+  overflow-x: auto;
+  font-family: "Fira Code", monospace;
+  font-size: 0.82rem;
+}
+
+.block.image {
+  max-width: 100%;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+
+/* Sent-message attachment thumbnails (same look as composer preview, no X) */
+
+.sent-attachment-thumb {
+  display: inline-block;
+  position: relative;
+  width: 80px;
+  height: 80px;
+  cursor: pointer;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 2px 2px 0 0;
+  vertical-align: top;
+  flex-shrink: 0;
+}
+
+.sent-attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.sent-attachment-thumb:hover img {
+  border-color: var(--color-primary);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Composer */
+
+.composer-attachments {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.composer-attachments .attachment {
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.composer-attachments img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}
+
+.composer-attachments .rm {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-danger);
+  color: var(--color-background);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.15s, background 0.15s;
+}
+
+.composer-attachments .attachment:hover .rm {
+  transform: scale(1.15);
+  background: color-mix(in srgb, var(--color-danger) 80%, #fff 20%);
+}
+
+.composer-attachments .rm i {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.composer-row {
+  display: flex;
+  gap: 8px;
+}
+
+/* Input wrap holds the highlight backdrop + the transparent-text textarea on
+ * top of it, glyph-for-glyph aligned. The surface/rounding lives on the wrap
+ * so the textarea can be transparent and let the colored backdrop show. */
+.composer-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+.composer-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  pointer-events: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* MUST match .composer-textarea box + type metrics exactly. */
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  color: var(--color-text);
+  z-index: 0;
+}
+
+.composer-textarea {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  resize: none;
+  box-sizing: border-box;
+  max-height: 200px;
+  overflow-y: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  /* Must match .composer-highlight wrapping so the caret stays aligned. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Zero-width scrollbar: keeps overflow-y:auto functional for long content
+   without stealing layout width, which would make text wrap at a different
+   column than the highlight and misplace the caret. */
+.composer-textarea::-webkit-scrollbar {
+  width: 0;
+}
+
+.composer-textarea:focus {
+  outline: none;
+}
+
+.composer-textarea:focus-visible {
+  outline: 2px solid var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.composer-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-send {
+  align-self: flex-end;
+}
+
+/* Post-send attachment chips (inside user messages) */
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  cursor: default;
+  max-width: 280px;
+  margin: 4px 0;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.attachment-chip.previewable {
+  cursor: pointer;
+}
+
+.attachment-chip.previewable:hover {
+  border-color: var(--color-accent, #7b6eff);
+}
+
+.attachment-chip i {
+  font-size: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.attachment-chip span.chip-name {
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.attachment-chip img.chip-thumb {
+  width: 72px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* Composer file chip (non-image, before send) */
+
+.composer-attachments .attachment.file-chip {
+  width: auto;
+  height: auto;
+  min-width: 80px;
+  max-width: 160px;
+  padding: 6px 8px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.composer-attachments .attachment.file-chip span {
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.composer-attachments .attachment img {
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.composer-attachments .attachment img:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+/* Drag-over state */
+
+.composer-root.drag-over {
+  outline: 2px dashed var(--color-accent, #7b6eff);
+  outline-offset: 2px;
+}
