@@ -55,6 +55,12 @@ const PASTED_LOG_RE = /<pasted-log id="([^"]+)" name="([^"]*)">\n?([\s\S]*?)\n?<
 const STATUS_TOKEN_RE = /<cc-status:(?:done|question|waiting)>/gi;
 const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?|w(?:a(?:i(?:t(?:i(?:n(?:g)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
 
+// Autopilot marker emitted by the /autopilot skill to signal on/off state.
+// The app reads it to toggle the sidebar badge; it must never display in chat.
+const AUTOPILOT_TOKEN_RE = /<cc-autopilot:(?:on|off)>/gi;
+// Matches an incomplete trailing <cc-autopilot:... fragment so it never flashes.
+const AUTOPILOT_TAIL_RE = /<cc-autopilot(?::[^>]*)?\s*$/i;
+
 // Title marker injected alongside the status marker (see daemon/lifecycle.rs).
 // Claude emits `<cc-title:Some Title>` each turn; the title is read off the
 // transcript for the sidebar and must never display. TITLE_TOKEN_RE matches a
@@ -75,9 +81,11 @@ export function stripStatusToken(text: string): string {
     .replace(STATUS_TOKEN_RE, "")
     .replace(TITLE_TOKEN_RE, "")
     .replace(TITLE_XML_TOKEN_RE, "")
+    .replace(AUTOPILOT_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
     .replace(TITLE_XML_TAIL_RE, "")
+    .replace(AUTOPILOT_TAIL_RE, "")
     .replace(/\s+$/, "");
 }
 

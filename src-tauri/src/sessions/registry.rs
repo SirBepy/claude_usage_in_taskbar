@@ -66,6 +66,7 @@ impl Registry {
             model: String::new(),
             effort: String::new(),
             awaiting: None,
+            autopilot: false,
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
@@ -117,6 +118,7 @@ impl Registry {
             model: String::new(),
             effort: String::new(),
             awaiting: None,
+            autopilot: false,
         };
         guard.insert(session_id.to_string(), instance);
         project_id
@@ -158,6 +160,7 @@ impl Registry {
             model: String::new(),
             effort: String::new(),
             awaiting: None,
+            autopilot: false,
         };
         guard.insert(session_id.to_string(), instance);
     }
@@ -168,6 +171,15 @@ impl Registry {
         let mut guard = self.inner.lock().unwrap();
         if let Some(i) = guard.get_mut(session_id) {
             i.awaiting = awaiting;
+        }
+    }
+
+    /// Set the autopilot-active flag. `true` = /autopilot running; `false` = finished.
+    /// No-op if session is unknown.
+    pub fn set_autopilot(&self, session_id: &str, active: bool) {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            i.autopilot = active;
         }
     }
 

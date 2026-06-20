@@ -188,11 +188,12 @@ pub async fn spawn_session(
                         // A `result` line parses to TurnUsage and marks the turn
                         // complete: update awaiting status, clear busy, and
                         // broadcast the registry change.
-                        let turn_done_awaiting = if let ChatEvent::TurnUsage { ref awaiting, .. } = ev {
-                            Some(awaiting.clone())
-                        } else {
-                            None
-                        };
+                        let (turn_done_awaiting, turn_autopilot_changed) =
+                            if let ChatEvent::TurnUsage { ref awaiting, ref autopilot_changed, .. } = ev {
+                                (Some(awaiting.clone()), *autopilot_changed)
+                            } else {
+                                (None, None)
+                            };
                         if log::log_enabled!(log::Level::Debug) {
                             let variant = serde_json::to_value(&ev)
                                 .ok()
@@ -224,6 +225,9 @@ pub async fn spawn_session(
                             saw_stream_turn = false;
                             state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
                             state_for_pump.registry.set_busy(&pump_session.session_id, false);
+                            if let Some(active) = turn_autopilot_changed {
+                                state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
+                            }
                             state_for_pump.notifier.publish(
                                 "instances_changed",
                                 serde_json::json!({"instances": state_for_pump.registry.list()}),

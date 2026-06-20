@@ -76,6 +76,10 @@ pub enum ChatEvent {
         /// in the result text. `Some("question")` or `Some("done")`, or None if
         /// no marker was found.
         awaiting: Option<String>,
+        /// `<cc-autopilot:on>` / `<cc-autopilot:off>` marker detected in the
+        /// result text. `Some(true)` = autopilot started, `Some(false)` = finished.
+        /// `None` = no autopilot marker this turn.
+        autopilot_changed: Option<bool>,
     },
 }
 

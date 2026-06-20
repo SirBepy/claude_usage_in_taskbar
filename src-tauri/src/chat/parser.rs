@@ -140,6 +140,7 @@ impl ParserContext {
 
         let result_text = v.get("result").and_then(|s| s.as_str()).unwrap_or("");
         let awaiting = detect_awaiting(result_text);
+        let autopilot_changed = detect_autopilot(result_text);
 
         if !result_text.is_empty() {
             events.push(ChatEvent::AssistantMessage {
@@ -167,6 +168,7 @@ impl ParserContext {
             has_thinking: self.has_thinking,
             model: None,
             awaiting,
+            autopilot_changed,
         });
 
         Some(events)
@@ -187,6 +189,20 @@ fn detect_awaiting(text: &str) -> Option<String> {
     .filter_map(|(pos, label)| pos.map(|p| (p, label)))
     .max_by_key(|(p, _)| *p)
     .map(|(_, label)| label.to_string())
+}
+
+/// Returns `Some(true)` if the last autopilot marker in `text` is `<cc-autopilot:on>`,
+/// `Some(false)` if it is `<cc-autopilot:off>`, or `None` if no marker is present.
+fn detect_autopilot(text: &str) -> Option<bool> {
+    let lower = text.to_lowercase();
+    let on_pos = lower.rfind("<cc-autopilot:on>");
+    let off_pos = lower.rfind("<cc-autopilot:off>");
+    match (on_pos, off_pos) {
+        (None, None) => None,
+        (Some(_), None) => Some(true),
+        (None, Some(_)) => Some(false),
+        (Some(on), Some(off)) => Some(on > off),
+    }
 }
 
 /// Extracts the visible text from one stream-json line if it is a
@@ -357,6 +373,7 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                     has_thinking,
                     model,
                     awaiting: awaiting_from_content,
+                    autopilot_changed: None,
                 });
             }
 

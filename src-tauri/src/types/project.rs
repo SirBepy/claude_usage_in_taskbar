@@ -99,6 +99,10 @@ pub struct Instance {
     /// `None` until the first turn completes or after a new turn starts.
     #[serde(default)]
     pub awaiting: Option<String>,
+    /// True while /autopilot is active in this session. Set via `<cc-autopilot:on>`
+    /// marker, cleared by `<cc-autopilot:off>` or session end.
+    #[serde(default)]
+    pub autopilot: bool,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a

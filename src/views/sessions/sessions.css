@@ -222,6 +222,23 @@
   flex-shrink: 0;
 }
 
+.autopilot-badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent, #7c6af7);
+  background: color-mix(in srgb, var(--color-accent, #7c6af7) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent, #7c6af7) 35%, transparent);
+  border-radius: 3px;
+  vertical-align: middle;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+
 .session-row-subtitle {
   font-size: 0.72rem;
   color: var(--color-text-muted);
