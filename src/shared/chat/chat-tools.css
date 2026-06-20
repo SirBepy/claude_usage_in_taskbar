@@ -286,6 +286,8 @@
 .tool-qa-a--pending > .ph,
 .tool-qa-a--skipped > .ph,
 .tool-qa-a--timed-out > .ph { color: var(--color-text-muted); }
+.tool-qa-a--pending { cursor: pointer; }
+.tool-qa-a--pending:hover { opacity: 0.9; }
 
 /* AUQ question card: rendered as a centered first-class message that splits
    the chip strips before/after the question. Reuses .tool-qa internals. */

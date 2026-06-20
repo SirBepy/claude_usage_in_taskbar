@@ -8,12 +8,6 @@ use axum::{extract::State as AxState, http::StatusCode, response::IntoResponse, 
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Duration;
-
-/// How long a permission/question prompt waits for the user before giving up.
-/// Generous (1h) because the user is often AFK and answers later, sometimes
-/// from their phone. Until it fires the turn just blocks, harmlessly.
-const PROMPT_TIMEOUT_SECS: u64 = 3600;
 
 #[derive(Deserialize)]
 pub(super) struct PermRequestBody {
@@ -50,9 +44,9 @@ pub(super) async fn on_permission_request(
         "[perm-relay] published permission_request id={} tool={} session={:?} -> {} subscriber(s)",
         body.id, body.tool_name, body.session_id, subs
     );
-    let result = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
-        Ok(Ok(val)) => (StatusCode::OK, Json(val)),
-        _ => {
+    let result = match rx.await {
+        Ok(val) => (StatusCode::OK, Json(val)),
+        Err(_) => {
             ctx.state.pending.lock().await.remove(&body.id);
             (
                 StatusCode::OK,
@@ -88,9 +82,9 @@ pub(super) async fn on_question_request(
         "[perm-relay] published question_request id={} session={:?} -> {} subscriber(s)",
         body.id, body.session_id, subs
     );
-    let result = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
-        Ok(Ok(val)) => (StatusCode::OK, Json(val)),
-        _ => {
+    let result = match rx.await {
+        Ok(val) => (StatusCode::OK, Json(val)),
+        Err(_) => {
             ctx.state.pending.lock().await.remove(&body.id);
             (StatusCode::OK, Json(json!({"answers": {}})))
         }
@@ -154,25 +148,16 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     );
 
     // `answers`: an object (possibly empty) iff the user actually responded;
-    // Null iff the prompt timed out with no response. The distinction matters -
-    // format_answers tells the agent "no answer yet" on timeout vs "dismissed"
-    // on an empty Skip, so an AFK user isn't read as a refusal.
-    let mut timed_out = false;
-    let answers = match tokio::time::timeout(Duration::from_secs(PROMPT_TIMEOUT_SECS), rx).await {
-        Ok(Ok(val)) => val.get("answers").cloned().unwrap_or(Value::Null),
-        _ => {
+    // Null if the sender was dropped (daemon restart etc.). The distinction
+    // matters - format_answers tells the agent "no answer yet" vs "dismissed".
+    let answers = match rx.await {
+        Ok(val) => val.get("answers").cloned().unwrap_or(Value::Null),
+        Err(_) => {
             ctx.state.pending.lock().await.remove(&id);
-            timed_out = true;
             Value::Null
         }
     };
     ctx.state.remove_prompt(&id).await;
-    if timed_out {
-        // Tell the app to hide the now-dead card + notify the user it expired.
-        ctx.state
-            .notifier
-            .publish("question_expired", json!({ "id": id, "session_id": session_id }));
-    }
     deny_decision(&format_answers(&questions, &answers))
 }
 

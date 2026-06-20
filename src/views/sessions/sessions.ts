@@ -33,6 +33,11 @@ import {
   rerenderViewMenuProtocol,
   toggleViewMoreMenu,
 } from "./view-more-menu";
+import {
+  dismissQuestionCard,
+  getSelectedSessionId,
+  replayPendingPrompt,
+} from "./permission-modal";
 
 
 let _pane: HTMLElement | null = null;
@@ -190,6 +195,17 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
   _pane = pane;
   initThinkingBar(pane);
+
+  // Clicking a pending "awaiting answer" chip in the chat dismisses any active
+  // AUQ card and re-surfaces it. Handles the case where the modal somehow got
+  // closed without answering (navigated away and back, dismissed by mistake).
+  pane.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest(".tool-qa-a--pending")) return;
+    const sid = getSelectedSessionId();
+    if (!sid) return;
+    dismissQuestionCard();
+    replayPendingPrompt(sid);
+  });
 
   // Mount the global rate-limit banner (top of the Chats window) and wire its
   // auto-continue to re-send "continue" to each interrupted chat on reset.

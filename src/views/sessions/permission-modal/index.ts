@@ -35,11 +35,13 @@ export {
   isAutoAccept,
   setAutoAccept,
   setSelectedSessionId,
+  getSelectedSessionId,
   addBackgroundSession,
   removeBackgroundSession,
   clearPendingPrompt,
   pendingPromptSessionIds,
 } from "./gating";
+export { dismissQuestionCard } from "./question-ui";
 
 // Sidebar re-render is injected rather than statically imported: a direct
 // `import { renderSidebar } from "../sidebar"` would close a module cycle

@@ -32,6 +32,10 @@ export function setSelectedSessionId(id: string | null): void {
   _selectedSessionId = id;
 }
 
+export function getSelectedSessionId(): string | null {
+  return _selectedSessionId;
+}
+
 export function addBackgroundSession(id: string): void {
   _backgroundSessionIds.add(id);
 }
