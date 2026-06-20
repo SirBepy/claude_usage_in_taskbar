@@ -173,7 +173,8 @@ if (new URLSearchParams(window.location.search).get("chatswindow") === "1") {
 // stored. Complete NO-OP inside the Tauri webview (window.__TAURI__ present).
 // Halt boot when the gate rendered its form so no commands are sent without auth.
 const detachedSessionId = detachedSessionFromHash();
-if (!ensureRemoteToken()) {
+void (async () => {
+if (!await ensureRemoteToken()) {
   // Gate rendered - boot stops here. The form's submit handler reloads the page.
 } else if (detachedSessionId) {
   document.body.classList.add("detached-mode");
@@ -250,6 +251,7 @@ if (!ensureRemoteToken()) {
 
   setupNewsBadgeAndNotifications();
 }
+})();
 
 /**
  * Surface a session in the chats window. "live" selects the running session in

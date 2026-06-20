@@ -2,19 +2,22 @@
  * Token gate for the browser (phone) remote client.
  *
  * When the SPA is served from the daemon's remote-access server and the user
- * has not yet pasted their bearer token, every /api call 401s. This module
- * intercepts that situation at boot and renders a minimal full-screen form
- * prompting the user to enter the token. On submit the token is saved to
- * localStorage and the page reloads so the normal boot path runs with auth.
+ * has not yet paired their device, every /api call 401s. This module
+ * intercepts that situation at boot:
+ *
+ *  - If the URL carries ?pair=<code>  : calls /api/pair to exchange the one-time
+ *    code for a device token, stores it, strips the URL param, proceeds.
+ *  - If the URL carries ?token=<TOKEN>: legacy path - stores directly.
+ *  - If a token is already stored     : proceeds immediately.
+ *  - Otherwise                        : renders a minimal full-screen form with
+ *    both a manual-paste path and a camera-scan button.
  *
  * This is a complete NO-OP inside the Tauri webview (window.__TAURI__ present).
  */
 
 import { REMOTE_TOKEN_KEY, REMOTE_TOKEN_EXPIRED_KEY } from "./transport";
 
-/** True when the previous token was rejected (401) and cleared by the transport,
- *  so the gate explains "expired / changed" rather than a plain first pairing.
- *  Reads-and-clears the one-shot flag. */
+/** True when the previous token was rejected (401) and cleared by the transport. */
 function consumeExpiredFlag(): boolean {
   try {
     const expired = sessionStorage.getItem(REMOTE_TOKEN_EXPIRED_KEY) === "1";
@@ -25,179 +28,191 @@ function consumeExpiredFlag(): boolean {
   }
 }
 
-/**
- * Ensure a remote bearer token is present in localStorage when running in a
- * plain browser (phone). Returns `true` immediately (no-op) inside the Tauri
- * webview or when a token is already stored. Returns `false` after rendering
- * the gate form; the caller should halt further boot in that case.
- */
-export function ensureRemoteToken(): boolean {
-  // Never gate inside the Tauri webview.
-  if (typeof window !== "undefined" && window.__TAURI__) return true;
-
-  // QR-scan auto-pair: if the phone opened https://<host>/?token=<TOKEN> (from
-  // scanning the desktop's QR), capture the token into localStorage and strip it
-  // from the URL so it isn't left in the address bar / history. Runs before the
-  // token check below so a freshly-paired device passes the gate on first load.
-  captureRemoteTokenFromUrl();
-
-  // Check for an existing token.
-  let token = "";
+function stripUrlParam(param: string): void {
   try {
-    token = localStorage.getItem(REMOTE_TOKEN_KEY) ?? "";
-  } catch {
-    // localStorage unavailable (e.g. node test env without a stub) - safe to proceed.
-    return true;
-  }
-  if (token.trim()) return true;
+    const url = new URL(location.href);
+    if (!url.searchParams.has(param)) return;
+    url.searchParams.delete(param);
+    const clean = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "") + url.hash;
+    history.replaceState(null, "", clean);
+  } catch { /* ignore */ }
+}
 
-  // No token found - render the gate and halt boot.
-  renderTokenGate();
+function daemonOrigin(): string {
+  try { return new URL(location.href).origin; }
+  catch { return location.origin; }
+}
+
+async function exchangePairingCode(code: string): Promise<string> {
+  const res = await fetch(`${daemonOrigin()}/api/pair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pairing_code: code, device_name: "Phone" }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => String(res.status));
+    throw new Error(`Pairing failed (${res.status}): ${text}`);
+  }
+  const data = (await res.json()) as { token?: string };
+  if (!data.token) throw new Error("Daemon did not return a token");
+  return data.token;
+}
+
+async function capturePairingFromUrl(): Promise<boolean> {
+  if (typeof window === "undefined" || typeof location === "undefined") return false;
+
+  let params: URLSearchParams;
+  try { params = new URL(location.href).searchParams; }
+  catch { return false; }
+
+  const pairCode = params.get("pair")?.trim();
+  const legacyToken = params.get("token")?.trim();
+
+  if (pairCode) {
+    stripUrlParam("pair");
+    try {
+      const token = await exchangePairingCode(pairCode);
+      localStorage.setItem(REMOTE_TOKEN_KEY, token);
+      return true;
+    } catch (e) {
+      console.error("[remote-gate] pairing failed", e);
+      renderPairingError(e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }
+
+  if (legacyToken) {
+    stripUrlParam("token");
+    try { localStorage.setItem(REMOTE_TOKEN_KEY, legacyToken); return true; }
+    catch { return false; }
+  }
+
   return false;
 }
 
 /**
- * Capture a `token` query param into localStorage (under REMOTE_TOKEN_KEY) and
- * strip it from the URL via history.replaceState. Harmless no-op inside the
- * Tauri webview, in node/test environments (no window/location/URL), or when the
- * URL carries no token param.
+ * Ensure a remote bearer token is present when running in a plain browser
+ * (phone). Returns true when auth is ready; false when the gate was rendered
+ * (boot should halt - the gate's submit or scan handler reloads the page).
  */
-function captureRemoteTokenFromUrl(): void {
-  if (typeof window !== "undefined" && window.__TAURI__) return;
-  if (
-    typeof window === "undefined" ||
-    typeof location === "undefined" ||
-    typeof URL === "undefined"
-  ) {
-    return;
-  }
+export async function ensureRemoteToken(): Promise<boolean> {
+  if (typeof window !== "undefined" && window.__TAURI__) return true;
+
+  if (await capturePairingFromUrl()) return true;
 
   let token = "";
-  try {
-    token = new URL(location.href).searchParams.get("token")?.trim() ?? "";
-  } catch {
-    return;
-  }
-  if (!token) return;
+  try { token = localStorage.getItem(REMOTE_TOKEN_KEY) ?? ""; }
+  catch { return true; }
+  if (token.trim()) return true;
 
-  try {
-    localStorage.setItem(REMOTE_TOKEN_KEY, token);
-  } catch {
-    // localStorage unavailable - leave the param in place; the gate still runs.
-    return;
-  }
+  renderTokenGate();
+  return false;
+}
 
-  // Strip ?token=... (and any other params) so the secret isn't left visible.
-  try {
-    const url = new URL(location.href);
-    url.searchParams.delete("token");
-    const clean = url.pathname + (url.searchParams.toString() ? `?${url.searchParams}` : "") + url.hash;
-    history.replaceState(null, "", clean);
-  } catch {
-    // replaceState unsupported - acceptable; token is already stored.
-  }
+function renderPairingError(msg: string): void {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f1117;z-index:9999;font-family:system-ui,sans-serif";
+  const card = document.createElement("div");
+  card.style.cssText = "background:#1a1d27;border:1px solid #2e3148;border-radius:12px;padding:32px 28px;width:min(420px,90vw);box-shadow:0 8px 32px rgba(0,0,0,.6);color:#e0e1f0";
+  card.innerHTML = `<h2 style="margin:0 0 12px;font-size:1.1rem;color:#f87171">Pairing failed</h2><p style="margin:0 0 20px;font-size:.85rem;line-height:1.5;color:#8b8fa8">${msg}</p>`;
+  const btn = document.createElement("button");
+  btn.textContent = "Try again";
+  btn.style.cssText = "width:100%;padding:10px;background:#5865f2;color:#fff;border:none;border-radius:7px;font-size:.95rem;font-weight:600;cursor:pointer";
+  btn.onclick = () => window.location.reload();
+  card.appendChild(btn);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 function renderTokenGate(): void {
-  // Build a minimal full-screen dark overlay. Inline styles only so this works
-  // before any CSS bundle loads. The design matches the app's dark theme.
   const overlay = document.createElement("div");
   overlay.id = "rc-token-gate";
-  overlay.style.cssText = [
-    "position:fixed",
-    "inset:0",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-    "background:#0f1117",
-    "z-index:9999",
-    "font-family:system-ui,sans-serif",
-  ].join(";");
+  overlay.style.cssText = "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f1117;z-index:9999;font-family:system-ui,sans-serif";
 
   const card = document.createElement("div");
-  card.style.cssText = [
-    "background:#1a1d27",
-    "border:1px solid #2e3148",
-    "border-radius:12px",
-    "padding:32px 28px",
-    "width:min(420px,90vw)",
-    "box-shadow:0 8px 32px rgba(0,0,0,.6)",
-    "color:#e0e1f0",
-  ].join(";");
+  card.style.cssText = "background:#1a1d27;border:1px solid #2e3148;border-radius:12px;padding:32px 28px;width:min(420px,90vw);box-shadow:0 8px 32px rgba(0,0,0,.6);color:#e0e1f0;display:flex;flex-direction:column;gap:12px";
 
   const expired = consumeExpiredFlag();
 
   const heading = document.createElement("h2");
-  heading.textContent = expired ? "Session expired" : "Enter access token";
-  heading.style.cssText = "margin:0 0 8px;font-size:1.15rem;font-weight:600;color:#fff";
+  heading.textContent = expired ? "Session expired" : "Pair this device";
+  heading.style.cssText = "margin:0;font-size:1.15rem;font-weight:600;color:#fff";
 
   const hint = document.createElement("p");
   hint.textContent = expired
-    ? "Your access token was rejected (it changed or was regenerated on the desktop). Re-scan the QR in Settings > Remote access, or paste the new token from remote-access-token.txt."
-    : "Paste the token from remote-access-token.txt on your desktop to connect to your Claude companion.";
-  hint.style.cssText = "margin:0 0 20px;font-size:.85rem;line-height:1.5;color:#8b8fa8";
+    ? "Your access token was rejected. Re-scan the QR in Settings > Remote access on the desktop."
+    : "Scan the QR code shown in Settings > Remote access on the desktop, or paste your bearer token below.";
+  hint.style.cssText = "margin:0;font-size:.85rem;line-height:1.5;color:#8b8fa8";
+
+  const scanBtn = document.createElement("button");
+  scanBtn.textContent = "Scan QR code with camera";
+  scanBtn.type = "button";
+  scanBtn.style.cssText = "padding:10px;background:#5865f2;color:#fff;border:none;border-radius:7px;font-size:.95rem;font-weight:600;cursor:pointer";
+
+  const scanStatus = document.createElement("p");
+  scanStatus.style.cssText = "margin:0;font-size:.82rem;color:#f87171;display:none";
+
+  scanBtn.onclick = () => {
+    void (async () => {
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Opening camera…";
+      scanStatus.style.display = "none";
+      try {
+        const { scanQrCode } = await import("./qr-scanner");
+        const url = await scanQrCode();
+        const pairCode = new URL(url).searchParams.get("pair")?.trim();
+        if (!pairCode) throw new Error("QR did not contain a pairing code");
+        const token = await exchangePairingCode(pairCode);
+        localStorage.setItem(REMOTE_TOKEN_KEY, token);
+        window.location.reload();
+      } catch (e) {
+        if (e instanceof Error && e.message === "cancelled") {
+          scanBtn.disabled = false;
+          scanBtn.textContent = "Scan QR code with camera";
+          return;
+        }
+        scanStatus.textContent = e instanceof Error ? e.message : "Scan failed";
+        scanStatus.style.display = "block";
+        scanBtn.disabled = false;
+        scanBtn.textContent = "Scan QR code with camera";
+      }
+    })();
+  };
+
+  const divider = document.createElement("p");
+  divider.textContent = "— or paste token manually —";
+  divider.style.cssText = "margin:0;font-size:.78rem;text-align:center;color:#555770";
 
   const input = document.createElement("input");
   input.type = "password";
-  input.placeholder = "Paste token here";
+  input.placeholder = "Paste bearer token here";
   input.autocomplete = "off";
   input.spellcheck = false;
-  input.style.cssText = [
-    "width:100%",
-    "box-sizing:border-box",
-    "padding:10px 12px",
-    "background:#0f1117",
-    "border:1px solid #2e3148",
-    "border-radius:7px",
-    "color:#e0e1f0",
-    "font-size:.95rem",
-    "outline:none",
-    "margin-bottom:14px",
-  ].join(";");
+  input.style.cssText = "padding:10px 12px;background:#0f1117;border:1px solid #2e3148;border-radius:7px;color:#e0e1f0;font-size:.95rem;outline:none;width:100%;box-sizing:border-box";
 
   const error = document.createElement("p");
-  error.style.cssText =
-    "margin:0 0 10px;font-size:.82rem;color:#f87171;display:none";
+  error.style.cssText = "margin:0;font-size:.82rem;color:#f87171;display:none";
   error.textContent = "Token cannot be empty.";
 
-  const btn = document.createElement("button");
-  btn.textContent = "Connect";
-  btn.type = "button";
-  btn.style.cssText = [
-    "width:100%",
-    "padding:10px",
-    "background:#5865f2",
-    "color:#fff",
-    "border:none",
-    "border-radius:7px",
-    "font-size:.95rem",
-    "font-weight:600",
-    "cursor:pointer",
-  ].join(";");
+  const connectBtn = document.createElement("button");
+  connectBtn.textContent = "Connect";
+  connectBtn.type = "button";
+  connectBtn.style.cssText = "padding:10px;background:#3d4166;color:#fff;border:none;border-radius:7px;font-size:.95rem;font-weight:600;cursor:pointer";
 
-  btn.addEventListener("click", () => {
+  connectBtn.addEventListener("click", () => {
     const val = input.value.trim();
-    if (!val) {
-      error.style.display = "block";
-      return;
-    }
+    if (!val) { error.style.display = "block"; return; }
     error.style.display = "none";
-    try {
-      localStorage.setItem(REMOTE_TOKEN_KEY, val);
-    } catch {
-      // Ignore - if storage is broken the page reload will 401 and we'll gate again.
-    }
+    try { localStorage.setItem(REMOTE_TOKEN_KEY, val); } catch { /* ignore */ }
     window.location.reload();
   });
 
   input.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Enter") btn.click();
+    if (e.key === "Enter") connectBtn.click();
   });
 
-  card.append(heading, hint, input, error, btn);
+  card.append(heading, hint, scanBtn, scanStatus, divider, input, error, connectBtn);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
-
-  // Focus the input after a tick so any pending body renders don't steal it.
   setTimeout(() => input.focus(), 50);
 }
