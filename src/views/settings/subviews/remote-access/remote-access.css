@@ -73,3 +73,53 @@
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.8rem;
 }
+
+.ra-qr-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ra-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ra-device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--color-surface-alt, #1a1d27);
+  border-radius: 6px;
+}
+
+.ra-device-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ra-device-name {
+  font-size: .9rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.ra-device-date {
+  font-size: .78rem;
+  color: var(--color-text-muted);
+}
+
+.btn-danger-sm {
+  padding: 4px 10px;
+  font-size: .8rem;
+  background: transparent;
+  color: #f87171;
+  border: 1px solid #f87171;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.btn-danger-sm:hover { background: rgba(248,113,113,.12); }
+.btn-danger-sm:disabled { opacity: .5; cursor: default; }
