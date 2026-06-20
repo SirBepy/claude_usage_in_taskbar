@@ -13,6 +13,8 @@ import type { SuggestProvider } from "./caret-popup/types";
 import type { ChatRenderer } from "./chat-renderer";
 import { parseBuiltin, HANDLERS, type BuiltinContext } from "./builtins";
 import { highlightComposerInput } from "./chat-transforms";
+import { VoiceController, type VoiceState } from "./voice/controller";
+import "./voice/voice.css";
 import "./builtins/register";
 import "./caret-popup/popup.css";
 import { openLightbox } from "./lightbox";
@@ -79,6 +81,16 @@ export class Composer {
   // Wall-clock of the last keystroke; feeds isComposing() so an auto-flush
   // doesn't fire out from under the user mid-type.
   private lastKeyAt = 0;
+  // Voice dictation. `voiceCommitPos` is the textarea index where committed voice
+  // text ends and the volatile (still-revising) tail begins; `voiceVolatileLen`
+  // is that tail's current length. `voiceUsed` flags the composition for the
+  // <voice-input/> sentinel on send.
+  private voice: VoiceController | null = null;
+  private voiceState: VoiceState = "idle";
+  private voiceCommitPos = 0;
+  private voiceVolatileLen = 0;
+  private voiceUsed = false;
+  private micBtn: HTMLButtonElement | null = null;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -126,6 +138,8 @@ export class Composer {
 
   destroy(): void {
     document.removeEventListener("keydown", this._globalKeydown);
+    void this.voice?.destroy();
+    this.voice = null;
     this.popup?.destroy();
     this.popup = null;
     this.slash?.stop();
@@ -214,6 +228,9 @@ export class Composer {
           <div class="composer-highlight" aria-hidden="true"></div>
           <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
         </div>
+        <button class="composer-mic icon-btn" ${this.disabled ? "disabled" : ""} title="Voice dictation (tap to start/stop)">
+          <i class="ph ph-microphone"></i>
+        </button>
         <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
           <i class="ph ph-paper-plane-right"></i>
         </button>
@@ -223,6 +240,7 @@ export class Composer {
     this.highlightEl = this.root.querySelector<HTMLElement>(".composer-highlight");
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
+    this.micBtn = this.root.querySelector<HTMLButtonElement>(".composer-mic");
 
     // The popup div was inside root.innerHTML, so it's gone after the swap.
     // Rebuild it on every render and keep the provider's cache.
@@ -249,6 +267,8 @@ export class Composer {
         if (this.highlightEl && this.textarea) this.highlightEl.scrollTop = this.textarea.scrollTop;
       });
       this.sendBtn?.addEventListener("click", () => void this.send());
+      this.micBtn?.addEventListener("click", () => void this.toggleVoice());
+      this.applyVoiceButtonState();
       this.root.classList.add("composer-root");
       this.root.addEventListener("dragover", this.onDragOver);
       this.root.addEventListener("dragleave", this.onDragLeave);
@@ -269,8 +289,104 @@ export class Composer {
   // transparent-text textarea, and keep it scroll-aligned.
   private updateHighlight(): void {
     if (!this.highlightEl || !this.textarea) return;
-    this.highlightEl.innerHTML = highlightComposerInput(this.textarea.value);
+    const val = this.textarea.value;
+    // While recording, paint the volatile (still-revising) voice tail faintly so
+    // it reads as "live, not yet committed". Committed voice text renders normally.
+    if (this.voiceState === "recording" && this.voiceVolatileLen > 0) {
+      const a = val.slice(0, this.voiceCommitPos);
+      const vol = val.slice(this.voiceCommitPos, this.voiceCommitPos + this.voiceVolatileLen);
+      const b = val.slice(this.voiceCommitPos + this.voiceVolatileLen);
+      this.highlightEl.innerHTML =
+        highlightComposerInput(a) +
+        `<span class="voice-volatile">${highlightComposerInput(vol)}</span>` +
+        highlightComposerInput(b);
+    } else {
+      this.highlightEl.innerHTML = highlightComposerInput(val);
+    }
     this.highlightEl.scrollTop = this.textarea.scrollTop;
+  }
+
+  // ── Voice dictation ─────────────────────────────────────────────────────────
+
+  private async toggleVoice(): Promise<void> {
+    if (this.disabled) return;
+    if (!this.voice) {
+      this.voice = new VoiceController({
+        onPartial: (t) => this.onVoicePartial(t),
+        onFinal: (t) => this.onVoiceFinal(t),
+        onError: (m) => this.onVoiceError(m),
+        onStateChange: (s) => this.onVoiceStateChange(s),
+      });
+    }
+    if (this.voice.isRecording) {
+      await this.voice.stop();
+      return;
+    }
+    // Anchor voice insertion at the current caret; new words land here.
+    this.textarea?.focus();
+    const pos = this.textarea?.selectionStart ?? this.textarea?.value.length ?? 0;
+    this.voiceCommitPos = pos;
+    this.voiceVolatileLen = 0;
+    await this.voice.start();
+  }
+
+  private applyVoiceButtonState(): void {
+    if (!this.micBtn) return;
+    this.micBtn.classList.toggle("recording", this.voiceState === "recording");
+    this.micBtn.classList.toggle("connecting", this.voiceState === "connecting");
+  }
+
+  private onVoiceStateChange(s: VoiceState): void {
+    this.voiceState = s;
+    if (s === "idle" || s === "error") {
+      // Drop any residual volatile tail that was never finalized.
+      if (this.voiceVolatileLen > 0 && this.textarea) {
+        const v = this.textarea.value;
+        this.textarea.value =
+          v.slice(0, this.voiceCommitPos) + v.slice(this.voiceCommitPos + this.voiceVolatileLen);
+        this.voiceVolatileLen = 0;
+        this.autoResize();
+        this.persistDraft();
+      }
+    }
+    this.applyVoiceButtonState();
+    this.updateHighlight();
+  }
+
+  private onVoicePartial(text: string): void {
+    if (!this.textarea) return;
+    const v = this.textarea.value;
+    this.textarea.value =
+      v.slice(0, this.voiceCommitPos) + text + v.slice(this.voiceCommitPos + this.voiceVolatileLen);
+    this.voiceVolatileLen = text.length;
+    const caret = this.voiceCommitPos + this.voiceVolatileLen;
+    this.textarea.selectionStart = this.textarea.selectionEnd = caret;
+    this.voiceUsed = true;
+    this.afterVoiceEdit();
+  }
+
+  private onVoiceFinal(text: string): void {
+    if (!this.textarea || !text) return;
+    // Commit text BEFORE the volatile tail; it becomes permanent, editable text.
+    const v = this.textarea.value;
+    this.textarea.value = v.slice(0, this.voiceCommitPos) + text + v.slice(this.voiceCommitPos);
+    this.voiceCommitPos += text.length;
+    const caret = this.voiceCommitPos + this.voiceVolatileLen;
+    this.textarea.selectionStart = this.textarea.selectionEnd = caret;
+    this.voiceUsed = true;
+    this.afterVoiceEdit();
+  }
+
+  private onVoiceError(message: string): void {
+    console.warn("[voice]", message);
+    if (this.micBtn) this.micBtn.title = `Voice error: ${message}`;
+  }
+
+  private afterVoiceEdit(): void {
+    this.autoResize();
+    this.updateHighlight();
+    this.persistDraft();
+    this.opts.onDraftActivity?.();
   }
 
   private async onKey(e: KeyboardEvent): Promise<void> {
@@ -521,6 +637,11 @@ export class Composer {
       const wrapped = `<pasted-log id="${nonce}" name="${b.name}">\n${b.text}\n</pasted-log:${nonce}>`;
       fullText += (fullText ? "\n\n" : "") + wrapped;
     }
+    // Mark voice-dictated messages so the model reads them charitably (homophones,
+    // transcription noise); the renderer collapses this into a mic chip.
+    if (this.voiceUsed) {
+      fullText += (fullText ? "\n" : "") + "<voice-input/>";
+    }
     const blocks: ContentBlock[] = [];
     if (fullText) blocks.push({ type: "text", text: fullText });
     for (const a of this.attachments) {
@@ -544,6 +665,12 @@ export class Composer {
     this.updateHighlight();
     this.attachments = [];
     this.pastedBlocks = [];
+    // Reset voice state; stop an in-flight recording so a send mid-dictation
+    // doesn't leave the controller running against stale anchor positions.
+    this.voiceUsed = false;
+    this.voiceCommitPos = 0;
+    this.voiceVolatileLen = 0;
+    if (this.voice?.isRecording) void this.voice.stop();
     this.renderAttachments();
     this.persistDraft();
     this.persistAttachments();

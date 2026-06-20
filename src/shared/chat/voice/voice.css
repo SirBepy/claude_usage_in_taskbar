@@ -1,0 +1,36 @@
+/* Voice dictation: mic button states + volatile-tail styling. */
+
+.composer-mic.recording {
+  color: #ef4444;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+.composer-mic.connecting {
+  opacity: 0.6;
+  animation: voice-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.65; }
+}
+
+@keyframes voice-blink {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.8; }
+}
+
+/* The still-revising voice tail in the composer highlight backdrop: faint, so it
+   reads as "live, not yet locked in". Committed voice text renders normally. */
+.composer-highlight .voice-volatile {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* The mic chip shown on a sent voice-dictated message bubble. */
+.voice-input-chip {
+  opacity: 0.85;
+}
+.voice-input-chip .ph-microphone {
+  color: #ef4444;
+}

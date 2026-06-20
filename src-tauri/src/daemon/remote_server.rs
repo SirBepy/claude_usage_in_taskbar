@@ -63,6 +63,7 @@ struct RemoteCtx {
     state: Arc<DaemonState>,
     app_data: PathBuf,
     router: crate::daemon::rpc::Router,
+    stt: Arc<crate::daemon::stt::SttSupervisor>,
 }
 
 /// Daemon RPC methods the remote client may invoke via `POST /api/rpc`. This is
@@ -100,8 +101,17 @@ const SAFE_METHODS: &[&str] = &[
 
 /// Start the remote-access server. Best-effort: a bind failure disables remote
 /// access for this run but never takes down the daemon. Call once at startup.
-pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf, router: crate::daemon::rpc::Router) {
+///
+/// Returns the STT sidecar supervisor so the daemon main loop can drive its
+/// idle-shutdown tick and kill it on graceful exit.
+pub fn spawn(
+    state: Arc<DaemonState>,
+    app_data: PathBuf,
+    router: crate::daemon::rpc::Router,
+) -> Arc<crate::daemon::stt::SttSupervisor> {
     ensure_token(&app_data);
+    let stt = crate::daemon::stt::SttSupervisor::new(app_data.clone());
+    let stt_for_task = stt.clone();
     tokio::spawn(async move {
         let listener = match TcpListener::bind(("127.0.0.1", REMOTE_PORT)).await {
             Ok(l) => l,
@@ -118,7 +128,7 @@ pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf, router: crate::daemon::
         // request hangs with no response - the port-hostage incident, here for
         // the remote port. Mirrors the hook listener's protection.
         crate::util::process::mark_listener_non_inheritable(&listener);
-        let ctx = Arc::new(RemoteCtx { state, app_data, router });
+        let ctx = Arc::new(RemoteCtx { state, app_data, router, stt: stt_for_task });
         let app = build_router(ctx);
         log::info!(
             "remote-access server listening on 127.0.0.1:{REMOTE_PORT} (expose with `tailscale serve --bg --https=443 http://127.0.0.1:{REMOTE_PORT}`)"
@@ -127,6 +137,7 @@ pub fn spawn(state: Arc<DaemonState>, app_data: PathBuf, router: crate::daemon::
             log::error!("remote-access server exited: {e}");
         }
     });
+    stt
 }
 
 fn build_router(ctx: Arc<RemoteCtx>) -> Router {
@@ -147,7 +158,8 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
     // WS route above are never shadowed by it.
     let public = Router::new()
         .route("/api/health", get(|| async { "ok" }))
-        .route("/api/sessions/:id/stream", get(stream_ws));
+        .route("/api/sessions/:id/stream", get(stream_ws))
+        .route("/ws/transcribe", get(transcribe_ws));
 
     protected
         .merge(public)
@@ -392,6 +404,89 @@ async fn pump_events(mut socket: WebSocket, session: Arc<Session>) {
             },
         }
     }
+}
+
+/// Authed entry to the voice transcription pipe. Self-authenticates via the
+/// `?token=` query (browsers cannot set the Authorization header on a WS
+/// handshake) exactly like `stream_ws`, ensures the Python STT sidecar is
+/// running, then upgrades and dumb-relays frames browser<->sidecar.
+async fn transcribe_ws(
+    State(ctx): State<Arc<RemoteCtx>>,
+    Query(q): Query<StreamQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if !token_is_valid(&q.token, &ctx.app_data) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if let Err(e) = ctx.stt.ensure_running().await {
+        log::error!("stt ensure_running: {e}");
+        return (StatusCode::SERVICE_UNAVAILABLE, "voice engine unavailable").into_response();
+    }
+    let stt = ctx.stt.clone();
+    ws.on_upgrade(move |socket| relay_transcribe(socket, stt))
+}
+
+/// Dumb bidirectional relay between the browser axum WebSocket and a
+/// tokio-tungstenite client WS to the localhost STT sidecar. Binary PCM goes
+/// up; JSON transcript frames come down. Closes when either side closes.
+async fn relay_transcribe(
+    browser: WebSocket,
+    stt: Arc<crate::daemon::stt::SttSupervisor>,
+) {
+    use axum::extract::ws::Message as AxMsg;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message as TgMsg;
+
+    stt.on_connect();
+    // Brief retry so the freshly-spawned sidecar has time to bind its socket.
+    let url = format!("ws://127.0.0.1:{}", crate::daemon::stt::SIDECAR_PORT);
+    let mut sidecar = None;
+    for _ in 0..50 {
+        if let Ok((s, _)) = tokio_tungstenite::connect_async(&url).await {
+            sidecar = Some(s);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let Some(sidecar) = sidecar else {
+        let _ = browser;
+        stt.on_disconnect().await;
+        return;
+    };
+
+    let (mut b_tx, mut b_rx) = browser.split();
+    let (mut s_tx, mut s_rx) = sidecar.split();
+
+    // browser -> sidecar (binary PCM + text control)
+    let up = async {
+        while let Some(Ok(msg)) = b_rx.next().await {
+            let out = match msg {
+                AxMsg::Binary(b) => TgMsg::Binary(b),
+                AxMsg::Text(t) => TgMsg::Text(t),
+                AxMsg::Close(_) => break,
+                _ => continue,
+            };
+            if s_tx.send(out).await.is_err() {
+                break;
+            }
+        }
+    };
+    // sidecar -> browser (JSON results)
+    let down = async {
+        while let Some(Ok(msg)) = s_rx.next().await {
+            let out = match msg {
+                TgMsg::Text(t) => AxMsg::Text(t),
+                TgMsg::Binary(b) => AxMsg::Binary(b),
+                TgMsg::Close(_) => break,
+                _ => continue,
+            };
+            if b_tx.send(out).await.is_err() {
+                break;
+            }
+        }
+    };
+    tokio::select! { _ = up => {}, _ = down => {} }
+    stt.on_disconnect().await;
 }
 
 #[cfg(test)]

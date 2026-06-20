@@ -42,6 +42,11 @@ const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
 // Groups: [1]=nonce, [2]=name (new) | [3]=body (new) | [4]=name (legacy) | [5]=body (legacy)
 const PASTED_LOG_RE = /<pasted-log id="([^"]+)" name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log:\1>|<pasted-log name="([^"]*)">\n?([\s\S]*?)\n?<\/pasted-log>/g;
 
+// Sentinel the composer appends when a message was dictated by voice. It carries
+// no content; the renderer strips it and prepends a small mic chip so the user
+// sees "this was voice" without raw markup (the model still receives the tag).
+const VOICE_INPUT_RE = /<voice-input\s*\/>/g;
+
 // Turn-status marker injected via `--append-system-prompt` (see
 // daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>`,
 // `<cc-status:question>`, or `<cc-status:waiting>` (parked on an external
@@ -97,13 +102,19 @@ export function detectStatusToken(text: string): "done" | "question" | "waiting"
 }
 
 function renderTextBlock(rawText: string, breaks = false): string {
-  const text = stripStatusToken(rawText);
+  const stripped = stripStatusToken(rawText);
+  // Peel off the voice-input sentinel into a leading mic chip.
+  VOICE_INPUT_RE.lastIndex = 0;
+  const hasVoice = VOICE_INPUT_RE.test(stripped);
+  VOICE_INPUT_RE.lastIndex = 0;
+  const text = hasVoice ? stripped.replace(VOICE_INPUT_RE, "").trim() : stripped;
+  const prefix = hasVoice ? voiceInputChipHtml() : "";
   // First peel off any <pasted-log> blocks into chips; render the surrounding
   // text (which may still carry <file:> tokens) through the file-token path.
   PASTED_LOG_RE.lastIndex = 0;
   if (!PASTED_LOG_RE.test(text)) {
     PASTED_LOG_RE.lastIndex = 0;
-    return renderFileSegments(text, breaks);
+    return prefix + renderFileSegments(text, breaks);
   }
   PASTED_LOG_RE.lastIndex = 0;
   const parts: string[] = [];
@@ -121,7 +132,13 @@ function renderTextBlock(rawText: string, breaks = false): string {
   }
   const tail = text.slice(last);
   if (tail.trim()) parts.push(renderFileSegments(tail, breaks));
-  return parts.join("");
+  return prefix + parts.join("");
+}
+
+// A voice-input chip: a mic glyph + "voice" label, signalling the message was
+// dictated. Mirrors the attachment-chip shape.
+function voiceInputChipHtml(): string {
+  return `<div class="attachment-chip voice-input-chip" title="Dictated by voice"><i class="ph ph-microphone"></i><span class="chip-name">voice</span></div>`;
 }
 
 // Renders a text segment, turning any <file:> tokens into attachment chips and

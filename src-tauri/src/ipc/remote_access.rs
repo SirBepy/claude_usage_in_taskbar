@@ -263,6 +263,16 @@ pub fn remote_access_qr() -> Result<String, String> {
     Ok(svg)
 }
 
+/// Return the plaintext remote-access token so the desktop webview can open the
+/// daemon's authed `/ws/transcribe` (voice) WebSocket on localhost. Same token
+/// the phone carries; desktop has no `rc_token` in localStorage, so it reads it
+/// here. Errors if no token is provisioned yet.
+#[tauri::command]
+pub fn get_remote_access_token() -> Result<String, String> {
+    let path = token_file()?;
+    read_plaintext_token(&path).ok_or_else(|| "no remote-access token provisioned".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

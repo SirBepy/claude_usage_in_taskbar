@@ -1,0 +1,18 @@
+# Pinned after the mandatory package safety check (2026-06-20, all SAFE).
+# ufal whisper_streaming is VENDORED as whisper_online.py, NOT pip-installed:
+# the PyPI package literally named `whisper-streaming` is an unrelated
+# third-party rework (name collision), per the safety audit.
+faster-whisper==1.2.1
+ctranslate2==4.8.0
+websockets==16.0
+numpy==2.4.6
+# CUDA runtime for ctranslate2 on the RTX 4070 SUPER. The CT2 pip wheels do NOT
+# bundle CUDA, so pull cuBLAS + cuDNN + the CUDA runtime via pip (no system CUDA
+# toolkit needed). engine.py adds their nvidia/*/bin dirs to the Windows DLL
+# search path. cudart (cuda-runtime) is required: cublas64_12.dll depends on it.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12>=9.0,<10
+nvidia-cuda-runtime-cu12
+# dev / tests:
+pytest==9.0.3
+pytest-asyncio==1.4.0

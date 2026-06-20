@@ -1,0 +1,179 @@
+// VoiceController: captures the mic, downsamples to 16 kHz mono Int16 PCM in an
+// AudioWorklet, streams it to the daemon's /ws/transcribe, and surfaces the
+// partial/final transcript via callbacks. No auto-stop: recording runs until
+// the caller calls stop().
+import { invoke } from "../../ipc";
+import { isRemote, remoteToken } from "../../transport";
+
+export type VoiceState = "idle" | "connecting" | "recording" | "error";
+
+export interface VoiceCallbacks {
+  onPartial: (text: string) => void;
+  onFinal: (text: string) => void;
+  onError: (message: string) => void;
+  onStateChange: (state: VoiceState) => void;
+}
+
+// AudioWorklet processor source. Runs in AudioWorkletGlobalScope (no imports;
+// `sampleRate` is a global there). Crude decimation to 16 kHz is fine for
+// speech/Whisper; flushes ~250 ms binary frames of Int16 PCM to the main thread.
+const WORKLET_SRC = `
+class CaptureProcessor extends AudioWorkletProcessor {
+  constructor() { super(); this._buf = []; this._ratio = sampleRate / 16000; this._acc = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    for (let i = 0; i < ch.length; i++) {
+      this._acc += 1;
+      if (this._acc >= this._ratio) { this._acc -= this._ratio; this._buf.push(ch[i]); }
+    }
+    if (this._buf.length >= 4000) {
+      const out = new Int16Array(this._buf.length);
+      for (let i = 0; i < this._buf.length; i++) {
+        let s = Math.max(-1, Math.min(1, this._buf[i]));
+        out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      this.port.postMessage(out.buffer, [out.buffer]);
+      this._buf = [];
+    }
+    return true;
+  }
+}
+registerProcessor('capture-processor', CaptureProcessor);
+`;
+
+let _workletUrl: string | null = null;
+function workletBlobUrl(): string {
+  if (!_workletUrl) {
+    _workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
+  }
+  return _workletUrl;
+}
+
+/** Resolve the daemon WS base + token. Phone reuses the served origin + paired
+ *  token; desktop hits the daemon's localhost remote server with the
+ *  remote-access token (read via IPC). */
+async function voiceWsTarget(): Promise<{ base: string; token: string }> {
+  if (isRemote()) {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    return { base: `${proto}://${location.host}`, token: remoteToken() };
+  }
+  let token = "";
+  try {
+    token = await invoke<string>("get_remote_access_token");
+  } catch (e) {
+    console.warn("[voice] get_remote_access_token failed", e);
+  }
+  return { base: "ws://127.0.0.1:27183", token };
+}
+
+export class VoiceController {
+  private ws: WebSocket | null = null;
+  private ctx: AudioContext | null = null;
+  private node: AudioWorkletNode | null = null;
+  private stream: MediaStream | null = null;
+  private recording = false;
+
+  constructor(private cb: VoiceCallbacks) {}
+
+  get isRecording(): boolean {
+    return this.recording;
+  }
+
+  async start(): Promise<void> {
+    if (this.recording) return;
+    this.cb.onStateChange("connecting");
+    try {
+      const { base, token } = await voiceWsTarget();
+      const url = `${base}/ws/transcribe?token=${encodeURIComponent(token)}`;
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.ctx = new AudioContext();
+      await this.ctx.audioWorklet.addModule(workletBlobUrl());
+      const src = this.ctx.createMediaStreamSource(this.stream);
+      this.node = new AudioWorkletNode(this.ctx, "capture-processor");
+
+      this.ws = new WebSocket(url);
+      this.ws.binaryType = "arraybuffer";
+      await new Promise<void>((resolve, reject) => {
+        this.ws!.onopen = () => resolve();
+        this.ws!.onerror = () => reject(new Error("voice connection failed"));
+      });
+
+      // The sidecar emits {type:"ready"} once the model is loaded (cold start can
+      // take a few seconds). Gate "recording" on it so the mic shows "connecting"
+      // until then, and don't send audio before the engine can consume it.
+      let resolveReady: () => void = () => {};
+      const readyPromise = new Promise<void>((r) => { resolveReady = r; });
+      this.ws.onmessage = (e: MessageEvent) => {
+        try {
+          const m = JSON.parse(e.data as string) as { type: string; text?: string; message?: string };
+          if (m.type === "ready") resolveReady();
+          else if (m.type === "partial") this.cb.onPartial(m.text ?? "");
+          else if (m.type === "final") this.cb.onFinal(m.text ?? "");
+          else if (m.type === "error") this.cb.onError(m.message ?? "voice error");
+        } catch {
+          /* ignore non-JSON frames */
+        }
+      };
+      this.ws.onclose = () => {
+        if (this.recording) void this.stop();
+      };
+
+      // Only forward audio once recording is live (post-ready); pre-ready frames
+      // are dropped rather than queued against an unloaded engine.
+      this.node.port.onmessage = (e: MessageEvent) => {
+        if (this.recording && this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(e.data as ArrayBuffer);
+        }
+      };
+      src.connect(this.node);
+      // Keep the graph pulling without audible playback: route through a muted gain.
+      const sink = this.ctx.createGain();
+      sink.gain.value = 0;
+      this.node.connect(sink).connect(this.ctx.destination);
+
+      // Wait for the engine (cap the wait so a wedged sidecar surfaces an error).
+      await Promise.race([
+        readyPromise,
+        new Promise<void>((_, rej) => setTimeout(() => rej(new Error("voice engine timed out starting")), 30000)),
+      ]);
+      this.ws.send(JSON.stringify({ cmd: "start" }));
+      this.recording = true;
+      this.cb.onStateChange("recording");
+    } catch (e) {
+      this.cb.onError((e as Error).message || "voice failed to start");
+      this.cb.onStateChange("error");
+      await this.cleanup();
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (!this.recording) return;
+    this.recording = false;
+    try {
+      this.ws?.send(JSON.stringify({ cmd: "stop" }));
+    } catch {
+      /* socket already gone */
+    }
+    // Give the sidecar a beat to emit the final flush before tearing down.
+    await new Promise((r) => setTimeout(r, 300));
+    await this.cleanup();
+    this.cb.onStateChange("idle");
+  }
+
+  async destroy(): Promise<void> {
+    this.recording = false;
+    await this.cleanup();
+  }
+
+  private async cleanup(): Promise<void> {
+    try { this.node?.disconnect(); } catch { /* */ }
+    try { this.stream?.getTracks().forEach((t) => t.stop()); } catch { /* */ }
+    try { await this.ctx?.close(); } catch { /* */ }
+    try { this.ws?.close(); } catch { /* */ }
+    this.node = null;
+    this.stream = null;
+    this.ctx = null;
+    this.ws = null;
+  }
+}

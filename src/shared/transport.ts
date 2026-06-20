@@ -73,7 +73,7 @@ function handleAuthFailure(): void {
   location.reload();
 }
 
-function remoteToken(): string {
+export function remoteToken(): string {
   try {
     return localStorage.getItem(REMOTE_TOKEN_KEY) ?? "";
   } catch {

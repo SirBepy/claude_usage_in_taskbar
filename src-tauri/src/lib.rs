@@ -288,6 +288,7 @@ pub fn run() {
             ipc::remote_access_status,
             ipc::regenerate_remote_token,
             ipc::remote_access_qr,
+            ipc::get_remote_access_token,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,

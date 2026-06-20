@@ -1,0 +1,42 @@
+import json
+import sys, pathlib
+import pytest
+import websockets
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import server
+
+
+class FakeEngine:
+    def __init__(self, *a, **k):
+        self.reset_called = 0
+        self.vocab_reloaded = 0
+
+    def reset(self):
+        self.reset_called += 1
+
+    def reload_vocab(self):
+        self.vocab_reloaded += 1
+
+    def accept_pcm(self, pcm):
+        return {"final": "hello ", "partial": "wor"}
+
+    def finish(self):
+        return "world"
+
+
+@pytest.mark.asyncio
+async def test_start_audio_stop_emits_ready_partial_final(monkeypatch):
+    monkeypatch.setattr(server, "StreamingEngine", FakeEngine)
+    async with websockets.serve(server.make_handler("/tmp"), "127.0.0.1", 0) as s:
+        port = s.sockets[0].getsockname()[1]
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
+            assert json.loads(await ws.recv())["type"] == "ready"
+            await ws.send(json.dumps({"cmd": "start"}))
+            await ws.send(b"\x00\x00" * 4000)  # dummy PCM frame
+            msgs = [json.loads(await ws.recv()) for _ in range(2)]
+            kinds = {m["type"]: m.get("text") for m in msgs}
+            assert kinds.get("final") == "hello "
+            assert kinds.get("partial") == "wor"
+            await ws.send(json.dumps({"cmd": "stop"}))
+            assert json.loads(await ws.recv()) == {"type": "final", "text": "world"}

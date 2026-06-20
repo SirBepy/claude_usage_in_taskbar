@@ -22,6 +22,7 @@ pub mod session;
 pub mod settings_cache;
 pub mod spawn_self;
 pub mod state;
+pub mod stt;
 pub mod transport_common;
 
 #[cfg(windows)]
@@ -115,7 +116,20 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     // authed; opt-in remote reach via the user's `tailscale serve`. Best-effort:
     // never fails daemon startup. See daemon/remote_server.rs for the security
     // boundary.
-    remote_server::spawn(state.clone(), app_data.clone(), router.clone());
+    let stt = remote_server::spawn(state.clone(), app_data.clone(), router.clone());
+
+    // Idle-shutdown tick for the STT voice sidecar: every 60s, kill it if it has
+    // been idle (zero active /ws/transcribe connections) past the 5-min timeout,
+    // so the GPU model frees VRAM when voice mode is unused.
+    {
+        let stt_tick = stt.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                stt_tick.maybe_idle_shutdown().await;
+            }
+        });
+    }
 
     // Restore Interactive (in-app) chats persisted before the last shutdown.
     // The registry is in-memory only; without this, every daemon restart (reboot,
@@ -198,5 +212,7 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
         }
         log::info!("daemon: main loop exiting");
     }
+    // Graceful teardown: never let the Python STT sidecar outlive the daemon.
+    stt.kill().await;
     Ok(())
 }
