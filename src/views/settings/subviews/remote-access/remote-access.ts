@@ -20,7 +20,7 @@ async function refreshQr(root: HTMLElement): Promise<void> {
   const box = $(root, "#ra-qr");
   if (!box) return;
   try {
-    box.innerHTML = await api.remoteAccessQr();
+    box.innerHTML = (await api.remoteAccessQr()).svg;
   } catch {
     box.innerHTML = `<span class="ra-qr-fallback">QR unavailable - check Tailscale</span>`;
   }
@@ -102,11 +102,6 @@ export async function renderRemoteAccessView(
       void (async () => {
         regenBtn.disabled = true;
         try {
-          const token = await api.regenerateRemoteToken();
-          const tokenRow = $(root, "#ra-token-row");
-          const tokenField = $(root, "#ra-token-field") as HTMLInputElement | null;
-          if (tokenRow) tokenRow.style.display = "";
-          if (tokenField) tokenField.value = token;
           await refreshQr(root);
         } catch (e) {
           console.error("[remote-access] regenerate token failed", e);

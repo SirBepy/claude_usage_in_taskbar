@@ -160,6 +160,17 @@ export interface RemoteAccessStatus {
   url: string | null;
 }
 
+export interface PairingQrResult {
+  svg: string;
+  url: string;
+}
+
+export interface RemoteDevice {
+  id: string;
+  name: string;
+  created_at: number; // unix timestamp seconds
+}
+
 // ── Public API ────────────────────────────────────────────────────────────
 
 export const api = {
@@ -392,9 +403,14 @@ export const api = {
     invoke("set_remote_access_enabled", { enabled }),
   remoteAccessStatus: (): Promise<RemoteAccessStatus> =>
     invoke("remote_access_status"),
-  regenerateRemoteToken: (): Promise<string> =>
-    invoke("regenerate_remote_token"),
-  remoteAccessQr: (): Promise<string> => invoke("remote_access_qr"),
+  remoteAccessQr: (): Promise<PairingQrResult> => invoke("remote_access_qr"),
+  getRemoteAccessToken: (): Promise<string> => invoke("get_remote_access_token"),
+  listRemoteDevices: (): Promise<RemoteDevice[]> => invoke("list_remote_devices"),
+  revokeRemoteDevice: (id: string): Promise<boolean> =>
+    invoke("revoke_remote_device", { id }),
+  setRemoteKillSwitch: (enabled: boolean): Promise<void> =>
+    invoke("set_remote_kill_switch", { enabled }),
+  getRemoteKillSwitch: (): Promise<boolean> => invoke("get_remote_kill_switch"),
 
   // --- Hook registration ---
   getHookRegistrationState: async (): Promise<HookRegistrationState> => {
