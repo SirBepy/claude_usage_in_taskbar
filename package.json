@@ -1,7 +1,7 @@
 {
   "name": "claude-usage-tauri-tests",
   "private": true,
-  "version": "0.1.106",
+  "version": "0.1.107",
   "type": "module",
   "scripts": {
     "predev": "node scripts/kill-stale.mjs",
