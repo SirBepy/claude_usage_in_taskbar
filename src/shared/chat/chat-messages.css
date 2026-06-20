@@ -47,6 +47,19 @@
 /* Composer highlight-backdrop slash coloring. COLOR ONLY (no font/padding/border
  * changes) so the backdrop stays glyph-aligned with the textarea. Mirrors the
  * sent-message .slash-mention palette so the live preview matches the result. */
+/* "ultrathink" rainbow keyword — paint-only so it's safe in the composer backdrop too. */
+@keyframes rainbow-shift {
+  to { background-position: 200% center; }
+}
+.rainbow-keyword {
+  background: linear-gradient(90deg, #ff4444, #ff8c00, #ffee00, #44dd44, #44aaff, #aa44ff, #ff4444);
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: rainbow-shift 1.8s linear infinite;
+}
+
 .cm-slash-builtin { color: #7cb6ff; }
 .cm-slash-user-command,
 .cm-slash-project-command { color: #6ed6c8; }

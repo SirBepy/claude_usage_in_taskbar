@@ -285,7 +285,7 @@ function wrapTables(html: string): string {
 
 function renderMarkdown(text: string, breaks = false): string {
   const inst = breaks ? mdBreaks : md;
-  return wrapTables(linkifyInlineCodeUrls(highlightSlashMentions(inst.render(text)), inst));
+  return highlightKeywords(wrapTables(linkifyInlineCodeUrls(highlightSlashMentions(inst.render(text)), inst)));
 }
 
 // markdown-it linkifies bare URLs in normal text, but a URL the model wraps in
@@ -414,6 +414,19 @@ export function isNoiseAssistantText(text: string): boolean {
 // the text-node level using a tag-skipping regex). Unknown names stay plain.
 const SLASH_MENTION_RE = /(^|[\s(>])\/([a-zA-Z][\w-]*(?::[a-zA-Z][\w-]*)?)\b/g;
 
+const ULTRATHINK_RE = /\b(ultrathink)\b/gi;
+
+function highlightKeywords(html: string): string {
+  const parts = html.split(/(<(?:code|pre|a)(?:\s[^>]*)?>[\s\S]*?<\/(?:code|pre|a)>)/gi);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) continue;
+    const part = parts[i];
+    if (!part) continue;
+    parts[i] = part.replace(ULTRATHINK_RE, '<span class="rainbow-keyword">$1</span>');
+  }
+  return parts.join("");
+}
+
 export function highlightSlashMentions(html: string): string {
   // Skip content inside <code>, <pre>, <a>. Split on these tags and only
   // transform the chunks that are outside.
@@ -451,7 +464,8 @@ export function highlightComposerInput(text: string): string {
   });
   // pre-wrap drops a trailing newline; pad it so the backdrop height (and thus
   // scroll position) tracks the textarea exactly.
-  return withSpans.endsWith("\n") ? withSpans + " " : withSpans;
+  const padded = withSpans.endsWith("\n") ? withSpans + " " : withSpans;
+  return highlightKeywords(padded);
 }
 
 export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
