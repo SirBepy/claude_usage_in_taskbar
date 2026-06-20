@@ -1,6 +1,6 @@
 import { invoke } from "../../shared/ipc";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
-import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
+import type { GitInfo, ContextStatus, ChatDrain } from "../../types/ipc.generated";
 import { modelLabel } from "../../shared/model-name";
 import {
   type ChipType, DEFAULT_ROWS, MAX_ROWS, isKnownChip, TOOL_CHIP_TOOLS,
@@ -124,6 +124,12 @@ export const countsCache = new Map<string, SessionCounts>();
  *  re-mounted statusbar shows the last value instead of flashing the frontend
  *  fallback while the async refetch is in flight. */
 export const ctxStatusCache = new Map<string, ContextStatus>();
+
+/** Last known per-chat token-drain breakdown (this chat's share of a 5h session
+ *  + weekly, plus the per-message rundown), fetched via the `chat_drain` IPC.
+ *  Cached so a re-mounted statusbar shows the last value instead of flashing the
+ *  placeholder while the async refetch is in flight. */
+export const drainCache = new Map<string, ChatDrain>();
 
 export function fetchGitInfo(cwd: string): Promise<GitInfo> {
   let p = gitInflight.get(cwd);

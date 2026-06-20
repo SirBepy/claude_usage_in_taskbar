@@ -4,7 +4,7 @@ import { type ToolTally } from "../../shared/chat/tool-meta";
 import { formatTokenCount } from "../../shared/chat/turn-chips";
 import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
-import type { AiTodoEntry, GitInfo, ContextStatus } from "../../types/ipc.generated";
+import type { AiTodoEntry, GitInfo, ContextStatus, ChatDrain } from "../../types/ipc.generated";
 import { EFFORTS } from "../../shared/effort-presets";
 import { type ChipType, isToolChip, chipToolName } from "./statusline-catalog";
 import {
@@ -15,6 +15,7 @@ import {
   metaCache,
   countsCache,
   ctxStatusCache,
+  drainCache,
   fetchGitInfo,
   type SessionCounts,
   type StatusbarOptions,
@@ -61,6 +62,14 @@ export class SessionStatusbar {
   private aiTodoFiles: AiTodoEntry[] = [];
   private aiTodosLoaded = false;
   private aiTodosPopoverOpen = false;
+  // Per-chat token-drain (share of a 5h session + weekly, plus per-message
+  // rundown), via chat_drain IPC. null = not yet fetched / unavailable.
+  private drain: ChatDrain | null = null;
+  private drainInflight = false;
+  // The drain rundown popover is body-appended (rich content), so it survives
+  // statusbar re-renders; managed by its own open/close like the tally popover.
+  private drainPopoverEl: HTMLElement | null = null;
+  private drainPopoverCleanup: (() => void) | null = null;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
@@ -105,6 +114,8 @@ export class SessionStatusbar {
       if (cachedCounts) { this.counts = cachedCounts; this.countsLoaded = true; }
       const cachedCtx = ctxStatusCache.get(this.sessionId);
       if (cachedCtx) this.ctxStatus = cachedCtx;
+      const cachedDrain = drainCache.get(this.sessionId);
+      if (cachedDrain) this.drain = cachedDrain;
     }
 
     this.render();
@@ -113,6 +124,7 @@ export class SessionStatusbar {
     if (this.wantsContext()) void this.refreshContextStatus();
     if (this.hasChip("dirty")) void this.refreshDirty();
     if (this.hasChip("ai_todos") && this.cwd) void this.refreshAiTodos();
+    if (this.wantsDrain()) void this.refreshDrain();
   }
 
   private hasChip(type: string): boolean {
@@ -121,6 +133,7 @@ export class SessionStatusbar {
   private wantsCounts(): boolean { return this.hasChip("messages") || this.hasChip("turns"); }
   private wantsContext(): boolean { return this.hasChip("context_pct") || this.hasChip("context_tokens"); }
   private wantsTimer(): boolean { return this.hasChip("duration") || this.hasChip("clock"); }
+  private wantsDrain(): boolean { return this.hasChip("drain"); }
 
   private async refreshCounts(): Promise<void> {
     const sid = this.sessionId;
@@ -195,6 +208,27 @@ export class SessionStatusbar {
     } catch { /* transient - keep last known */ }
   }
 
+  // This chat's token-drain breakdown. session-based (reset on setSessionId).
+  // Guards against overlapping in-flight calls (it's re-fired on every meta
+  // update as the chat spends, like refreshCounts/refreshContextStatus).
+  private async refreshDrain(): Promise<void> {
+    const sid = this.sessionId;
+    if (!sid || this.drainInflight) return;
+    this.drainInflight = true;
+    try {
+      const d = await invoke<ChatDrain | null>("chat_drain", { sessionId: sid });
+      if (this.sessionId !== sid) return;
+      if (d) {
+        this.drain = d;
+        drainCache.set(sid, d);
+        this.render();
+        // Keep an open rundown popover in sync as the chat spends.
+        if (this.drainPopoverEl) this.openDrainPopover();
+      }
+    } catch { /* command may predate this binary, or transient - keep last known */ }
+    finally { this.drainInflight = false; }
+  }
+
   private renderAiTodos(): string {
     if (!this.cwd) return "";
     if (!this.aiTodosLoaded) return this.skeletonChip("ai_todos", "sb-ai-todos", "ph-check-square", "55px");
@@ -211,6 +245,7 @@ export class SessionStatusbar {
     this.render();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
+    if (this.wantsDrain()) void this.refreshDrain();
     if (turnJustCompleted && this.cwd) void this.refreshGitInfo();
   }
 
@@ -240,13 +275,18 @@ export class SessionStatusbar {
     this.counts = null;
     this.countsLoaded = false;
     this.ctxStatus = null;
+    this.drain = null;
+    this.closeDrainPopover();
     const cached = countsCache.get(id);
     if (cached) { this.counts = cached; this.countsLoaded = true; }
     const cachedCtx = ctxStatusCache.get(id);
     if (cachedCtx) this.ctxStatus = cachedCtx;
+    const cachedDrain = drainCache.get(id);
+    if (cachedDrain) this.drain = cachedDrain;
     this.render();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
+    if (this.wantsDrain()) void this.refreshDrain();
     // Fallback for fast turns that complete before the JS event-store listener
     // is set up (the live turn_usage event is dropped). Re-check after 3 s; by
     // then any fast turn is done and the JSONL is definitely flushed.
@@ -266,6 +306,7 @@ export class SessionStatusbar {
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
     this.tally.destroy();
+    this.closeDrainPopover();
   }
 
   private tickTimer(): void {
@@ -366,6 +407,7 @@ export class SessionStatusbar {
       case "clock":
         return `<span class="sb-chip sb-clock${this.animClass("clock")}"><i class="ph ph-clock"></i><span class="sb-clock-text">${this.clockText()}</span></span>`;
       case "ai_todos": return this.renderAiTodos();
+      case "drain": return this.renderDrain();
       case "separator":
         return `<span class="sb-separator" aria-hidden="true"></span>`;
       case "flex_separator":
@@ -434,6 +476,93 @@ export class SessionStatusbar {
     if (!this.metaLoaded) return this.skeletonChip("cost", "sb-cost", "ph-currency-dollar", "44px");
     if ((!c || c <= 0) && this.hideZero) return "";
     return `<span class="sb-chip sb-cost${this.animClass("cost")}" title="Estimated session cost (local estimate, not a charge)"><i class="ph ph-currency-dollar"></i>~$${(c ?? 0).toFixed(2)}</span>`;
+  }
+
+  private renderDrain(): string {
+    const d = this.drain;
+    if (!d) {
+      // Muted placeholder while the first chat_drain fetch is in flight (or if
+      // the chat has no usage yet). Stays a real button so the popover (with its
+      // own empty state) is still reachable.
+      return `<span class="sb-chip sb-drain sb-drain-btn muted${this.animClass("drain")}" role="button" tabindex="0" aria-label="Token drain (loading)" title="Share of a 5h session this chat has drained (loading)"><i class="ph ph-drop"></i>··%</span>`;
+    }
+    const five = Math.round(d.fiveHourPct);
+    const week = Math.round(d.weeklyPct);
+    const cls = d.fiveHourPct >= 80 ? " danger" : d.fiveHourPct >= 50 ? " warn" : "";
+    const label = `This chat has drained ${five}% of a 5h session and ${week}% of the week. Click for a per-message rundown.`;
+    return `<span class="sb-chip sb-drain sb-drain-btn${cls}${this.animClass("drain")}" role="button" tabindex="0" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ph ph-drop"></i>${five}% · ${week}%w</span>`;
+  }
+
+  // Body-appended, fixed-position rundown popover anchored to the drain chip.
+  // Mirrors ToolTallyRow.openToolPopover: positioned off the anchor, dismissed
+  // on outside click, torn down on close/destroy. Rebuilt in place as the chat
+  // spends (refreshDrain re-calls this while open).
+  private openDrainPopover(): void {
+    const anchor = this.container.querySelector<HTMLElement>(".sb-drain-btn");
+    if (!anchor) return;
+    this.drainPopoverCleanup?.();
+    this.drainPopoverCleanup = null;
+    this.drainPopoverEl?.remove();
+
+    const pop = document.createElement("div");
+    pop.className = "sb-drain-popover";
+    pop.innerHTML = this.drainPopoverHtml();
+    document.body.appendChild(pop);
+    this.drainPopoverEl = pop;
+
+    const rect = anchor.getBoundingClientRect();
+    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
+    pop.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
+    const below = window.innerHeight - rect.bottom;
+    if (below >= pop.offsetHeight + 8 || below >= rect.top) {
+      pop.style.top = `${rect.bottom + 4}px`;
+    } else {
+      pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+    }
+
+    const onOutside = (e: MouseEvent) => {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+        this.closeDrainPopover();
+      }
+    };
+    setTimeout(() => document.addEventListener("click", onOutside), 0);
+    this.drainPopoverCleanup = () => document.removeEventListener("click", onOutside);
+  }
+
+  private closeDrainPopover(): void {
+    this.drainPopoverCleanup?.();
+    this.drainPopoverCleanup = null;
+    this.drainPopoverEl?.remove();
+    this.drainPopoverEl = null;
+  }
+
+  private toggleDrainPopover(): void {
+    if (this.drainPopoverEl) this.closeDrainPopover();
+    else this.openDrainPopover();
+  }
+
+  private drainPopoverHtml(): string {
+    const d = this.drain;
+    if (!d) {
+      return `<div class="sb-drain-empty">No drain data yet</div>`;
+    }
+    const five = Math.round(d.fiveHourPct);
+    const week = Math.round(d.weeklyPct);
+    const tokens = formatTokenCount(Number(d.tokens), { decimals: 1 });
+    const header = `
+      <div class="sb-drain-header">
+        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${five}%</span><span class="sb-drain-stat-lbl">of a 5h session</span></span>
+        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${week}%</span><span class="sb-drain-stat-lbl">of the week</span></span>
+      </div>
+      <div class="sb-drain-secondary"><i class="ph ph-coins"></i>${escapeHtml(tokens)} tokens drained</div>`;
+    const rows = d.messages.length === 0
+      ? `<div class="sb-drain-empty">No message breakdown yet</div>`
+      : d.messages.map((m) => {
+          const flag = m.expensive ? ' <i class="ph ph-warning sb-drain-flag"></i>' : "";
+          const expCls = m.expensive ? " expensive" : "";
+          return `<div class="sb-drain-row${expCls}" title="${escapeHtml(m.preview)}"><span class="sb-drain-idx">#${m.index}</span><span class="sb-drain-preview">${escapeHtml(m.preview)}</span>${flag}<span class="sb-drain-usd">~$${m.drainUsd.toFixed(2)}</span></div>`;
+        }).join("");
+    return `${header}<div class="sb-drain-list">${rows}</div>`;
   }
 
   private render(): void {
@@ -555,6 +684,11 @@ export class SessionStatusbar {
       this.render();
     });
 
+    this.container.querySelector<HTMLElement>(".sb-drain-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggleDrainPopover();
+    });
+
     this.container.querySelectorAll<HTMLElement>(".sb-ai-todos-popover-file").forEach((el) => {
       el.addEventListener("click", () => {
         const p = el.dataset.path;
@@ -572,5 +706,11 @@ export class SessionStatusbar {
       };
       setTimeout(() => document.addEventListener("click", closeOnOutsideAiTodos), 0);
     }
+
+    // The drain popover is body-appended and survives re-renders, but its anchor
+    // chip was just replaced. Re-anchor (rebuild + reposition) if it's open so a
+    // background refresh (counts/git/etc.) doesn't leave it bound to a detached
+    // node and break outside-click dismissal.
+    if (this.drainPopoverEl) this.openDrainPopover();
   }
 }
