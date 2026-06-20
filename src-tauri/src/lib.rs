@@ -430,6 +430,7 @@ pub fn run() {
                     .remote_access_enabled;
                 crate::ipc::remote_access::reapply_on_boot(enabled);
             }
+            crate::ipc::remote_access::start_tailscale_watcher();
             crate::scheduler::spawn(app.handle().clone());
             crate::news::spawn_poll_loop(app.handle().clone());
             crate::slash::watcher::spawn(app.handle().clone());

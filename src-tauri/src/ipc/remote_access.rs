@@ -185,6 +185,29 @@ pub fn reapply_on_boot(enabled: bool) {
     });
 }
 
+/// Spawn a background thread that re-applies `tailscale serve` when it has
+/// dropped while remote access is still enabled. Polls every 30 seconds.
+/// Best-effort: errors are logged, never fatal.
+pub fn start_tailscale_watcher() {
+    std::thread::spawn(|| {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            let enabled = crate::settings::paths::settings_file()
+                .ok()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                .and_then(|v| v.get("remote_access_enabled").and_then(|b| b.as_bool()))
+                .unwrap_or(false);
+            if enabled && !serve_running() {
+                match serve_enable() {
+                    Ok(()) => log::info!("remote-access: watcher re-applied tailscale serve"),
+                    Err(e) => log::warn!("remote-access: watcher tailscale serve failed: {e}"),
+                }
+            }
+        }
+    });
+}
+
 // ── Pairing code helpers ──────────────────────────────────────────────────────
 
 /// Mint a fresh pairing code, write hash + TTL to remote-pairing.json,
