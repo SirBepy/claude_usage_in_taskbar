@@ -53,11 +53,32 @@ impl SttSupervisor {
     }
 
     fn sidecar_dir(&self) -> PathBuf {
-        // stt-sidecar/ sits at the repo/install root next to the daemon exe.
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("stt-sidecar")))
-            .unwrap_or_else(|| PathBuf::from("stt-sidecar"))
+        // Find the dir that actually holds `stt-sidecar/server.py`. In a bundled
+        // install it sits next to the exe; in `cargo tauri dev` the exe is under
+        // `src-tauri/target/debug/` while stt-sidecar/ is at the repo root, so we
+        // walk up a few levels. Fall back to CWD, then a bare relative path.
+        let has_sidecar = |d: &std::path::Path| d.join("server.py").exists();
+        if let Ok(exe) = std::env::current_exe() {
+            let mut dir = exe.parent();
+            for _ in 0..6 {
+                if let Some(d) = dir {
+                    let cand = d.join("stt-sidecar");
+                    if has_sidecar(&cand) {
+                        return cand;
+                    }
+                    dir = d.parent();
+                } else {
+                    break;
+                }
+            }
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            let cand = cwd.join("stt-sidecar");
+            if has_sidecar(&cand) {
+                return cand;
+            }
+        }
+        PathBuf::from("stt-sidecar")
     }
 
     pub async fn ensure_running(&self) -> Result<(), String> {

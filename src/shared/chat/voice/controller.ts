@@ -73,6 +73,7 @@ export class VoiceController {
   private node: AudioWorkletNode | null = null;
   private stream: MediaStream | null = null;
   private recording = false;
+  private lastLevelLog = 0;
 
   constructor(private cb: VoiceCallbacks) {}
 
@@ -86,8 +87,14 @@ export class VoiceController {
     try {
       const { base, token } = await voiceWsTarget();
       const url = `${base}/ws/transcribe?token=${encodeURIComponent(token)}`;
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
       this.ctx = new AudioContext();
+      // Autoplay policy can start the context suspended, which feeds the worklet
+      // zero-filled buffers (silence) instead of the mic - Whisper then
+      // hallucinates caption boilerplate. Resume so real audio flows.
+      if (this.ctx.state === "suspended") await this.ctx.resume();
       await this.ctx.audioWorklet.addModule(workletBlobUrl());
       const src = this.ctx.createMediaStreamSource(this.stream);
       this.node = new AudioWorkletNode(this.ctx, "capture-processor");
@@ -123,7 +130,9 @@ export class VoiceController {
       // are dropped rather than queued against an unloaded engine.
       this.node.port.onmessage = (e: MessageEvent) => {
         if (this.recording && this.ws && this.ws.readyState === WebSocket.OPEN) {
-          this.ws.send(e.data as ArrayBuffer);
+          const buf = e.data as ArrayBuffer;
+          this.logLevel(buf);
+          this.ws.send(buf);
         }
       };
       src.connect(this.node);
@@ -164,6 +173,24 @@ export class VoiceController {
   async destroy(): Promise<void> {
     this.recording = false;
     await this.cleanup();
+  }
+
+  // Diagnostic: ~once/sec, log the RMS level of the outgoing PCM. RMS near 0
+  // means the mic is feeding silence (Whisper then hallucinates); a healthy
+  // speaking level is roughly 0.02-0.2.
+  private logLevel(buf: ArrayBuffer): void {
+    const now = Date.now();
+    if (now - this.lastLevelLog < 1000) return;
+    this.lastLevelLog = now;
+    const pcm = new Int16Array(buf);
+    if (pcm.length === 0) return;
+    let sum = 0;
+    for (let i = 0; i < pcm.length; i++) {
+      const v = pcm[i] ?? 0;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / pcm.length) / 32768;
+    console.debug(`[voice] mic RMS=${rms.toFixed(4)} samples=${pcm.length}`);
   }
 
   private async cleanup(): Promise<void> {
