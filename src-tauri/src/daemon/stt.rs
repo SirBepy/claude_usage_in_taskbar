@@ -53,29 +53,53 @@ impl SttSupervisor {
     }
 
     fn sidecar_dir(&self) -> PathBuf {
-        // Find the dir that actually holds `stt-sidecar/server.py`. In a bundled
-        // install it sits next to the exe; in `cargo tauri dev` the exe is under
-        // `src-tauri/target/debug/` while stt-sidecar/ is at the repo root, so we
-        // walk up a few levels. Fall back to CWD, then a bare relative path.
-        let has_sidecar = |d: &std::path::Path| d.join("server.py").exists();
-        if let Ok(exe) = std::env::current_exe() {
-            let mut dir = exe.parent();
-            for _ in 0..6 {
-                if let Some(d) = dir {
-                    let cand = d.join("stt-sidecar");
-                    if has_sidecar(&cand) {
-                        return cand;
-                    }
-                    dir = d.parent();
-                } else {
-                    break;
+        // Find the dir that actually holds `stt-sidecar/server.py`. Resolution
+        // order (first hit wins) so it works for a dev run AND an installed app
+        // whose exe is in Program Files while stt-sidecar/ lives in the repo:
+        //   1. CC_STT_SIDECAR_DIR env var (explicit override).
+        //   2. <app_data>/voice/sidecar-path.txt (a recorded path; lets the
+        //      installed app point at the repo without bundling the venv).
+        //   3. walk up from the exe (bundled next-to-exe, or dev target/debug).
+        //   4. walk up from the working dir.
+        let has = |d: &std::path::Path| d.join("server.py").exists();
+
+        if let Ok(p) = std::env::var("CC_STT_SIDECAR_DIR") {
+            let d = PathBuf::from(p.trim());
+            if has(&d) {
+                return d;
+            }
+        }
+
+        let pathfile = self.app_data.join("voice").join("sidecar-path.txt");
+        if let Ok(raw) = std::fs::read_to_string(&pathfile) {
+            // Strip a possible UTF-8 BOM (editors/PowerShell add one) before trim.
+            let d = PathBuf::from(raw.trim_start_matches('\u{feff}').trim());
+            if has(&d) {
+                return d;
+            }
+        }
+
+        let walk_up = |start: Option<&std::path::Path>| -> Option<PathBuf> {
+            let mut dir = start.map(|p| p.to_path_buf());
+            for _ in 0..8 {
+                let d = dir?;
+                let cand = d.join("stt-sidecar");
+                if has(&cand) {
+                    return Some(cand);
                 }
+                dir = d.parent().map(|p| p.to_path_buf());
+            }
+            None
+        };
+
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(found) = walk_up(exe.parent()) {
+                return found;
             }
         }
         if let Ok(cwd) = std::env::current_dir() {
-            let cand = cwd.join("stt-sidecar");
-            if has_sidecar(&cand) {
-                return cand;
+            if let Some(found) = walk_up(Some(cwd.as_path())) {
+                return found;
             }
         }
         PathBuf::from("stt-sidecar")
@@ -89,9 +113,16 @@ impl SttSupervisor {
             }
         }
         let dir = self.sidecar_dir();
+        if !dir.join("server.py").exists() {
+            return Err(format!(
+                "stt-sidecar not found at {dir:?} (set CC_STT_SIDECAR_DIR or write \
+                 <app-data>/voice/sidecar-path.txt to point at the repo's stt-sidecar)"
+            ));
+        }
         let python = dir
             .join(".venv")
             .join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });
+        log::info!("stt-sidecar dir resolved to {dir:?} (python: {})", python.exists());
         let mut cmd = Command::new(if python.exists() { python } else { PathBuf::from("python") });
         cmd.current_dir(&dir)
             .arg("server.py")
@@ -103,7 +134,9 @@ impl SttSupervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         crate::util::process::hide_console_tokio(&mut cmd);
-        let child = cmd.spawn().map_err(|e| format!("spawn stt-sidecar: {e}"))?;
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("spawn stt-sidecar in {dir:?}: {e}"))?;
         log::info!("stt-sidecar spawned (pid {:?})", child.id());
         *guard = Some(child);
         Ok(())
