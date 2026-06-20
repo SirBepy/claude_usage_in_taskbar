@@ -1146,6 +1146,10 @@
   transition: opacity 0.15s, color 0.15s;
 }
 
+.thinking-pause-btn[hidden] {
+  display: none;
+}
+
 .thinking-pause-btn:hover {
   opacity: 1;
   color: var(--color-text);
