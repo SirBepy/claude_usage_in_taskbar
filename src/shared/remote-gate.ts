@@ -53,9 +53,9 @@ async function exchangePairingCode(code: string): Promise<string> {
     const text = await res.text().catch(() => String(res.status));
     throw new Error(`Pairing failed (${res.status}): ${text}`);
   }
-  const data = (await res.json()) as { token?: string };
-  if (!data.token) throw new Error("Daemon did not return a token");
-  return data.token;
+  const data = (await res.json()) as { device_token?: string };
+  if (!data.device_token) throw new Error("Daemon did not return a token");
+  return data.device_token;
 }
 
 async function capturePairingFromUrl(): Promise<boolean> {
@@ -141,7 +141,7 @@ function renderTokenGate(): void {
   const hint = document.createElement("p");
   hint.textContent = expired
     ? "Your access token was rejected. Re-scan the QR in Settings > Remote access on the desktop."
-    : "Scan the QR code shown in Settings > Remote access on the desktop, or paste your bearer token below.";
+    : "Scan the QR code shown in Settings > Remote access on the desktop, or paste your bearer token or the full pairing URL below.";
   hint.style.cssText = "margin:0;font-size:.85rem;line-height:1.5;color:#8b8fa8";
 
   const scanBtn = document.createElement("button");
@@ -180,12 +180,12 @@ function renderTokenGate(): void {
   };
 
   const divider = document.createElement("p");
-  divider.textContent = "— or paste token manually —";
+  divider.textContent = "— or paste token or URL manually —";
   divider.style.cssText = "margin:0;font-size:.78rem;text-align:center;color:#555770";
 
   const input = document.createElement("input");
   input.type = "password";
-  input.placeholder = "Paste bearer token here";
+  input.placeholder = "Paste token or full URL here";
   input.autocomplete = "off";
   input.spellcheck = false;
   input.style.cssText = "padding:10px 12px;background:#0f1117;border:1px solid #2e3148;border-radius:7px;color:#e0e1f0;font-size:.95rem;outline:none;width:100%;box-sizing:border-box";
@@ -203,6 +203,36 @@ function renderTokenGate(): void {
     const val = input.value.trim();
     if (!val) { error.style.display = "block"; return; }
     error.style.display = "none";
+
+    // If the pasted value looks like a URL, try to extract pair/token params first.
+    let parsed: URL | null = null;
+    try { parsed = new URL(val); } catch { /* not a URL, treat as raw token */ }
+
+    if (parsed) {
+      const pairCode = parsed.searchParams.get("pair")?.trim();
+      const legacyToken = parsed.searchParams.get("token")?.trim();
+      if (pairCode) {
+        connectBtn.disabled = true;
+        connectBtn.textContent = "Connecting…";
+        void exchangePairingCode(pairCode).then(token => {
+          try { localStorage.setItem(REMOTE_TOKEN_KEY, token); } catch { /* ignore */ }
+          window.location.reload();
+        }).catch(e => {
+          error.textContent = e instanceof Error ? e.message : "Pairing failed";
+          error.style.display = "block";
+          connectBtn.disabled = false;
+          connectBtn.textContent = "Connect";
+        });
+        return;
+      }
+      if (legacyToken) {
+        try { localStorage.setItem(REMOTE_TOKEN_KEY, legacyToken); } catch { /* ignore */ }
+        window.location.reload();
+        return;
+      }
+      // URL but no recognised params - fall through and treat as raw token.
+    }
+
     try { localStorage.setItem(REMOTE_TOKEN_KEY, val); } catch { /* ignore */ }
     window.location.reload();
   });
