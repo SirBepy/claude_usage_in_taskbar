@@ -654,6 +654,7 @@ mod tests {
             model: String::new(),
             effort: String::new(),
             awaiting: None,
+            autopilot: false,
         }
     }
 

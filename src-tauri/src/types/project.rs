@@ -215,6 +215,7 @@ mod tests {
             model: String::new(),
             effort: String::new(),
             awaiting: None,
+            autopilot: false,
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();
