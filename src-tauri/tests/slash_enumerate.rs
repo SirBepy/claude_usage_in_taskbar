@@ -71,7 +71,7 @@ fn scans_project_skills_tagged_with_project_basename() {
 fn scans_plugin_skills_and_commands() {
     let home = tempfile::tempdir().unwrap();
 
-    let plugin_skill_dir = home.path().join("plugins/cache/myplugin/abc123/skills/foo");
+    let plugin_skill_dir = home.path().join("plugins/cache/publisher/myplugin/abc123/skills/foo");
     fs::create_dir_all(&plugin_skill_dir).unwrap();
     fs::write(
         plugin_skill_dir.join("SKILL.md"),
@@ -79,7 +79,7 @@ fn scans_plugin_skills_and_commands() {
     )
     .unwrap();
 
-    let plugin_cmd_dir = home.path().join("plugins/cache/myplugin/abc123/commands");
+    let plugin_cmd_dir = home.path().join("plugins/cache/publisher/myplugin/abc123/commands");
     fs::create_dir_all(&plugin_cmd_dir).unwrap();
     fs::write(
         plugin_cmd_dir.join("bar.md"),

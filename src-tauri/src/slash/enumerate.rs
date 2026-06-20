@@ -86,26 +86,34 @@ fn scan_skills(dir: &Path, src: &SlashSource, out: &mut Vec<SlashEntry>) {
 }
 
 fn scan_plugins(dir: &Path, out: &mut Vec<SlashEntry>) {
-    let Ok(entries) = fs::read_dir(dir) else { return };
-    for ent in entries.flatten() {
-        let plugin_root = ent.path();
-        if !plugin_root.is_dir() {
+    // Structure: cache/<publisher>/<plugin>/<version>/skills/
+    let Ok(publishers) = fs::read_dir(dir) else { return };
+    for pub_ent in publishers.flatten() {
+        let pub_root = pub_ent.path();
+        if !pub_root.is_dir() {
             continue;
         }
-        let plugin_name = match ent.file_name().into_string() {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-        let Ok(versions) = fs::read_dir(&plugin_root) else { continue };
-        for v in versions.flatten() {
-            let vp = v.path();
-            if !vp.is_dir() {
+        let Ok(plugins) = fs::read_dir(&pub_root) else { continue };
+        for plugin_ent in plugins.flatten() {
+            let plugin_root = plugin_ent.path();
+            if !plugin_root.is_dir() {
                 continue;
             }
+            let plugin_name = match plugin_ent.file_name().into_string() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
             let skill_src = SlashSource::PluginSkill { plugin: plugin_name.clone() };
             let cmd_src = SlashSource::PluginCommand { plugin: plugin_name.clone() };
-            scan_skills(&vp.join("skills"), &skill_src, out);
-            scan_commands(&vp.join("commands"), &cmd_src, out);
+            let Ok(versions) = fs::read_dir(&plugin_root) else { continue };
+            for v in versions.flatten() {
+                let vp = v.path();
+                if !vp.is_dir() {
+                    continue;
+                }
+                scan_skills(&vp.join("skills"), &skill_src, out);
+                scan_commands(&vp.join("commands"), &cmd_src, out);
+            }
         }
     }
 }
