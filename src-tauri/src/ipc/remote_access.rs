@@ -185,7 +185,35 @@ pub fn reapply_on_boot(enabled: bool) {
     });
 }
 
+// ── Pairing code helpers ──────────────────────────────────────────────────────
+
+/// Mint a fresh pairing code, write hash + TTL to remote-pairing.json,
+/// return the plaintext code. TTL: 2 minutes.
+fn do_mint_pairing_code(app_data: &std::path::Path) -> Result<String, String> {
+    let mut bytes = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+    let code: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let expires_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        + 120;
+    let body = serde_json::json!({ "code_hash": sha256_hex(&code), "expires_at": expires_at });
+    std::fs::write(
+        app_data.join("remote-pairing.json"),
+        serde_json::to_string_pretty(&body).unwrap_or_default(),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(code)
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct PairingQrResult {
+    pub svg: String,
+    pub url: String,
+}
 
 #[derive(Serialize)]
 pub struct RemoteAccessStatus {
@@ -230,37 +258,65 @@ pub fn remote_access_status(state: State<AppState>) -> RemoteAccessStatus {
     }
 }
 
-/// Mint a NEW token, overwriting both hash + plaintext in remote-access.json.
-/// Old QRs/tokens stop working once the daemon re-reads the new hash (it reads
-/// the file per request, so this is effectively immediate). Returns the new
-/// plaintext token.
+/// No-op kept for backward compatibility. Use remote_access_qr() instead.
 #[tauri::command]
 pub fn regenerate_remote_token() -> Result<String, String> {
-    let path = token_file()?;
-    let token = mint_token();
-    write_token(&path, &token)?;
-    Ok(token)
+    Ok(String::new())
 }
 
-/// Build "https://<dnsname>/?token=<plaintext>" and return it rendered as an SVG
-/// QR code string. Errors if tailscale is not up or no token exists yet.
+/// Mint a fresh pairing code, return SVG QR + URL.
+/// Both encode the same code, so only one IPC call is needed per QR refresh.
 #[tauri::command]
-pub fn remote_access_qr() -> Result<String, String> {
+pub fn remote_access_qr() -> Result<PairingQrResult, String> {
     use qrcode::render::svg;
     use qrcode::QrCode;
 
     let dnsname = tailscale_dnsname()
         .ok_or_else(|| "tailscale is not connected (run `tailscale up` first)".to_string())?;
-    let path = token_file()?;
-    let token = read_plaintext_token(&path)
-        .ok_or_else(|| "no remote-access token yet (generate one first)".to_string())?;
-    let url = format!("https://{dnsname}/?token={token}");
-    let code = QrCode::new(url.as_bytes()).map_err(|e| format!("QR encode failed: {e}"))?;
-    let svg = code
-        .render::<svg::Color>()
-        .min_dimensions(220, 220)
-        .build();
-    Ok(svg)
+    let app_data = paths::data_dir().map_err(|e| e.to_string())?;
+    let code = do_mint_pairing_code(&app_data)?;
+    let url = format!("https://{dnsname}/?pair={code}");
+    let qr = QrCode::new(url.as_bytes()).map_err(|e| format!("QR encode failed: {e}"))?;
+    let svg = qr.render::<svg::Color>().min_dimensions(220, 220).build();
+    Ok(PairingQrResult { svg, url })
+}
+
+/// Return just the pairing URL (re-mints a code). Prefer remote_access_qr() to get both.
+#[tauri::command]
+pub fn generate_pairing_url() -> Result<String, String> {
+    let dnsname = tailscale_dnsname()
+        .ok_or_else(|| "tailscale is not connected".to_string())?;
+    let app_data = paths::data_dir().map_err(|e| e.to_string())?;
+    let code = do_mint_pairing_code(&app_data)?;
+    Ok(format!("https://{dnsname}/?pair={code}"))
+}
+
+/// List all paired devices (no token hashes).
+#[tauri::command]
+pub fn list_remote_devices() -> Result<Vec<crate::daemon::device_registry::RemoteDevice>, String> {
+    let app_data = paths::data_dir().map_err(|e| e.to_string())?;
+    Ok(crate::daemon::device_registry::DeviceRegistry::list_devices(&app_data))
+}
+
+/// Revoke a device by id. Returns true if the device existed and was removed.
+#[tauri::command]
+pub fn revoke_remote_device(id: String) -> Result<bool, String> {
+    let app_data = paths::data_dir().map_err(|e| e.to_string())?;
+    crate::daemon::device_registry::DeviceRegistry::revoke_device(&id, &app_data)
+}
+
+/// Toggle the kill switch. When false, the daemon returns 503 for all remote requests.
+#[tauri::command]
+pub fn set_remote_kill_switch(enabled: bool) -> Result<(), String> {
+    let app_data = paths::data_dir().map_err(|e| e.to_string())?;
+    crate::daemon::device_registry::DeviceRegistry::set_enabled(enabled, &app_data)
+}
+
+/// True = server active (not blocked); false = kill switch engaged.
+#[tauri::command]
+pub fn get_remote_kill_switch() -> Result<bool, String> {
+    let app_data = paths::data_dir().map_err(|e| e.to_string())?;
+    Ok(crate::daemon::device_registry::DeviceRegistry::is_enabled(&app_data))
 }
 
 /// Return the plaintext remote-access token so the desktop webview can open the
@@ -330,5 +386,29 @@ mod tests {
         let t = mint_token();
         assert_eq!(t.len(), 64);
         assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn mint_pairing_code_writes_hash_and_ttl() {
+        let dir = tempdir().unwrap();
+        let code = do_mint_pairing_code(dir.path()).unwrap();
+        assert_eq!(code.len(), 64);
+        let raw = std::fs::read_to_string(dir.path().join("remote-pairing.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["code_hash"].as_str().unwrap(), sha256_hex(&code));
+        let expires_at = v["expires_at"].as_u64().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(expires_at > now);
+        assert!(expires_at <= now + 120);
+    }
+
+    #[test]
+    fn list_remote_devices_returns_empty_without_registry() {
+        let dir = tempdir().unwrap();
+        let devices = crate::daemon::device_registry::DeviceRegistry::list_devices(dir.path());
+        assert!(devices.is_empty());
     }
 }
