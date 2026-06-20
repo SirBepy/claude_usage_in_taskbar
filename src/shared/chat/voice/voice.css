@@ -27,6 +27,19 @@
   font-style: italic;
 }
 
+/* Mic-source dropdown (shown only with 2+ input devices). Compact so it sits
+   quietly in the composer row next to the mic button. */
+.composer-mic-select {
+  max-width: 130px;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  background: var(--color-surface-alt, rgba(255, 255, 255, 0.04));
+  color: var(--color-text-muted, #aaa);
+  align-self: center;
+}
+
 /* The mic chip shown on a sent voice-dictated message bubble. */
 .voice-input-chip {
   opacity: 0.85;

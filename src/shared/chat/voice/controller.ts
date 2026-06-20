@@ -4,6 +4,7 @@
 // the caller calls stop().
 import { invoke } from "../../ipc";
 import { isRemote, remoteToken } from "../../transport";
+import { getSelectedMic, listMics } from "./voice-devices";
 
 export type VoiceState = "idle" | "connecting" | "recording" | "error";
 
@@ -87,9 +88,32 @@ export class VoiceController {
     try {
       const { base, token } = await voiceWsTarget();
       const url = `${base}/ws/transcribe?token=${encodeURIComponent(token)}`;
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      // Capture the user's chosen mic (with 2+ mics the default is often the
+      // wrong/idle one - that reads as silence). Fall back to the default if the
+      // chosen device is gone.
+      const micId = getSelectedMic();
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      if (micId) audioConstraints.deviceId = { exact: micId };
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      } catch (e) {
+        if (micId) {
+          console.warn("[voice] chosen mic unavailable, falling back to default", e);
+          delete audioConstraints.deviceId;
+          this.stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        } else {
+          throw e;
+        }
+      }
+      const track = this.stream.getAudioTracks()[0];
+      console.debug(`[voice] capturing mic: ${track?.label || "(default device)"}`);
+      void listMics().then((mics) =>
+        console.debug("[voice] available mics:", mics.map((m) => m.label)),
+      );
       this.ctx = new AudioContext();
       // Autoplay policy can start the context suspended, which feeds the worklet
       // zero-filled buffers (silence) instead of the mic - Whisper then
