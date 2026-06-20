@@ -1,5 +1,30 @@
 # Comments for Bepy
 
+## 2026-06-20 - /autopilot: voice mode (long-form dictation) brainstorm + spec
+
+GOAL (Joe): self-hosted streaming speech-to-text for dictating chat messages on desktop AND (heavily) mobile. Hard rules he set before going AFK: NO auto-stop / no turn-detection / no talk-back ("I HATE when AIs assume I'm done"); talk uninterrupted for up to 10 min; live text like the Claude Code app; must be able to edit mid-dictation then RESUME voice (most apps wipe edits - the thing he hates); host a model on this PC; later "teach" it his vocabulary via corrections + a <voice-msg/> tag.
+
+ASSUMED SCOPE: this run delivers the design + implementation plan only. Implementation NOT started - it needs a Python/CUDA env + an actual mic on Joe's box to verify, so building it AFK would ship unverifiable half-work. Plan 1 execution is gated on the host-PC setup (added to BEPY_TODOS Urgent). Spec: docs/superpowers/specs/2026-06-20-voice-mode-design.md (gitignored, per repo convention - all specs there are untracked).
+
+Decisions I'd normally have asked, resolved myself (Joe said "this stuff, i dont mind not reading this"):
+
+Decision needed: STT engine (he said "whispr flow model" - that's Wispr Flow, a closed commercial app, NOT self-hostable).
+Resolved via: direct judgment. Picked: faster-whisper large-v3 on CUDA via whisper-streaming LocalAgreement-2. Reason: native hotword biasing + clean partial/final streaming = exactly the two things he asked for; 4070 SUPER runs it real-time. Where: spec Stack. Revisit: no (he approved Approach A explicitly before AFK).
+
+Decision needed: edit-while-talking simultaneously, or only between bursts?
+Resolved via: direct judgment. Picked: edit only between bursts (volatile tail owns the anchor while audio flows). Reason: avoids user-vs-partial caret-fighting; invisible in practice since he stops to fix things. Where: spec Non-obvious decisions. Revisit: yes-if-it-feels-wrong-in-use.
+
+Decision needed: sidecar transport - localhost WS (daemon proxies) vs stdio child framing?
+Resolved via: direct judgment. Picked: localhost WS sidecar on 127.0.0.1:27184, daemon is the WS client + authed /ws/transcribe proxy. Reason: natural for binary audio; the past inherited-listen-socket bug (port-27182 hostage) does NOT recur (sidecar owns its own socket, spawns no children). Where: spec Architecture. Revisit: no.
+
+Decision needed: always-on engine vs lazy?
+Resolved via: direct judgment. Picked: lazy-start on first connect + idle-shutdown after 5 min. Reason: don't pin ~2GB VRAM for an unused feature; cold start (~seconds) fine for an explicit action. Where: spec Sidecar supervision. Revisit: no.
+
+Decision needed: the "teach it" / fine-tuning ask.
+Resolved via: direct judgment. Picked: hotword vocab + correction-map post-process + auto-promotion; NO Whisper fine-tuning. <voice-msg/> becomes a <voice-input/> sentinel the renderer collapses to a mic chip (per the split-send-vs-display pattern) + tells the model to read dictated text charitably. Reason: ~90% of "learns my words" at ~1% of the cost. Where: spec Learning loop. Revisit: yes-if-accuracy-plateaus.
+
+Grounded against real code: daemon stream_ws auth (?token=), lifecycle.rs spawn/supervise blueprint, util/process.rs hide_console_tokio, composer.ts highlight layer + buildBlocks sentinel path. Nothing committed (spec/plan/log all gitignored). NEXT: invoke writing-plans for Plan 1 (backend sidecar), then hand off - real progress resumes once the host-PC env exists.
+
 ## 2026-06-19 - /autopilot: phone parity bugs (hook popup / missing images / new-chat dead-end)
 
 GOAL (Joe): make the remote phone view mirror the desktop. Three reported bugs: (1) "inject the hook" modal pops on the phone home screen; (2) chat shows missing images + icons; (3) new-chat project picker opens but selecting a project does NOT open the model modal - falls back to the chats view.

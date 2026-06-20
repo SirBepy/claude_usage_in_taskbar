@@ -5,6 +5,7 @@
 - Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 - SECURITY pass: eyeball the remote SAFE_METHODS allowlist diff from the 2026-06-18 run (8 read-only methods added in src-tauri/src/daemon/remote_server.rs). Autopilot judged these safe (all read-only, no new RCE surface) but the allowlist IS the security boundary, so confirm.
+- VOICE MODE host-PC setup (gates Plan 1 of voice mode - see docs/superpowers/specs/2026-06-20-voice-mode-design.md): one-time on THIS PC only. Create the `stt-sidecar/` venv, install pinned deps (faster-whisper, whisper-streaming, websockets), and download the `large-v3` model. BEFORE pinning, run the mandatory package safety check (typosquat + advisory DB) on each - they're load-bearing audio/network deps. Confirm CUDA is visible to faster-whisper (`nvidia-smi` + a one-line transcribe smoke test). Without this the daemon will surface "voice engine not set up". Joe-only because it touches the Python/CUDA toolchain + a ~3GB download.
 
 ### Manual QA (needs relaunch / live)
 
