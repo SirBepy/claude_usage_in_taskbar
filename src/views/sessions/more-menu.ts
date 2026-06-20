@@ -3,6 +3,7 @@ import { positionDropdown } from "./position-dropdown";
 import { isAutoAccept, setAutoAccept, autoAcceptParked } from "./permission-modal";
 import { closeChat } from "./close-chat";
 import { state } from "./state";
+import { registerMenuCloser, closeAllMenus } from "./menu-registry";
 
 // The ⋮ "More options" dropdown shared by the active-session header and a
 // freshly-started chat header, so both surfaces show the exact same menu
@@ -42,7 +43,7 @@ function positionSubmenu(sub: HTMLElement, parentItem: HTMLElement): void {
 }
 
 export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, readOnly: boolean, onDiscard?: () => void): void {
-  closeMoreMenu();
+  closeAllMenus();
 
   const menu = document.createElement("div");
   menu.className = "session-more-menu";
@@ -163,3 +164,5 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
   setTimeout(() => document.addEventListener("click", onOutside), 0);
   _moreMenuCleanup = () => document.removeEventListener("click", onOutside);
 }
+
+registerMenuCloser(closeMoreMenu);

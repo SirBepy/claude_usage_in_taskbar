@@ -19,6 +19,7 @@ import {
   whenDoneArmed,
   whenDoneMenuHtml,
 } from "./when-done";
+import { registerMenuCloser, closeAllMenus } from "./menu-registry";
 
 let _viewMenu: HTMLElement | null = null;
 let _viewMenuCleanup: (() => void) | null = null;
@@ -55,7 +56,7 @@ export function rerenderViewMenuProtocol(): void {
 }
 
 function openViewMoreMenu(btn: HTMLButtonElement): void {
-  closeViewMoreMenu();
+  closeAllMenus();
   const host = document.getElementById("view-more-host");
 
   const menu = document.createElement("div");
@@ -129,3 +130,5 @@ export function toggleViewMoreMenu(btn: HTMLButtonElement): void {
   if (_viewMenu) closeViewMoreMenu();
   else openViewMoreMenu(btn);
 }
+
+registerMenuCloser(closeViewMoreMenu);
