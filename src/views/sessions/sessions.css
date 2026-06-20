@@ -249,6 +249,23 @@
   white-space: nowrap;
 }
 
+/* Inline "X% of 5h" token-drain chip (only shown in the "Token drain" sort). */
+.session-row-drain {
+  font-weight: 600;
+  color: var(--color-text);
+  opacity: 0.85;
+}
+.session-row-drain::before {
+  content: "·";
+  margin: 0 0.3em;
+  font-weight: 400;
+  opacity: 0.6;
+}
+.session-row-drain--unknown {
+  font-weight: 400;
+  opacity: 0.5;
+}
+
 .sessions-list li.active .session-row-project,
 .sessions-list li.active .session-row-subtitle {
   color: var(--color-background);

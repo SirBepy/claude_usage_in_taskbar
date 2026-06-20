@@ -43,6 +43,7 @@ export function template() {
           <option value="status">Status</option>
           <option value="recent">Recent</option>
           <option value="name">Name</option>
+          <option value="drain">Token drain</option>
         </select>
         <button
           class="smore-item"

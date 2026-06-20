@@ -1,6 +1,6 @@
 import type { Instance } from "../../types/ipc.generated";
 
-export type SessionSort = "status" | "recent" | "name";
+export type SessionSort = "status" | "recent" | "name" | "drain";
 export type SessionStateStyle = "icons" | "dots";
 
 export const LS_STATE_STYLE = "cc_session_state_style";
@@ -91,6 +91,7 @@ export function sortSessions(
   attention: Set<string>,
   question: Set<string>,
   closing: Set<string> = new Set(),
+  drainBySession?: Map<string, number>,
 ): Instance[] {
   const copy = sessions.slice();
   const closingLast = (a: Instance, b: Instance): number => {
@@ -98,6 +99,18 @@ export function sortSessions(
     const bc = closing.has(b.session_id) ? 1 : 0;
     return ac - bc;
   };
+  if (sort === "drain") {
+    // Heaviest 5h-quota drainer floats to the top. Unknown drain (no data yet)
+    // sinks to the bottom; stable-tiebreak by most-recent like the other sorts.
+    return copy.sort((a, b) => {
+      const cl = closingLast(a, b);
+      if (cl !== 0) return cl;
+      const da = drainBySession?.get(a.session_id) ?? -1;
+      const db = drainBySession?.get(b.session_id) ?? -1;
+      if (da !== db) return db - da;
+      return (b.started_at ?? "").localeCompare(a.started_at ?? "");
+    });
+  }
   if (sort === "name") {
     return copy.sort((a, b) =>
       closingLast(a, b) ||
@@ -163,7 +176,7 @@ export function saveHiddenCollapsed(collapsed: boolean): void {
 export function loadSort(): SessionSort {
   try {
     const v = localStorage.getItem(LS_SORT);
-    if (v === "status" || v === "recent" || v === "name") return v;
+    if (v === "status" || v === "recent" || v === "name" || v === "drain") return v;
   } catch { /* ignore */ }
   return "status";
 }

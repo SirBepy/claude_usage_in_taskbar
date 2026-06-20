@@ -150,4 +150,21 @@ describe("sortSessions", () => {
     const sorted = sortSessions([yourTurn, working, external], "recent", unread, noAttention, noQuestion);
     expect(sorted[0]).toBe(working);
   });
+  it("drain sort: heaviest drainer first, unknown drain sinks to bottom", () => {
+    const drainBySession = new Map([
+      ["busy-id", 12], // working
+      ["ext-id", 47],  // external — heaviest
+      // "other-id" (yourTurn) has no entry → unknown → sinks to bottom
+    ]);
+    const sorted = sortSessions(
+      [working, yourTurn, external],
+      "drain",
+      unread,
+      noAttention,
+      noQuestion,
+      new Set(),
+      drainBySession,
+    );
+    expect(sorted.map(s => s.session_id)).toEqual(["ext-id", "busy-id", "other-id"]);
+  });
 });

@@ -1,7 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { positionDropdown } from "./position-dropdown";
 import { invoke } from "../../shared/ipc";
-import type { Instance } from "../../types/ipc.generated";
+import type { Instance, DrainBoard } from "../../types/ipc.generated";
 import { closeChat } from "./close-chat";
 import { isSessionClosing, getClosingSet } from "./closing-sessions";
 import {
@@ -27,6 +27,52 @@ import { reconcileList, loadAnimEnabled, markSessionExiting } from "./sidebar-an
 import { characterForSession, characterIconUrl } from "./session-characters";
 import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
+
+// ── Token-drain data (for the "Token drain" sort) ────────────────────────────
+//
+// sessionId -> fiveHourPct (this chat's share of the rolling 5h quota). Filled
+// lazily by refreshDrainMap, which is ONLY kicked when the active sort is
+// "drain". renderSidebar runs frequently and synchronously, so it must never
+// block on (or unconditionally fire) the chat_drains IPC — it reads whatever
+// drainMap already has and triggers an async, debounced background refresh.
+const drainMap = new Map<string, number>();
+let drainFetchInFlight = false;
+let drainLastFetchMs = 0;
+const DRAIN_REFRESH_DEBOUNCE_MS = 3000;
+
+/** Lazily refresh the per-session drain percentages, then re-render ONCE.
+ *  Debounced: skips if a fetch is in flight or one ran within the last ~3s. */
+function refreshDrainMap(sessionIds: string[]): void {
+  if (drainFetchInFlight) return;
+  if (Date.now() - drainLastFetchMs < DRAIN_REFRESH_DEBOUNCE_MS) return;
+  if (sessionIds.length === 0) return;
+  drainFetchInFlight = true;
+  void (async () => {
+    try {
+      const board = await invoke<DrainBoard>("chat_drains", { sessionIds });
+      for (const id of sessionIds) {
+        const chat = board.chats[id];
+        if (chat) drainMap.set(id, chat.fiveHourPct);
+      }
+      drainLastFetchMs = Date.now();
+      // Re-render with the fresh data. Guard on a still-mounted list element.
+      if (sidebarListEl) renderSidebar(sidebarListEl);
+    } catch (err) {
+      console.error("[sidebar] chat_drains failed", err);
+    } finally {
+      drainFetchInFlight = false;
+    }
+  })();
+}
+
+/** Inline "X% of 5h" chip shown in a row's subtitle while sorting by drain.
+ *  Muted "—% of 5h" placeholder until the async drain fetch resolves. */
+function drainChipHtml(pct: number | undefined): string {
+  if (pct === undefined) {
+    return ` <span class="session-row-drain session-row-drain--unknown" title="Token drain (loading...)">—% of 5h</span>`;
+  }
+  return ` <span class="session-row-drain" title="This chat's share of the rolling 5h quota">${Math.round(pct)}% of 5h</span>`;
+}
 
 /** Renders the project tech-icon badge (bottom-right corner of the character portrait).
  *  Shared by the sidebar rows and the session-header badge (active-session.ts). */
@@ -188,7 +234,13 @@ export function renderSidebar(listEl: HTMLElement): void {
   );
 
   const closing = getClosingSet();
-  const sorted = sortSessions(filtered, sort, unread, attention, question, closing);
+  // Only fetch token-drain data when the user is actually sorting by it. Fire
+  // the (debounced) async refresh in the background; render now with whatever
+  // drainMap already holds so render never blocks on the IPC.
+  if (sort === "drain") {
+    refreshDrainMap(filtered.map(s => s.session_id));
+  }
+  const sorted = sortSessions(filtered, sort, unread, attention, question, closing, drainMap);
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
   const isManualSlots = getChatSlotMode() === "manual";
@@ -292,7 +344,7 @@ export function renderSidebar(listEl: HTMLElement): void {
           ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
           <div class="session-row-text">
             <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>
-            <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>
+            <span class="session-row-subtitle">${escapeHtml(projectName(s))}${sort === "drain" ? drainChipHtml(drainMap.get(s.session_id)) : ""}</span>
           </div>
           <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
             <i class="ph ph-dots-three-vertical"></i>
