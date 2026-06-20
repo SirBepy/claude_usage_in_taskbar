@@ -6,6 +6,7 @@ pub mod channel_adopt;
 pub mod claude_config;
 pub mod channels;
 pub mod detector_task;
+pub mod device_registry;
 pub mod frame;
 pub mod handshake;
 pub mod health;
