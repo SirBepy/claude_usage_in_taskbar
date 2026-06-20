@@ -27,6 +27,8 @@
 
 ### Visual QA
 
+- After the next build+relaunch, confirm "ultrathink" rainbow (commit 7f44d09): type the word in the chat composer - it should glow with a moving rainbow gradient in the input backdrop. Send it - the bubble should also rainbow. If a Claude reply contains the word, same effect. Should NOT fire inside code blocks.
+
 - After the next build, sanity-check the chat-renderer split (ai_todo 123, behavior-preserving refactor: chat-renderer.ts 1078→328 lines, logic moved verbatim into chat-event-handler.ts + chat-dom-renderer.ts). The 40-case unit suite passes unchanged, but eyeball a live chat once: open an existing chat (it should fade-reveal + pin to the bottom as before), send a message and watch a turn stream (bubble streams, tool chips appear, the working chip pulses, the meta row settles on completion). Pure refactor - if anything looks off vs before, that's the regression to flag.
 - After the next build, confirm the chat-open snap fix (commit c012e90): open an existing chat with a long history - it should SNAP to its final state (header changes-badge shows the final count immediately, thinking bar lands on the final activity or clears if the chat is done) instead of visibly counting up / flipping through every past activity. New live turns after open should still animate the badge + thinking bar normally.
 - After the next build, confirm the 0.1.89 fix end-to-end: app boots normally, Settings > Statusline > Back works again, and Settings > About > the GitHub/YouTube dev-link buttons open in the browser (now routed through the app's `open_external` IPC).
@@ -51,10 +53,13 @@ The stub console is GONE - the daemon now serves the **real chat UI** as an inst
 
 REQUIRED FIRST: **redeploy + update.** The running daemon still serves the old binary until rebuilt. Pushed as v0.1.98 (2026-06-18) - let the app auto-update (or rebuild). The daemon binds `127.0.0.1:27183` as before.
 
-NEW (2026-06-18, no more manual tailscale command): pairing is now a Settings screen + QR.
-1. In the app: **Settings -> Remote access** (System section, phone icon). Flip the **toggle on** - the app runs `tailscale serve --https=443 http://127.0.0.1:27183` for you (Tailscale must be running/signed in; the screen warns if not). Leave it on and it re-applies every app launch.
-2. A **QR code** appears. On your phone (same tailnet) scan it with the camera - it opens `https://<your-pc>/?token=<token>` and the SPA auto-captures the token (strips it from the URL) so you land straight in the app, signed in. No manual paste.
-3. Fallbacks if the camera route fails: the screen has a **Regenerate token** button (kills old QRs) that shows the new token to copy; the old paste-the-token gate still works too. (Legacy `remote-access-token.txt` also still exists.)
+NEW (Phase 2, 2026-06-20): **per-device tokens + QR pairing flow**.
+1. In the app: **Settings -> Remote access** (System section). Flip **Enable remote access** ON.
+2. A **QR code** appears - scan with the phone camera. It calls `/api/pair` on the daemon, gets a per-device token, stores it, and lands you straight in the app. No manual paste. The QR is one-time + expires in 2 minutes (refresh with the "Refresh QR" button).
+3. **Copy link** button copies the pairing URL so you can paste it in another browser.
+4. Paired devices list below the QR shows all paired phones with a Revoke button per device.
+5. **Block all remote access** toggle (kill switch) at the bottom sends 503 to all devices immediately.
+6. On the phone, the gate now shows a "Scan QR code with camera" button (uses device camera) and a manual-paste fallback.
 
 VERIFY (the things that couldn't be tested headless):
 - The real chat UI loads (not the old raw console), session list shows, and it stays live (polls every ~3.5s).
