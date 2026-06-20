@@ -52,27 +52,30 @@ export function statusPriority(i: Instance, unread: Set<string>, attention: Set<
   return 4;
 }
 
-export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>): string {
+export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>, rateLimited: ReadonlySet<string> = new Set()): string {
   if (attention.has(i.session_id)) return "Needs your permission - click to answer";
   if (i.kind === "external") return "External session (read-only)";
   if (i.kind === "automated") return "Automated session (remote-controlled)";
   if (i.busy) return "Claude is running";
   if (question.has(i.session_id)) return "Claude asked a question - click to answer";
   if (i.awaiting === "waiting") return "Waiting on an external process (CI / a long command)";
+  if (rateLimited.has(i.session_id)) return "Usage limit reached - will auto-resume on reset";
   if (unread.has(i.session_id)) return "Claude responded - click to read";
   return "Done - your turn";
 }
 
 /** Maps a session to its display segment index.
- *  0=Input Needed, 1=Done, 2=In Progress, 3=Closing */
+ *  0=Input Needed, 1=Done, 2=In Progress, 3=Closing, 4=Waiting for Reset */
 export function sessionSegment(
   s: Instance,
   unread: Set<string>,
   attention: Set<string>,
   question: Set<string>,
   closing: Set<string>,
+  rateLimited: ReadonlySet<string> = new Set(),
 ): number {
   if (closing.has(s.session_id)) return 3;
+  if (rateLimited.has(s.session_id)) return 4;
   const priority = statusPriority(s, unread, attention, question);
   if (priority === 0 || priority === 1) return 0; // Input Needed
   if (priority === 2 || priority === 5) return 2; // In Progress
@@ -152,12 +155,14 @@ export function statusDotClass(
   unread: Set<string>,
   attention: Set<string>,
   question: Set<string>,
+  rateLimited: ReadonlySet<string> = new Set(),
 ): string {
   if (attention.has(i.session_id)) return "st-attention";
   if (i.kind === "external" || i.kind === "automated") return "st-external";
   if (i.busy) return "st-working";
   if (question.has(i.session_id)) return "st-question";
   if (i.awaiting === "waiting") return "st-waiting";
+  if (rateLimited.has(i.session_id)) return "st-rate-limited";
   if (unread.has(i.session_id)) return "st-done";
   return "st-your-turn";
 }
@@ -169,13 +174,15 @@ export function statusIndicator(
   question: Set<string>,
   style: SessionStateStyle,
   escapeHtmlFn: (s: string) => string,
+  rateLimited: ReadonlySet<string> = new Set(),
 ): string {
-  const tooltip = escapeHtmlFn(stateTooltip(i, unread, attention, question));
+  const tooltip = escapeHtmlFn(stateTooltip(i, unread, attention, question, rateLimited));
   const needsAttention = attention.has(i.session_id);
   const isExternal = i.kind === "external" || i.kind === "automated";
   const isQuestion = !needsAttention && !isExternal && !i.busy && question.has(i.session_id);
+  const isRateLimited = !needsAttention && !isExternal && !i.busy && rateLimited.has(i.session_id);
   if (style === "dots") {
-    const cls = `session-status-dot ${statusDotClass(i, unread, attention, question)}`;
+    const cls = `session-status-dot ${statusDotClass(i, unread, attention, question, rateLimited)}`;
     return `<span class="${cls}" title="${tooltip}"></span>`;
   }
   // icons mode
@@ -196,6 +203,9 @@ export function statusIndicator(
   }
   if (i.awaiting === "waiting") {
     return `<i class="session-state-icon ph ph-hourglass-medium s-waiting" title="${tooltip}"></i>`;
+  }
+  if (isRateLimited) {
+    return `<i class="session-state-icon ph ph-hourglass-high s-rate-limited" title="${tooltip}"></i>`;
   }
   if (unread.has(i.session_id)) {
     return `<i class="session-state-icon ph ph-check-circle s-done" title="${tooltip}"></i>`;

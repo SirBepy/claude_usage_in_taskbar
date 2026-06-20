@@ -22,6 +22,7 @@ import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal"
 import { reconcileList, loadAnimEnabled, markSessionExiting } from "./sidebar-anim";
 import { characterForSession, characterIconUrl } from "./session-characters";
 import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
+import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 
 /** Renders the project tech-icon badge (bottom-right corner of the character portrait).
  *  Shared by the sidebar rows and the session-header badge (active-session.ts). */
@@ -42,11 +43,12 @@ function leadingVisual(
   unread: Set<string>,
   attention: Set<string>,
   question: Set<string>,
+  rateLimited: ReadonlySet<string> = new Set(),
 ): string {
   const charId = characterForSession(s);
   if (!charId) return indicator;
   const id = escapeHtml(charId);
-  const st = statusDotClass(s, unread, attention, question);
+  const st = statusDotClass(s, unread, attention, question, rateLimited);
   const url = characterIconUrl(charId);
   // Inline the preloaded data URL so the image is filled on first paint and
   // doesn't flash broken when the row is rebuilt. data-hydrated makes the
@@ -146,6 +148,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   ]);
   const style = loadStateStyle();
   const sort = loadSort();
+  const rateLimited = rateLimitBanner.interruptedSet;
 
   let visible = state.sessions;
   if (pending?.realId) {
@@ -239,14 +242,14 @@ export function renderSidebar(listEl: HTMLElement): void {
     });
   }
 
-  const SEGMENT_LABELS = ["Input Needed", "Done", "In Progress", "Closing"];
-  const segmented: Map<number, typeof sorted> = new Map([[0, []], [1, []], [2, []], [3, []]]);
+  const SEGMENT_LABELS = ["Input Needed", "Done", "In Progress", "Closing", "Waiting for Reset"];
+  const segmented: Map<number, typeof sorted> = new Map([[0, []], [1, []], [2, []], [3, []], [4, []]]);
   for (const s of sorted) {
-    segmented.get(sessionSegment(s, unread, attention, question, closing))!.push(s);
+    segmented.get(sessionSegment(s, unread, attention, question, closing, rateLimited))!.push(s);
   }
 
   let sessionIndex = 0;
-  for (const seg of [0, 1, 2, 3]) {
+  for (const seg of [0, 1, 2, 3, 4]) {
     const group = segmented.get(seg)!;
     if (group.length === 0) continue;
     entries.push({
@@ -258,7 +261,7 @@ export function renderSidebar(listEl: HTMLElement): void {
       const isActive = s.session_id === state.selectedId;
       const needsAttention = attention.has(s.session_id);
       const isClosing = isSessionClosing(s.session_id);
-      const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml);
+      const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml, rateLimited);
       let kbdHint = "";
       if (isManualSlots) {
         const slot = slotBySession[s.session_id];
@@ -269,7 +272,7 @@ export function renderSidebar(listEl: HTMLElement): void {
       entries.push({
         key: `s:${s.session_id}`,
         html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
-          ${leadingVisual(s, indicator, unread, attention, question)}
+          ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
           <div class="session-row-text">
             <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>
             <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>

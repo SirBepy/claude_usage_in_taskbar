@@ -35,9 +35,10 @@ import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
+import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 
 const HEADER_STATUS_CLASSES = [
-  "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention",
+  "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention", "st-rate-limited",
 ];
 
 /** Status class (st-working / st-question / …) for an open session, using the
@@ -55,7 +56,7 @@ export function headerStatusClass(sess: Instance): string {
     ...state.questionSessions,
     ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),
   ]);
-  return statusDotClass(sess, unread, attention, question);
+  return statusDotClass(sess, unread, attention, question, rateLimitBanner.interruptedSet);
 }
 
 /** Swap the header avatar's status ring class without re-rendering the whole

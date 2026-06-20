@@ -90,6 +90,11 @@ export class RateLimitBanner {
     };
   }
 
+  /** Live set of session IDs whose last turn was blocked by a rate-limit rejection. */
+  get interruptedSet(): ReadonlySet<string> {
+    return this.interrupted;
+  }
+
   /** Record a rate-limit rejection for one session. Body is the raw JSON string. */
   report(sessionId: string, body: string): void {
     let info: { status?: string; rateLimitType?: string; resetsAt?: number } | null = null;
