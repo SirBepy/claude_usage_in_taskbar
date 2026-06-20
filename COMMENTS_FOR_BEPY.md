@@ -1,5 +1,23 @@
 # Comments for Bepy
 
+## 2026-06-20 - /autopilot: per-chat token drain feature (ALL chunks done + deployed)
+
+GOAL (Joe): see which running chat is "the vampire" draining his Max 5x limit, as a % of a 5h (and weekly) session. Brainstormed + specced with him first (cost-weighted drain, "% of a 5h session" ruler via calibration against the scraped utilization, statusbar chip + click-popover rundown, sortable drain column in the sidebar). Spec: docs/superpowers/specs/2026-06-20-per-chat-token-drain-design.md.
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- Chunk 1 (backend cost engine + calibration): DONE + verified (13/13 unit tests pass: pricing ordering, hand-computed opus drain, deterministic per-message grouping incl. the tool_result/pre-amble edge cases that were the "bugs out" symptom, EWMA + floor + roundtrip). Files: tokens/drain.rs (new), tokens/quota.rs (new), tokens.rs + settings/paths.rs (wiring). -> committed in 1b50337 (BUNDLED by a concurrent autopilot's broad git-add, mislabeled "FIX: add missing autopilot field to Instance initializers in tests"; my 4 files are present + correct; did NOT un-bundle - dropping a concurrent agent's commit is a hard stop).
+
+Decision needed: drain metric source - spec said total_cost_usd.
+Resolved via: direct judgment (spec already named pricing as the fallback). Picked: compute lifetime drain as tokens x per-model pricing for ALL history. Reason: history transcripts don't store total_cost_usd (only live result lines do); and since chat-drain and the quota share the same pricing units, absolute pricing error cancels in the ratio - only per-model ratios matter. Where: tokens/drain.rs. Revisit: no.
+
+- Chunk 2 (IPC): chat_drain + chat_drains + DrainBoard struct, ts-rs export. AppState fields used: current_usage: Mutex<Option<UsageSnapshot>>, cached_instances: Arc<Mutex<Vec<Instance>>>. Heavy parse on spawn_blocking; "active in window" = transcript mtime within 5h/7d (lifetime-as-windowed proxy, Joe accepted the approximation). cargo lib clean, export_types test pass, tsc clean. -> a8ff1b1
+- Chunk 3 (statusbar drain chip + per-message rundown popover): opt-in via the chip picker (Session section, drop icon); color-graded teal/amber/red at 50/80% of 5h; body-appended popover mirroring the tool-tally popover. Handled MessageDrain.tokens being bigint (Number()). tsc clean, 22 statusbar tests pass. -> 5534183
+- Chunk 4 (sort sidebar by token drain + inline % per row, the vampire-spotter): new "drain" SessionSort, debounced chat_drains fetch (only when that sort is active, never blocks render), heaviest-first. <select> lives in template.ts not sessions.ts. tsc clean, 29 sessions-helpers tests pass (added a drain-ordering case). -> 157ec99
+
+FINAL VERIFY: full cumulative tsc clean (only the known vendor/tauri_kit stack.ts TS2532), vite build green (672 modules), backend lib clean. Resumed after the 5h limit reset; tree was quiet this pass (no concurrent collisions). DEPLOYED via /commit pushnbump. ai_todo 120 deleted (resolved). Visual QA (chip + sort look/feel) -> BEPY_TODOS, since a headless run can't screenshot.
+
+How to USE it (opt-in, not on by default): enable the "drain" chip in a chat's statusline chip picker (Session section); and pick "Token drain" in the sessions sort dropdown. The % is a CALIBRATED estimate that self-corrects against the scraped 5h utilization (needs a few samples + real usage >5% util before the absolute number is tight); the RANKING is reliable immediately. Chunk 3's deterministic per-message grouping also fixes the old "per-message tokens sometimes don't show" bug.
+
 ## 2026-06-20 - /autopilot: voice mode (long-form dictation) brainstorm + spec
 
 GOAL (Joe): self-hosted streaming speech-to-text for dictating chat messages on desktop AND (heavily) mobile. Hard rules he set before going AFK: NO auto-stop / no turn-detection / no talk-back ("I HATE when AIs assume I'm done"); talk uninterrupted for up to 10 min; live text like the Claude Code app; must be able to edit mid-dictation then RESUME voice (most apps wipe edits - the thing he hates); host a model on this PC; later "teach" it his vocabulary via corrections + a <voice-msg/> tag.
