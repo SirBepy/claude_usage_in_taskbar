@@ -84,6 +84,11 @@ fn emit_ipc_types() {
     out.push_str(&decl::<TokenRecord>());
     out.push_str(&decl::<BackfillResult>());
 
+    // token drain (per-chat cost + leaderboard)
+    out.push_str(&decl::<claude_usage_tauri_lib::tokens::MessageDrain>());
+    out.push_str(&decl::<claude_usage_tauri_lib::tokens::ChatDrain>());
+    out.push_str(&decl::<claude_usage_tauri_lib::ipc::DrainBoard>());
+
     // piper
     out.push_str(&decl::<VoiceEntry>());
     out.push_str(&decl::<PiperStatus>());

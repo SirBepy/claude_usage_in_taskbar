@@ -213,6 +213,8 @@ pub fn run() {
             ipc::is_daemon_connected,
             ipc::phone_link,
             ipc::instance_token_stats,
+            ipc::chat_drain,
+            ipc::chat_drains,
             ipc::get_hook_registration_state,
             ipc::register_hooks_globally,
             ipc::skip_hook_registration,
