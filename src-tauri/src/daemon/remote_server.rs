@@ -41,6 +41,7 @@ use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast::error::RecvError;
 
+use crate::daemon::device_registry::DeviceRegistry;
 use crate::daemon::session::Session;
 use crate::daemon::state::DaemonState;
 
@@ -109,7 +110,7 @@ pub fn spawn(
     app_data: PathBuf,
     router: crate::daemon::rpc::Router,
 ) -> Arc<crate::daemon::stt::SttSupervisor> {
-    ensure_token(&app_data);
+    DeviceRegistry::ensure_desktop_device(&app_data);
     let stt = crate::daemon::stt::SttSupervisor::new(app_data.clone());
     let stt_for_task = stt.clone();
     tokio::spawn(async move {
@@ -158,6 +159,7 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
     // WS route above are never shadowed by it.
     let public = Router::new()
         .route("/api/health", get(|| async { "ok" }))
+        .route("/api/pair", post(pair_device))
         .route("/api/sessions/:id/stream", get(stream_ws))
         .route("/ws/transcribe", get(transcribe_ws));
 
@@ -175,25 +177,6 @@ fn sha256_hex(s: &str) -> String {
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn token_hash_file(app_data: &Path) -> PathBuf {
-    app_data.join("remote-access.json")
-}
-
-/// The stored SHA-256 hex of the valid token, or None if remote access has not
-/// been provisioned (fail-closed: callers treat None as "deny all").
-fn stored_token_hash(app_data: &Path) -> Option<String> {
-    let raw = std::fs::read_to_string(token_hash_file(app_data)).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    v.get("hash").and_then(|h| h.as_str()).map(str::to_string)
-}
-
-fn token_is_valid(presented: &str, app_data: &Path) -> bool {
-    match stored_token_hash(app_data) {
-        Some(expected) => sha256_hex(presented) == expected,
-        None => false,
-    }
-}
-
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
     headers
         .get(AUTHORIZATION)?
@@ -205,8 +188,11 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
 
 /// Auth middleware for the protected routes. Runs before request extractors.
 async fn auth_mw(State(ctx): State<Arc<RemoteCtx>>, req: Request, next: Next) -> Response {
+    if !DeviceRegistry::is_enabled(&ctx.app_data) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     let ok = bearer_token(req.headers())
-        .map(|t| token_is_valid(&t, &ctx.app_data))
+        .map(|t| DeviceRegistry::validate_token(&t, &ctx.app_data))
         .unwrap_or(false);
     if ok {
         next.run(req).await
@@ -215,30 +201,34 @@ async fn auth_mw(State(ctx): State<Arc<RemoteCtx>>, req: Request, next: Next) ->
     }
 }
 
-/// On first run, mint a token, store only its hash, and write the plaintext to
-/// a one-time handoff file for the user to copy (then delete). Idempotent: a
-/// no-op once a hash exists. Phase 2 (QR pairing) replaces this handoff.
-fn ensure_token(app_data: &Path) {
-    if stored_token_hash(app_data).is_some() {
-        return;
+fn pairing_file(app_data: &Path) -> PathBuf {
+    app_data.join("remote-pairing.json")
+}
+
+/// Validate a one-time pairing code against remote-pairing.json.
+/// On success, deletes the file (single-use). Returns Err with reason on failure.
+fn validate_pairing_code(code: &str, app_data: &Path) -> Result<(), &'static str> {
+    let raw = std::fs::read_to_string(pairing_file(app_data))
+        .map_err(|_| "no active pairing code")?;
+    let v: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|_| "malformed pairing file")?;
+
+    let expected_hash = v.get("code_hash").and_then(|h| h.as_str()).unwrap_or("");
+    let expires_at = v.get("expires_at").and_then(|e| e.as_u64()).unwrap_or(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if now > expires_at {
+        let _ = std::fs::remove_file(pairing_file(app_data));
+        return Err("pairing code expired");
     }
-    let mut bytes = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
-    let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    let hash = sha256_hex(&token);
-    let body = serde_json::json!({ "hash": hash });
-    if let Err(e) = std::fs::write(
-        token_hash_file(app_data),
-        serde_json::to_string_pretty(&body).unwrap_or_default(),
-    ) {
-        log::error!("remote-access: failed to write token hash file: {e}");
-        return;
+    if sha256_hex(code) != expected_hash {
+        return Err("invalid pairing code");
     }
-    let handoff = app_data.join("remote-access-token.txt");
-    let _ = std::fs::write(&handoff, format!("{token}\n"));
-    log::info!(
-        "remote-access: generated a token; plaintext written to {handoff:?} - copy it into the phone client, then DELETE that file. Only its hash is stored."
-    );
+    let _ = std::fs::remove_file(pairing_file(app_data));
+    Ok(())
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -369,7 +359,7 @@ async fn stream_ws(
     Query(q): Query<StreamQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if !token_is_valid(&q.token, &ctx.app_data) {
+    if !DeviceRegistry::validate_token(&q.token, &ctx.app_data) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let Some(session) = ctx.state.sessions.get(&id).map(|s| s.clone()) else {
@@ -415,7 +405,7 @@ async fn transcribe_ws(
     Query(q): Query<StreamQuery>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if !token_is_valid(&q.token, &ctx.app_data) {
+    if !DeviceRegistry::validate_token(&q.token, &ctx.app_data) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     if let Err(e) = ctx.stt.ensure_running().await {
@@ -489,6 +479,29 @@ async fn relay_transcribe(
     stt.on_disconnect().await;
 }
 
+#[derive(Deserialize)]
+struct PairBody {
+    pairing_code: String,
+    device_name: Option<String>,
+}
+
+async fn pair_device(
+    State(ctx): State<Arc<RemoteCtx>>,
+    Json(body): Json<PairBody>,
+) -> Response {
+    if !DeviceRegistry::is_enabled(&ctx.app_data) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    if let Err(reason) = validate_pairing_code(&body.pairing_code, &ctx.app_data) {
+        return (StatusCode::BAD_REQUEST, reason).into_response();
+    }
+    let name = body.device_name.unwrap_or_else(|| "Phone".to_string());
+    match DeviceRegistry::add_device(&name, &ctx.app_data) {
+        Ok(token) => Json(serde_json::json!({ "device_token": token })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,22 +516,49 @@ mod tests {
     }
 
     #[test]
-    fn token_validation_is_fail_closed_without_a_hash_file() {
+    fn pair_device_validates_code_hash_and_ttl() {
         let dir = tempdir().unwrap();
-        // No remote-access.json provisioned -> every token is rejected.
-        assert!(!token_is_valid("anything", dir.path()));
-        assert!(stored_token_hash(dir.path()).is_none());
+        let code = "abc123testcode";
+        let hash = sha256_hex(code);
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + 120;
+        let body = serde_json::json!({ "code_hash": hash, "expires_at": expires_at });
+        std::fs::write(dir.path().join("remote-pairing.json"), body.to_string()).unwrap();
+
+        let result = validate_pairing_code(code, dir.path());
+        assert!(result.is_ok());
+        assert!(!dir.path().join("remote-pairing.json").exists());
+
+        let result2 = validate_pairing_code(code, dir.path());
+        assert!(result2.is_err());
     }
 
     #[test]
-    fn token_validation_matches_only_the_provisioned_token() {
+    fn pair_device_rejects_expired_code() {
         let dir = tempdir().unwrap();
-        let secret = "s3cr3t-token";
-        let body = serde_json::json!({ "hash": sha256_hex(secret) });
-        std::fs::write(token_hash_file(dir.path()), body.to_string()).unwrap();
-        assert!(token_is_valid(secret, dir.path()));
-        assert!(!token_is_valid("wrong", dir.path()));
-        assert!(!token_is_valid("", dir.path()));
+        let code = "expiredcode";
+        let body = serde_json::json!({
+            "code_hash": sha256_hex(code),
+            "expires_at": 1u64
+        });
+        std::fs::write(dir.path().join("remote-pairing.json"), body.to_string()).unwrap();
+        assert!(validate_pairing_code(code, dir.path()).is_err());
+    }
+
+    #[test]
+    fn pair_device_rejects_wrong_code() {
+        let dir = tempdir().unwrap();
+        let real_code = "realcode";
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + 120;
+        let body = serde_json::json!({ "code_hash": sha256_hex(real_code), "expires_at": expires_at });
+        std::fs::write(dir.path().join("remote-pairing.json"), body.to_string()).unwrap();
+        assert!(validate_pairing_code("wrongcode", dir.path()).is_err());
+        assert!(dir.path().join("remote-pairing.json").exists());
     }
 
     #[test]
@@ -580,19 +620,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ensure_token_writes_only_the_hash_and_is_idempotent() {
-        let dir = tempdir().unwrap();
-        ensure_token(dir.path());
-        let hash1 = stored_token_hash(dir.path()).expect("hash written");
-        // The one-time handoff plaintext is a valid token for the stored hash...
-        let plaintext = std::fs::read_to_string(dir.path().join("remote-access-token.txt")).unwrap();
-        assert!(token_is_valid(plaintext.trim(), dir.path()));
-        // ...and the stored file holds the hash, not the plaintext.
-        let stored = std::fs::read_to_string(token_hash_file(dir.path())).unwrap();
-        assert!(!stored.contains(plaintext.trim()));
-        // Idempotent: a second call must not rotate an existing token.
-        ensure_token(dir.path());
-        assert_eq!(stored_token_hash(dir.path()).unwrap(), hash1);
-    }
 }
