@@ -15,6 +15,10 @@ import {
   saveUnreadSet,
   loadSort,
   loadStateStyle,
+  loadHiddenSessions,
+  saveHiddenSessions,
+  loadHiddenCollapsed,
+  saveHiddenCollapsed,
 } from "./sessions-helpers";
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
@@ -134,6 +138,8 @@ export async function refreshSessions(): Promise<void> {
 }
 
 export function renderSidebar(listEl: HTMLElement): void {
+  sidebarListEl = listEl;
+
   const filter = state.filter.toLowerCase();
   const pending = state.pendingNewSession;
   const unread = loadUnreadSet();
@@ -150,7 +156,18 @@ export function renderSidebar(listEl: HTMLElement): void {
   const sort = loadSort();
   const rateLimited = rateLimitBanner.interruptedSet;
 
-  let visible = state.sessions;
+  // Load hidden set and prune stale IDs
+  const hidden = loadHiddenSessions();
+  const liveIds = new Set(state.sessions.map(s => s.session_id));
+  let hiddenPruned = false;
+  for (const id of [...hidden]) {
+    if (!liveIds.has(id)) { hidden.delete(id); hiddenPruned = true; }
+  }
+  if (hiddenPruned) saveHiddenSessions(hidden);
+
+  const hiddenSessions = state.sessions.filter(s => hidden.has(s.session_id));
+
+  let visible = state.sessions.filter(s => !hidden.has(s.session_id));
   if (pending?.realId) {
     visible = visible.filter(s => s.session_id !== pending.realId);
   } else if (pending) {
@@ -295,6 +312,37 @@ export function renderSidebar(listEl: HTMLElement): void {
     });
   }
 
+  // Hidden section - always at the bottom
+  if (hiddenSessions.length > 0) {
+    const hiddenCollapsed = loadHiddenCollapsed();
+    const chevronCls = hiddenCollapsed ? "ph-caret-right" : "ph-caret-down";
+    entries.push({
+      key: "__seg:hidden__",
+      html: `<li class="session-group-header session-group-hidden-toggle" data-hidden-toggle="1" data-row-key="__seg:hidden__">
+        <i class="ph ${chevronCls}" style="margin-right:4px;font-size:10px;vertical-align:middle"></i>Hidden (${hiddenSessions.length})
+      </li>`,
+    });
+    if (!hiddenCollapsed) {
+      for (const s of hiddenSessions) {
+        const isActive = s.session_id === state.selectedId;
+        const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml, rateLimited);
+        entries.push({
+          key: `s:${s.session_id}`,
+          html: `<li data-session-id="${escapeHtml(s.session_id)}" class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""}">
+            ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
+            <div class="session-row-text">
+              <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}</span>
+              <span class="session-row-subtitle">${escapeHtml(projectName(s))}</span>
+            </div>
+            <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
+              <i class="ph ph-dots-three-vertical"></i>
+            </button>
+          </li>`,
+        });
+      }
+    }
+  }
+
   reconcileList(listEl, entries, loadAnimEnabled());
   // Resolve hero avatar images to data URLs (idempotent per character id).
   void hydrateCharacterAvatars(listEl);
@@ -302,6 +350,8 @@ export function renderSidebar(listEl: HTMLElement): void {
 }
 
 // ── Per-row 3-dot context menu ───────────────────────────────────────────────
+
+let sidebarListEl: HTMLElement | null = null;
 
 let activeCtxMenu: HTMLElement | null = null;
 
@@ -384,6 +434,30 @@ export function openCtxMenu(
     menu.appendChild(pidItem);
   }
 
+  // "Hide" / "Unhide"
+  const hiddenSet = loadHiddenSessions();
+  const isHidden = hiddenSet.has(sessionId);
+  const hideItem = document.createElement("button");
+  hideItem.className = "session-ctx-item";
+  if (isHidden) {
+    hideItem.innerHTML = '<i class="ph ph-eye"></i> Unhide';
+    hideItem.addEventListener("click", () => {
+      closeCtxMenu();
+      hiddenSet.delete(sessionId);
+      saveHiddenSessions(hiddenSet);
+      if (sidebarListEl) renderSidebar(sidebarListEl);
+    });
+  } else {
+    hideItem.innerHTML = '<i class="ph ph-eye-slash"></i> Hide';
+    hideItem.addEventListener("click", () => {
+      closeCtxMenu();
+      hiddenSet.add(sessionId);
+      saveHiddenSessions(hiddenSet);
+      if (sidebarListEl) renderSidebar(sidebarListEl);
+    });
+  }
+  menu.appendChild(hideItem);
+
   // "Close" — kills the underlying claude process (per-turn child for
   // interactive sessions, the user's terminal claude pid for external)
   // and drops the row from the sidebar. clear_session handles both kinds.
@@ -413,4 +487,12 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && activeCtxMenu) closeCtxMenu();
+});
+
+document.addEventListener("click", (e) => {
+  const toggle = (e.target as HTMLElement).closest<HTMLElement>("[data-hidden-toggle]");
+  if (toggle && sidebarListEl) {
+    saveHiddenCollapsed(!loadHiddenCollapsed());
+    renderSidebar(sidebarListEl);
+  }
 });

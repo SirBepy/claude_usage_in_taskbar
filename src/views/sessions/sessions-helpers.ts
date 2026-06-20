@@ -6,6 +6,8 @@ export type SessionStateStyle = "icons" | "dots";
 export const LS_STATE_STYLE = "cc_session_state_style";
 export const LS_SORT = "cc_session_sort";
 export const LS_UNREAD = "cc_session_unread";
+export const LS_HIDDEN = "cc_hidden_sessions";
+export const LS_HIDDEN_COLLAPSED = "cc_hidden_collapsed";
 
 export function projectName(i: Instance): string {
   const cwd = String(i.cwd ?? "");
@@ -129,6 +131,32 @@ export function loadUnreadSet(): Set<string> {
 
 export function saveUnreadSet(set: Set<string>): void {
   try { localStorage.setItem(LS_UNREAD, JSON.stringify([...set])); }
+  catch { /* ignore */ }
+}
+
+export function loadHiddenSessions(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_HIDDEN);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+export function saveHiddenSessions(set: Set<string>): void {
+  try { localStorage.setItem(LS_HIDDEN, JSON.stringify([...set])); }
+  catch { /* ignore */ }
+}
+
+export function loadHiddenCollapsed(): boolean {
+  try {
+    const v = localStorage.getItem(LS_HIDDEN_COLLAPSED);
+    if (v !== null) return v === "true";
+  } catch { /* ignore */ }
+  return true;
+}
+
+export function saveHiddenCollapsed(collapsed: boolean): void {
+  try { localStorage.setItem(LS_HIDDEN_COLLAPSED, collapsed ? "true" : "false"); }
   catch { /* ignore */ }
 }
 
