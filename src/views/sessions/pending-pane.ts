@@ -90,9 +90,9 @@ export async function renderPendingPane(
       cwd: project.path,
       effort: config.effort,
       sessionId: placeholderId,
-      readOnly: true,
       sessionModel: config.model || null,
       hideZero,
+      onEffortChange: (e) => { config.effort = e; },
     });
     state.statusbar = sb;
     fetchGitInfo(project.path)

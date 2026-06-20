@@ -144,4 +144,6 @@ export interface StatusbarOptions {
   sessionModel?: string | null;
   /** Global hide-at-zero for count/tool chips (statuslineHideZero). Default true. */
   hideZero?: boolean;
+  /** Called instead of set_session_effort IPC when effort changes (e.g. pending sessions). */
+  onEffortChange?: (effort: string) => void;
 }

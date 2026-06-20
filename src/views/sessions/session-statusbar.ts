@@ -67,6 +67,7 @@ export class SessionStatusbar {
   private sessionId: string | null;
   private sessionModel: string | null;
   private readOnlyEffort: boolean;
+  private onEffortChange: ((effort: string) => void) | null;
   // Global hide-at-zero: when true, count/tool chips resolving to 0 are omitted.
   private hideZero: boolean;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
@@ -86,6 +87,7 @@ export class SessionStatusbar {
     this.sessionId = opts.sessionId ?? null;
     this.sessionModel = opts.sessionModel ?? null;
     this.readOnlyEffort = opts.readOnly ?? false;
+    this.onEffortChange = opts.onEffortChange ?? null;
     this.hideZero = opts.hideZero ?? true;
     this.container.className = "session-statusbar";
     this.tally = new ToolTallyRow(this.container);
@@ -503,9 +505,17 @@ export class SessionStatusbar {
       slider?.addEventListener("change", () => {
         const i = Number(slider.value);
         const next = EFFORTS[i];
-        if (!next || !this.sessionId) return;
-        const sid = this.sessionId;
+        if (!next) return;
         const newEffort = next;
+        if (this.onEffortChange) {
+          this.onEffortChange(newEffort);
+          this.effort = newEffort;
+          this.effortPopoverOpen = false;
+          this.render();
+          return;
+        }
+        if (!this.sessionId) return;
+        const sid = this.sessionId;
         void invoke<void>("set_session_effort", { sessionId: sid, effort: newEffort })
           .then(() => {
             this.effort = newEffort;
