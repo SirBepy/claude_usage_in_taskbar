@@ -687,8 +687,15 @@
   cursor: not-allowed;
 }
 
-.composer-send {
+.composer-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
   align-self: flex-end;
+}
+
+.composer-row--tall .composer-actions {
+  flex-direction: column;
 }
 
 /* Post-send attachment chips (inside user messages) */

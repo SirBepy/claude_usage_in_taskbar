@@ -230,13 +230,14 @@ export class Composer {
           <div class="composer-highlight" aria-hidden="true"></div>
           <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
         </div>
-        <select class="composer-mic-select" title="Microphone" style="display:none"></select>
-        <button class="composer-mic icon-btn" ${this.disabled ? "disabled" : ""} title="Voice dictation (tap to start/stop)">
-          <i class="ph ph-microphone"></i>
-        </button>
-        <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
-          <i class="ph ph-paper-plane-right"></i>
-        </button>
+        <div class="composer-actions">
+          <button class="composer-mic icon-btn" ${this.disabled ? "disabled" : ""} title="Voice dictation (tap to start/stop)">
+            <i class="ph ph-microphone"></i>
+          </button>
+          <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
+            <i class="ph ph-paper-plane-right"></i>
+          </button>
+        </div>
       </div>
     `;
     this.textarea = this.root.querySelector<HTMLTextAreaElement>(".composer-textarea");
@@ -244,7 +245,7 @@ export class Composer {
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
     this.micBtn = this.root.querySelector<HTMLButtonElement>(".composer-mic");
-    this.micSelect = this.root.querySelector<HTMLSelectElement>(".composer-mic-select");
+    this.micSelect = null;
 
     // The popup div was inside root.innerHTML, so it's gone after the swap.
     // Rebuild it on every render and keep the provider's cache.
@@ -288,6 +289,7 @@ export class Composer {
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${ta.scrollHeight}px`;
+    this.root.querySelector<HTMLElement>(".composer-row")?.classList.toggle("composer-row--tall", ta.scrollHeight > 44);
   }
 
   // Repaint the highlight backdrop (colors known /slash commands) behind the
