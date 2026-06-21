@@ -142,18 +142,31 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("list_characters", null);
       case "list_project_groups":
         return this.rpc<T>("list_project_groups", null);
-      case "start_session":
+      case "start_session": {
         // Daemon expects snake_case; tolerate camelCase from callers (matches
         // the set_session_effort normalization pattern above). Params forwarded
         // mirror the desktop call site in pending-pane.ts.
-        return this.rpc<T>("start_session", {
+        //
+        // Two differences from the desktop Tauri IPC path:
+        // 1. The daemon RPC returns {session_id: "uuid"}, not the bare string
+        //    the desktop IPC handler returns. Extract it so callers get a string.
+        // 2. The daemon RPC StartSessionParams has no `prompt` field (dropped at
+        //    deserialization). Send the first turn via a follow-up send_message
+        //    call, mirroring what run.rs::start_session_daemon does on desktop.
+        const spawnResult = await this.rpc<{ session_id: string }>("start_session", {
           cwd: args.cwd,
-          prompt: args.prompt,
           model: args.model,
           effort: args.effort,
           remote: args.remote,
           placeholder_id: args.placeholderId ?? args.placeholder_id,
         });
+        const sid = spawnResult.session_id;
+        const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";
+        if (promptText) {
+          await this.rpc<unknown>("send_message", { session_id: sid, text: promptText });
+        }
+        return sid as unknown as T;
+      }
       case "set_session_effort":
         return this.rpc<T>("set_session_effort", {
           session_id: args.session_id ?? args.sessionId,
