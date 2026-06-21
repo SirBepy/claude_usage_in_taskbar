@@ -1,6 +1,6 @@
 .view-history .view-body {
   padding: 0;
-  height: calc(100vh - 56px);
+  min-height: 0;
   overflow: hidden;
 }
 
