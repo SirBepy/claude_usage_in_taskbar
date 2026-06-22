@@ -220,7 +220,9 @@ export class Composer {
   private render(): void {
     const placeholder = this.disabled
       ? "Read-only - click Take over to interact"
-      : "Type a message. Shift+Enter for newline. Paste images.";
+      : this.isMobileViewport()
+        ? "Type a message. Tap send to send."
+        : "Type a message. Shift+Enter for newline. Paste images.";
     this.root.innerHTML = `
       <div class="composer-attachments"></div>
       <div class="composer-row">
@@ -395,9 +397,22 @@ export class Composer {
     this.opts.onDraftActivity?.();
   }
 
+  /** Mobile = the same 768px breakpoint the sessions layout uses to switch to
+   *  single-pane mode. On a soft keyboard there is no easy Shift+Enter, so a
+   *  bare Enter must insert a newline (the send button sends instead). */
+  private isMobileViewport(): boolean {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 768px)").matches
+    );
+  }
+
   private async onKey(e: KeyboardEvent): Promise<void> {
     if (this.popup?.handleKey(e)) return;
     if (e.key === "Enter" && !e.shiftKey) {
+      // On mobile, let Enter insert a newline and rely on the send button.
+      if (this.isMobileViewport()) return;
       e.preventDefault();
       await this.send();
     }
