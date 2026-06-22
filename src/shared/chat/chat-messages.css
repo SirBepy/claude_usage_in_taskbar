@@ -371,6 +371,14 @@
   padding: 4px;
 }
 
+/* Any <pre> inside a message that isn't wrapped in .block.code (e.g. a
+ * markdown-it fenced block before Shiki processes it, or a Shiki fallback)
+ * must scroll rather than overflow the chat area. */
+.msg pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 .msg.tool-use {
   background: var(--color-surface-alt);
   border-left: 3px solid var(--color-primary);
@@ -524,19 +532,21 @@
 
 /* Shiki-highlighted code blocks. The wrap div carries our background;
  * the inner <pre class="shiki"> from shiki only contributes tokenized spans.
- * Margin is on the .copyable-block parent; this div has none. */
+ * Margin is on the .copyable-block parent; this div has none.
+ * overflow-x: auto here (not hidden) lets the wrapper be the scroll container
+ * so the pre.shiki content doesn't get clipped. */
 .block.code.shiki-wrap {
   padding: 0;
-  overflow: hidden;
+  overflow-x: auto;
   margin: 0;
 }
 
 .block.code.shiki-wrap pre.shiki {
   margin: 0;
   padding: 10px;
-  overflow-x: auto;
   font-family: "Fira Code", monospace;
   font-size: 0.82rem;
+  min-width: max-content;
 }
 
 .block.image {
