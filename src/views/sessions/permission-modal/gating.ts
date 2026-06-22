@@ -7,11 +7,28 @@ import type { PermissionRequestedPayload, QuestionDraft, QuestionRequestedPayloa
 // ── Auto-accept (per-session) ──────────────────────────────────────────────
 //
 // When set for a session_id, permission-requested events for that session
-// auto-respond `allow` with the original input, skipping the modal. Reset on
-// every app launch (no persistence). AskUserQuestion-shaped requests are NOT
-// auto-answered (see gate in installPermissionModalListener).
+// auto-respond `allow` with the original input, skipping the modal. The choice
+// is PERSISTED in chat-config.json (daemon-owned, shared desktop+phone) so it
+// survives an app/daemon restart: `hydrateAutoAccept()` seeds this set on
+// launch and `setAutoAccept` write-throughs each toggle. The in-memory set is
+// the runtime source of truth because `isAutoAccept` is read synchronously in
+// the permission gate. AskUserQuestion-shaped requests are NOT auto-answered
+// (see gate in installPermissionModalListener).
 
 const _autoAccept = new Map<string, boolean>();
+
+/** Seed the in-memory set from the persisted store. Call once at startup,
+ *  before permission events can fire. Best-effort: a failure just means the
+ *  gate starts empty (same as the old no-persistence behaviour). */
+export async function hydrateAutoAccept(): Promise<void> {
+  try {
+    const ids = await invoke<string[]>("list_auto_accept");
+    _autoAccept.clear();
+    for (const id of ids ?? []) _autoAccept.set(id, true);
+  } catch (e) {
+    console.warn("[auto-accept] hydrate failed:", e);
+  }
+}
 
 export function isAutoAccept(sessionId: string | undefined | null): boolean {
   if (!sessionId) return false;
@@ -21,6 +38,11 @@ export function isAutoAccept(sessionId: string | undefined | null): boolean {
 export function setAutoAccept(sessionId: string, value: boolean): void {
   if (value) _autoAccept.set(sessionId, true);
   else _autoAccept.delete(sessionId);
+  // Write-through so the toggle survives a restart. Fire-and-forget: the
+  // in-memory set already reflects the change for this session.
+  void invoke("set_auto_accept", { sessionId, value }).catch((e) =>
+    console.warn("[auto-accept] persist failed:", e),
+  );
 }
 
 // ── Session-ID gating ──────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ import { showPermissionCard } from "./permission-card";
 import {
   allowPermission,
   autoAllowIfRemembered,
+  hydrateAutoAccept,
   isAutoAccept,
   isForSelectedSession,
   gateDiag,
@@ -117,6 +118,11 @@ let installed = false;
 export function installPermissionModalListener(): void {
   if (installed) return;
   installed = true;
+
+  // Seed the auto-accept set from the persisted store so the toggle survives a
+  // restart. Done before the Tauri-only early-return below so the phone (which
+  // has no Tauri event bus) still hydrates its gate.
+  void hydrateAutoAccept();
 
   const ev = window.__TAURI__?.event;
   if (!ev?.listen) return;

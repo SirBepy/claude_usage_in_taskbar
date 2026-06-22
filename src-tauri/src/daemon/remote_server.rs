@@ -83,6 +83,8 @@ const SAFE_METHODS: &[&str] = &[
     "respond_permission",
     "respond_question",
     "set_session_effort",
+    "set_auto_accept",
+    "list_auto_accept",
     "load_history_page",
     "read_attachment",
     "list_characters",

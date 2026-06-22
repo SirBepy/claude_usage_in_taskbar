@@ -161,6 +161,21 @@ pub async fn set_session_effort(
     Ok(())
 }
 
+/// Persist a chat's auto-accept-permissions toggle. Forwarded to the daemon so
+/// it stays the sole writer of chat-config.json (the read side is the local
+/// `list_auto_accept` command in misc.rs, which reads the same shared file).
+#[tauri::command]
+pub async fn set_auto_accept(
+    session_id: String,
+    value: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+    client.set_auto_accept(&session_id, value).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn cancel_turn(
     session_id: String,

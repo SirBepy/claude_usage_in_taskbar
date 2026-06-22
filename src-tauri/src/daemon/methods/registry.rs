@@ -61,6 +61,24 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             }
         });
     }
+    // Persist a chat's auto-accept-permissions toggle. The daemon is the sole
+    // writer of chat-config.json, so both the desktop app (forwarding via the
+    // daemon client) and the phone (direct remote RPC) funnel through here.
+    router.register("set_auto_accept", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize)]
+            struct P { session_id: String, value: bool }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+            crate::sessions::chat_config::set_auto_accept(&p.session_id, p.value);
+            Ok(json!({"ok": true}))
+        }
+    });
+    // Session ids with auto-accept enabled, so a freshly-launched client seeds
+    // its gate. Read-only; mirrors the desktop `list_auto_accept` Tauri command.
+    router.register("list_auto_accept", move |_params, _ctx| {
+        async move { Ok(json!(crate::sessions::chat_config::list_auto_accept())) }
+    });
     {
         let state = state.clone();
         router.register("register_historical", move |params, _ctx| {

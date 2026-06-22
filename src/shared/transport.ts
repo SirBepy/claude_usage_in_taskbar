@@ -172,6 +172,13 @@ export class HttpTransport implements Transport {
           session_id: args.session_id ?? args.sessionId,
           effort: args.effort,
         });
+      case "set_auto_accept":
+        return this.rpc<T>("set_auto_accept", {
+          session_id: args.session_id ?? args.sessionId,
+          value: args.value,
+        });
+      case "list_auto_accept":
+        return this.rpc<T>("list_auto_accept", null);
       case "cancel_turn":
         return this.rpc<T>("cancel_turn", {
           session_id: args.sessionId ?? args.session_id,

@@ -22,6 +22,11 @@ pub struct ChatConfig {
     pub model: String,
     #[serde(default)]
     pub effort: String,
+    /// Per-chat "auto-accept permissions" toggle. Persisted so the choice
+    /// survives an app/daemon restart (the frontend gate hydrates from
+    /// `list_auto_accept` on launch). Written only via `set_auto_accept`.
+    #[serde(default)]
+    pub auto_accept: bool,
 }
 
 /// Serialize read-modify-write within a process. Cross-process integrity comes
@@ -87,6 +92,38 @@ fn get_at(path: &Path, session_id: &str) -> Option<ChatConfig> {
     load_map(path).remove(session_id)
 }
 
+/// Set (or clear) a chat's auto-accept-permissions flag. Preserves any
+/// recorded model/effort on the same entry. Best-effort, never panics.
+pub fn set_auto_accept(session_id: &str, value: bool) {
+    let Some(path) = config_path() else { return };
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    set_auto_accept_at(&path, session_id, value);
+}
+
+/// Session ids that currently have auto-accept enabled. The frontend gate
+/// seeds its in-memory set from this on launch.
+pub fn list_auto_accept() -> Vec<String> {
+    let Some(path) = config_path() else { return Vec::new() };
+    list_auto_accept_at(&path)
+}
+
+fn set_auto_accept_at(path: &Path, session_id: &str, value: bool) {
+    if session_id.is_empty() {
+        return;
+    }
+    let mut map = load_map(path);
+    map.entry(session_id.to_string()).or_default().auto_accept = value;
+    write_atomic(path, &map);
+}
+
+fn list_auto_accept_at(path: &Path) -> Vec<String> {
+    load_map(path)
+        .into_iter()
+        .filter(|(_, c)| c.auto_accept)
+        .map(|(id, _)| id)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +149,30 @@ mod tests {
         let got = get_at(&path, "sess-1").unwrap();
         assert_eq!(got.model, "opus", "model preserved on effort-only update");
         assert_eq!(got.effort, "max");
+    }
+
+    #[test]
+    fn auto_accept_round_trips_and_preserves_model() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("chat-config.json");
+        record_at(&path, "sess-1", "opus", "high");
+        set_auto_accept_at(&path, "sess-1", true);
+        let got = get_at(&path, "sess-1").unwrap();
+        assert!(got.auto_accept, "auto_accept set");
+        assert_eq!(got.model, "opus", "model preserved across auto-accept write");
+        assert_eq!(list_auto_accept_at(&path), vec!["sess-1".to_string()]);
+        // Clearing drops it from the list but keeps the entry's model/effort.
+        set_auto_accept_at(&path, "sess-1", false);
+        assert!(list_auto_accept_at(&path).is_empty());
+        assert_eq!(get_at(&path, "sess-1").unwrap().model, "opus");
+    }
+
+    #[test]
+    fn set_auto_accept_empty_session_id_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("chat-config.json");
+        set_auto_accept_at(&path, "", true);
+        assert!(!path.exists(), "no file written for empty session id");
     }
 
     #[test]

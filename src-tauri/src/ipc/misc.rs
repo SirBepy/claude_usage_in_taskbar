@@ -10,6 +10,15 @@ pub fn get_session_config(session_id: String) -> Option<crate::sessions::chat_co
     crate::sessions::chat_config::get(&session_id)
 }
 
+/// Session ids with auto-accept-permissions enabled. The frontend permission
+/// gate seeds its in-memory set from this on launch so the toggle survives a
+/// restart. Read-only local file read (writes go through `set_auto_accept`,
+/// which forwards to the daemon as the sole writer).
+#[tauri::command]
+pub fn list_auto_accept() -> Vec<String> {
+    crate::sessions::chat_config::list_auto_accept()
+}
+
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     use std::sync::atomic::Ordering;
