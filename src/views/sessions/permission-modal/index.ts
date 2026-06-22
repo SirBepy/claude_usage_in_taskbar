@@ -83,12 +83,22 @@ function showQuestionCard(payload: QuestionRequestedPayload): void {
     onSubmit: async (answers) => {
       try {
         await invoke("respond_question", { id: payload.id, answers });
-      } catch (e) { console.warn("respond_question failed:", e); }
+      } catch (e) {
+        console.warn("respond_question failed:", e);
+        // Daemon no longer holds this prompt (turn ended before poll caught it).
+        // Clear the park so the phantom doesn't re-surface on switch-back.
+        clearPendingPromptById(payload.id);
+        rerenderSidebar();
+      }
     },
     onCancel: async () => {
       try {
         await invoke("respond_question", { id: payload.id, answers: {} });
-      } catch { /* ignore */ }
+      } catch {
+        // Same: backend already cleaned up. Clear the park ourselves.
+        clearPendingPromptById(payload.id);
+        rerenderSidebar();
+      }
     },
   });
 }
