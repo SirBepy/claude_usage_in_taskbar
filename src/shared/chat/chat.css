@@ -1,9 +1,11 @@
 /* Shared chat-renderer + composer styles. Imported by the Sessions and
- * History views. Barrel: the rules live in three purpose-scoped modules.
- *  - chat-messages.css: message bubbles, markdown, tables, composer, attachments
+ * History views. Barrel: the rules live in four purpose-scoped modules.
+ *  - chat-messages.css: message bubbles, markdown, tables, sent attachment chips
+ *  - composer.css:      composer input, attachments, file chips, drag-over state
  *  - chat-tools.css:    tool rows, chip strip, custom views, AUQ, turn footer
  *  - chat-overlays.css: lightbox, file viewer, edit window + unified diff
  */
 @import "./chat-messages.css";
+@import "./composer.css";
 @import "./chat-tools.css";
 @import "./chat-overlays.css";
