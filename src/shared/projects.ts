@@ -7,6 +7,7 @@
 import type { AliasMap } from "./tokens";
 import { resolveMergeChain } from "./merges";
 import { api } from "./api";
+import { getCharacterIconUrl } from "./character-icon";
 import { escapeHtml } from "./escape-html";
 
 export interface Avatar {
@@ -93,7 +94,7 @@ export async function hydrateCharacterAvatars(root: HTMLElement | Document = doc
     if (!id) continue;
     if (img.dataset.hydrated === id) continue;
     try {
-      const url = await api.characterAssetUrl(id, "icon.png");
+      const url = await getCharacterIconUrl(id);
       if (url) {
         img.src = url;
         img.dataset.hydrated = id;
