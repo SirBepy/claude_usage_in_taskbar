@@ -6,6 +6,7 @@ import * as shortcuts from "../../shared/shortcuts";
 import { showToast } from "../../shared/toast";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
+import "./session-avatar.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";

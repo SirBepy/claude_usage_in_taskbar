@@ -1,0 +1,242 @@
+/* ── Hero avatar: full-height strip flush to the row's left edge ─────────── */
+/* The strip cancels the row's vertical + left padding so the portrait bleeds
+   to the top, bottom, and left edges. Status reads as a glowing accent bar on
+   the strip's RIGHT edge (see .session-avatar::after) rather than a ring. */
+.session-avatar {
+  position: relative;
+  align-self: stretch;
+  width: 40px;
+  flex-shrink: 0;
+  margin: -8px 0 -8px -10px;
+  overflow: hidden;
+  display: block;
+  background: #0d0f15;
+}
+.session-char-backdrop,
+.session-char-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Blurred, scaled-up copy of the same art fills the strip behind the sharp
+   portrait — transparent (hexagonal) corners reveal hero colours, not the row
+   background, so nothing reads as a floating hexagon. */
+.session-char-backdrop {
+  z-index: 0;
+  transform: scale(1.8);
+  filter: blur(7px) saturate(1.3) brightness(0.85);
+  image-rendering: auto;
+}
+.session-char-img {
+  z-index: 1;
+  image-rendering: pixelated;
+  /* Nudge the sharp portrait a few px left so the subject sits clear of the
+     right-edge status glow/bar; the blurred backdrop fills the exposed sliver. */
+  transform: translateX(-3px);
+}
+/* Status accent: a crisp bar on the strip's right edge plus a CONTAINED inner
+   edge-glow (a right-anchored gradient inside the clipped strip). A box-shadow
+   here would be clipped on the outside by overflow:hidden and bleed only
+   leftward over the portrait, biasing it left — hence the gradient instead, so
+   the portrait stays visually centered. */
+.session-avatar { --st-color: rgba(255,255,255,0.14); --st-glow: rgba(255,255,255,0.10); }
+.session-avatar.st-question  { --st-color: var(--st-question);  --st-glow: var(--st-question-glow); }
+.session-avatar.st-waiting        { --st-color: var(--st-waiting);       --st-glow: var(--st-waiting-glow); }
+.session-avatar.st-rate-limited   { --st-color: var(--st-rate-limited);   --st-glow: var(--st-rate-limited-glow); }
+.session-avatar.st-external  { --st-color: var(--st-external);  --st-glow: var(--st-external-glow); }
+.session-avatar.st-done      { --st-color: var(--st-done);      --st-glow: var(--st-done-glow); }
+.session-avatar.st-your-turn { --st-color: var(--st-your-turn); --st-glow: var(--st-your-turn-glow); }
+.session-avatar.st-working   { --st-color: var(--st-working);   --st-glow: var(--st-working-glow); }
+.session-avatar.st-attention { --st-color: var(--st-attention); --st-glow: var(--st-attention-glow); }
+
+.session-avatar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--st-glow));
+}
+.session-avatar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  z-index: 3;
+  background: var(--st-color);
+}
+.session-avatar.st-working::before,
+.session-avatar.st-attention::before { animation: avatar-edge-pulse 1.4s ease-in-out infinite; }
+@keyframes avatar-edge-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* Positioning wrapper that holds the avatar strip + optional project badge.
+   Takes the flex-item slot; the inner .session-avatar fills it absolutely so
+   its overflow:hidden clip still works while the badge can protrude outside. */
+.session-avatar-wrap {
+  position: relative;
+  align-self: stretch;
+  flex-shrink: 0;
+  width: 40px;
+  margin: -8px 0 -8px -10px;
+}
+.session-avatar-wrap > .session-avatar {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-self: auto;
+  width: auto;
+  height: auto;
+}
+.session-proj-badge {
+  position: absolute;
+  bottom: 4px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--color-surface, #0d0f15);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Wrapper for the open-chat header avatar: circular clip + status-coloured
+   ring. Contains session-header-backdrop (blurred art fill) + session-header-char
+   (sharp portrait). Also used as a plain container for the "?" placeholder. */
+.session-header-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.session-header-proj-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 2px solid var(--color-surface, #0d0f15);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.7);
+}
+.session-header-avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,0.18);
+  box-sizing: border-box;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.04);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.session-header-avatar.st-question  { border-color: var(--st-question);  box-shadow: 0 0 6px 1px var(--st-question-glow); }
+.session-header-avatar.st-waiting        { border-color: var(--st-waiting);       box-shadow: 0 0 6px 1px var(--st-waiting-glow); }
+.session-header-avatar.st-rate-limited   { border-color: var(--st-rate-limited);   box-shadow: 0 0 6px 1px var(--st-rate-limited-glow); }
+.session-header-avatar.st-external  { border-color: var(--st-external);  box-shadow: 0 0 6px 1px var(--st-external-glow); }
+.session-header-avatar.st-done      { border-color: var(--st-done);      box-shadow: 0 0 5px 1px var(--st-done-glow); }
+.session-header-avatar.st-your-turn { border-color: var(--st-your-turn); }
+.session-header-avatar.st-working   { border-color: var(--st-working);   animation: header-char-pulse 1.5s ease-in-out infinite; }
+.session-header-avatar.st-attention { border-color: var(--st-attention); animation: header-char-pulse 1.3s ease-in-out infinite; }
+@keyframes header-char-pulse {
+  0%, 100% { box-shadow: 0 0 4px 0 var(--st-working-glow); }
+  50%      { box-shadow: 0 0 9px 2px var(--st-working-glow); }
+}
+.session-header-avatar.st-attention {
+  animation-name: header-char-pulse-attention;
+}
+/* Needs-input (amber) attention pulse for the open-chat header ring. */
+@keyframes header-char-pulse-attention {
+  0%, 100% { box-shadow: 0 0 4px 0 var(--chat-state-needs-input-glow); }
+  50%      { box-shadow: 0 0 9px 2px var(--chat-state-needs-input); }
+}
+/* Blurred backdrop behind the sharp portrait — fills transparent hexagon
+   corners with hero colours instead of the app background. */
+.session-header-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.8);
+  filter: blur(7px) saturate(1.3) brightness(0.85);
+  image-rendering: auto;
+  z-index: 0;
+}
+/* Sharp portrait layered above the backdrop. */
+.session-header-char {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  z-index: 1;
+}
+
+/* Stacked text column beside the header avatar: title on top (the important
+   line, white + bold), project name beneath it (muted). */
+.session-header-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* A chat that parked a permission/question prompt while backgrounded. Pulse
+   the icon and tint the row so the user knows to click in and answer. This is
+   the needs-input (amber) family - NOT red. Red is reserved for closing. */
+.session-state-icon.attention-pulse { color: var(--chat-state-needs-input); animation: attention-pulse 1.4s ease-in-out infinite; }
+
+.sessions-list li.needs-attention {
+  background: color-mix(in srgb, var(--chat-state-needs-input) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--chat-state-needs-input);
+}
+.sessions-list li.needs-attention:hover { background: color-mix(in srgb, var(--chat-state-needs-input) 20%, transparent); }
+.sessions-list li.needs-attention.active { background: var(--color-primary); box-shadow: none; }
+.sessions-list li.needs-attention.active .session-state-icon.attention-pulse {
+  color: var(--color-background) !important;
+}
+
+@keyframes attention-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* `/close` in progress: the chat stays VISIBLE with a red, pulsing left bar
+   until the session is actually ended (daemon process killed), instead of
+   vanishing up front. RED IS RESERVED FOR THIS TERMINAL STATE - the needs-input
+   states are amber, so the closing bar is now unambiguous (ai_todo 112). */
+.sessions-list li.closing {
+  box-shadow: inset 3px 0 0 var(--chat-state-closing);
+  animation: closing-pulse 1.2s ease-in-out infinite;
+  opacity: 0.5;
+}
+@keyframes closing-pulse {
+  0%, 100% { box-shadow: inset 3px 0 0 var(--chat-state-closing-glow); }
+  50% { box-shadow: inset 3px 0 0 var(--chat-state-closing); }
+}
