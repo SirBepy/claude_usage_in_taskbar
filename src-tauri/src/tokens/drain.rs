@@ -64,9 +64,12 @@ fn line_drain(v: &serde_json::Value) -> Option<(f64, u64)> {
     Some((usd, tokens))
 }
 
-/// Cost-weighted drain (USD) for ONE transcript file = sum over assistant usage
-/// lines of token*price. Missing/malformed files yield 0.0 (never panic).
-pub fn transcript_drain_usd(path: &Path) -> f64 {
+/// Cost-weighted drain UNITS for ONE transcript file = sum over assistant usage
+/// lines of token*relative-price. The weights are the per-token model prices, so
+/// an opus output token outweighs a haiku cache-read; the absolute scale is
+/// meaningless (it's only ever used as a ratio), so this is NOT dollars and is
+/// never shown to the user. Missing/malformed files yield 0.0 (never panic).
+pub fn transcript_drain_units(path: &Path) -> f64 {
     let Ok(file) = std::fs::File::open(path) else { return 0.0 };
     let reader = BufReader::new(file);
     let mut total = 0.0;
@@ -80,13 +83,13 @@ pub fn transcript_drain_usd(path: &Path) -> f64 {
     total
 }
 
-/// Lifetime drain (USD) for a session incl. merged subagents: the main
+/// Lifetime drain UNITS for a session incl. merged subagents: the main
 /// transcript plus every `subagents/*.jsonl` under it. Resolves the main
 /// transcript the same way `walker`/`backfill` do.
-pub fn drain_for_session(cwd: &Path, session_id: &str) -> f64 {
+pub fn drain_units_for_session(cwd: &Path, session_id: &str) -> f64 {
     let mut total = 0.0;
     if let Some(main) = transcript_for_session(cwd, session_id) {
-        total += transcript_drain_usd(&main);
+        total += transcript_drain_units(&main);
     }
     // Subagent transcripts live at
     // `<projects>/<encoded-cwd>/<session-id>/subagents/*.jsonl` (mirrors how
@@ -100,7 +103,7 @@ pub fn drain_for_session(cwd: &Path, session_id: &str) -> f64 {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                    total += transcript_drain_usd(&path);
+                    total += transcript_drain_units(&path);
                 }
             }
         }
@@ -108,8 +111,10 @@ pub fn drain_for_session(cwd: &Path, session_id: &str) -> f64 {
     total
 }
 
-/// Drain attributed to one of the user's messages. The drain/tokens cover every
+/// Drain attributed to one of the user's messages. The tokens cover every
 /// assistant turn from this user message up to (but not including) the next one.
+/// No dollar figure is exposed: the user is subscription-based, so the rundown
+/// is in raw tokens, and `expensive` is flagged from an internal cost-weight.
 #[derive(serde::Serialize, Clone, Debug, ts_rs::TS)]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 #[serde(rename_all = "camelCase")]
@@ -118,28 +123,26 @@ pub struct MessageDrain {
     pub index: u32,
     /// First ~80 chars of that user prompt, whitespace-collapsed.
     pub preview: String,
-    /// Cost of all assistant turns from this user msg until the next user msg.
-    pub drain_usd: f64,
-    /// Raw token sum for those turns (secondary stat).
+    /// Raw token sum for those turns (what the rundown shows).
     pub tokens: u64,
-    /// True if `drain_usd` is a clear outlier (>= mean + 1*stddev) OR top-3.
+    /// True if this message's cost-weighted drain is a clear outlier
+    /// (>= mean + 1*stddev) OR top-3. Ranked on the internal weight, not tokens,
+    /// so a short-but-pricey opus turn still flags.
     pub expensive: bool,
 }
 
-/// Lifetime + windowed drain for a session, returned to the UI. The
-/// quota/percentage fields are filled by the IPC layer; `drain.rs` only
-/// produces the cost + per-message breakdown.
+/// One chat's share of the rolling windows, returned to the UI. `five_hour_pct`
+/// / `weekly_pct` are the chat's slice of the CURRENT window utilization, filled
+/// by the IPC layer (`None` when there's no usage snapshot to apportion against);
+/// `drain.rs` only produces the raw token total + per-message breakdown.
 #[derive(serde::Serialize, Clone, Debug, ts_rs::TS)]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ChatDrain {
     pub session_id: String,
-    pub lifetime_drain_usd: f64,
     pub tokens: u64,
-    pub five_hour_pct: f64,
-    pub weekly_pct: f64,
-    pub quota_5h_usd: f64,
-    pub quota_weekly_usd: f64,
+    pub five_hour_pct: Option<f64>,
+    pub weekly_pct: Option<f64>,
     pub messages: Vec<MessageDrain>,
 }
 
@@ -181,10 +184,13 @@ pub fn message_drains(path: &Path) -> Vec<MessageDrain> {
     let reader = BufReader::new(file);
 
     // current group being accumulated. index 0 = pre-first-user implicit group.
+    // `cur_weight` is the internal cost-weight (drives `expensive`); it is never
+    // surfaced. `cur_tokens` is the raw token total the rundown shows.
     let mut groups: Vec<MessageDrain> = Vec::new();
+    let mut weights: Vec<f64> = Vec::new();
     let mut cur_index: u32 = 0;
     let mut cur_preview = String::new();
-    let mut cur_usd = 0.0;
+    let mut cur_weight = 0.0;
     let mut cur_tokens: u64 = 0;
     let mut started = false; // whether the current group has any committed identity
 
@@ -193,14 +199,14 @@ pub fn message_drains(path: &Path) -> Vec<MessageDrain> {
     // message list lines up 1:1 with what the user sent.
     macro_rules! flush {
         () => {{
-            if cur_index > 0 || cur_usd > 0.0 || cur_tokens > 0 {
+            if cur_index > 0 || cur_weight > 0.0 || cur_tokens > 0 {
                 groups.push(MessageDrain {
                     index: cur_index,
                     preview: cur_preview.clone(),
-                    drain_usd: cur_usd,
                     tokens: cur_tokens,
                     expensive: false,
                 });
+                weights.push(cur_weight);
             }
         }};
     }
@@ -211,54 +217,56 @@ pub fn message_drains(path: &Path) -> Vec<MessageDrain> {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
         if is_real_user_turn(&v) {
             // Close the previous group (group 0 or the prior user message).
-            if started || cur_usd > 0.0 || cur_tokens > 0 {
+            if started || cur_weight > 0.0 || cur_tokens > 0 {
                 flush!();
             }
             cur_index = next_user_index;
             next_user_index += 1;
             cur_preview = user_preview(&v);
-            cur_usd = 0.0;
+            cur_weight = 0.0;
             cur_tokens = 0;
             started = true;
             continue;
         }
-        if let Some((usd, tokens)) = line_drain(&v) {
-            cur_usd += usd;
+        if let Some((weight, tokens)) = line_drain(&v) {
+            cur_weight += weight;
             cur_tokens += tokens;
         }
     }
     // Flush the trailing group.
-    if started || cur_usd > 0.0 || cur_tokens > 0 {
+    if started || cur_weight > 0.0 || cur_tokens > 0 {
         flush!();
     }
 
-    mark_expensive(&mut groups);
+    mark_expensive(&mut groups, &weights);
     groups
 }
 
-/// Sets `expensive` on outliers: any drain >= mean + 1*stddev, OR a top-3 drain.
-/// Mutates in place after all drains are known.
-fn mark_expensive(groups: &mut [MessageDrain]) {
+/// Sets `expensive` on outliers: any cost-weight >= mean + 1*stddev, OR a top-3
+/// weight. `weights` is positionally aligned with `groups` (the internal drain
+/// units, never surfaced). Mutates in place after all weights are known.
+fn mark_expensive(groups: &mut [MessageDrain], weights: &[f64]) {
     if groups.is_empty() { return }
-    let n = groups.len() as f64;
-    let mean = groups.iter().map(|g| g.drain_usd).sum::<f64>() / n;
-    let variance = groups.iter().map(|g| (g.drain_usd - mean).powi(2)).sum::<f64>() / n;
+    let n = weights.len() as f64;
+    let mean = weights.iter().sum::<f64>() / n;
+    let variance = weights.iter().map(|w| (w - mean).powi(2)).sum::<f64>() / n;
     let stddev = variance.sqrt();
     let threshold = mean + stddev;
 
-    // Indices of the top-3 by drain.
-    let mut by_drain: Vec<usize> = (0..groups.len()).collect();
-    by_drain.sort_by(|&a, &b| {
-        groups[b].drain_usd
-            .partial_cmp(&groups[a].drain_usd)
+    // Indices of the top-3 by weight.
+    let mut by_weight: Vec<usize> = (0..weights.len()).collect();
+    by_weight.sort_by(|&a, &b| {
+        weights[b]
+            .partial_cmp(&weights[a])
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let top3: std::collections::HashSet<usize> = by_drain.into_iter().take(3).collect();
+    let top3: std::collections::HashSet<usize> = by_weight.into_iter().take(3).collect();
 
     for (i, g) in groups.iter_mut().enumerate() {
-        // A positive-drain message is "expensive" if it clears the stddev bar or
-        // sits in the top 3. Zero-drain messages never qualify.
-        g.expensive = g.drain_usd > 0.0 && (g.drain_usd >= threshold || top3.contains(&i));
+        // A positive-weight message is "expensive" if it clears the stddev bar or
+        // sits in the top 3. Zero-weight messages never qualify.
+        let w = weights[i];
+        g.expensive = w > 0.0 && (w >= threshold || top3.contains(&i));
     }
 }
 
@@ -302,13 +310,13 @@ mod tests {
             + 2000.0 * 75e-6
             + 4000.0 * 18.75e-6
             + 8000.0 * 1.5e-6;
-        let got = transcript_drain_usd(&path);
+        let got = transcript_drain_units(&path);
         assert!((got - expected).abs() < 1e-12, "got {got}, expected {expected}");
     }
 
     #[test]
     fn transcript_drain_missing_file_is_zero() {
-        assert_eq!(transcript_drain_usd(Path::new("nope-not-real.jsonl")), 0.0);
+        assert_eq!(transcript_drain_units(Path::new("nope-not-real.jsonl")), 0.0);
     }
 
     #[test]

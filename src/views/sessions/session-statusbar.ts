@@ -484,12 +484,18 @@ export class SessionStatusbar {
       // Muted placeholder while the first chat_drain fetch is in flight (or if
       // the chat has no usage yet). Stays a real button so the popover (with its
       // own empty state) is still reachable.
-      return `<span class="sb-chip sb-drain sb-drain-btn muted${this.animClass("drain")}" role="button" tabindex="0" aria-label="Token drain (loading)" title="Share of a 5h session this chat has drained (loading)"><i class="ph ph-drop"></i>··%</span>`;
+      return `<span class="sb-chip sb-drain sb-drain-btn muted${this.animClass("drain")}" role="button" tabindex="0" aria-label="Token drain (loading)" title="Share of a 5h session this chat has used (loading)"><i class="ph ph-drop"></i>··%</span>`;
+    }
+    if (d.fiveHourPct === null) {
+      // We have the chat's tokens but no usage snapshot to apportion against
+      // (not signed in / first sync pending). Show "—%", not a misleading 0%.
+      const label = "No usage data yet to compute this chat's share. Click for the token rundown.";
+      return `<span class="sb-chip sb-drain sb-drain-btn muted${this.animClass("drain")}" role="button" tabindex="0" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ph ph-drop"></i>—%</span>`;
     }
     const five = Math.round(d.fiveHourPct);
-    const week = Math.round(d.weeklyPct);
+    const week = Math.round(d.weeklyPct ?? 0);
     const cls = d.fiveHourPct >= 80 ? " danger" : d.fiveHourPct >= 50 ? " warn" : "";
-    const label = `This chat has drained ${five}% of a 5h session and ${week}% of the week. Click for a per-message rundown.`;
+    const label = `This chat is ${five}% of your current 5h session and ${week}% of the week. Click for a per-message rundown.`;
     return `<span class="sb-chip sb-drain sb-drain-btn${cls}${this.animClass("drain")}" role="button" tabindex="0" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ph ph-drop"></i>${five}% · ${week}%w</span>`;
   }
 
@@ -546,21 +552,21 @@ export class SessionStatusbar {
     if (!d) {
       return `<div class="sb-drain-empty">No drain data yet</div>`;
     }
-    const five = Math.round(d.fiveHourPct);
-    const week = Math.round(d.weeklyPct);
+    const pct = (v: number | null): string => (v === null ? "—" : `${Math.round(v)}%`);
     const tokens = formatTokenCount(Number(d.tokens), { decimals: 1 });
     const header = `
       <div class="sb-drain-header">
-        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${five}%</span><span class="sb-drain-stat-lbl">of a 5h session</span></span>
-        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${week}%</span><span class="sb-drain-stat-lbl">of the week</span></span>
+        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${pct(d.fiveHourPct)}</span><span class="sb-drain-stat-lbl">of your 5h session</span></span>
+        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${pct(d.weeklyPct)}</span><span class="sb-drain-stat-lbl">of the week</span></span>
       </div>
-      <div class="sb-drain-secondary"><i class="ph ph-coins"></i>${escapeHtml(tokens)} tokens drained</div>`;
+      <div class="sb-drain-secondary"><i class="ph ph-coins"></i>${escapeHtml(tokens)} tokens used</div>`;
     const rows = d.messages.length === 0
       ? `<div class="sb-drain-empty">No message breakdown yet</div>`
       : d.messages.map((m) => {
           const flag = m.expensive ? ' <i class="ph ph-warning sb-drain-flag"></i>' : "";
           const expCls = m.expensive ? " expensive" : "";
-          return `<div class="sb-drain-row${expCls}" title="${escapeHtml(m.preview)}"><span class="sb-drain-idx">#${m.index}</span><span class="sb-drain-preview">${escapeHtml(m.preview)}</span>${flag}<span class="sb-drain-usd">~$${m.drainUsd.toFixed(2)}</span></div>`;
+          const tok = formatTokenCount(Number(m.tokens), { decimals: 1 });
+          return `<div class="sb-drain-row${expCls}" title="${escapeHtml(m.preview)}"><span class="sb-drain-idx">#${m.index}</span><span class="sb-drain-preview">${escapeHtml(m.preview)}</span>${flag}<span class="sb-drain-tokens">${escapeHtml(tok)} tok</span></div>`;
         }).join("");
     return `${header}<div class="sb-drain-list">${rows}</div>`;
   }

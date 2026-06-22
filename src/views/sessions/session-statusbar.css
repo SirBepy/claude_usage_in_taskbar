@@ -376,14 +376,14 @@
   font-size: 0.85rem;
 }
 
-.sb-drain-usd {
+.sb-drain-tokens {
   flex-shrink: 0;
   font-family: 'Fira Code', monospace;
   font-size: 0.74rem;
-  color: #fbbf24;
+  color: var(--color-text-muted);
 }
 
-.sb-drain-row.expensive .sb-drain-usd { color: #f87171; }
+.sb-drain-row.expensive .sb-drain-tokens { color: #f87171; }
 
 .sb-drain-empty {
   padding: 12px 8px;

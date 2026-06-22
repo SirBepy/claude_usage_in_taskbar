@@ -30,7 +30,7 @@ import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 
 // ── Token-drain data (for the "Token drain" sort) ────────────────────────────
 //
-// sessionId -> fiveHourPct (this chat's share of the rolling 5h quota). Filled
+// sessionId -> fiveHourPct (this chat's share of the current 5h session). Filled
 // lazily by refreshDrainMap, which is ONLY kicked when the active sort is
 // "drain". renderSidebar runs frequently and synchronously, so it must never
 // block on (or unconditionally fire) the chat_drains IPC — it reads whatever
@@ -52,7 +52,9 @@ function refreshDrainMap(sessionIds: string[]): void {
       const board = await invoke<DrainBoard>("chat_drains", { sessionIds });
       for (const id of sessionIds) {
         const chat = board.chats[id];
-        if (chat) drainMap.set(id, chat.fiveHourPct);
+        // null share = no usage snapshot yet; leave it out so the row keeps the
+        // "—% of 5h" placeholder rather than rendering a misleading 0%.
+        if (chat && chat.fiveHourPct !== null) drainMap.set(id, chat.fiveHourPct);
       }
       drainLastFetchMs = Date.now();
       // Re-render with the fresh data. Guard on a still-mounted list element.
@@ -71,7 +73,7 @@ function drainChipHtml(pct: number | undefined): string {
   if (pct === undefined) {
     return ` <span class="session-row-drain session-row-drain--unknown" title="Token drain (loading...)">—% of 5h</span>`;
   }
-  return ` <span class="session-row-drain" title="This chat's share of the rolling 5h quota">${Math.round(pct)}% of 5h</span>`;
+  return ` <span class="session-row-drain" title="This chat's share of your current 5h session">${Math.round(pct)}% of 5h</span>`;
 }
 
 /** Renders the project tech-icon badge (bottom-right corner of the character portrait).

@@ -27,11 +27,6 @@ pub fn token_history_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("token-history.json"))
 }
 
-/// Persisted self-calibrating $/quota estimate (see `tokens::quota`).
-pub fn session_quota_file() -> Result<PathBuf> {
-    Ok(data_dir()?.join("session-quota.json"))
-}
-
 /// SQLite store consolidating usage / token / skill history. Lives in the same
 /// data dir as the other persisted files.
 pub fn companion_db() -> Result<PathBuf> {
