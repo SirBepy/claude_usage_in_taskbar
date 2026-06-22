@@ -1,4 +1,4 @@
-# Streaming STT engine: faster-whisper large-v3 + ufal LocalAgreement-2
+# Streaming STT engine: faster-whisper large-v3-turbo + ufal LocalAgreement-2
 # (vendored whisper_online.py). Injects hotword vocab + applies the correction
 # map. VAD filter on: silent frames are dropped before Whisper sees them.
 import os
@@ -67,7 +67,7 @@ _MIN_ITER_SAMPLES = 16000  # 1 s at 16 kHz
 
 
 class StreamingEngine:
-    def __init__(self, app_data, model_size="large-v3", lang="en"):
+    def __init__(self, app_data, model_size="large-v3-turbo", lang="en"):
         self.app_data = app_data
         # FasterWhisperASR.load_model hardcodes device="cuda", compute_type="float16";
         # modelsize="large-v3" is auto-downloaded by faster-whisper on first use.
