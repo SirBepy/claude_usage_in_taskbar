@@ -17,7 +17,7 @@
  */
 
 import { invoke } from "../../../shared/ipc";
-import { dismissQuestionCard, extractQuestions, renderQuestionUI } from "./question-ui";
+import { dismissQuestionCard, extractQuestions, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
 import {
   allowPermission,
@@ -29,7 +29,7 @@ import {
   takePendingPrompt,
   clearPendingPromptById,
 } from "./gating";
-import type { PermissionRequestedPayload, Question, QuestionRequestedPayload } from "./types";
+import type { PermissionRequestedPayload, Question, QuestionDraft, QuestionRequestedPayload } from "./types";
 
 export {
   isAutoAccept,
@@ -60,7 +60,7 @@ function rerenderSidebar(): void {
   _rerenderSidebar?.();
 }
 
-function showQuestionCard(payload: QuestionRequestedPayload): void {
+function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: QuestionDraft): void {
   // Park the prompt while it's on screen so switching chats and back re-surfaces
   // it (the reliable poll only emits each id once, so a card torn down by
   // navigation is otherwise lost while the daemon turn hangs). Cleared when the
@@ -72,9 +72,18 @@ function showQuestionCard(payload: QuestionRequestedPayload): void {
     ? payload.questions
     : [payload.questions];
 
+  // Snapshot draft from the old card if it belongs to this session (covers the
+  // case where the user switched away and back without another session getting
+  // an AUQ in between).
+  const initialDraft = restoredDraft
+    ?? (payload.session_id ? snapshotActiveCardDraft(payload.session_id) : undefined)
+    ?? undefined;
+
   renderQuestionUI({
     id: payload.id,
+    sessionId: payload.session_id,
     questions,
+    initialDraft,
     titleIcon: "ph-chat-circle-dots",
     titleText: "Claude is asking",
     submitLabel: "Submit",
@@ -225,7 +234,7 @@ export function replayPendingPrompt(sessionId: string): void {
   if (!pending) return;
   rerenderSidebar(); // clear the attention marker now that we're surfacing it
   if (pending.kind === "question") {
-    showQuestionCard(pending.payload);
+    showQuestionCard(pending.payload, pending.draft);
     return;
   }
   const payload = pending.payload;

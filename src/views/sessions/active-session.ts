@@ -31,6 +31,8 @@ import {
   replayPendingPrompt,
   pendingPromptSessionIds,
 } from "./permission-modal";
+import { snapshotActiveCardDraft } from "./permission-modal/question-ui";
+import { savePendingPromptDraft } from "./permission-modal/gating";
 import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
@@ -173,6 +175,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   // the list overlay still switches away from the list.
   document.querySelector(".view-sessions")?.setAttribute("data-mobile-pane", "chat");
   if (state.selectedId === sessionId) return;
+  // Snapshot any in-progress AUQ answer before the pane is replaced, so it
+  // survives the session switch even if another session also gets an AUQ.
+  if (state.selectedId) {
+    const draft = snapshotActiveCardDraft(state.selectedId);
+    if (draft) savePendingPromptDraft(state.selectedId, draft);
+  }
   // Unwatch any previously watched session if we're switching to a different one.
   if (_watchedId && _watchedId !== sessionId) {
     void invoke<void>("unwatch_session_transcript", { sessionId: _watchedId }).catch(() => {});

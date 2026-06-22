@@ -58,7 +58,12 @@ export function extractQuestions(input: unknown): Question[] | null {
 // The currently-shown question card, so a daemon "prompt-resolved" / expiry
 // event can dismiss it from outside (e.g. it timed out, or was answered on
 // another device). Only one card shows at a time.
-let activeCard: { id: string; teardown: () => void } | null = null;
+let activeCard: {
+  id: string;
+  sessionId?: string;
+  teardown: () => void;
+  getDraft: () => import("./types").QuestionDraft;
+} | null = null;
 
 /**
  * Dismiss the live question card if it matches `id` (or unconditionally when no
@@ -71,14 +76,30 @@ export function dismissQuestionCard(id?: string): void {
   activeCard.teardown();
 }
 
+/**
+ * Return a snapshot of the active card's current answer state if it belongs to
+ * the given session, without tearing it down. Returns null if no card is up or
+ * the card belongs to a different session.
+ */
+export function snapshotActiveCardDraft(sessionId: string): import("./types").QuestionDraft | null {
+  if (!activeCard || activeCard.sessionId !== sessionId) return null;
+  return activeCard.getDraft();
+}
+
 export function renderQuestionUI(opts: QuestionUIOpts): void {
   const { host } = ensureHost();
   const { questions } = opts;
 
   const selections = new Map<number, Selection>();
   const freeText = new Map<number, string>();
+  if (opts.initialDraft) {
+    opts.initialDraft.freeText.forEach((v, k) => freeText.set(k, v));
+    opts.initialDraft.selections.forEach((v, k) => {
+      selections.set(k, v instanceof Set ? new Set(v) : v);
+    });
+  }
   questions.forEach((q, i) => {
-    if (q.multiSelect) selections.set(i, new Set<string>());
+    if (q.multiSelect && !selections.has(i)) selections.set(i, new Set<string>());
   });
 
   const messagesEl = document.querySelector<HTMLElement>(".session-messages");
@@ -103,7 +124,20 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     }
     if (activeCard?.teardown === teardown) activeCard = null;
   };
-  if (opts.id) activeCard = { id: opts.id, teardown };
+  if (opts.id) {
+    activeCard = {
+      id: opts.id,
+      sessionId: opts.sessionId,
+      teardown,
+      getDraft: () => ({
+        freeText: new Map(freeText),
+        selections: new Map(
+          Array.from(selections.entries()).map(([k, v]) => [k, v instanceof Set ? new Set(v) : v])
+        ),
+        activeTab,
+      }),
+    };
+  }
 
   const escHandler = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -148,7 +182,7 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     return typeof s === "string";
   };
 
-  let activeTab = 0;
+  let activeTab = opts.initialDraft?.activeTab ?? 0;
   let firstRender = true;
   const render = () => {
     const title = `

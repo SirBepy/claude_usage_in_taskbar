@@ -2,7 +2,7 @@ import { invoke } from "../../../shared/ipc";
 import { state } from "../state";
 import { isDestructive, loadRulesForCwd, matchesRule } from "../permission-rules";
 import { extractQuestions } from "./question-ui";
-import type { PermissionRequestedPayload, QuestionRequestedPayload } from "./types";
+import type { PermissionRequestedPayload, QuestionDraft, QuestionRequestedPayload } from "./types";
 
 // ── Auto-accept (per-session) ──────────────────────────────────────────────
 //
@@ -72,12 +72,19 @@ export function isForSelectedSession(eventSessionId: string | undefined): boolea
 
 export type PendingPrompt =
   | { kind: "permission"; payload: PermissionRequestedPayload }
-  | { kind: "question"; payload: QuestionRequestedPayload };
+  | { kind: "question"; payload: QuestionRequestedPayload; draft?: QuestionDraft };
 
 const _pendingPrompts = new Map<string, PendingPrompt>();
 
 export function storePendingPrompt(sessionId: string, prompt: PendingPrompt): void {
   _pendingPrompts.set(sessionId, prompt);
+}
+
+/** Attach a draft snapshot to an already-parked question prompt. No-op if
+ *  nothing is parked or the parked entry is not a question. */
+export function savePendingPromptDraft(sessionId: string, draft: QuestionDraft): void {
+  const p = _pendingPrompts.get(sessionId);
+  if (p?.kind === "question") _pendingPrompts.set(sessionId, { ...p, draft });
 }
 
 /** Returns and removes the parked prompt for a session, if any. */

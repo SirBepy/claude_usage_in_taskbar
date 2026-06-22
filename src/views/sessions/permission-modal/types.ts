@@ -25,9 +25,19 @@ export interface QuestionRequestedPayload {
 
 export type Answers = Record<string, string | string[]>;
 
+export type Selection = string | Set<string>;
+
+export interface QuestionDraft {
+  freeText: Map<number, string>;
+  selections: Map<number, Selection>;
+  activeTab: number;
+}
+
 export interface QuestionUIOpts {
   /** Prompt id, so the card can be torn down externally (expiry / resolved elsewhere). */
   id?: string;
+  /** Session the prompt belongs to - used to scope draft snapshots. */
+  sessionId?: string;
   questions: Question[];
   titleIcon: string;
   titleText: string;
@@ -37,6 +47,6 @@ export interface QuestionUIOpts {
   onSubmit: (answers: Answers) => void | Promise<void>;
   onCancel: () => void | Promise<void>;
   cancelLabel: string;
+  /** Partial answers to restore when re-surfacing a parked card. */
+  initialDraft?: QuestionDraft;
 }
-
-export type Selection = string | Set<string>;
