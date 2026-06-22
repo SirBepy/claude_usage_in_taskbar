@@ -180,6 +180,7 @@
 .history-pane .session-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .history-session-actions {
