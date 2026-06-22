@@ -80,6 +80,26 @@ export function handleCopyClick(e: MouseEvent): void {
   if (!btn) return;
 
   let text = "";
+
+  if (btn.classList.contains("cell-copy-btn")) {
+    const cell = btn.closest<HTMLElement>("td, th");
+    if (!cell) return;
+    const clone = cell.cloneNode(true) as HTMLElement;
+    clone.querySelector(".cell-copy-btn")?.remove();
+    text = clone.textContent ?? "";
+    void navigator.clipboard.writeText(text.trim()).then(() => {
+      const icon = btn.querySelector("i");
+      if (!icon) return;
+      icon.className = "ph ph-check";
+      btn.classList.add("copied");
+      setTimeout(() => {
+        icon.className = "ph ph-copy";
+        btn.classList.remove("copied");
+      }, 1500);
+    });
+    return;
+  }
+
   const inlineWrap = btn.closest(".inline-code-wrap");
   if (inlineWrap) {
     text = inlineWrap.querySelector("code")?.textContent ?? "";
