@@ -1,6 +1,6 @@
 # Streaming STT engine: faster-whisper large-v3 + ufal LocalAgreement-2
 # (vendored whisper_online.py). Injects hotword vocab + applies the correction
-# map. NO VAD: the engine never decides an utterance has ended.
+# map. VAD filter on: silent frames are dropped before Whisper sees them.
 import os
 import sys
 import importlib.util
@@ -61,6 +61,10 @@ import numpy as np
 from whisper_online import FasterWhisperASR, OnlineASRProcessor
 from vocab import load_vocab, load_corrections, apply_corrections
 
+# Run Whisper at most once per second of accumulated audio. Calling it on every
+# 250 ms frame wastes GPU cycles and creates a backlog that causes multi-second lag.
+_MIN_ITER_SAMPLES = 16000  # 1 s at 16 kHz
+
 
 class StreamingEngine:
     def __init__(self, app_data, model_size="large-v3", lang="en"):
@@ -68,16 +72,21 @@ class StreamingEngine:
         # FasterWhisperASR.load_model hardcodes device="cuda", compute_type="float16";
         # modelsize="large-v3" is auto-downloaded by faster-whisper on first use.
         self.asr = FasterWhisperASR(lan=lang, modelsize=model_size)
+        # Skip silent / non-speech frames so Whisper never sees silence and
+        # hallucinates closed-caption boilerplate.
+        self.asr.use_vad()
         self._hotwords = load_vocab(app_data)
         if self._hotwords:
             self.asr.transcribe_kargs["hotwords"] = self._hotwords
         self._corrections = load_corrections(app_data)
         self.online = None
+        self._samples_since_iter = 0
 
     def reset(self):
         """Begin a fresh utterance."""
         self.online = OnlineASRProcessor(self.asr)
         self.online.init()
+        self._samples_since_iter = 0
 
     def reload_vocab(self):
         self._hotwords = load_vocab(self.app_data)
@@ -90,8 +99,14 @@ class StreamingEngine:
     def accept_pcm(self, pcm_i16le: bytes) -> dict:
         """Feed a chunk of raw 16-bit LE mono 16 kHz PCM.
         Returns {"final": newly-committed text (may be ""), "partial": uncommitted tail}."""
+        if self.online is None:
+            return {"final": "", "partial": ""}
         audio = np.frombuffer(pcm_i16le, dtype="<i2").astype(np.float32) / 32768.0
         self.online.insert_audio_chunk(audio)
+        self._samples_since_iter += len(audio)
+        if self._samples_since_iter < _MIN_ITER_SAMPLES:
+            return {"final": "", "partial": ""}
+        self._samples_since_iter = 0
         _, _, text = self.online.process_iter()
         final = apply_corrections(text or "", self._corrections)
         # Uncommitted LocalAgreement tail = HypothesisBuffer.buffer, list of (beg,end,word).

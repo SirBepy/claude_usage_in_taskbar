@@ -1,7 +1,7 @@
 # STT sidecar: localhost-only WebSocket server on 127.0.0.1:27184.
 # Binary frames = raw 16 kHz mono Int16LE PCM. Text frames = JSON control
 # {"cmd": "start"|"stop"|"reload_vocab"|"shutdown"}. Emits JSON results.
-import argparse, asyncio, json, pathlib, sys
+import argparse, asyncio, concurrent.futures, json, pathlib, sys
 import websockets
 from engine import StreamingEngine
 
@@ -9,11 +9,17 @@ from engine import StreamingEngine
 def make_handler(app_data):
     async def handle(ws):
         eng = StreamingEngine(app_data=pathlib.Path(app_data))
+        # Single-worker executor: Whisper inference is blocking; running it in a
+        # thread keeps the asyncio loop free to receive new audio frames instead
+        # of letting them pile up in the OS buffer (the root cause of 10-15 s lag).
+        # max_workers=1 serialises calls so eng.online is never touched concurrently.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        loop = asyncio.get_running_loop()
         await ws.send(json.dumps({"type": "ready"}))
         async for msg in ws:
             try:
                 if isinstance(msg, (bytes, bytearray)):
-                    out = eng.accept_pcm(bytes(msg))
+                    out = await loop.run_in_executor(executor, eng.accept_pcm, bytes(msg))
                     if out["final"]:
                         await ws.send(json.dumps({"type": "final", "text": out["final"]}))
                     if out["partial"]:
@@ -23,7 +29,7 @@ def make_handler(app_data):
                 if cmd == "start":
                     eng.reset()
                 elif cmd == "stop":
-                    tail = eng.finish()
+                    tail = await loop.run_in_executor(executor, eng.finish)
                     await ws.send(json.dumps({"type": "final", "text": tail}))
                 elif cmd == "reload_vocab":
                     eng.reload_vocab()
@@ -32,6 +38,7 @@ def make_handler(app_data):
                     return
             except Exception as e:  # never let one bad frame kill the loop
                 await ws.send(json.dumps({"type": "error", "message": str(e)}))
+        executor.shutdown(wait=False)
     return handle
 
 
