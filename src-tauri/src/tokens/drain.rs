@@ -1,12 +1,15 @@
-//! Cost-weighted "drain" of a session: USD burned per transcript, per session
-//! (incl. merged subagents), and per user message. Pricing is matched on the
-//! model string of each assistant usage line. The per-message grouping mirrors
-//! `walker::parse_transcript`'s line loop and reuses `title::is_real_user_turn`
-//! so a "message" means exactly what the user perceives (no tool_result
-//! continuations, no meta/last-prompt rows).
+//! Cost-weighted "drain" of a session in relative drain UNITS per transcript,
+//! per session (incl. merged subagents), and per user message. The weights are
+//! the per-token model prices, so the scale is meaningless on its own and is
+//! only ever used as a ratio — never shown to the user as a dollar figure.
+//! Pricing is matched on the model string of each assistant usage line. The
+//! per-message grouping mirrors `walker::parse_transcript`'s line loop and
+//! reuses `title::is_real_user_turn` so a "message" means exactly what the user
+//! perceives (no tool_result continuations, no meta/last-prompt rows).
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::title::is_real_user_turn;
 use super::walker::{claude_projects_dir, encode_cwd_as_project_dir, transcript_for_session};
@@ -104,6 +107,68 @@ pub fn drain_units_for_session(cwd: &Path, session_id: &str) -> f64 {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                     total += transcript_drain_units(&path);
+                }
+            }
+        }
+    }
+    total
+}
+
+/// Parses a transcript line's top-level `timestamp` (RFC 3339, e.g.
+/// "2026-06-22T17:31:45.803Z") into a `SystemTime`. `None` when absent or
+/// unparseable — assistant usage lines always carry one, so a `None` here means
+/// the line isn't a usage line we'd count anyway.
+fn line_timestamp(v: &serde_json::Value) -> Option<SystemTime> {
+    let ts = v.get("timestamp").and_then(|t| t.as_str())?;
+    let dt = chrono::DateTime::parse_from_rfc3339(ts).ok()?;
+    let secs = dt.timestamp();
+    if secs < 0 {
+        return None;
+    }
+    Some(UNIX_EPOCH + Duration::new(secs as u64, dt.timestamp_subsec_nanos()))
+}
+
+/// Cost-weighted drain UNITS for ONE transcript file, counting only assistant
+/// usage lines whose `timestamp` is at or after `cutoff`. Used to measure a
+/// chat's drain *within the current rolling window* (since its reset boundary),
+/// which is what calibrates the window-capacity estimate. Lines without a
+/// parseable timestamp are excluded (can't place them in the window).
+pub fn transcript_drain_units_since(path: &Path, cutoff: SystemTime) -> f64 {
+    let Ok(file) = std::fs::File::open(path) else { return 0.0 };
+    let reader = BufReader::new(file);
+    let mut total = 0.0;
+    for line in reader.lines().map_while(|r| r.ok()) {
+        if line.trim().is_empty() { continue }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        match line_timestamp(&v) {
+            Some(ts) if ts >= cutoff => {}
+            _ => continue,
+        }
+        if let Some((units, _)) = line_drain(&v) {
+            total += units;
+        }
+    }
+    total
+}
+
+/// Windowed drain UNITS for a session incl. merged subagents (main transcript +
+/// every `subagents/*.jsonl`), counting only lines at or after `cutoff`. Mirrors
+/// `drain_units_for_session` but time-bounded.
+pub fn drain_units_for_session_since(cwd: &Path, session_id: &str, cutoff: SystemTime) -> f64 {
+    let mut total = 0.0;
+    if let Some(main) = transcript_for_session(cwd, session_id) {
+        total += transcript_drain_units_since(&main, cutoff);
+    }
+    if let Some(projects) = claude_projects_dir() {
+        let sub_dir = projects
+            .join(encode_cwd_as_project_dir(cwd))
+            .join(session_id)
+            .join("subagents");
+        if let Ok(entries) = std::fs::read_dir(&sub_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                    total += transcript_drain_units_since(&path, cutoff);
                 }
             }
         }

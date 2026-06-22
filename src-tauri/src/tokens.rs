@@ -5,6 +5,7 @@ pub mod aggregate;
 pub mod backfill;
 pub mod live;
 pub mod drain;
+pub mod capacity;
 
 pub use record::*;
 pub use walker::*;

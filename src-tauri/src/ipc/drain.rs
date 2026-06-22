@@ -1,22 +1,33 @@
-//! IPC layer for the token-drain feature. Wraps `tokens::drain`:
-//! `chat_drain` is the per-chat popover (raw tokens + per-message breakdown +
-//! window shares), `chat_drains` is the leaderboard (many chats, no per-message
-//! detail). Both apportion the CURRENT window utilization across the chats that
-//! were active in the window, weighting by each chat's internal cost-drain. No
-//! dollar figure is ever produced or surfaced (the user is subscription-based).
+//! IPC layer for the token-drain feature. Wraps `tokens::drain` + `tokens::capacity`:
+//! `chat_drain` is the per-chat popover (raw tokens + per-message breakdown + the
+//! chat's size as a % of a 5h/weekly window), `chat_drains` is the leaderboard
+//! (many chats, no per-message detail).
+//!
+//! A chat's size is a STABLE yardstick, not a live share: `lifetime cost-weighted
+//! drain ÷ the estimated capacity of one window`. It never changes based on what
+//! else is running, and can exceed 100% for a chat that spanned several windows.
+//! The capacity is estimated by division from the live utilization snapshot
+//! (`visible drain since the window reset ÷ utilization`), calibrated only from
+//! high-utilization readings and persisted so the size is stable across restarts.
+//! No dollar figure is ever produced or surfaced (the user is subscription-based).
 
+use crate::settings::paths;
 use crate::state::AppState;
-use crate::tokens::{self, drain as drain_engine, ChatDrain, MessageDrain};
+use crate::tokens::{self, capacity, drain as drain_engine, ChatDrain, MessageDrain};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::State;
+
+const FIVE_HOURS: Duration = Duration::from_secs(5 * 60 * 60);
+const SEVEN_DAYS: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// Don't re-run the expensive all-chats windowed-drain sum more often than this;
+/// capacity barely moves window to window, so a slightly stale ruler is fine.
+const RECALIBRATE_AFTER: Duration = Duration::from_secs(60);
 
 /// Resolves `(cwd, main_transcript)` for a session id the way
 /// `instance_token_stats` / `context_status` do: the live instance cache first,
 /// then a scan of `~/.claude/projects/*/<id>.jsonl` for history-only sessions.
-/// The directory name is decoded back to a real cwd so the drain engine can find
-/// the matching `subagents/` dir. Returns `None` when nothing resolves.
 fn resolve_session(session_id: &str, state: &AppState) -> Option<(PathBuf, PathBuf)> {
     // 1. Live instance cache.
     if let Some(inst) = state
@@ -59,64 +70,109 @@ fn resolve_session(session_id: &str, state: &AppState) -> Option<(PathBuf, PathB
     None
 }
 
-/// The live 5h / weekly utilization PERCENTAGES from the latest usage snapshot
-/// (the real Anthropic-reported numbers). `None` when no snapshot exists yet, so
-/// the UI can show "no data" rather than a bogus 0%.
-fn util_from_state(state: &AppState) -> (Option<f64>, Option<f64>) {
+/// One window's live state from the usage snapshot: utilization percent and the
+/// start of the current rolling window (`resets_at - window length`). Either
+/// field is `None` when there's no snapshot or `resets_at` won't parse.
+#[derive(Clone, Copy)]
+struct WindowCtx {
+    util: Option<f64>,
+    start: Option<SystemTime>,
+}
+
+fn parse_rfc3339(s: &str) -> Option<SystemTime> {
+    let dt = chrono::DateTime::parse_from_rfc3339(s).ok()?;
+    let secs = dt.timestamp();
+    if secs < 0 {
+        return None;
+    }
+    Some(UNIX_EPOCH + Duration::new(secs as u64, dt.timestamp_subsec_nanos()))
+}
+
+/// The 5h and weekly window contexts from the latest usage snapshot.
+fn windows_from_state(state: &AppState) -> (WindowCtx, WindowCtx) {
     let snap = state.current_usage.lock().unwrap();
     match snap.as_ref() {
-        Some(s) => (Some(s.five_hour.utilization), Some(s.seven_day.utilization)),
-        None => (None, None),
+        Some(s) => (
+            WindowCtx {
+                util: Some(s.five_hour.utilization),
+                start: parse_rfc3339(&s.five_hour.resets_at).and_then(|r| r.checked_sub(FIVE_HOURS)),
+            },
+            WindowCtx {
+                util: Some(s.seven_day.utilization),
+                start: parse_rfc3339(&s.seven_day.resets_at).and_then(|r| r.checked_sub(SEVEN_DAYS)),
+            },
+        ),
+        None => (
+            WindowCtx { util: None, start: None },
+            WindowCtx { util: None, start: None },
+        ),
     }
 }
 
-/// Per-session windowed cost-drain + the visible totals. For each resolved
-/// session we take its lifetime drain units (the proxy Joe accepted) and count
-/// them toward a window only if the transcript was touched within that window.
-/// Returns `(per_session (units_5h, units_weekly), total_5h, total_weekly)`.
-fn windowed_drains(
+/// Loads the persisted capacity estimate and, unless it was refreshed within the
+/// last minute, recalibrates each window from the visible chats' drain since that
+/// window's reset (only when utilization clears the floor). Returns the
+/// capacities to use as denominators: `None` when still unknown (no high-util
+/// sample seen yet), so the UI shows "—%" rather than a bogus number.
+fn compute_capacities(
     resolved: &[(String, PathBuf, PathBuf)],
-) -> (HashMap<String, (f64, f64)>, f64, f64) {
-    let now = SystemTime::now();
-    let within = |path: &Path, window: Duration| -> bool {
-        std::fs::metadata(path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|mtime| now.duration_since(mtime).ok())
-            .map(|age| age <= window)
-            .unwrap_or(false)
+    five: &WindowCtx,
+    weekly: &WindowCtx,
+) -> (Option<f64>, Option<f64>) {
+    let Ok(path) = paths::session_capacity_file() else {
+        return (None, None);
     };
-    let five_h = Duration::from_secs(5 * 60 * 60);
-    let seven_d = Duration::from_secs(7 * 24 * 60 * 60);
+    let mut est = capacity::load(&path);
 
-    let mut map = HashMap::new();
-    let mut total_5h = 0.0;
-    let mut total_weekly = 0.0;
-    for (id, cwd, transcript) in resolved {
-        let units = drain_engine::drain_units_for_session(cwd, id);
-        let u5 = if within(transcript, five_h) { units } else { 0.0 };
-        let uw = if within(transcript, seven_d) { units } else { 0.0 };
-        total_5h += u5;
-        total_weekly += uw;
-        map.insert(id.clone(), (u5, uw));
+    let now = SystemTime::now();
+    let stale = parse_rfc3339(&est.updated_at)
+        .and_then(|t| now.duration_since(t).ok())
+        .map(|age| age >= RECALIBRATE_AFTER)
+        .unwrap_or(true);
+
+    if stale {
+        let mut changed = false;
+        let mut recalc = |ctx: &WindowCtx, prev: f64| -> f64 {
+            match (ctx.util, ctx.start) {
+                (Some(u), Some(start)) if u >= capacity::UTIL_FLOOR_PCT => {
+                    let visible: f64 = resolved
+                        .iter()
+                        .map(|(id, cwd, _)| drain_engine::drain_units_for_session_since(cwd, id, start))
+                        .sum();
+                    let next = capacity::calibrate_window(prev, visible, u);
+                    if next != prev {
+                        changed = true;
+                    }
+                    next
+                }
+                _ => prev,
+            }
+        };
+        est.capacity_5h_units = recalc(five, est.capacity_5h_units);
+        est.capacity_weekly_units = recalc(weekly, est.capacity_weekly_units);
+
+        if changed {
+            est.samples = est.samples.saturating_add(1);
+            est.updated_at = chrono::DateTime::<chrono::Utc>::from(now).to_rfc3339();
+            let _ = capacity::save(&path, &est);
+        }
     }
-    (map, total_5h, total_weekly)
+
+    let cap = |v: f64| if v > 0.0 { Some(v) } else { None };
+    (cap(est.capacity_5h_units), cap(est.capacity_weekly_units))
 }
 
-/// This chat's slice of a window's utilization: `util * (part / total)`. `None`
-/// when there's no snapshot (unknowable); a real `0.0` when the chat was idle in
-/// the window (it contributed nothing to the current usage).
-fn share(util: Option<f64>, part: f64, total: f64) -> Option<f64> {
-    match util {
-        Some(u) if total > 0.0 => Some(u * part / total),
-        Some(_) => Some(0.0),
-        None => None,
+/// A chat's size as a percent of one window: `lifetime drain ÷ capacity`. `None`
+/// when capacity is unknown (no usable utilization sample yet).
+fn size_pct(lifetime_units: f64, capacity: Option<f64>) -> Option<f64> {
+    match capacity {
+        Some(c) if c > 0.0 => Some(lifetime_units / c * 100.0),
+        _ => None,
     }
 }
 
-/// Builds a `ChatDrain` for one session: raw token total + the supplied window
-/// shares + per-message `messages` (empty for the leaderboard, full for the
-/// popover).
+/// Builds a `ChatDrain`: raw token total + window-size percents + per-message
+/// breakdown (empty for the leaderboard, full for the popover).
 fn build_chat_drain(
     session_id: &str,
     main_transcript: &Path,
@@ -139,15 +195,15 @@ fn build_chat_drain(
 }
 
 /// Full rundown for ONE chat (the popover): raw tokens + per-message breakdown +
-/// window shares. The share denominator is every currently-visible chat, so the
-/// popover is self-sufficient and no longer depends on the sidebar's drain sort
-/// having run.
+/// the chat's size as a % of a 5h/weekly window. Resolves the visible set itself
+/// so the capacity estimate is available without the sidebar's drain sort having
+/// run.
 #[tauri::command]
 pub async fn chat_drain(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<Option<ChatDrain>, String> {
-    let Some((_cwd, main_transcript)) = resolve_session(&session_id, &state) else {
+    let Some((target_cwd, main_transcript)) = resolve_session(&session_id, &state) else {
         return Ok(None);
     };
 
@@ -171,17 +227,21 @@ pub async fn chat_drain(
         }
     }
 
-    let (util_5h, util_weekly) = util_from_state(&state);
+    let (five, weekly) = windows_from_state(&state);
     let target = session_id.clone();
 
     // Heavy file parsing off the async runtime.
     let result = tokio::task::spawn_blocking(move || {
-        let (per_session, total_5h, total_weekly) = windowed_drains(&resolved);
-        let (part_5h, part_weekly) = per_session.get(&target).copied().unwrap_or((0.0, 0.0));
-        let five = share(util_5h, part_5h, total_5h);
-        let weekly = share(util_weekly, part_weekly, total_weekly);
+        let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly);
+        let lifetime = drain_engine::drain_units_for_session(&target_cwd, &target);
         let messages = drain_engine::message_drains(&main_transcript);
-        build_chat_drain(&target, &main_transcript, five, weekly, messages)
+        build_chat_drain(
+            &target,
+            &main_transcript,
+            size_pct(lifetime, cap_5h),
+            size_pct(lifetime, cap_weekly),
+            messages,
+        )
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -189,12 +249,12 @@ pub async fn chat_drain(
     Ok(Some(result))
 }
 
-/// Leaderboard payload: per-session window shares, messages omitted (cheap).
+/// Leaderboard payload: per-session window-size percents, messages omitted.
 #[derive(serde::Serialize, Clone, Debug, ts_rs::TS)]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DrainBoard {
-    pub chats: HashMap<String, ChatDrain>, // per session: tokens + shares, messages EMPTY
+    pub chats: HashMap<String, ChatDrain>, // per session: tokens + size %, messages EMPTY
 }
 
 /// Leaderboard payload for MANY chats. messages omitted (empty) for the cheap path.
@@ -213,16 +273,20 @@ pub async fn chat_drains(
         }
     }
 
-    let (util_5h, util_weekly) = util_from_state(&state);
+    let (five, weekly) = windows_from_state(&state);
 
     let board = tokio::task::spawn_blocking(move || {
-        let (per_session, total_5h, total_weekly) = windowed_drains(&resolved);
+        let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly);
         let mut chats = HashMap::new();
-        for (id, _cwd, transcript) in &resolved {
-            let (part_5h, part_weekly) = per_session.get(id).copied().unwrap_or((0.0, 0.0));
-            let five = share(util_5h, part_5h, total_5h);
-            let weekly = share(util_weekly, part_weekly, total_weekly);
-            let cd = build_chat_drain(id, transcript, five, weekly, Vec::new());
+        for (id, cwd, transcript) in &resolved {
+            let lifetime = drain_engine::drain_units_for_session(cwd, id);
+            let cd = build_chat_drain(
+                id,
+                transcript,
+                size_pct(lifetime, cap_5h),
+                size_pct(lifetime, cap_weekly),
+                Vec::new(),
+            );
             chats.insert(id.clone(), cd);
         }
         DrainBoard { chats }
