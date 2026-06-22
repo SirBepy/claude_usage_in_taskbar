@@ -321,6 +321,10 @@ export function buildMessageEl(m: RenderedMessage): HTMLElement {
   const wrap = document.createElement("div");
   wrap.innerHTML = renderMessage(m);
   const el = wrap.firstElementChild as HTMLElement;
+  if (m.ts) {
+    const ms = m.ts < 1e10 ? m.ts * 1000 : m.ts;
+    el.dataset.ts = new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
   if (el.querySelector(".attachment-chip[data-attachment-path]")) {
     void hydrateAttachments(el);
   }

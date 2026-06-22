@@ -68,6 +68,7 @@
 .cm-slash-plugin-skill { color: #c794f5; }
 
 .msg {
+  position: relative;
   margin-bottom: 12px;
   padding: 8px 12px;
   border-radius: 6px;
@@ -78,6 +79,30 @@
      better-behaved than word-break for natural-language text. */
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.msg[data-ts]:hover::after {
+  content: attr(data-ts);
+  position: absolute;
+  bottom: calc(100% + 3px);
+  right: 0;
+  white-space: nowrap;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.9;
+}
+
+.msg.assistant[data-ts]:hover::after,
+.msg.tool-use[data-ts]:hover::after,
+.msg.tool-result[data-ts]:hover::after {
+  right: auto;
+  left: 0;
 }
 
 .msg.user {
