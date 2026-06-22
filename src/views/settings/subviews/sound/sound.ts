@@ -3,6 +3,7 @@ import { saveSettings } from "../../../../shared/settings-save";
 import { getSettings } from "../../../../shared/state";
 import { api } from "../../../../shared/api";
 import { populateAudioDevicePicker } from "../../../../../vendor/tauri_kit/frontend/audio/device-picker";
+import { listMics, getSelectedMic, setSelectedMic } from "../../../../shared/chat/voice/voice-devices";
 
 interface LegacyGlobals {
   navigateTo(name: string): Promise<void>;
@@ -26,9 +27,32 @@ async function populateDevicePicker(): Promise<void> {
   sel.addEventListener("change", saveSettings);
 }
 
+async function populateMicPicker(): Promise<void> {
+  const sel = $("audioInputDevice") as HTMLSelectElement | null;
+  if (!sel) return;
+  const mics = await listMics();
+  const current = getSelectedMic() || "";
+  sel.innerHTML = '<option value="">System default</option>';
+  for (const mic of mics) {
+    const opt = document.createElement("option");
+    opt.value = mic.deviceId;
+    opt.textContent = mic.label;
+    if (mic.deviceId === current) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.removeEventListener("change", onMicChange);
+  sel.addEventListener("change", onMicChange);
+}
+
+function onMicChange(e: Event): void {
+  const sel = e.target as HTMLSelectElement;
+  setSelectedMic(sel.value || null);
+}
+
 async function hydrateSound(): Promise<void> {
   const s = getSettings();
   await populateDevicePicker();
+  await populateMicPicker();
 
   const pauseInMeetingSwitch = $("pauseInMeetingSwitch") as HTMLInputElement | null;
   if (pauseInMeetingSwitch) {
@@ -105,6 +129,16 @@ function template() {
             </select>
           </div>
           <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">"System default" follows your computer's default output - if you switch the default device, sounds follow automatically.</div>
+        </div>
+        <div class="kit-section">
+          <div class="kit-section-title">Audio input</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Microphone</span>
+            <select id="audioInputDevice">
+              <option value="">System default</option>
+            </select>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Microphone used for voice input. Device labels appear after granting microphone permission.</div>
         </div>
         <div class="kit-section" id="characterSoundsSection">
           <div class="kit-section-title">Character sounds</div>

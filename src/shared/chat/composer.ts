@@ -14,7 +14,6 @@ import type { ChatRenderer } from "./chat-renderer";
 import { parseBuiltin, HANDLERS, type BuiltinContext } from "./builtins";
 import { highlightComposerInput } from "./chat-transforms";
 import { VoiceController, type VoiceState } from "./voice/controller";
-import { listMics, getSelectedMic, setSelectedMic } from "./voice/voice-devices";
 import "./voice/voice.css";
 import "./builtins/register";
 import "./caret-popup/popup.css";
@@ -92,7 +91,6 @@ export class Composer {
   private voiceVolatileLen = 0;
   private voiceUsed = false;
   private micBtn: HTMLButtonElement | null = null;
-  private micSelect: HTMLSelectElement | null = null;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -245,8 +243,6 @@ export class Composer {
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
     this.micBtn = this.root.querySelector<HTMLButtonElement>(".composer-mic");
-    this.micSelect = null;
-
     // The popup div was inside root.innerHTML, so it's gone after the swap.
     // Rebuild it on every render and keep the provider's cache.
     this.popup?.destroy();
@@ -274,7 +270,6 @@ export class Composer {
       this.sendBtn?.addEventListener("click", () => void this.send());
       this.micBtn?.addEventListener("click", () => void this.toggleVoice());
       this.applyVoiceButtonState();
-      void this.populateMicSelect();
       this.root.classList.add("composer-root");
       this.root.addEventListener("dragover", this.onDragOver);
       this.root.addEventListener("dragleave", this.onDragLeave);
@@ -343,35 +338,8 @@ export class Composer {
     this.micBtn.classList.toggle("connecting", this.voiceState === "connecting");
   }
 
-  // Populate the mic-source dropdown. Hidden unless 2+ input devices exist.
-  // Labels are blank until mic permission is granted once, so this is re-run
-  // after the first successful recording to upgrade "Microphone N" to real names.
-  private async populateMicSelect(): Promise<void> {
-    const sel = this.micSelect;
-    if (!sel) return;
-    const mics = await listMics();
-    if (mics.length < 2) {
-      sel.style.display = "none";
-      return;
-    }
-    const stored = getSelectedMic();
-    sel.innerHTML = "";
-    for (const m of mics) {
-      const opt = document.createElement("option");
-      opt.value = m.deviceId;
-      opt.textContent = m.label;
-      sel.appendChild(opt);
-    }
-    if (stored && mics.some((m) => m.deviceId === stored)) sel.value = stored;
-    sel.style.display = "";
-    sel.onchange = () => setSelectedMic(sel.value || null);
-  }
-
   private onVoiceStateChange(s: VoiceState): void {
     this.voiceState = s;
-    // First successful capture grants mic permission, which reveals device
-    // labels - refresh the dropdown so it shows real names instead of generic.
-    if (s === "recording") void this.populateMicSelect();
     if (s === "idle" || s === "error") {
       // Drop any residual volatile tail that was never finalized.
       if (this.voiceVolatileLen > 0 && this.textarea) {
