@@ -369,12 +369,16 @@ export class Composer {
 
   private onVoiceFinal(text: string): void {
     if (!this.textarea || !text) return;
-    // Commit text BEFORE the volatile tail; it becomes permanent, editable text.
+    // Strip the volatile tail first, then insert committed text. Without this,
+    // the committed word gets prepended to the stale partial and appears twice
+    // until the next partial message arrives and overwrites it.
     const v = this.textarea.value;
-    this.textarea.value = v.slice(0, this.voiceCommitPos) + text + v.slice(this.voiceCommitPos);
+    const before = v.slice(0, this.voiceCommitPos);
+    const after = v.slice(this.voiceCommitPos + this.voiceVolatileLen);
+    this.textarea.value = before + text + after;
     this.voiceCommitPos += text.length;
-    const caret = this.voiceCommitPos + this.voiceVolatileLen;
-    this.textarea.selectionStart = this.textarea.selectionEnd = caret;
+    this.voiceVolatileLen = 0;
+    this.textarea.selectionStart = this.textarea.selectionEnd = this.voiceCommitPos;
     this.voiceUsed = true;
     this.afterVoiceEdit();
   }
