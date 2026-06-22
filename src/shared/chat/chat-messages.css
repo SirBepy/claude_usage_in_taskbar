@@ -385,17 +385,6 @@
   font-size: 0.82rem;
 }
 
-.msg.tool-use pre {
-  margin: 6px 0 0;
-  padding: 6px;
-  background: var(--color-background);
-  border-radius: 4px;
-  overflow-x: auto;
-  font-family: "Fira Code", monospace;
-  font-size: 0.78rem;
-  white-space: pre-wrap;
-}
-
 .msg.tool-result {
   background: var(--color-surface);
   border-left: 3px solid var(--color-success);
@@ -459,6 +448,26 @@
 .card-block blockquote p {
   margin: 0;
   line-height: 1.5;
+}
+
+/* Card-style container for copyable code (tool inputs, raw blocks). Same
+ * visual shell as .card-block but with monospace content + horizontal scroll. */
+.code-card {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  padding-right: 36px;
+  overflow-x: auto;
+}
+
+.code-card pre {
+  margin: 0;
+  background: none;
+  font-family: "Fira Code", monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .msg a {

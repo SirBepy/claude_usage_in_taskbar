@@ -264,7 +264,7 @@ export function renderMessage(m: RenderedMessage): string {
       const view = parseFileEdit(m.tool ?? "", m.input);
       if (view) return `<div class="msg tool-use tool-use--file">${renderEditWindow(view)}</div>`;
       const summary = toolSummary(m.tool ?? "", m.input);
-      return `<details class="msg tool-use tool-row"><summary class="tool-row-summary"><i class="ph ${escapeHtml(summary.icon)}"></i><span class="tool-row-name">${escapeHtml(summary.tool)}</span><span class="tool-row-target">${escapeHtml(summary.target)}</span></summary><div class="copyable-block"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></details>`;
+      return `<details class="msg tool-use tool-row"><summary class="tool-row-summary"><i class="ph ${escapeHtml(summary.icon)}"></i><span class="tool-row-name">${escapeHtml(summary.tool)}</span><span class="tool-row-target">${escapeHtml(summary.target)}</span></summary><div class="copyable-block code-card"><pre>${escapeHtml(JSON.stringify(m.input ?? null, null, 2))}</pre><button class="copy-btn" aria-label="Copy"><i class="ph ph-copy"></i></button></div></details>`;
     }
     case "tool_result":
       return `<details class="msg tool-result tool-row${m.is_error ? " error" : ""}"><summary class="tool-row-summary"><i class="ph ph-arrow-bend-down-right"></i><span class="tool-row-name">result</span></summary>${m.output ? renderBlocks([m.output]) : ""}</details>`;
