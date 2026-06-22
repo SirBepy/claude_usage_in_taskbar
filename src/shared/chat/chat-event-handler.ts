@@ -85,7 +85,7 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       r.activeTurnFirstTs = ts > 0 ? ts : 0;
       r.activeTurnLastTs = r.activeTurnFirstTs;
       if (isCompact) {
-        r.messages.push({ kind: "system", text: "Conversation compacted", ts });
+        r.messages.push({ kind: "system", text: "Conversation compacted", ts, compactionN: ++r.compactionCount });
       } else if (isSilent) {
         r.messages.push({ kind: "system", text: "Continuing session…", ts });
       } else {
@@ -342,6 +342,7 @@ export async function bulkLoadEvents(r: ChatRenderer, events: ChatEvent[]): Prom
   r.activityToolCanon = null;
   r.activeToolGroups.clear();
   r.activeTurnStart = null;
+  r.compactionCount = 0;
   r.resetActiveTurnMeta();
   r.turnFooters.clear();
   r.closeTurnQueue = [];

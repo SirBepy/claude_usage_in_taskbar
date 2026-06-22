@@ -222,6 +222,9 @@ export interface RenderedMessage {
    *  "Request interrupted by user"). Used to position the chips footer BEFORE
    *  these labels rather than after them. */
   noiseLabel?: boolean;
+  /** Ordinal of this compaction event within the session (1-based). Present
+   *  only on system messages that represent a compaction boundary. */
+  compactionN?: number;
 }
 
 /**
@@ -234,7 +237,7 @@ export interface RenderedMessage {
  * becomes a kind:"user" row), so checking kind here is sufficient.
  */
 export function isBoundaryMessage(m: RenderedMessage): boolean {
-  return m.kind === "user" || (m.kind === "system" && m.text === "Conversation compacted");
+  return m.kind === "user" || (m.kind === "system" && m.compactionN != null);
 }
 
 export function renderBlocks(blocks: ContentBlock[], breaks = false): string {
@@ -255,6 +258,9 @@ export function renderBlocks(blocks: ContentBlock[], breaks = false): string {
 export function renderMessage(m: RenderedMessage): string {
   switch (m.kind) {
     case "system":
+      if (m.compactionN != null) {
+        return `<div class="msg system compact-marker"><span class="compact-chip"><i class="ph ph-stack"></i>Context compacted<span class="compact-n">×${m.compactionN}</span></span></div>`;
+      }
       return `<div class="msg system">${escapeHtml(m.text ?? "")}</div>`;
     case "user":
       return `<div class="msg user">${renderBlocks(m.content ?? [], true)}</div>`;
@@ -276,11 +282,14 @@ export function renderMessage(m: RenderedMessage): string {
 }
 
 const TABLE_RE = /<table[\s\S]*?<\/table>/gi;
+const CELL_OPEN_RE = /<(td|th)(\s[^>]*)?>/gi;
+const CELL_COPY_BTN = '<button class="copy-btn cell-copy-btn" aria-label="Copy cell"><i class="ph ph-copy"></i></button>';
 
 function wrapTables(html: string): string {
-  return html.replace(TABLE_RE, (t) =>
-    `<div class="table-wrap"><button class="table-fs-btn" aria-label="Fullscreen table"><i class="ph ph-arrows-out"></i></button>${t}</div>`
-  );
+  return html.replace(TABLE_RE, (t) => {
+    const withBtns = t.replace(CELL_OPEN_RE, (m) => `${m}${CELL_COPY_BTN}`);
+    return `<div class="table-wrap"><button class="table-fs-btn" aria-label="Fullscreen table"><i class="ph ph-arrows-out"></i></button>${withBtns}</div>`;
+  });
 }
 
 function renderMarkdown(text: string, breaks = false): string {

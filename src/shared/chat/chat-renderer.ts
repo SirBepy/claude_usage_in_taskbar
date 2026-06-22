@@ -78,6 +78,8 @@ export class ChatRenderer {
   // Wall-clock ms when the active turn's user message arrived. Drives the
   // live elapsed display (NEVER derive elapsed from the key - it's a counter).
   activeTurnStartedAtMs = 0;
+  /** Ordinal counter for compaction events; incremented each time a compact user_message is seen. */
+  compactionCount = 0;
   // Combined usage for the active turn. History replays one turn_usage per
   // assistant line, so output/cache/cost SUM across events; input is the
   // latest (context-size semantics); durationMs is the max seen (live's
