@@ -121,7 +121,26 @@ export function handleCopyClick(e: MouseEvent): void {
       if (!msg) return;
       const clone = msg.cloneNode(true) as HTMLElement;
       clone.querySelector(".msg-copy-btn")?.remove();
-      text = clone.textContent ?? "";
+      const html = clone.innerHTML;
+      const plain = clone.textContent ?? "";
+      void navigator.clipboard
+        .write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([plain.trim()], { type: "text/plain" }),
+          }),
+        ])
+        .then(() => {
+          const icon = btn.querySelector("i");
+          if (!icon) return;
+          icon.className = "ph ph-check";
+          btn.classList.add("copied");
+          setTimeout(() => {
+            icon.className = "ph ph-copy";
+            btn.classList.remove("copied");
+          }, 1500);
+        });
+      return;
     }
   }
 
