@@ -67,6 +67,7 @@ impl Registry {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            turn_gen: 0,
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
@@ -119,6 +120,7 @@ impl Registry {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            turn_gen: 0,
         };
         guard.insert(session_id.to_string(), instance);
         project_id
@@ -161,6 +163,7 @@ impl Registry {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            turn_gen: 0,
         };
         guard.insert(session_id.to_string(), instance);
     }
@@ -185,11 +188,43 @@ impl Registry {
 
     /// Path C helper: flip the `busy` flag on a session entry. Sidebar uses
     /// this to render running vs idle. No-op if session is unknown.
+    /// When `busy=true`, also bumps `turn_gen` so the pump can detect stale
+    /// set_busy(false) calls from a prior turn draining after a new message arrived.
     pub fn set_busy(&self, session_id: &str, busy: bool) {
         let mut guard = self.inner.lock().unwrap();
         if let Some(i) = guard.get_mut(session_id) {
             i.busy = busy;
+            if busy {
+                i.turn_gen = i.turn_gen.wrapping_add(1);
+            }
         }
+    }
+
+    /// Read the current `turn_gen` for a session. Used by the pump to snapshot
+    /// the generation at turn-start so it can guard the turn-end `set_busy(false)`
+    /// call. Returns 0 for unknown sessions.
+    pub fn current_turn_gen(&self, session_id: &str) -> u64 {
+        self.inner
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .map(|i| i.turn_gen)
+            .unwrap_or(0)
+    }
+
+    /// Set `busy=false` only if `turn_gen` still matches `gen`. A mismatch means
+    /// a newer turn has started since the pump captured the generation; the stale
+    /// result line should not clear the new turn's `busy=true`.
+    /// Returns true if busy was actually cleared.
+    pub fn set_busy_false_if_gen(&self, session_id: &str, gen: u64) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            if i.turn_gen == gen {
+                i.busy = false;
+                return true;
+            }
+        }
+        false
     }
 
     /// Set both model and effort on a session entry. Returns true if the
@@ -401,6 +436,56 @@ mod tests {
         let registry = Registry::new();
         registry.set_busy("missing", true);
         assert!(registry.get("missing").is_none());
+    }
+
+    #[test]
+    fn set_busy_true_bumps_turn_gen() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s", Path::new("/tmp/x"), &settings, "2026-06-23T00:00:00Z");
+        assert_eq!(registry.get("s").unwrap().turn_gen, 0);
+        registry.set_busy("s", true);
+        assert_eq!(registry.get("s").unwrap().turn_gen, 1);
+        // false must NOT bump gen
+        registry.set_busy("s", false);
+        assert_eq!(registry.get("s").unwrap().turn_gen, 1);
+        registry.set_busy("s", true);
+        assert_eq!(registry.get("s").unwrap().turn_gen, 2);
+    }
+
+    #[test]
+    fn set_busy_false_if_gen_clears_on_match() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s", Path::new("/tmp/x"), &settings, "2026-06-23T00:00:00Z");
+        registry.set_busy("s", true); // gen -> 1
+        let gen = registry.current_turn_gen("s");
+        assert_eq!(gen, 1);
+        let cleared = registry.set_busy_false_if_gen("s", gen);
+        assert!(cleared);
+        assert_eq!(registry.get("s").unwrap().busy, false);
+    }
+
+    #[test]
+    fn set_busy_false_if_gen_noop_on_stale_gen() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s", Path::new("/tmp/x"), &settings, "2026-06-23T00:00:00Z");
+        registry.set_busy("s", true); // gen -> 1 (pump captures this)
+        let pump_gen = registry.current_turn_gen("s");
+        // New message arrives before pump's TurnUsage: gen -> 2
+        registry.set_busy("s", true);
+        // Pump tries to clear with stale gen=1 — must be a no-op
+        let cleared = registry.set_busy_false_if_gen("s", pump_gen);
+        assert!(!cleared);
+        assert_eq!(registry.get("s").unwrap().busy, true, "new turn's busy must survive");
+        assert_eq!(registry.get("s").unwrap().turn_gen, 2);
+    }
+
+    #[test]
+    fn current_turn_gen_returns_zero_for_unknown() {
+        let registry = Registry::new();
+        assert_eq!(registry.current_turn_gen("ghost"), 0);
     }
 
     #[test]

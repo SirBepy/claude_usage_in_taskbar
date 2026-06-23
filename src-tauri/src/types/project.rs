@@ -103,6 +103,14 @@ pub struct Instance {
     /// marker, cleared by `<cc-autopilot:off>` or session end.
     #[serde(default)]
     pub autopilot: bool,
+    /// Monotonically increasing counter bumped each time `busy` is set to true
+    /// (i.e. each time a new turn starts). Used by the pump to detect whether a
+    /// newer turn has started since the pump began draining the previous one, so
+    /// the stale `set_busy(false)` from the old turn's result line doesn't
+    /// overwrite the new turn's `busy=true`. Never sent to the webview.
+    #[serde(skip, default)]
+    #[ts(skip)]
+    pub turn_gen: u64,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a
@@ -216,6 +224,7 @@ mod tests {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            turn_gen: 0,
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();

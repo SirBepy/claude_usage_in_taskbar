@@ -154,6 +154,12 @@ pub async fn spawn_session(
         // evaluated independently. Without this guard, resumed sessions fire one
         // sound per prior completed turn on top of the real one.
         let mut saw_stream_turn = false;
+        // Generation counter captured at the start of each live turn (when the
+        // first streaming AssistantMessage arrives). At turn-end we only call
+        // set_busy(false) if the registry's turn_gen still matches, preventing
+        // a stale result line from an interrupted turn from clearing the
+        // busy=true that a new send_message set in the meantime.
+        let mut pump_turn_gen: u64 = 0;
         loop {
             line_buf.clear();
             match buf_reader.read_until(b'\n', &mut line_buf).await {
@@ -182,7 +188,15 @@ pub async fn spawn_session(
                         }
                         // A streaming AssistantMessage marks the current turn as
                         // live (not a replayed history line from --resume).
+                        // On the FIRST such event per turn, snapshot the registry's
+                        // turn_gen so the turn-end guard can detect if a newer
+                        // send_message arrived before the result line was processed.
                         if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
+                            if !saw_stream_turn {
+                                pump_turn_gen = state_for_pump
+                                    .registry
+                                    .current_turn_gen(&pump_session.session_id);
+                            }
                             saw_stream_turn = true;
                         }
                         // A `result` line parses to TurnUsage and marks the turn
@@ -224,7 +238,7 @@ pub async fn spawn_session(
                             }
                             saw_stream_turn = false;
                             state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
-                            state_for_pump.registry.set_busy(&pump_session.session_id, false);
+                            state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
                             if let Some(active) = turn_autopilot_changed {
                                 state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
                             }
