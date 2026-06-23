@@ -2,6 +2,7 @@ import { html, render } from "lit-html";
 import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
 import { invoke } from "../../shared/ipc";
 import { ensureModalHost, closeModal } from "../../shared/modal";
+import { isRemote } from "../../shared/transport";
 import type { ProjectGroup } from "../../types/ipc.generated";
 import { openNewProjectModal, isNewProjectModalOpen } from "./new-project-modal";
 import { renderAvatar, hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
@@ -267,6 +268,7 @@ export function openProjectPickerModal(
             </ul>
           </div>
           <footer class="modal-footer">
+            ${isRemote() ? "" : html`
             <button
               class="btn btn-secondary btn-new-folder"
               @click=${async () => {
@@ -294,6 +296,7 @@ export function openProjectPickerModal(
             >
               <i class="ph ph-folder-open"></i> Open in new folder&hellip;
             </button>
+            `}
             <button class="btn btn-secondary" @click=${() => finish(null)}>Cancel</button>
           </footer>
         </div>
