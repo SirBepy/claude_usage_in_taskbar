@@ -95,6 +95,15 @@ export function openProjectPickerModal(
     // sort changes (top of the new list).
     let selectedIdx = 0;
 
+    // 0 = exact name, 1 = name starts with, 2 = name contains, 3 = path only
+    const matchRank = (p: ProjectGroup, f: string): number => {
+      const n = p.name.toLowerCase();
+      if (n === f) return 0;
+      if (n.startsWith(f)) return 1;
+      if (n.includes(f)) return 2;
+      return 3;
+    };
+
     const computeRows = (): ProjectGroup[] => {
       const f = filter.trim().toLowerCase();
       let rows = projects.filter((p) =>
@@ -121,6 +130,10 @@ export function openProjectPickerModal(
           const bm = mtimes[bi] ?? 0;
           return bm - am;
         });
+      }
+      // When a filter is active, promote closer name matches to the top.
+      if (f) {
+        rows = rows.slice().sort((a, b) => matchRank(a, f) - matchRank(b, f));
       }
       return rows;
     };
