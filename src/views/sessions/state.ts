@@ -62,7 +62,7 @@ export interface SessionsState {
   prevBusyMap: Map<string, boolean>;
   sortedSessionIds: string[];
   /** Sessions whose last finished turn self-reported `<cc-status:question>`
-   * (Claude is waiting on the user). Drives the amber sidebar flag. Populated
+   * (Claude is waiting on the user). Drives the red sidebar flag. Populated
    * from the active renderer's onStatusUpdate; in-memory only. */
   questionSessions: Set<string>;
   /** Latest global sleep/shutdown-when-done protocol state, hydrated on mount

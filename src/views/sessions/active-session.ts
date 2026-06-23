@@ -316,7 +316,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     setFileEditsProvider(() => renderer.getFileEdits());
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
     // Track Claude's self-reported turn status for this session so the sidebar
-    // shows an amber "answer me" flag for questions and a calm icon otherwise.
+    // shows a red "answer me" flag for questions and a calm icon otherwise.
     // Suppresses sidebar re-renders during history replay (loadFromStore).
     // onStatusUpdate fires for every historical cc-status marker; intermediate
     // question→done transitions cause spurious FLIP animation that makes rows

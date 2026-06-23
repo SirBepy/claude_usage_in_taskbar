@@ -168,7 +168,7 @@
 .session-header-avatar.st-attention {
   animation-name: header-char-pulse-attention;
 }
-/* Needs-input (amber) attention pulse for the open-chat header ring. */
+/* Needs-input (red) attention pulse for the open-chat header ring. */
 @keyframes header-char-pulse-attention {
   0%, 100% { box-shadow: 0 0 4px 0 var(--chat-state-needs-input-glow); }
   50%      { box-shadow: 0 0 9px 2px var(--chat-state-needs-input); }
@@ -209,7 +209,7 @@
 
 /* A chat that parked a permission/question prompt while backgrounded. Pulse
    the icon and tint the row so the user knows to click in and answer. This is
-   the needs-input (amber) family - NOT red. Red is reserved for closing. */
+   the needs-input (red) family - "needs your attention". */
 .session-state-icon.attention-pulse { color: var(--chat-state-needs-input); animation: attention-pulse 1.4s ease-in-out infinite; }
 
 .sessions-list li.needs-attention {
@@ -229,8 +229,9 @@
 
 /* `/close` in progress: the chat stays VISIBLE with a red, pulsing left bar
    until the session is actually ended (daemon process killed), instead of
-   vanishing up front. RED IS RESERVED FOR THIS TERMINAL STATE - the needs-input
-   states are amber, so the closing bar is now unambiguous (ai_todo 112). */
+   vanishing up front. Closing shares the red "needs your attention" family with
+   needs-input (Joe's 2026-06-24 call); they're mutually exclusive states so the
+   shared hue doesn't ambiguate a row in practice. */
 .sessions-list li.closing {
   box-shadow: inset 3px 0 0 var(--chat-state-closing);
   animation: closing-pulse 1.2s ease-in-out infinite;
