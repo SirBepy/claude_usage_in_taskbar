@@ -349,6 +349,7 @@ mod tests {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            turn_gen: 0,
         }
     }
 
