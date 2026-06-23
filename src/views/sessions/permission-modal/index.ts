@@ -17,6 +17,8 @@
  */
 
 import { invoke } from "../../../shared/ipc";
+import { getTransport } from "../../../shared/transport";
+import { reconcilePendingPrompts } from "./remote-prompt-poll";
 import { dismissQuestionCard, extractQuestions, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
 import {
@@ -113,6 +115,108 @@ function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: Que
   });
 }
 
+/** A permission tool fired. Allow (auto-accept / remembered rule), park (a
+ *  backgrounded chat), or surface the card (the focused chat). */
+function handlePermissionRequested(payload: PermissionRequestedPayload): void {
+  console.info("[perm-relay] frontend received permission-requested", { tool: payload.tool_name, session: payload.session_id, ...gateDiag() });
+  if (!isForSelectedSession(payload.session_id)) {
+    if (payload.session_id) {
+      // Auto-accept is on for this backgrounded chat: allow NOW rather than
+      // parking, so no "needs attention" dot appears for a prompt that will
+      // never need the user. (Questions still park - never auto-answered.)
+      if (isAutoAccept(payload.session_id) && extractQuestions(payload.input) === null) {
+        console.debug("[auto-accept] background allow", payload.tool_name, "for", payload.session_id);
+        allowPermission(payload, "background respond_permission");
+        return;
+      }
+      // Switched-away chat: try a saved Always-Allow rule FIRST so a chat the
+      // user already granted access to doesn't park a red prompt off-screen.
+      // autoAllowIfRemembered returns false for question-shaped / destructive /
+      // unmatched, which then falls through to parking. Replayed on selectSession.
+      const sid = payload.session_id;
+      void (async () => {
+        if (await autoAllowIfRemembered(payload)) {
+          console.debug("[perm-rules] background auto-allow", payload.tool_name, "for", sid);
+          return;
+        }
+        storePendingPrompt(sid, { kind: "permission", payload });
+        rerenderSidebar();
+        console.warn("[perm-gate] PARKED permission-requested for backgrounded chat", { eventSessionId: sid, tool: payload.tool_name, ...gateDiag() });
+      })();
+    } else {
+      console.warn("[perm-gate] DROPPED permission-requested (no session_id)", { tool: payload.tool_name, ...gateDiag() });
+    }
+    return;
+  }
+
+  if (
+    payload.session_id
+    && isAutoAccept(payload.session_id)
+    && extractQuestions(payload.input) === null
+  ) {
+    console.debug("[auto-accept] allowing", payload.tool_name, "for", payload.session_id);
+    allowPermission(payload, "respond_permission");
+    return;
+  }
+
+  void (async () => {
+    if (await autoAllowIfRemembered(payload)) return;
+    showPermissionCard(payload);
+  })();
+}
+
+/** An AskUserQuestion fired. Park it (backgrounded chat) or show the card (the
+ *  focused chat). Never auto-answered. */
+function handleQuestionRequested(payload: QuestionRequestedPayload): void {
+  console.info("[perm-relay] frontend received question-requested", { session: payload.session_id, ...gateDiag() });
+  if (!isForSelectedSession(payload.session_id)) {
+    if (payload.session_id) {
+      storePendingPrompt(payload.session_id, { kind: "question", payload });
+      rerenderSidebar();
+      console.warn("[perm-gate] PARKED question-requested for backgrounded chat", { eventSessionId: payload.session_id, ...gateDiag() });
+    } else {
+      console.warn("[perm-gate] DROPPED question-requested (no session_id)", { ...gateDiag() });
+    }
+    return;
+  }
+  showQuestionCard(payload);
+}
+
+/** A prompt closed on the daemon (timed out, or answered elsewhere). Remove its
+ *  card if it's the one on screen, and clear any park so it can't re-surface. */
+function handlePromptResolved(id: string): void {
+  dismissQuestionCard(id);
+  clearPendingPromptById(id);
+  rerenderSidebar();
+}
+
+/**
+ * Phone (browser PWA) substitute for the desktop's Tauri-event delivery. The
+ * desktop's reliable poll lives in Rust (daemon_link.rs); the phone has no
+ * Tauri event bus, so it polls `list_pending_prompts` over the remote RPC and
+ * demuxes each prompt into the same handlers. Without this, AskUserQuestion +
+ * permission prompts raised during a phone-driven turn never surfaced.
+ */
+function startRemotePromptPoll(): void {
+  const emitted = new Set<string>();
+  const cb = {
+    onQuestion: handleQuestionRequested,
+    onPermission: handlePermissionRequested,
+    onResolved: handlePromptResolved,
+  };
+  const tick = async (): Promise<void> => {
+    let prompts: unknown;
+    try {
+      prompts = await getTransport().call("list_pending_prompts");
+    } catch {
+      return; // network blip - keep `emitted` and retry next tick
+    }
+    reconcilePendingPrompts(prompts, emitted, cb);
+  };
+  void tick();
+  setInterval(() => void tick(), 700);
+}
+
 let installed = false;
 
 export function installPermissionModalListener(): void {
@@ -120,90 +224,25 @@ export function installPermissionModalListener(): void {
   installed = true;
 
   // Seed the auto-accept set from the persisted store so the toggle survives a
-  // restart. Done before the Tauri-only early-return below so the phone (which
-  // has no Tauri event bus) still hydrates its gate.
+  // restart. Done before the transport split below so the phone (which has no
+  // Tauri event bus) still hydrates its gate.
   void hydrateAutoAccept();
 
   const ev = window.__TAURI__?.event;
-  if (!ev?.listen) return;
+  if (!ev?.listen) {
+    // Phone / browser PWA: no Tauri events. Poll the daemon's pending-prompt
+    // store over RPC so AUQs + permission prompts surface here too.
+    startRemotePromptPoll();
+    return;
+  }
 
-  ev.listen<PermissionRequestedPayload>("permission-requested", (event) => {
-    const payload = event.payload;
-    console.info("[perm-relay] frontend received permission-requested", { tool: payload.tool_name, session: payload.session_id, ...gateDiag() });
-    if (!isForSelectedSession(payload.session_id)) {
-      if (payload.session_id) {
-        // Auto-accept is on for this backgrounded chat: allow NOW rather than
-        // parking, so no "needs attention" dot appears for a prompt that will
-        // never need the user. (Questions still park - never auto-answered.)
-        if (isAutoAccept(payload.session_id) && extractQuestions(payload.input) === null) {
-          console.debug("[auto-accept] background allow", payload.tool_name, "for", payload.session_id);
-          allowPermission(payload, "background respond_permission");
-          return;
-        }
-        // Switched-away chat: try a saved Always-Allow rule FIRST so a chat the
-        // user already granted access to doesn't park a red prompt off-screen.
-        // autoAllowIfRemembered returns false for question-shaped / destructive /
-        // unmatched, which then falls through to parking. Replayed on selectSession.
-        const sid = payload.session_id;
-        void (async () => {
-          if (await autoAllowIfRemembered(payload)) {
-            console.debug("[perm-rules] background auto-allow", payload.tool_name, "for", sid);
-            return;
-          }
-          storePendingPrompt(sid, { kind: "permission", payload });
-          rerenderSidebar();
-          console.warn("[perm-gate] PARKED permission-requested for backgrounded chat", { eventSessionId: sid, tool: payload.tool_name, ...gateDiag() });
-        })();
-      } else {
-        console.warn("[perm-gate] DROPPED permission-requested (no session_id)", { tool: payload.tool_name, ...gateDiag() });
-      }
-      return;
-    }
-
-    if (
-      payload.session_id
-      && isAutoAccept(payload.session_id)
-      && extractQuestions(payload.input) === null
-    ) {
-      console.debug("[auto-accept] allowing", payload.tool_name, "for", payload.session_id);
-      allowPermission(payload, "respond_permission");
-      return;
-    }
-
-    void (async () => {
-      if (await autoAllowIfRemembered(payload)) return;
-      showPermissionCard(payload);
-    })();
-  });
-
-  ev.listen<QuestionRequestedPayload>("question-requested", (event) => {
-    const payload = event.payload;
-    console.info("[perm-relay] frontend received question-requested", { session: payload.session_id, ...gateDiag() });
-    if (!isForSelectedSession(payload.session_id)) {
-      if (payload.session_id) {
-        storePendingPrompt(payload.session_id, { kind: "question", payload });
-        rerenderSidebar();
-        console.warn("[perm-gate] PARKED question-requested for backgrounded chat", { eventSessionId: payload.session_id, ...gateDiag() });
-      } else {
-        console.warn("[perm-gate] DROPPED question-requested (no session_id)", { ...gateDiag() });
-      }
-      return;
-    }
-    showQuestionCard(payload);
-  });
-
-  // A prompt closed on the daemon (timed out, or answered elsewhere). Remove its
-  // card if it's the one on screen. Emitted by the reliable pending-prompt poll
-  // (daemon_link.rs), so it survives the lossy broadcast.
+  ev.listen<PermissionRequestedPayload>("permission-requested", (event) => handlePermissionRequested(event.payload));
+  ev.listen<QuestionRequestedPayload>("question-requested", (event) => handleQuestionRequested(event.payload));
+  // The reliable pending-prompt poll (daemon_link.rs) emits this, so it survives
+  // the lossy broadcast.
   ev.listen<{ id: string }>("prompt-resolved", (event) => {
     const id = event.payload?.id;
-    if (id) {
-      dismissQuestionCard(id);
-      // Drop the park now that the daemon no longer holds this prompt, so it
-      // can't re-surface on a later switch-back, and clear the row's marker.
-      clearPendingPromptById(id);
-      rerenderSidebar();
-    }
+    if (id) handlePromptResolved(id);
   });
 }
 
