@@ -8,10 +8,11 @@ use crate::daemon::notifier::Notifier;
 use crate::daemon::session::SessionMap;
 use crate::daemon::settings_cache::SettingsCache;
 use crate::sessions::registry::Registry;
+use crate::daemon::push::PushManager;
 use crate::storage::StorageManager;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::{oneshot, Mutex, Notify};
 
 pub type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>;
@@ -45,6 +46,10 @@ pub struct DaemonState {
     /// write locks briefly for a single synchronous INSERT and never holds the
     /// guard across an await.
     pub db: Option<Arc<std::sync::Mutex<StorageManager>>>,
+    /// Web Push manager (ai_todo 119), set once at daemon startup via
+    /// [`DaemonState::init_push`]. `None` in tests and until init runs, so every
+    /// push path no-ops gracefully when absent.
+    pub push: OnceLock<Arc<PushManager>>,
 }
 
 impl DaemonState {
@@ -73,7 +78,38 @@ impl DaemonState {
             pending_prompts: Arc::new(Mutex::new(HashMap::new())),
             shutdown: Arc::new(Notify::new()),
             db,
+            push: OnceLock::new(),
         })
+    }
+
+    /// Load the Web Push manager (VAPID key + persisted phone subscriptions
+    /// under `app_data`) and install it. Idempotent: a second call is ignored.
+    pub fn init_push(&self, app_data: std::path::PathBuf) {
+        let _ = self.push.set(PushManager::load(app_data));
+    }
+
+    /// Fire a "Claude is blocked on you" push for a freshly-registered prompt.
+    /// No-op if push isn't initialised. Resolves a human session name from the
+    /// registry and spawns the (best-effort, idle-gated) send so the prompt
+    /// relay path is never delayed by a network call.
+    pub fn fire_blocked_prompt(&self, session_id: Option<&str>, prompt_id: &str) {
+        let Some(pm) = self.push.get().cloned() else { return };
+        let name = session_id
+            .and_then(|sid| self.registry.get(sid))
+            .map(|inst| {
+                inst.name.clone().unwrap_or_else(|| {
+                    inst.cwd
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "a chat".into())
+                })
+            })
+            .unwrap_or_else(|| "a chat".into());
+        let sid = session_id.map(|s| s.to_string());
+        let pid = prompt_id.to_string();
+        tokio::spawn(async move {
+            pm.maybe_notify_blocked(sid, name, pid).await;
+        });
     }
 
     /// Record an open prompt for reliable poll-based delivery to the app.

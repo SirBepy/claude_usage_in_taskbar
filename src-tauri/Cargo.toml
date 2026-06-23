@@ -65,6 +65,12 @@ notify = "6"
 rusqlite = { version = "0.40", features = ["bundled"] }
 # QR pairing for remote-access (SVG render only; no `image` feature needed).
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# Web Push (ai_todo 119): crypto-only (RFC8291 + VAPID), no bundled HTTP client -
+# we POST via the existing rustls reqwest, avoiding a second TLS stack. Pinned
+# 0.4.0 (latest); both known web-push advisories are in the unrelated `web-push`
+# crate. Uses http 1.x (matches reqwest 0.12) and re-exports p256/jwt-simple.
+web-push-native = "0.4.0"
+base64ct = { version = "1.6", features = ["alloc", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -80,6 +86,10 @@ windows = { version = "0.58", features = [
     "Win32_System_Com",
     "Win32_System_Registry",
     "Win32_Media_Audio",
+    # GetLastInputInfo + LASTINPUTINFO (idle detection for push gating, ai_todo 119)
+    "Win32_UI_Input_KeyboardAndMouse",
+    # GetTickCount (paired with GetLastInputInfo)
+    "Win32_System_SystemInformation",
 ] }
 
 [target.'cfg(unix)'.dependencies]

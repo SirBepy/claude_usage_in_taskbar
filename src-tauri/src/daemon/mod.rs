@@ -11,12 +11,14 @@ pub mod frame;
 pub mod handshake;
 pub mod health;
 pub mod hooks_server;
+pub mod idle;
 pub mod instance;
 pub mod jsonl_tail;
 pub mod lifecycle;
 pub mod lockfile;
 pub mod methods;
 pub mod notifier;
+pub mod push;
 pub mod remote_server;
 pub mod rpc;
 pub mod session;
@@ -88,6 +90,11 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     };
 
     let state = DaemonState::with_db(new_session_map(), settings_cache.clone(), db);
+
+    // Web Push manager (ai_todo 119): loaded before the hook server so the
+    // blocked-prompt fire path can reach it. Owns VAPID keys + phone
+    // subscriptions persisted under app_data.
+    state.init_push(app_data.clone());
 
     let mut router = Router::new();
     health::register(&mut router);

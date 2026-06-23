@@ -39,6 +39,8 @@ pub(super) async fn on_permission_request(
     let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
     ctx.state.pending.lock().await.insert(body.id.clone(), tx);
     ctx.state.add_prompt(&body.id, "permission-requested", payload.clone()).await;
+    // Push the phone if Joe is away (ai_todo 119): Claude is now blocked on him.
+    ctx.state.fire_blocked_prompt(body.session_id.as_deref(), &body.id);
     let subs = ctx.state.notifier.publish("permission_request", payload);
     log::info!(
         "[perm-relay] published permission_request id={} tool={} session={:?} -> {} subscriber(s)",
@@ -72,6 +74,7 @@ pub(super) async fn on_question_request(
     // Reliable delivery: record the prompt so the app's poll surfaces it even if
     // the lossy notifier broadcast drops the frame.
     ctx.state.add_prompt(&body.id, "question-requested", payload.clone()).await;
+    ctx.state.fire_blocked_prompt(body.session_id.as_deref(), &body.id);
     let subs = ctx.state.notifier.publish("question_request", payload);
     // Character "asking" sound (see `ask_question_decision` for the rationale).
     ctx.state.notifier.publish(
@@ -137,6 +140,7 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     // Reliable delivery: record the prompt so the app's poll surfaces it even if
     // the lossy notifier broadcast drops the frame.
     ctx.state.add_prompt(&id, "question-requested", payload.clone()).await;
+    ctx.state.fire_blocked_prompt(session_id.as_deref(), &id);
     ctx.state.notifier.publish("question_request", payload);
     // Character "asking" sound. An AskUserQuestion turn does NOT end with an
     // `awaiting:question` result (claude continues after the deny-feedback), so

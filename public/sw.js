@@ -42,6 +42,50 @@ function isNavigationRequest(req) {
   );
 }
 
+// ── Push notifications (ai_todo 119) ─────────────────────────────────────────
+// The daemon sends a Web Push when a chat becomes blocked on a prompt and the
+// PC is idle. Payload is JSON: { title, body, tag, url }. Best-effort: a
+// malformed/empty payload still shows a generic notification rather than
+// throwing (a thrown push handler is logged as a failed delivery).
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  const title = data.title || "Claude needs your input";
+  const options = {
+    body: data.body || "",
+    tag: data.tag || "claude-blocked",
+    // A later prompt in the same session replaces the earlier banner instead of
+    // stacking, but still re-alerts so a fresh block isn't silently coalesced.
+    renotify: true,
+    data: { url: data.url || "/" },
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Tapping the notification focuses an open PWA tab (navigating it to the deep
+// link) or opens a new one.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          if ("navigate" in client) client.navigate(target).catch(() => {});
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;

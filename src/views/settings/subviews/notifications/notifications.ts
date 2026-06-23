@@ -9,6 +9,8 @@ import {
 import type { NotifCardRef } from "../../../../shared/settings-save";
 import { getSettings } from "../../../../shared/state";
 import { api } from "../../../../shared/api";
+import { isRemote } from "../../../../shared/transport";
+import { pushSupported, pushEnabledLocally, enablePush, disablePush } from "../../../../shared/push";
 import "./notifications.css";
 
 const DEFAULT_SOUNDS: { id: string; label: string }[] = [
@@ -273,6 +275,51 @@ async function hydrateNotifications(): Promise<void> {
 // Back-compat window binding.
 (window as unknown as { renderNotificationSettings?: () => Promise<void> }).renderNotificationSettings = hydrateNotifications;
 
+// Phone-only Web Push enrolment (ai_todo 119). The desktop drives OS notifs via
+// the cards below; the phone instead subscribes to daemon-sent pushes for "Claude
+// is blocked on you" while the PC is idle. Hidden entirely on desktop and on
+// browsers without Push support.
+function wirePushSection(root: HTMLElement): void {
+  const section = root.querySelector<HTMLElement>("#push-section");
+  if (!section) return;
+  if (!isRemote() || !pushSupported()) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "";
+  const toggle = root.querySelector<HTMLInputElement>("#push-enabled");
+  const statusEl = root.querySelector<HTMLElement>("#push-status");
+  if (!toggle) return;
+  toggle.checked = pushEnabledLocally();
+
+  const setStatus = (msg: string) => { if (statusEl) statusEl.textContent = msg; };
+
+  toggle.onchange = () => {
+    void (async () => {
+      toggle.disabled = true;
+      if (toggle.checked) {
+        const res = await enablePush();
+        if (res.ok) {
+          setStatus("On - your phone will buzz when Claude needs you and the PC is idle.");
+        } else {
+          toggle.checked = false;
+          setStatus(
+            res.reason === "denied"
+              ? "Notification permission was blocked. Allow it in your browser settings, then try again."
+              : res.reason === "unsupported"
+                ? "This browser can't do push notifications."
+                : "Couldn't enable push. Check the connection and try again.",
+          );
+        }
+      } else {
+        await disablePush();
+        setStatus("Off.");
+      }
+      toggle.disabled = false;
+    })();
+  };
+}
+
 export async function renderNotificationsView(
   root: HTMLElement,
 ): Promise<() => void> {
@@ -280,6 +327,8 @@ export async function renderNotificationsView(
 
   const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
   if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
+
+  wirePushSection(root);
 
   try { await hydrateNotifications(); }
   catch (e) { console.error("[notifications] render failed", e); }
@@ -296,6 +345,19 @@ function template() {
         <div style="width:32px"></div>
       </div>
       <div class="view-body">
+        <div class="kit-section" id="push-section" style="display:none">
+          <div class="kit-section-title">Push to this phone</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Notify me when Claude is blocked (PC idle)</span>
+            <label class="kit-toggle">
+              <input type="checkbox" id="push-enabled">
+              <span class="kit-toggle-track"></span>
+            </label>
+          </div>
+          <p class="ra-caption" id="push-status" style="margin-top:4px;font-size:0.78rem;color:var(--text-dim)">
+            Get a push on this phone when a chat needs a permission or a question answered and you've stepped away from the PC.
+          </p>
+        </div>
         <div class="kit-section" id="muteSection">
           <div class="kit-section-title">Mute</div>
           <div class="kit-row">

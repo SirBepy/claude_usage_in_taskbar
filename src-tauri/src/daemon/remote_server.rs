@@ -151,6 +151,10 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
         .route("/api/sessions/:id/send", post(send_message))
         .route("/api/sessions/:id/cancel", post(cancel_turn))
         .route("/api/rpc", post(rpc_dispatch))
+        // Web Push enrolment (ai_todo 119). Token-gated like the rest.
+        .route("/api/push/vapid-public-key", get(push_vapid_key))
+        .route("/api/push/subscribe", post(push_subscribe))
+        .route("/api/push/unsubscribe", post(push_unsubscribe))
         .route_layer(middleware::from_fn_with_state(ctx.clone(), auth_mw));
 
     // /api/health is unauthenticated (connectivity probe, reveals nothing).
@@ -231,6 +235,49 @@ fn validate_pairing_code(code: &str, app_data: &Path) -> Result<(), &'static str
     }
     let _ = std::fs::remove_file(pairing_file(app_data));
     Ok(())
+}
+
+// ── Push notifications (ai_todo 119) ─────────────────────────────────────────
+
+/// The VAPID public key the phone needs as its `applicationServerKey`.
+async fn push_vapid_key(State(ctx): State<Arc<RemoteCtx>>) -> Response {
+    match ctx.state.push.get() {
+        Some(pm) => Json(serde_json::json!({ "key": pm.vapid_public() })).into_response(),
+        None => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+
+/// Register a phone's Web Push subscription (body = `subscription.toJSON()`).
+async fn push_subscribe(
+    State(ctx): State<Arc<RemoteCtx>>,
+    Json(sub): Json<crate::daemon::push::PushSubscription>,
+) -> StatusCode {
+    match ctx.state.push.get() {
+        Some(pm) => {
+            pm.subscribe(sub);
+            StatusCode::NO_CONTENT
+        }
+        None => StatusCode::SERVICE_UNAVAILABLE,
+    }
+}
+
+#[derive(Deserialize)]
+struct UnsubscribeBody {
+    endpoint: String,
+}
+
+/// Drop a phone's subscription (on disable / re-pair).
+async fn push_unsubscribe(
+    State(ctx): State<Arc<RemoteCtx>>,
+    Json(body): Json<UnsubscribeBody>,
+) -> StatusCode {
+    match ctx.state.push.get() {
+        Some(pm) => {
+            pm.unsubscribe(&body.endpoint);
+            StatusCode::NO_CONTENT
+        }
+        None => StatusCode::SERVICE_UNAVAILABLE,
+    }
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
