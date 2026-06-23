@@ -305,6 +305,51 @@
   flex-shrink: 0;
 }
 
+/* Collapsible wrapper inside .msg.question-card */
+.question-card-collapsible { list-style: none; }
+.question-card-collapsible > summary { list-style: none; }
+.question-card-collapsible > summary::-webkit-details-marker { display: none; }
+
+.question-card-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text);
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+.question-card-collapsible[open] > .question-card-summary {
+  border-bottom-color: color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+.question-card-summary > .ph:first-child { color: var(--color-primary); flex-shrink: 0; }
+.question-card-summary > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.question-card-badge {
+  background: var(--color-primary);
+  color: white;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.question-card-chevron {
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: transform 0.15s;
+}
+.question-card-collapsible[open] > .question-card-summary .question-card-chevron {
+  transform: rotate(180deg);
+}
+
 /* Per-subagent chip: descriptions can be long, so cap + ellipsize the label
    and lead with the robot icon so it reads as "a subagent", not a tool. */
 .tool-chip--agent .tool-chip-label {
