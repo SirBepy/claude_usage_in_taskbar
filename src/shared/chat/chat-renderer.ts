@@ -116,6 +116,7 @@ export class ChatRenderer {
   public onToolTally: ((t: ToolTally) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
   public onStatusUpdate: ((status: "done" | "question" | "waiting" | null) => void) | null = null;
+  public onSendText: ((text: string) => void) | null = null;
   turnStatus: "done" | "question" | "waiting" | null = null;
   // True only while bulkLoadEvents replays HISTORY on open. During replay the
   // per-event onActivityUpdate / onFileEditsChanged callbacks are suppressed so
@@ -167,6 +168,7 @@ export class ChatRenderer {
     this.container.addEventListener("click", handleTableFullscreen);
     this.container.addEventListener("click", this.handleToolChipClick);
     this.container.addEventListener("click", this.handleToolFileClick);
+    this.container.addEventListener("click", this.handleRetryClick);
     this.paginator = new ChatPaginator(container, {
       getSessionId: () => this.sessionId,
       getMessages: () => this.messages,
@@ -324,6 +326,13 @@ export class ChatRenderer {
     if (!row) return;
     const path = row.dataset.path;
     if (path) openFileViewer(path);
+  };
+
+  private handleRetryClick = (e: MouseEvent): void => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>(".api-retry-btn");
+    if (!btn || !this.onSendText) return;
+    btn.disabled = true;
+    this.onSendText("continue");
   };
 
   private handleToolChipClick = (e: MouseEvent): void => {

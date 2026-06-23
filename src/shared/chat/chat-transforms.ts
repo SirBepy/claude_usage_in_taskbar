@@ -183,8 +183,19 @@ export function renderMessage(m: RenderedMessage): string {
       return `<div class="msg system">${escapeHtml(m.text ?? "")}</div>`;
     case "user":
       return `<div class="msg user">${renderBlocks(m.content ?? [], true)}</div>`;
-    case "assistant":
-      return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(m.content ?? [])}</div>`;
+    case "assistant": {
+      const blocks = m.content ?? [];
+      const firstBlock = blocks[0];
+      const isApiError = !m.streaming &&
+        blocks.length === 1 &&
+        firstBlock != null &&
+        firstBlock.type === "text" &&
+        firstBlock.text.startsWith("API Error:");
+      const retryBtn = isApiError
+        ? `<button class="api-retry-btn"><i class="ph ph-arrow-clockwise"></i>Retry</button>`
+        : "";
+      return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(blocks)}${retryBtn}</div>`;
+    }
     case "tool_use": {
       const view = parseFileEdit(m.tool ?? "", m.input);
       if (view) return `<div class="msg tool-use tool-use--file">${renderEditWindow(view)}</div>`;

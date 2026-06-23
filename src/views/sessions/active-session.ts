@@ -460,6 +460,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     });
     state.composer = composer;
     composer.setSessionId(sessionId, { readOnly });
+    if (state.renderer) {
+      state.renderer.onSendText = (text) => { void sendBundle([{ type: "text", text }]); };
+    }
 
     // Held-messages controller is a singleton (its per-session set survives
     // session switches); re-attach it to this freshly-mounted pane + session.
