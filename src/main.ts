@@ -41,6 +41,7 @@ import { ensureRemoteToken } from "./shared/remote-gate";
 import { isRemote } from "./shared/transport";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
+import { initBackButton, registerOverlayBack } from "./shared/back-button";
 import { installPermissionModalListener, setSidebarRerenderHook, setSelectedSessionId } from "./views/sessions/permission-modal";
 import { renderSidebar } from "./views/sessions/sidebar";
 import { installExternalLinkInterceptor } from "./shared/external-links";
@@ -185,6 +186,22 @@ if (!await ensureRemoteToken()) {
 } else {
   mountRouter(app);
   initBoot();
+
+  // Phone PWA: trap the hardware back button so it navigates within the app
+  // instead of closing it. The mobile chat pane is a non-view overlay (a CSS
+  // attribute, not a route), so register its back affordance here: back from an
+  // open chat returns to the session list before back starts stepping views.
+  if (isRemote()) {
+    initBackButton();
+    registerOverlayBack(() => {
+      const el = document.querySelector(".view-sessions");
+      if (el?.getAttribute("data-mobile-pane") === "chat") {
+        el.setAttribute("data-mobile-pane", "list");
+        return true;
+      }
+      return false;
+    });
+  }
 
   if (!document.body.classList.contains("chats-window-mode")) {
     void window.__TAURI__?.event?.listen?.("navigate-to-dashboard", () => {

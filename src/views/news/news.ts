@@ -1,5 +1,6 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
+import { registerOverlayBack } from "../../shared/back-button";
 import { invoke } from "../../shared/ipc";
 import type { NewsPost } from "../../types/ipc.generated";
 import { state, setPaint } from "./news-state";
@@ -217,6 +218,18 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
   };
   document.addEventListener("click", onDocClick);
 
+  // Phone back button: when an article is open, close it back to the list
+  // (mirrors the in-header Back button) instead of leaving the news view.
+  const disposeBack = registerOverlayBack(() => {
+    if (state.selectedSlug) {
+      state.selectedSlug = null;
+      state.menuOpen = false;
+      paint(root);
+      return true;
+    }
+    return false;
+  });
+
   const onInject = (e: Event) => {
     state.posts = ((e as CustomEvent).detail as NewsPost[]) || [];
     state.loading = false;
@@ -252,6 +265,7 @@ export async function renderNewsView(root: HTMLElement): Promise<() => void> {
 
   return () => {
     document.removeEventListener("click", onDocClick);
+    disposeBack();
     if (import.meta.env.DEV) window.removeEventListener("e2e-inject-news", onInject);
     for (const u of unlisteners) { try { u(); } catch { /* ignore */ } }
   };

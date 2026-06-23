@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../../shared/escape-html";
+import { registerOverlayBack } from "../../../shared/back-button";
 import { clearHost, ensureHost, renderCardShell } from "./host";
 import type { Answers, Question, QuestionUIOpts, Selection } from "./types";
 
@@ -114,7 +115,14 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     messagesEl.scrollTop = messagesEl.scrollHeight - messagesEl.clientHeight;
   };
 
+  // Phone back button skips the question (same as Escape / the Skip button) so
+  // the card never traps the user, and the prompt resolves rather than silently
+  // hiding. Registered below once `cancel` exists; disposed on teardown.
+  let backDisposer: (() => void) | null = null;
+
   const teardown = () => {
+    backDisposer?.();
+    backDisposer = null;
     clearHost();
     document.removeEventListener("keydown", escHandler);
     if (resizeObs) { try { resizeObs.disconnect(); } catch { /* ignore */ } resizeObs = null; }
@@ -170,6 +178,11 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     teardown();
     void opts.onCancel();
   };
+
+  backDisposer = registerOverlayBack(() => {
+    cancel();
+    return true;
+  });
 
   const isQuestionAnswered = (qi: number): boolean => {
     const q = questions[qi];

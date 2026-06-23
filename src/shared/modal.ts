@@ -1,4 +1,5 @@
 import { html, render, type TemplateResult } from "lit-html";
+import { registerOverlayBack } from "./back-button";
 
 export interface ModalOptions {
   title: string;
@@ -9,14 +10,26 @@ export interface ModalOptions {
   onCancel?: () => void;
 }
 
+// Phone back button closes an open modal (as Cancel), mirroring the backdrop
+// tap and Escape. Registered on open, disposed on close.
+let modalBackDisposer: (() => void) | null = null;
+
 export function openModal(opts: ModalOptions): void {
   const host = ensureModalHost();
   render(modalTemplate(opts, closeModal), host);
   host.classList.add("open");
   document.addEventListener("keydown", onEsc);
+  modalBackDisposer?.();
+  modalBackDisposer = registerOverlayBack(() => {
+    opts.onCancel?.();
+    closeModal();
+    return true;
+  });
 }
 
 export function closeModal(): void {
+  modalBackDisposer?.();
+  modalBackDisposer = null;
   const host = document.getElementById("modal-host");
   if (!host) return;
   host.classList.remove("open");

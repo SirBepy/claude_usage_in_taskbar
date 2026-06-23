@@ -1,5 +1,6 @@
 import { html, render } from "lit-html";
 import { setActiveView } from "./shared/navigation";
+import { noteNavigation } from "./shared/back-button";
 
 type RenderFn = (
   root: HTMLElement,
@@ -45,6 +46,9 @@ function showLegacyView(name: string): void {
 export async function navigateTo(name: string): Promise<void> {
   if (!currentRoot) return;
   setActiveView(name);
+  // Feed the back-button view stack so the phone's hardware back can step back
+  // through screens (no-op recording on desktop).
+  noteNavigation(name);
   currentTeardown?.();
   currentTeardown = null;
   const view = views.get(name);
@@ -64,5 +68,13 @@ export async function navigateTo(name: string): Promise<void> {
     updateSidemenuActive?: (n: string) => void;
   }).updateSidemenuActive;
   updateActive?.(name);
-  window.location.hash = name;
+  // Update the hash WITHOUT adding a browser history entry. Pushing one (via
+  // `location.hash = name`) is what let the phone's back button walk off the
+  // SPA and close the app; the back-button trap owns history now. The hash
+  // still drives deep-link / refresh restore (mountRouter reads it on boot).
+  if (typeof history !== "undefined" && history.replaceState) {
+    history.replaceState(history.state, "", `#${name}`);
+  } else {
+    window.location.hash = name;
+  }
 }
