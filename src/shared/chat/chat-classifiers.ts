@@ -169,12 +169,15 @@ export function isSilentSystemUserMessage(cleaned: ContentBlock[]): boolean {
 // when a chat is continued (e.g. after a restart). The user never typed it, so
 // it must not render as a user bubble - drop it entirely; the assistant's
 // "Continuing chat" notice is the visible resume marker.
+// Also drops "[Request interrupted by user]" which the CLI emits as a synthetic
+// user turn in the context after a cancel - it arrives out of order (after the
+// user's next message) and the assistant-side noiseLabel already handles it.
 export function isResumeContinuationUserMessage(cleaned: ContentBlock[]): boolean {
   const first = cleaned[0];
   if (cleaned.length !== 1 || !first || first.type !== "text") return false;
-  return /^continue from where you left off\.?$/i.test(
-    (first as { type: "text"; text: string }).text.trim(),
-  );
+  const t = (first as { type: "text"; text: string }).text.trim();
+  return /^continue from where you left off\.?$/i.test(t)
+    || /^\[request interrupted( by user)?\]$/i.test(t);
 }
 
 // Assistant messages that are internal CLI noise. Returns a display label for

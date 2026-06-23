@@ -29,6 +29,15 @@ Key files to investigate:
 3. Reproduce symptom 2: confirm `questionSessions` is dropped on view switch. Make the question status derive from the persisted marker (re-detected on re-render) rather than only from transient live state, so returning to the chat re-surfaces it.
 4. Decide where question status should be the source of truth so both the sidebar and any re-entry path read the same value (persist per-session, keyed by session id, cleared when the next user turn starts — same point `user_message` calls `setTurnStatus(null)`).
 
+## Update (2026-06-23) - interrupt is a known trigger
+
+Joe confirmed: both symptoms (Input Needed → Done on click, and question state gone
+after switch) are reliably reproduced when the session was previously interrupted
+(cancel button pressed). The interrupt leaves the session in a bad busy/awaiting state
+via a race condition documented in ai_todo 130. Fixing 130 should reduce the frequency
+of symptom 1; the root cause of symptom 1 on non-interrupted sessions and symptom 2
+still need the live-trace steps below.
+
 ## Investigation (autopilot 2026-06-15) - PARKED, needs live repro
 
 Traced the code; both symptoms hinge on RUNTIME state that can't be reproduced
