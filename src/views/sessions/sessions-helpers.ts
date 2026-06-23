@@ -46,7 +46,7 @@ export function paneEmptyStateHtml(connected: boolean | null, stalled: boolean):
 export function statusPriority(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>): number {
   if (attention.has(i.session_id)) return 0;
   if (i.kind === "external" || i.kind === "automated") return 5;
-  if (i.busy) return 2;
+  if (i.busy && i.awaiting !== "question") return 2;
   if (question.has(i.session_id)) return 1;
   // Parked on an external process (CI / long command): an in-progress flavor.
   if (i.awaiting === "waiting") return 2;
@@ -58,7 +58,7 @@ export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<st
   if (attention.has(i.session_id)) return "Needs your permission - click to answer";
   if (i.kind === "external") return "External session (read-only)";
   if (i.kind === "automated") return "Automated session (remote-controlled)";
-  if (i.busy) return "Claude is running";
+  if (i.busy && i.awaiting !== "question") return "Claude is running";
   if (question.has(i.session_id)) return "Claude asked a question - click to answer";
   if (i.awaiting === "waiting") return "Waiting on an external process (CI / a long command)";
   if (rateLimited.has(i.session_id)) return "Usage limit reached - will auto-resume on reset";
@@ -200,7 +200,7 @@ export function statusDotClass(
 ): string {
   if (attention.has(i.session_id)) return "st-attention";
   if (i.kind === "external" || i.kind === "automated") return "st-external";
-  if (i.busy) return "st-working";
+  if (i.busy && i.awaiting !== "question") return "st-working";
   if (question.has(i.session_id)) return "st-question";
   if (i.awaiting === "waiting") return "st-waiting";
   if (rateLimited.has(i.session_id)) return "st-rate-limited";
@@ -220,7 +220,7 @@ export function statusIndicator(
   const tooltip = escapeHtmlFn(stateTooltip(i, unread, attention, question, rateLimited));
   const needsAttention = attention.has(i.session_id);
   const isExternal = i.kind === "external" || i.kind === "automated";
-  const isQuestion = !needsAttention && !isExternal && !i.busy && question.has(i.session_id);
+  const isQuestion = !needsAttention && !isExternal && (!i.busy || i.awaiting === "question") && question.has(i.session_id);
   const isRateLimited = !needsAttention && !isExternal && !i.busy && rateLimited.has(i.session_id);
   if (style === "dots") {
     const cls = `session-status-dot ${statusDotClass(i, unread, attention, question, rateLimited)}`;
@@ -236,7 +236,7 @@ export function statusIndicator(
   if (i.kind === "automated") {
     return `<i class="session-state-icon ph ph-robot s-external" title="${tooltip}"></i>`;
   }
-  if (i.busy) {
+  if (i.busy && i.awaiting !== "question") {
     return `<i class="session-state-icon ph ph-spinner s-working spinning" title="${tooltip}"></i>`;
   }
   if (isQuestion) {

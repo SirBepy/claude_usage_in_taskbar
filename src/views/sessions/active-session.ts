@@ -362,6 +362,11 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       overlay?.remove();
     }
     historyLoaded = true;
+    // Sync sidebar once after replay: questionSessions is now populated but no
+    // renderSidebar fired during replay (suppressed to avoid FLIP flicker).
+    const rootEl = document.querySelector<HTMLElement>(".view-sessions");
+    const listAfterLoad = rootEl?.querySelector<HTMLElement>("#sessions-list");
+    if (listAfterLoad) renderSidebar(listAfterLoad);
   }
 
   // Attach composer + held-messages controller
