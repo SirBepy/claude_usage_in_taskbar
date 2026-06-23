@@ -85,6 +85,8 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--color-surface-alt);
+  /* Mobile list pane: clear the notch above its search/header row (0 on desktop). */
+  padding-top: env(safe-area-inset-top);
 }
 
 .sessions-sort {
@@ -500,6 +502,8 @@
 
 .session-header {
   padding: 12px 16px;
+  /* Notch clearance on mobile (env() is 0 on desktop). */
+  padding-top: max(12px, env(safe-area-inset-top));
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
@@ -868,6 +872,8 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Keep scroll momentum inside the transcript; don't chain to the page. */
+  overscroll-behavior: contain;
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -942,6 +948,8 @@
 .session-composer {
   border-top: 1px solid var(--color-border);
   padding: 10px 12px 12px;
+  /* Lift the input above the home indicator on mobile (env() is 0 on desktop). */
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 8px;

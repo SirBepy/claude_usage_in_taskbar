@@ -776,6 +776,11 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   padding: 12px 8px;
+  /* Full-height overlay: clear the notch (top), home indicator (bottom), and a
+     left-edge notch in landscape. env() is 0 on desktop, so it stays 12px 8px. */
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding-left: max(8px, env(safe-area-inset-left));
   box-sizing: border-box;
 }
 .sidemenu.open {
