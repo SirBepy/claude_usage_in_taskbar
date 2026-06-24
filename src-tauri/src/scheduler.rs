@@ -22,6 +22,12 @@ pub fn spawn(app: AppHandle) {
         loop {
             let interval_secs = interval_for(&app);
 
+            let prev_util: Option<f64> = {
+                let state = app.state::<crate::state::AppState>();
+                let guard = state.current_usage.lock().unwrap();
+                guard.as_ref().map(|s| s.five_hour.utilization)
+            };
+
             match poll_once(&app, PollTrigger::Scheduled).await {
                 Ok(snap) => {
                     fail_streak = 0;
@@ -30,7 +36,16 @@ pub fn spawn(app: AppHandle) {
                         snap.five_hour.utilization,
                         snap.seven_day.utilization,
                     );
-                    sleep_until_next_target(interval_secs as i64).await;
+                    let reset_detected = prev_util
+                        .map(|prev| prev >= 15.0 && snap.five_hour.utilization < prev - 30.0)
+                        .unwrap_or(false);
+                    if reset_detected {
+                        let jitter = reset_jitter_secs();
+                        log::info!("usage reset detected - waiting {}s before next poll", jitter);
+                        tokio::time::sleep(Duration::from_secs(jitter)).await;
+                    } else {
+                        sleep_until_next_target(interval_secs as i64).await;
+                    }
                 }
                 Err(PollErr::NoSession) => {
                     log::info!("no session on disk - triggering login flow");
@@ -69,6 +84,16 @@ pub fn spawn(app: AppHandle) {
             }
         }
     });
+}
+
+/// Random delay after a usage reset: 60-300 seconds (1-5 min).
+/// Uses subsecond nanoseconds of the current wall clock as cheap pseudo-randomness.
+fn reset_jitter_secs() -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    60 + (nanos % 241) as u64
 }
 
 /// Next wall-clock target: ceil(now_ts / interval) * interval + offset, where
