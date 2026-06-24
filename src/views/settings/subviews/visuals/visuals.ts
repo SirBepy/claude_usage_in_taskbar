@@ -193,6 +193,12 @@ function hydrateVisuals(): void {
       catch { /* ignore */ }
     });
   }
+
+  const hideInMeetingSwitch = $("hideInMeetingSwitch") as HTMLInputElement | null;
+  if (hideInMeetingSwitch) {
+    hideInMeetingSwitch.checked = !!s.hideInMeeting;
+    hideInMeetingSwitch.addEventListener("change", saveSettings);
+  }
 }
 
 // Back-compat window binding (legacy boot code calls this by name).
@@ -372,6 +378,18 @@ function template() {
               <span class="kit-toggle-track"></span>
             </label>
           </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-title">MEETINGS</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Hide from screen capture</span>
+            <label class="kit-toggle">
+              <input type="checkbox" id="hideInMeetingSwitch">
+              <span class="kit-toggle-track"></span>
+            </label>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Hides app windows from screen shares and recordings during meetings. Windows only.</div>
         </div>
 
       </div>
