@@ -129,7 +129,7 @@ fn load_or_record_install_date(current_version: &str) -> Option<String> {
 
     // UTC date string (matches the prior hand-rolled epoch->YMD math, which also
     // worked off UNIX_EPOCH seconds). chrono is already a crate dependency.
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let today = chrono::Utc::now().format("%Y-%m-%d %H:%M").to_string();
     let info = InstallInfo { version: current_version.to_string(), installed_at: today.clone() };
     if let Ok(json) = serde_json::to_string(&info) {
         let _ = std::fs::write(&path, json);
