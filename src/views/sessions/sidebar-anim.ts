@@ -44,17 +44,20 @@ function removeExitNode(li: HTMLLIElement): void {
   if (li.parentElement) li.remove();
 }
 
-// Pin a row at its current geometry and take it out of layout flow. Its
-// siblings immediately reflow into the freed space (no JS), so a plain FLIP can
-// then slide them up. The pinned row keeps painting on its own layer and slides
-// out via the `slideOutLeft` animation without affecting anyone else's layout.
-function pinOutOfFlow(li: HTMLLIElement): void {
-  // Read all geometry BEFORE mutating styles (offset* are relative to the
-  // positioned list container — see `.sessions-list { position: relative }`).
-  const top = li.offsetTop;
-  const left = li.offsetLeft;
-  const width = li.offsetWidth;
-  const height = li.offsetHeight;
+// Clear any in-progress FLIP styles (transform/transition/zIndex set by
+// flipNodes). Safe to call before measuring layout: transforms are purely
+// visual and don't affect offsetTop, but DO affect getBoundingClientRect.
+function clearFlipState(li: HTMLLIElement): void {
+  li.style.transition = "none";
+  li.style.transform = "";
+  li.style.boxShadow = "";
+  li.style.zIndex = "";
+}
+
+// Apply absolute pin at explicitly provided geometry. Callers must read
+// geometry in a batch BEFORE calling this, because setting position:absolute
+// reflowed siblings change their offsetTop for subsequent reads.
+function applyPin(li: HTMLLIElement, top: number, left: number, width: number, height: number): void {
   li.style.position = "absolute";
   li.style.boxSizing = "border-box";
   li.style.top = `${top}px`;
@@ -64,16 +67,23 @@ function pinOutOfFlow(li: HTMLLIElement): void {
   li.style.margin = "0";
 }
 
-// Start a row's exit: pin it out of flow, play the slide-out, remove on end.
-// Does NOT animate the survivors — the caller owns that (reconcileList runs one
-// FLIP over all moved rows; markSessionExiting runs its own survivor FLIP).
-function beginExit(li: HTMLLIElement): void {
+// Pin a row at pre-captured geometry and start its slide-out animation.
+// Does NOT animate the survivors — the caller owns that.
+function beginExitAt(li: HTMLLIElement, top: number, left: number, width: number, height: number): void {
   if (li.classList.contains("row-exiting")) return;
-  pinOutOfFlow(li);
+  applyPin(li, top, left, width, height);
   li.classList.add("row-exiting");
   const remove = () => removeExitNode(li);
   li.addEventListener("animationend", remove, { once: true });
   exitTimers.set(li, setTimeout(remove, EXIT_SAFETY_MS));
+}
+
+// Start a row's exit: clear FLIP state, read geometry, pin and slide out.
+// Safe for single-row exits (markSessionExiting). For multi-row exits use
+// the batch-capture pattern in reconcileList to avoid reflow corruption.
+function beginExit(li: HTMLLIElement): void {
+  clearFlipState(li);
+  beginExitAt(li, li.offsetTop, li.offsetLeft, li.offsetWidth, li.offsetHeight);
 }
 
 function updateNode(kept: HTMLLIElement, html: string): void {
@@ -218,19 +228,36 @@ export function reconcileList(
 
   const newKeys = new Set(visibleEntries.map(e => e.key));
 
+  // Clear FLIP state on soon-to-exit rows first: transforms are visual-only
+  // and don't affect offsetTop, but getBoundingClientRect on adjacent survivors
+  // could include their bulk, so clear before snapshotting survivors.
+  for (const [k, li] of existing) {
+    if (!newKeys.has(k)) clearFlipState(li);
+  }
+
   // Snapshot positions of rows that will REMAIN before any DOM change.
   const beforeRects = new Map<string, DOMRect>();
   for (const [k, li] of existing) {
     if (newKeys.has(k)) beforeRects.set(k, li.getBoundingClientRect());
   }
 
-  // Start exit animations for rows dropped from the list this call. Each pins
-  // itself out of flow, so the survivors reflow up immediately and the single
-  // FLIP below animates the move — no deferral, no removal-ordering games.
+  // Batch-capture exit geometry for ALL rows leaving this reconcile BEFORE
+  // calling applyPin on any of them. Each applyPin sets position:absolute which
+  // reflows siblings — so a second row in the loop would read a post-reflow
+  // offsetTop and get pinned at the wrong (often overlapping) position.
+  const exitGeoms = new Map<HTMLLIElement, [number, number, number, number]>();
+  for (const [k, li] of existing) {
+    if (!newKeys.has(k)) {
+      exitGeoms.set(li, [li.offsetTop, li.offsetLeft, li.offsetWidth, li.offsetHeight]);
+    }
+  }
+
+  // Now pin and start exit animations using the pre-captured geometry.
   for (const [k, li] of existing) {
     if (!newKeys.has(k)) {
       exitingKeys.add(k);
-      beginExit(li);
+      const [top, left, width, height] = exitGeoms.get(li)!;
+      beginExitAt(li, top, left, width, height);
     }
   }
 
