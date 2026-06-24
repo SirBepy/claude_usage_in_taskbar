@@ -106,11 +106,11 @@ fn scan_plugins(dir: &Path, out: &mut Vec<SlashEntry>) {
             let skill_src = SlashSource::PluginSkill { plugin: plugin_name.clone() };
             let cmd_src = SlashSource::PluginCommand { plugin: plugin_name.clone() };
             let Ok(versions) = fs::read_dir(&plugin_root) else { continue };
-            for v in versions.flatten() {
-                let vp = v.path();
-                if !vp.is_dir() {
-                    continue;
-                }
+            let mut version_dirs: Vec<_> =
+                versions.flatten().filter(|e| e.path().is_dir()).collect();
+            version_dirs.sort_by_key(|e| e.file_name());
+            if let Some(latest) = version_dirs.last() {
+                let vp = latest.path();
                 scan_skills(&vp.join("skills"), &skill_src, out);
                 scan_commands(&vp.join("commands"), &cmd_src, out);
             }
