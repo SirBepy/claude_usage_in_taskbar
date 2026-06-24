@@ -23,6 +23,14 @@ pub fn save_settings(updated: Settings, state: State<AppState>, app: AppHandle)
     if old_device != updated.audio_output_device {
         state.audio_stream.reinit(updated.audio_output_device.as_deref());
     }
-    let _ = app.emit("settings-changed", updated);
+    let _ = app.emit("settings-changed", updated.clone());
+    // Sync screen-capture exclusion immediately so toggling the setting
+    // mid-meeting takes effect without waiting for the next meeting edge.
+    {
+        use std::sync::atomic::Ordering;
+        let meeting = state.meeting_active.load(Ordering::Relaxed);
+        let hide = updated.extra.get("hideInMeeting").and_then(|v| v.as_bool()).unwrap_or(false);
+        crate::meeting::apply_capture_affinity(meeting && hide);
+    }
     Ok(())
 }

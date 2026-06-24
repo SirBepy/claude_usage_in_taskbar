@@ -61,6 +61,12 @@ async function hydrateSound(): Promise<void> {
     pauseInMeetingSwitch.addEventListener("change", saveSettings);
   }
 
+  const hideInMeetingSwitch = $("hideInMeetingSwitch") as HTMLInputElement | null;
+  if (hideInMeetingSwitch) {
+    hideInMeetingSwitch.checked = !!s.hideInMeeting;
+    hideInMeetingSwitch.addEventListener("change", saveSettings);
+  }
+
   // Per-slot character-sound toggles. Each defaults ON when its key is absent.
   const slots = (s.characterSoundSlots as Record<string, boolean | undefined>) || {};
   for (const [id, key] of CHARACTER_SLOT_SWITCHES) {
@@ -167,6 +173,14 @@ function template() {
             </label>
           </div>
           <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Silences sounds and voice while your camera or mic is in use, or a meeting app (Teams, Zoom, Discord...) is in a call. Windows only.</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Hide from screen capture</span>
+            <label class="kit-toggle">
+              <input type="checkbox" id="hideInMeetingSwitch">
+              <span class="kit-toggle-track"></span>
+            </label>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Hides app windows from screen shares and recordings during meetings. Windows only.</div>
         </div>
       </div>
     </div>

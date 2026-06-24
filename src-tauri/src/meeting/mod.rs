@@ -44,6 +44,47 @@ pub struct MeetingState {
     pub sources: Sources,
 }
 
+/// Apply or remove screen-capture exclusion on all app windows in this process.
+/// Uses `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` when `exclude` is true,
+/// restores `WDA_NONE` otherwise. No-op on non-Windows.
+pub fn apply_capture_affinity(exclude: bool) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            EnumWindows, GetWindowThreadProcessId, SetWindowDisplayAffinity,
+            WINDOW_DISPLAY_AFFINITY,
+        };
+        // WDA_NONE = 0, WDA_EXCLUDEFROMCAPTURE = 0x11 (Win10 2004+)
+        let affinity = if exclude {
+            WINDOW_DISPLAY_AFFINITY(0x11)
+        } else {
+            WINDOW_DISPLAY_AFFINITY(0)
+        };
+        let own_pid = std::process::id();
+
+        struct Ctx {
+            pid: u32,
+            affinity: WINDOW_DISPLAY_AFFINITY,
+        }
+
+        unsafe extern "system" fn each(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let ctx = unsafe { &*(lparam.0 as *const Ctx) };
+            let mut wpid: u32 = 0;
+            let _ = GetWindowThreadProcessId(hwnd, Some(&mut wpid));
+            if wpid == ctx.pid {
+                let _ = SetWindowDisplayAffinity(hwnd, ctx.affinity);
+            }
+            BOOL(1)
+        }
+
+        let ctx = Ctx { pid: own_pid, affinity };
+        unsafe {
+            let _ = EnumWindows(Some(each), LPARAM(&ctx as *const Ctx as isize));
+        }
+    }
+}
+
 /// Spawn the background meeting watcher. Polls every 3s; on each active/inactive
 /// transition it updates `AppState.meeting_active`, emits `meeting://changed`
 /// (so the tray tooltip re-renders), and logs the edge. On non-Windows the
@@ -73,6 +114,18 @@ pub fn start(app: AppHandle) {
                 last = Some(active);
                 let _ = app.emit("meeting://changed", MeetingState { active, sources });
                 log::info!("meeting: active={active} sources={sources:?}");
+                let hide = app
+                    .try_state::<AppState>()
+                    .and_then(|s| {
+                        s.settings.lock().ok().map(|g| {
+                            g.extra
+                                .get("hideInMeeting")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
+                apply_capture_affinity(active && hide);
             }
             std::thread::sleep(POLL_INTERVAL);
         }

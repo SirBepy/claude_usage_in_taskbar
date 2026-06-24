@@ -145,6 +145,8 @@ export function saveSettings(): void {
     muteSystemNotifications: chkOr("muteSystemSwitch", !!prev.muteSystemNotifications),
     // Default on: absent key or unmounted subview both resolve to true.
     pauseInMeeting: chkOr("pauseInMeetingSwitch", prev.pauseInMeeting !== false),
+    // Default off: opt-in.
+    hideInMeeting: chkOr("hideInMeetingSwitch", !!prev.hideInMeeting),
     characterSoundSlots,
     // Default off: opt-in "play select when clicking a session row".
     selectOnSessionClick: chkOr("selectOnSessionClickSwitch", !!prev.selectOnSessionClick),
