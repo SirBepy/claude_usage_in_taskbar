@@ -17,6 +17,8 @@ export interface SessionConfig {
   remote?: boolean;
   /** Character chosen in the new-session pane; applied to the real session once it starts. */
   characterId?: string | null;
+  /** When set, the pending pane auto-sends this text as the first message on mount. */
+  initialMessage?: string;
 }
 
 export const MODELS = ["haiku", "sonnet", "opus", "fable"] as const;

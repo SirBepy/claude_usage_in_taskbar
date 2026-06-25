@@ -304,6 +304,11 @@ export async function renderPendingPane(
   const ta = pane.querySelector<HTMLTextAreaElement>(".composer-textarea");
   if (ta) ta.focus();
 
+  if (config.initialMessage) {
+    const msg = config.initialMessage;
+    setTimeout(() => { void state.composer?.sendText(msg); }, 0);
+  }
+
 }
 
 function rebindPaneHeader(pane: HTMLElement, sessionId: string): void {

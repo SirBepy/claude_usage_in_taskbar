@@ -121,6 +121,10 @@ export class ChatRenderer {
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
   public onStatusUpdate: ((status: "done" | "question" | "waiting" | null) => void) | null = null;
   public onSendText: ((text: string) => void) | null = null;
+  /** Fired when a next-ai-prompt skill turn completes. Active-session wires this to show the pickup CTA. */
+  public onNextAiPromptDone: (() => void) | null = null;
+  /** Set by chat-event-handler when a Skill tool_use for "next-ai-prompt" is seen in a live turn. */
+  _nextAiPromptPending = false;
   turnStatus: "done" | "question" | "waiting" | null = null;
   // True only while bulkLoadEvents replays HISTORY on open. During replay the
   // per-event onActivityUpdate / onFileEditsChanged callbacks are suppressed so
@@ -134,6 +138,10 @@ export class ChatRenderer {
     if (this.turnStatus === s) return;
     this.turnStatus = s;
     this.onStatusUpdate?.(s);
+    if (s !== null && this._nextAiPromptPending && !this.hydrating) {
+      this._nextAiPromptPending = false;
+      this.onNextAiPromptDone?.();
+    }
   }
 
   setActivity(a: string | null): void {

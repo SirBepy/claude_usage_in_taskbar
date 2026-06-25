@@ -970,6 +970,51 @@
   outline: none;
 }
 
+/* ── Pickup CTA bar (shown after /next-ai-prompt completes) ───────────────── */
+.pickup-cta-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface-alt));
+  border-top: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.pickup-cta-bar i.ph {
+  color: var(--color-primary);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.pickup-cta-label {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.pickup-cta-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  transition: opacity 0.15s;
+}
+
+.pickup-cta-btn:hover {
+  opacity: 0.85;
+}
+
+.pickup-cta-dismiss {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
 /* Detached-window mode: solo session pane, no sidebar/header. */
 .view-sessions.detached .view-body.detached-layout {
   display: block;

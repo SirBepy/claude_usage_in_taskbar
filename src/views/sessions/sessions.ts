@@ -195,6 +195,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   }
 
   _pane = pane;
+  state.launchNewChatCallback = (project, config) => { void launchNewSession(pane, project, config); };
   initThinkingBar(pane);
 
   // Clicking a pending "awaiting answer" chip in the chat dismisses any active

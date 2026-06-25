@@ -77,6 +77,8 @@ export interface SessionsState {
    * of spinning forever (2026-06-12 incident: daemon crash-looped on a hostage
    * port and the UI gave no hint anything was wrong). Cleared on connect. */
   daemonSetupStalled: boolean;
+  /** Set by sessions.ts on mount. Called by active-session when the pickup CTA launches a new chat. */
+  launchNewChatCallback: ((project: { path: string; name: string }, config: SessionConfig) => void) | null;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -99,6 +101,7 @@ export function createInitialState(mountId: number): SessionsState {
     whenDone: null,
     daemonConnected: null,
     daemonSetupStalled: false,
+    launchNewChatCallback: null,
   };
 }
 

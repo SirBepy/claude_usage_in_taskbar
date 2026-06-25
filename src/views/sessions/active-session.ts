@@ -38,6 +38,7 @@ import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
+import { openModelEffortModal } from "./model-effort-modal";
 
 const HEADER_STATUS_CLASSES = [
   "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention", "st-rate-limited",
@@ -166,6 +167,34 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
       if (listEl) renderSidebar(listEl);
     }
   }
+}
+
+function showPickupCta(pane: HTMLElement, sess: Instance): void {
+  if (pane.querySelector(".pickup-cta-bar")) return;
+  const project = { path: String(sess.cwd ?? ""), name: projectName(sess) };
+
+  const bar = document.createElement("div");
+  bar.className = "pickup-cta-bar";
+  bar.innerHTML = `
+    <i class="ph ph-hand-fist"></i>
+    <span class="pickup-cta-label">next-ai-prompt ready</span>
+    <button class="pickup-cta-btn">Close &amp; start new chat with /pickup</button>
+    <button class="pickup-cta-dismiss icon-btn" title="Dismiss"><i class="ph ph-x"></i></button>
+  `;
+
+  const thinking = pane.querySelector<HTMLElement>(".session-thinking");
+  if (thinking) pane.insertBefore(bar, thinking);
+  else pane.appendChild(bar);
+
+  bar.querySelector(".pickup-cta-dismiss")?.addEventListener("click", () => bar.remove());
+
+  bar.querySelector(".pickup-cta-btn")?.addEventListener("click", async () => {
+    bar.remove();
+    const config = await openModelEffortModal(project.path, project.name);
+    if (!config) return;
+    void state.composer?.sendText("/close");
+    state.launchNewChatCallback?.(project, { ...config, initialMessage: "/pickup" });
+  });
 }
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
@@ -315,6 +344,10 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     // Let the file viewer's Diff tab resolve this session's edits for any file.
     setFileEditsProvider(() => renderer.getFileEdits());
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
+    renderer.onNextAiPromptDone = () => {
+      if (state.renderer !== renderer) return;
+      showPickupCta(pane, sess);
+    };
     // Track Claude's self-reported turn status for this session so the sidebar
     // shows a red "answer me" flag for questions and a calm icon otherwise.
     // Suppresses sidebar re-renders during history replay (loadFromStore).

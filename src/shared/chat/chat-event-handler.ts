@@ -210,6 +210,12 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
         const t = r.tallyState.tallyToolUse(ev.tool_name, ev.input, ev.id);
         if (t) r.onToolTally?.(t);
       }
+      if (!r.hydrating && ev.tool_name === "Skill") {
+        const inp = ev.input as Record<string, unknown>;
+        if (typeof inp?.skill === "string" && inp.skill === "next-ai-prompt") {
+          r._nextAiPromptPending = true;
+        }
+      }
       r.activityToolCanon = canonicalTool(ev.tool_name);
       r.setActivity(describeActivity(ev.tool_name, ev.input));
       touched = true;

@@ -619,6 +619,20 @@ export class Composer {
     return !text && this.attachments.length === 0 && this.pastedBlocks.length === 0;
   }
 
+  /** Programmatically send a plain-text message, bypassing busy/held checks. */
+  async sendText(text: string): Promise<void> {
+    if (this.sending) return;
+    this.sending = true;
+    const blocks: ContentBlock[] = [{ type: "text", text }];
+    try {
+      await this.opts.onSend(blocks);
+    } catch (err) {
+      console.error("[Composer] sendText failed", err);
+    } finally {
+      this.sending = false;
+    }
+  }
+
   /** True while the user is actively composing: focused with a non-empty draft,
    * or a keystroke within the last 2s. Gates auto-flush. */
   isComposing(): boolean {
