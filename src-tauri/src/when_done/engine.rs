@@ -1,23 +1,8 @@
-//! "Do-X-when-all-sessions-idle" protocol engine.
-//!
-//! Lives in the Tauri MAIN process (not the daemon). One armed protocol at a
-//! time. When armed, a background tokio task:
-//!   1. Watches every live session and auto-resolves any blocking prompt
-//!      (permission -> allow as-is, question -> first/default option).
-//!   2. Once all sessions are idle, injects `/close` into each and waits for
-//!      each close turn to finish.
-//!   3. Counts down 30s, then fires the terminal action (sleep / shutdown).
-//!
-//! Cancellation, per-session timeouts, and a no-progress runaway guard keep the
-//! task from spinning forever. Every tick emits the current `ProtocolState` to
-//! all windows on the `when-done-state` event.
-
+pub use super::protocol::{TerminalAction, ProtocolPhase, ProtocolState};
 use crate::state::AppState;
-use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
-use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// A boxed, owned future the engine seams hand back. The phase machine awaits
@@ -25,66 +10,8 @@ use tauri::{AppHandle, Emitter, Manager};
 /// stub.
 type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// The terminal action to perform once every session has been closed.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
-#[serde(rename_all = "lowercase")]
-#[ts(export_to = "../../src/types/ipc.generated.ts")]
-pub enum TerminalAction {
-    Sleep,
-    Shutdown,
-}
-
-/// Where the protocol currently is in its lifecycle.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "../../src/types/ipc.generated.ts")]
-pub enum ProtocolPhase {
-    Disarmed,
-    Watching,
-    Closing,
-    CountingDown,
-    Firing,
-}
-
-/// Snapshot of the protocol, emitted to the frontend each tick.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
-#[ts(export_to = "../../src/types/ipc.generated.ts")]
-pub struct ProtocolState {
-    pub action: Option<TerminalAction>,
-    pub phase: ProtocolPhase,
-    pub countdown_remaining_secs: Option<u32>,
-    /// Session ids not yet idle/closed.
-    pub waiting_on: Vec<String>,
-}
-
-impl ProtocolState {
-    fn disarmed() -> Self {
-        Self {
-            action: None,
-            phase: ProtocolPhase::Disarmed,
-            countdown_remaining_secs: None,
-            waiting_on: Vec::new(),
-        }
-    }
-}
-
-/// AppState-held protocol state plus a handle to the running engine task.
-pub struct WhenDoneInner {
-    pub state: ProtocolState,
-    pub task: Option<JoinHandle<()>>,
-}
-
-impl Default for WhenDoneInner {
-    fn default() -> Self {
-        Self {
-            state: ProtocolState::disarmed(),
-            task: None,
-        }
-    }
-}
-
 const TICK_MS: u64 = 1000;
-const COUNTDOWN_SECS: u32 = 30;
+pub(super) const COUNTDOWN_SECS: u32 = 30;
 const PER_SESSION_TIMEOUT: Duration = Duration::from_secs(180);
 const NO_PROGRESS_LIMIT: Duration = Duration::from_secs(180);
 
@@ -399,7 +326,7 @@ impl EngineDeps {
 
 /// The engine task. Thin production wiring: build the real seams, then run the
 /// phase machine. All behavior lives in `run_engine_with_deps`.
-async fn run_engine(app: AppHandle, action: TerminalAction) {
+pub(super) async fn run_engine(app: AppHandle, action: TerminalAction) {
     run_engine_with_deps(EngineDeps::production(app), action).await;
 }
 
@@ -552,73 +479,6 @@ async fn run_engine_with_deps(deps: EngineDeps, action: TerminalAction) {
         log_comment(&format!("[when-done] terminal action failed: {e}"));
         log::error!("when_done: terminal action failed: {e}");
     }
-}
-
-// ---------------------------------------------------------------------------
-// IPC commands
-// ---------------------------------------------------------------------------
-
-/// Arm the protocol: set the action, spawn the engine task (aborting any
-/// existing one first), and return the new state.
-#[tauri::command]
-pub async fn arm_when_done(
-    action: TerminalAction,
-    state: tauri::State<'_, AppState>,
-    app: AppHandle,
-) -> Result<ProtocolState, String> {
-    // Abort any existing engine task and reset to a fresh Watching state.
-    let new_state = {
-        let mut inner = state.when_done.lock().unwrap();
-        if let Some(handle) = inner.task.take() {
-            handle.abort();
-        }
-        inner.state = ProtocolState {
-            action: Some(action),
-            phase: ProtocolPhase::Watching,
-            countdown_remaining_secs: None,
-            waiting_on: Vec::new(),
-        };
-        inner.state.clone()
-    };
-
-    let app_for_task = app.clone();
-    let handle = tauri::async_runtime::spawn(async move {
-        run_engine(app_for_task, action).await;
-    });
-    {
-        let mut inner = state.when_done.lock().unwrap();
-        inner.task = Some(handle);
-    }
-
-    let _ = app.emit("when-done-state", new_state.clone());
-    Ok(new_state)
-}
-
-/// Cancel the protocol: abort the engine task, reset to Disarmed, emit, return.
-#[tauri::command]
-pub async fn cancel_when_done(
-    state: tauri::State<'_, AppState>,
-    app: AppHandle,
-) -> Result<ProtocolState, String> {
-    let new_state = {
-        let mut inner = state.when_done.lock().unwrap();
-        if let Some(handle) = inner.task.take() {
-            handle.abort();
-        }
-        inner.state = ProtocolState::disarmed();
-        inner.state.clone()
-    };
-    let _ = app.emit("when-done-state", new_state.clone());
-    Ok(new_state)
-}
-
-/// Read the current protocol state.
-#[tauri::command]
-pub async fn get_when_done_state(
-    state: tauri::State<'_, AppState>,
-) -> Result<ProtocolState, String> {
-    let inner = state.when_done.lock().unwrap();
-    Ok(inner.state.clone())
 }
 
 #[cfg(test)]
