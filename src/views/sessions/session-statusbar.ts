@@ -4,8 +4,7 @@ import { type ToolTally } from "../../shared/chat/tool-meta";
 import { formatTokenCount } from "../../shared/chat/turn-chips";
 import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
-import type { AiTodoEntry, GitInfo, ContextStatus, ChatDrain } from "../../types/ipc.generated";
-import { EFFORTS } from "../../shared/effort-presets";
+import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { type ChipType, isToolChip, chipToolName } from "./statusline-catalog";
 import {
   formatDuration,
@@ -20,6 +19,7 @@ import {
   type SessionCounts,
   type StatusbarOptions,
 } from "./session-statusbar-helpers";
+import { DrainPopover, AiTodosPopover, EffortPopover, ModelPopover } from "./statusbar-popovers";
 export {
   loadStatuslineRows,
   saveStatuslineRows,
@@ -59,17 +59,6 @@ export class SessionStatusbar {
   // Uncommitted-file count for the `dirty` chip (via get_git_dirty IPC, cwd-based).
   private dirtyCount: number | null = null;
   private dirtyLoaded = false;
-  private aiTodoFiles: AiTodoEntry[] = [];
-  private aiTodosLoaded = false;
-  private aiTodosPopoverOpen = false;
-  // Per-chat token-drain (share of a 5h session + weekly, plus per-message
-  // rundown), via chat_drain IPC. null = not yet fetched / unavailable.
-  private drain: ChatDrain | null = null;
-  private drainInflight = false;
-  // The drain rundown popover is body-appended (rich content), so it survives
-  // statusbar re-renders; managed by its own open/close like the tally popover.
-  private drainPopoverEl: HTMLElement | null = null;
-  private drainPopoverCleanup: (() => void) | null = null;
   private startedAt: string | null;
   private cwd: string | null;
   private effort: string;
@@ -80,12 +69,16 @@ export class SessionStatusbar {
   // Global hide-at-zero: when true, count/tool chips resolving to 0 are omitted.
   private hideZero: boolean;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
-  private effortPopoverOpen = false;
-  private modelPopoverOpen = false;
   private animatedKeys = new Set<string>();
   private toolTally: ToolTally = { byType: [] };
   // Per-tool chips delegate their drill-down popover to this controller.
   private tally: ToolTallyRow;
+
+  // Popover subsystems (each owns its own state, DOM, and event wiring).
+  private drainPopover = new DrainPopover();
+  private aiTodosPopover = new AiTodosPopover();
+  private effortPopover = new EffortPopover();
+  private modelPopover = new ModelPopover();
 
   constructor(container: HTMLElement, startedAt: string | null, rows: ChipType[][], opts: StatusbarOptions = {}) {
     this.container = container;
@@ -115,7 +108,7 @@ export class SessionStatusbar {
       const cachedCtx = ctxStatusCache.get(this.sessionId);
       if (cachedCtx) this.ctxStatus = cachedCtx;
       const cachedDrain = drainCache.get(this.sessionId);
-      if (cachedDrain) this.drain = cachedDrain;
+      if (cachedDrain) this.drainPopover.drain = cachedDrain;
     }
 
     this.render();
@@ -123,7 +116,7 @@ export class SessionStatusbar {
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
     if (this.hasChip("dirty")) void this.refreshDirty();
-    if (this.hasChip("ai_todos") && this.cwd) void this.refreshAiTodos();
+    if (this.hasChip("ai_todos") && this.cwd) void this.aiTodosPopover.refresh(this.cwd, () => this.render());
     if (this.wantsDrain()) void this.refreshDrain();
   }
 
@@ -151,8 +144,6 @@ export class SessionStatusbar {
   private async refreshContextStatus(allowRetry = true): Promise<void> {
     const sid = this.sessionId;
     if (!sid) return;
-    // Capture hasUsage before the await: if the turn just completed and the
-    // JSONL hasn't been flushed yet, we get null back and need a retry.
     const hadUsage = this.meta.hasUsage;
     try {
       const r = await invoke<ContextStatus | null>("context_status", { sessionId: sid });
@@ -162,9 +153,6 @@ export class SessionStatusbar {
         ctxStatusCache.set(sid, r);
         this.render();
       } else if (allowRetry && hadUsage && !this.ctxStatus) {
-        // Turn completed (hasUsage=true) but the transcript JSONL may not have
-        // been flushed to disk yet (claude CLI can write stdout before the file).
-        // Retry once after 1.5 s to resolve the write-buffer race.
         setTimeout(() => {
           if (this.sessionId === sid && !this.ctxStatus) void this.refreshContextStatus(false);
         }, 1500);
@@ -182,8 +170,6 @@ export class SessionStatusbar {
     } catch { /* transient */ }
   }
 
-  // Uncommitted-file count for the `dirty` chip. cwd-based (not session-based),
-  // so it is not reset on setSessionId. Mirrors refreshCounts.
   private async refreshDirty(): Promise<void> {
     const cwd = this.cwd;
     if (!cwd) return;
@@ -196,45 +182,13 @@ export class SessionStatusbar {
     } catch { /* transient - keep last known */ }
   }
 
-  private async refreshAiTodos(): Promise<void> {
-    const cwd = this.cwd;
-    if (!cwd) return;
-    try {
-      const files = await invoke<AiTodoEntry[]>("list_ai_todos", { cwd });
-      if (this.cwd !== cwd) return;
-      this.aiTodoFiles = files;
-      this.aiTodosLoaded = true;
-      this.render();
-    } catch { /* transient - keep last known */ }
-  }
-
-  // This chat's token-drain breakdown. session-based (reset on setSessionId).
-  // Guards against overlapping in-flight calls (it's re-fired on every meta
-  // update as the chat spends, like refreshCounts/refreshContextStatus).
   private async refreshDrain(): Promise<void> {
     const sid = this.sessionId;
-    if (!sid || this.drainInflight) return;
-    this.drainInflight = true;
-    try {
-      const d = await invoke<ChatDrain | null>("chat_drain", { sessionId: sid });
-      if (this.sessionId !== sid) return;
-      if (d) {
-        this.drain = d;
-        drainCache.set(sid, d);
-        this.render();
-        // Keep an open rundown popover in sync as the chat spends.
-        if (this.drainPopoverEl) this.openDrainPopover();
-      }
-    } catch { /* command may predate this binary, or transient - keep last known */ }
-    finally { this.drainInflight = false; }
-  }
-
-  private renderAiTodos(): string {
-    if (!this.cwd) return "";
-    if (!this.aiTodosLoaded) return this.skeletonChip("ai_todos", "sb-ai-todos", "ph-check-square", "55px");
-    const n = this.aiTodoFiles.length;
-    if (n === 0) return "";
-    return `<span class="sb-chip sb-ai-todos sb-ai-todos-btn${this.animClass("ai_todos")}" role="button" tabindex="0" title="${n} AI todo${n === 1 ? "" : "s"} in .for_bepy/ai_todos"><i class="ph ph-check-square"></i>${n} todo${n === 1 ? "" : "s"}</span>`;
+    if (!sid) return;
+    await this.drainPopover.refresh(sid, () => this.render(), () => {
+      const anchor = this.container.querySelector<HTMLElement>(".sb-drain-btn");
+      if (anchor) this.drainPopover.open(anchor);
+    });
   }
 
   updateMeta(meta: SessionMeta): void {
@@ -275,14 +229,14 @@ export class SessionStatusbar {
     this.counts = null;
     this.countsLoaded = false;
     this.ctxStatus = null;
-    this.drain = null;
-    this.closeDrainPopover();
+    this.drainPopover.drain = null;
+    this.drainPopover.close();
     const cached = countsCache.get(id);
     if (cached) { this.counts = cached; this.countsLoaded = true; }
     const cachedCtx = ctxStatusCache.get(id);
     if (cachedCtx) this.ctxStatus = cachedCtx;
     const cachedDrain = drainCache.get(id);
-    if (cachedDrain) this.drain = cachedDrain;
+    if (cachedDrain) this.drainPopover.drain = cachedDrain;
     this.render();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
@@ -306,7 +260,7 @@ export class SessionStatusbar {
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
     this.tally.destroy();
-    this.closeDrainPopover();
+    this.drainPopover.close();
   }
 
   private tickTimer(): void {
@@ -406,8 +360,8 @@ export class SessionStatusbar {
       case "cost": return this.renderCost();
       case "clock":
         return `<span class="sb-chip sb-clock${this.animClass("clock")}"><i class="ph ph-clock"></i><span class="sb-clock-text">${this.clockText()}</span></span>`;
-      case "ai_todos": return this.renderAiTodos();
-      case "drain": return this.renderDrain();
+      case "ai_todos": return this.aiTodosPopover.renderChip(this.cwd, (k) => this.animClass(k));
+      case "drain": return this.drainPopover.renderChip((k) => this.animClass(k));
       case "separator":
         return `<span class="sb-separator" aria-hidden="true"></span>`;
       case "flex_separator":
@@ -478,245 +432,74 @@ export class SessionStatusbar {
     return `<span class="sb-chip sb-cost${this.animClass("cost")}" title="Estimated session cost (local estimate, not a charge)"><i class="ph ph-currency-dollar"></i>~$${(c ?? 0).toFixed(2)}</span>`;
   }
 
-  private renderDrain(): string {
-    const d = this.drain;
-    if (!d) {
-      // Muted placeholder while the first chat_drain fetch is in flight (or if
-      // the chat has no usage yet). Stays a real button so the popover (with its
-      // own empty state) is still reachable.
-      return `<span class="sb-chip sb-drain sb-drain-btn muted${this.animClass("drain")}" role="button" tabindex="0" aria-label="Token drain (loading)" title="Share of a 5h session this chat has used (loading)"><i class="ph ph-drop"></i>··%</span>`;
-    }
-    if (d.fiveHourPct === null) {
-      // We have the chat's tokens but no usage snapshot to apportion against
-      // (not signed in / first sync pending). Show "—%", not a misleading 0%.
-      const label = "No usage data yet to compute this chat's share. Click for the token rundown.";
-      return `<span class="sb-chip sb-drain sb-drain-btn muted${this.animClass("drain")}" role="button" tabindex="0" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ph ph-drop"></i>—%</span>`;
-    }
-    const five = Math.round(d.fiveHourPct);
-    const week = Math.round(d.weeklyPct ?? 0);
-    const cls = d.fiveHourPct >= 80 ? " danger" : d.fiveHourPct >= 50 ? " warn" : "";
-    const label = `This chat is ${five}% of your current 5h session and ${week}% of the week. Click for a per-message rundown.`;
-    return `<span class="sb-chip sb-drain sb-drain-btn${cls}${this.animClass("drain")}" role="button" tabindex="0" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ph ph-drop"></i>${five}% · ${week}%w</span>`;
-  }
-
-  // Body-appended, fixed-position rundown popover anchored to the drain chip.
-  // Mirrors ToolTallyRow.openToolPopover: positioned off the anchor, dismissed
-  // on outside click, torn down on close/destroy. Rebuilt in place as the chat
-  // spends (refreshDrain re-calls this while open).
-  private openDrainPopover(): void {
-    const anchor = this.container.querySelector<HTMLElement>(".sb-drain-btn");
-    if (!anchor) return;
-    this.drainPopoverCleanup?.();
-    this.drainPopoverCleanup = null;
-    this.drainPopoverEl?.remove();
-
-    const pop = document.createElement("div");
-    pop.className = "sb-drain-popover";
-    pop.innerHTML = this.drainPopoverHtml();
-    document.body.appendChild(pop);
-    this.drainPopoverEl = pop;
-
-    const rect = anchor.getBoundingClientRect();
-    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
-    pop.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
-    const below = window.innerHeight - rect.bottom;
-    if (below >= pop.offsetHeight + 8 || below >= rect.top) {
-      pop.style.top = `${rect.bottom + 4}px`;
-    } else {
-      pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-    }
-
-    const onOutside = (e: MouseEvent) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
-        this.closeDrainPopover();
-      }
-    };
-    setTimeout(() => document.addEventListener("click", onOutside), 0);
-    this.drainPopoverCleanup = () => document.removeEventListener("click", onOutside);
-  }
-
-  private closeDrainPopover(): void {
-    this.drainPopoverCleanup?.();
-    this.drainPopoverCleanup = null;
-    this.drainPopoverEl?.remove();
-    this.drainPopoverEl = null;
-  }
-
-  private toggleDrainPopover(): void {
-    if (this.drainPopoverEl) this.closeDrainPopover();
-    else this.openDrainPopover();
-  }
-
-  private drainPopoverHtml(): string {
-    const d = this.drain;
-    if (!d) {
-      return `<div class="sb-drain-empty">No drain data yet</div>`;
-    }
-    const pct = (v: number | null): string => (v === null ? "—" : `${Math.round(v)}%`);
-    const tokens = formatTokenCount(Number(d.tokens), { decimals: 1 });
-    const header = `
-      <div class="sb-drain-header">
-        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${pct(d.fiveHourPct)}</span><span class="sb-drain-stat-lbl">of your 5h session</span></span>
-        <span class="sb-drain-stat"><span class="sb-drain-stat-val">${pct(d.weeklyPct)}</span><span class="sb-drain-stat-lbl">of the week</span></span>
-      </div>
-      <div class="sb-drain-secondary"><i class="ph ph-coins"></i>${escapeHtml(tokens)} tokens used</div>`;
-    const rows = d.messages.length === 0
-      ? `<div class="sb-drain-empty">No message breakdown yet</div>`
-      : d.messages.map((m) => {
-          const flag = m.expensive ? ' <i class="ph ph-warning sb-drain-flag"></i>' : "";
-          const expCls = m.expensive ? " expensive" : "";
-          const tok = formatTokenCount(Number(m.tokens), { decimals: 1 });
-          return `<div class="sb-drain-row${expCls}" title="${escapeHtml(m.preview)}"><span class="sb-drain-idx">#${m.index}</span><span class="sb-drain-preview">${escapeHtml(m.preview)}</span>${flag}<span class="sb-drain-tokens">${escapeHtml(tok)} tok</span></div>`;
-        }).join("");
-    return `${header}<div class="sb-drain-list">${rows}</div>`;
-  }
-
   private render(): void {
     const rowsHtml = this.rows.map((row) => {
       const chips = row.map((t) => this.renderChip(t)).filter(Boolean).join("");
       return chips ? `<div class="sb-row">${chips}</div>` : "";
     }).filter(Boolean).join("");
 
-    const effortIdx = Math.max(0, EFFORTS.indexOf(this.effort as typeof EFFORTS[number]));
-    const effortPopoverHtml = this.effortPopoverOpen ? `
-      <div class="sb-effort-popover">
-        <div class="sb-effort-popover-label">Effort</div>
-        <input type="range" class="sb-effort-slider" min="0" max="${EFFORTS.length - 1}" step="1" value="${effortIdx}">
-        <div class="sb-effort-stops">
-          ${EFFORTS.map((e, i) => `<span class="sb-effort-stop${i === effortIdx ? " active" : ""}">${escapeHtml(e)}</span>`).join("")}
-        </div>
-      </div>
-    ` : "";
-
     const popoverModel = this.meta.model ?? this.sessionModel;
-    const modelPopoverHtml = this.modelPopoverOpen && popoverModel ? `
-      <div class="sb-model-popover">
-        <div class="sb-model-popover-name">${escapeHtml(popoverModel)}</div>
-        <div class="sb-model-popover-hint">Locked for this session. Start a new session to change.</div>
-      </div>
-    ` : "";
-
-    const aiTodosPopoverHtml = this.aiTodosPopoverOpen && this.aiTodoFiles.length > 0 ? `
-      <div class="sb-ai-todos-popover">
-        <div class="sb-ai-todos-popover-header">AI Todos (${this.aiTodoFiles.length})</div>
-        <div class="sb-ai-todos-popover-list">
-          ${this.aiTodoFiles.map((f) => `<div class="sb-ai-todos-popover-file" role="button" tabindex="0" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</div>`).join("")}
-        </div>
-      </div>
-    ` : "";
 
     this.container.innerHTML = `
       <div class="sb-rows">${rowsHtml || '<span class="sb-empty">No chips</span>'}</div>
-      ${effortPopoverHtml}
-      ${modelPopoverHtml}
-      ${aiTodosPopoverHtml}
+      ${this.effortPopover.html(this.effort)}
+      ${this.modelPopover.html(popoverModel)}
+      ${this.aiTodosPopover.html()}
     `;
 
     this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
-      if (this.cwd) {
-        void invoke<void>("open_in_explorer", { path: this.cwd });
-      }
+      if (this.cwd) void invoke<void>("open_in_explorer", { path: this.cwd });
     });
 
     this.tally.wireChips();
 
     this.container.querySelector<HTMLElement>(".sb-model-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.modelPopoverOpen = !this.modelPopoverOpen;
-      this.effortPopoverOpen = false;
+      this.modelPopover.isOpen = !this.modelPopover.isOpen;
+      this.effortPopover.isOpen = false;
+      this.aiTodosPopover.isOpen = false;
       this.render();
     });
 
     this.container.querySelector<HTMLElement>(".sb-effort-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.readOnlyEffort) return;
-      this.effortPopoverOpen = !this.effortPopoverOpen;
-      this.modelPopoverOpen = false;
+      this.effortPopover.isOpen = !this.effortPopover.isOpen;
+      this.modelPopover.isOpen = false;
+      this.aiTodosPopover.isOpen = false;
       this.render();
     });
 
-    if (this.effortPopoverOpen) {
-      const slider = this.container.querySelector<HTMLInputElement>(".sb-effort-slider");
-      slider?.addEventListener("change", () => {
-        const i = Number(slider.value);
-        const next = EFFORTS[i];
-        if (!next) return;
-        const newEffort = next;
-        if (this.onEffortChange) {
-          this.onEffortChange(newEffort);
-          this.effort = newEffort;
-          this.effortPopoverOpen = false;
-          this.render();
-          return;
-        }
-        if (!this.sessionId) return;
-        const sid = this.sessionId;
-        void invoke<void>("set_session_effort", { sessionId: sid, effort: newEffort })
-          .then(() => {
-            this.effort = newEffort;
-            this.effortPopoverOpen = false;
-            this.render();
-          })
-          .catch((err) => {
-            console.error("[statusbar] set_session_effort failed", err);
-          });
-      });
-      const closeOnOutsideEffort = (e: MouseEvent) => {
-        if (!this.container.contains(e.target as Node)) {
-          this.effortPopoverOpen = false;
-          this.render();
-          document.removeEventListener("click", closeOnOutsideEffort);
-        }
-      };
-      setTimeout(() => document.addEventListener("click", closeOnOutsideEffort), 0);
-    }
-
-    if (this.modelPopoverOpen) {
-      const closeOnOutsideModel = (e: MouseEvent) => {
-        if (!this.container.contains(e.target as Node)) {
-          this.modelPopoverOpen = false;
-          this.render();
-          document.removeEventListener("click", closeOnOutsideModel);
-        }
-      };
-      setTimeout(() => document.addEventListener("click", closeOnOutsideModel), 0);
-    }
-
     this.container.querySelector<HTMLElement>(".sb-ai-todos-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.aiTodosPopoverOpen = !this.aiTodosPopoverOpen;
-      this.effortPopoverOpen = false;
-      this.modelPopoverOpen = false;
+      this.aiTodosPopover.isOpen = !this.aiTodosPopover.isOpen;
+      this.effortPopover.isOpen = false;
+      this.modelPopover.isOpen = false;
       this.render();
     });
 
     this.container.querySelector<HTMLElement>(".sb-drain-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.toggleDrainPopover();
+      const anchor = e.currentTarget as HTMLElement;
+      this.drainPopover.toggle(anchor);
     });
 
-    this.container.querySelectorAll<HTMLElement>(".sb-ai-todos-popover-file").forEach((el) => {
-      el.addEventListener("click", () => {
-        const p = el.dataset.path;
-        if (p) void invoke<void>("open_in_editor", { path: p });
-      });
-    });
-
-    if (this.aiTodosPopoverOpen) {
-      const closeOnOutsideAiTodos = (e: MouseEvent) => {
-        if (!this.container.contains(e.target as Node)) {
-          this.aiTodosPopoverOpen = false;
-          this.render();
-          document.removeEventListener("click", closeOnOutsideAiTodos);
-        }
-      };
-      setTimeout(() => document.addEventListener("click", closeOnOutsideAiTodos), 0);
-    }
+    this.effortPopover.wire(
+      this.container,
+      this.sessionId,
+      this.onEffortChange,
+      (next) => { this.effort = next; },
+      () => this.render(),
+    );
+    this.modelPopover.wire(this.container, () => this.render());
+    this.aiTodosPopover.wire(this.container, () => this.render());
 
     // The drain popover is body-appended and survives re-renders, but its anchor
     // chip was just replaced. Re-anchor (rebuild + reposition) if it's open so a
-    // background refresh (counts/git/etc.) doesn't leave it bound to a detached
-    // node and break outside-click dismissal.
-    if (this.drainPopoverEl) this.openDrainPopover();
+    // background refresh doesn't leave it bound to a detached node.
+    if (this.drainPopover.isOpen) {
+      const anchor = this.container.querySelector<HTMLElement>(".sb-drain-btn");
+      if (anchor) this.drainPopover.open(anchor);
+    }
   }
 }
