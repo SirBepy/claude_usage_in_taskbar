@@ -108,6 +108,10 @@ export class ChatRenderer {
   // right now pulses - not every tool that has an in-flight call. Cleared on
   // turn boundary / reset, same lifecycle as lastActivity.
   activityToolCanon: string | null = null;
+  // Set when an AUQ tool_use closes the streaming slot via enqueueTurnClose,
+  // so the result line's finalizing AssistantMessage (which carries the
+  // already-rendered pre-AUQ text) doesn't create a duplicate bubble.
+  auqPendingResult = false;
   // By-type cumulative tool tally state (counts + per-target details, dedup by
   // tool_use id). Owns the data behind the statusline `Read x4 · ...` tally.
   tallyState = new ToolTallyState();

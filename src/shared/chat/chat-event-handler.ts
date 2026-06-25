@@ -58,6 +58,7 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       touched = true;
       break;
     case "user_message": {
+      r.auqPendingResult = false;
       // Only a message the USER actually sent (or a compaction) is a turn
       // boundary. Real streams deliver every tool result as a user-role
       // line whose blocks the parser drops (content empty) - rotating the
@@ -139,6 +140,12 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
           r.messages[r.streamingIndex] = msg;
           r.dirtyIndices.add(r.streamingIndex);
           r.streamingIndex = null;
+          r.auqPendingResult = false;
+        } else if (r.auqPendingResult) {
+          // The result line re-emits the pre-AUQ text as a finalized
+          // AssistantMessage, but that slot was already rendered and finalized by
+          // enqueueTurnClose when the AUQ fired. Suppress the duplicate.
+          r.auqPendingResult = false;
         } else {
           r.messages.push(msg);
         }
@@ -161,6 +168,7 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       // Only top-level AUQ calls get the card treatment; nested subagent calls
       // fall through to the normal chip path.
       if (ev.tool_name === "AskUserQuestion" && !ev.parent_tool_use_id) {
+        r.auqPendingResult = true;
         enqueueTurnClose(r);
         r.messages.push({
           kind: "question",
@@ -337,6 +345,7 @@ export async function bulkLoadEvents(r: ChatRenderer, events: ChatEvent[]): Prom
   r.messageEls = [];
   r.dirtyIndices.clear();
   r.streamingIndex = null;
+  r.auqPendingResult = false;
   r.fileEdits = [];
   r.lastActivity = null;
   r.activityToolCanon = null;
