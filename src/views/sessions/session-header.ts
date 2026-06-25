@@ -25,7 +25,6 @@ export class SessionHeader {
   private readonly _titleEl: HTMLElement;
   private readonly _metaEl: HTMLElement;
   private readonly _changesBtn: HTMLButtonElement;
-  private _cancelBtn: HTMLButtonElement | null;
   private readonly _moreBtn: HTMLButtonElement;
 
   private _sessionId: string | null = null;
@@ -33,7 +32,6 @@ export class SessionHeader {
   private readonly _onDiscard: (() => void) | undefined;
 
   onChangesClick: (() => void) | null = null;
-  onCancelClick: (() => void) | null = null;
   onCharClick: (() => void) | null = null;
 
   constructor(opts: { title: string; meta: string; onDiscard?: () => void }) {
@@ -49,13 +47,13 @@ export class SessionHeader {
       `  <span class="title">${escapeHtml(opts.title)}</span>`,
       `  <span class="meta">${escapeHtml(opts.meta)}</span>`,
       `</div>`,
+      `<button class="icon-btn discard-btn" title="Discard draft">`,
+      `  <i class="ph ph-x-circle"></i>`,
+      `</button>`,
       `<button class="icon-btn changes-btn" title="Show all file changes in this chat" hidden>`,
       `  <i class="ph ph-git-diff"></i><span class="changes-count" hidden></span>`,
       `</button>`,
-      `<button class="icon-btn cancel-btn" title="Cancel turn" hidden>`,
-      `  <i class="ph ph-x"></i>`,
-      `</button>`,
-      `<button class="icon-btn more-btn" title="More options">`,
+      `<button class="icon-btn more-btn" title="More options" hidden>`,
       `  <i class="ph ph-dots-three-vertical"></i>`,
       `</button>`,
     ].join("");
@@ -65,8 +63,11 @@ export class SessionHeader {
     this._titleEl = el.querySelector(".title")!;
     this._metaEl = el.querySelector(".meta")!;
     this._changesBtn = el.querySelector(".changes-btn")!;
-    this._cancelBtn = el.querySelector(".cancel-btn");
     this._moreBtn = el.querySelector(".more-btn")!;
+
+    el.querySelector<HTMLButtonElement>(".discard-btn")?.addEventListener("click", () => {
+      this._onDiscard?.();
+    });
 
     this._moreBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -79,8 +80,6 @@ export class SessionHeader {
     });
 
     this._changesBtn.addEventListener("click", () => { this.onChangesClick?.(); });
-
-    this._cancelBtn?.addEventListener("click", () => { void this.onCancelClick?.(); });
 
     // Char-click delegate on the header element so it survives avatar swaps.
     el.addEventListener("click", (e) => {
@@ -140,10 +139,10 @@ export class SessionHeader {
     this._readOnly = opts.readOnly;
     this._moreBtn.classList.toggle("has-indicator", !!opts.autoAcceptOn);
 
-    this._cancelBtn?.remove();
-    this._cancelBtn = null;
+    this.el.querySelector(".discard-btn")?.remove();
 
     this._changesBtn.removeAttribute("hidden");
+    this._moreBtn.removeAttribute("hidden");
 
     if (opts.charId !== undefined && opts.charStatus !== undefined) {
       this.setAvatar(opts.charId ?? null, opts.charUrl ?? null, opts.charStatus, opts.cwd);

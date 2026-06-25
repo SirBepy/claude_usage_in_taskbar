@@ -42,15 +42,6 @@ export async function renderPendingPane(
     meta: project.name,
     onDiscard: onDiscard ? () => onDiscard(pane) : undefined,
   });
-  _pendingHeader.onCancelClick = async () => {
-    const cancelTarget = state.pendingNewSession?.realId || placeholderId;
-    try {
-      await invoke<void>("cancel_turn", { sessionId: cancelTarget });
-    } catch (err) {
-      console.error("[sessions] cancel_turn failed", err);
-    }
-  };
-
   pane.innerHTML = [
     `<div class="session-statusbar-host"></div>`,
     `<div class="session-messages">`,
