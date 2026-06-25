@@ -39,6 +39,7 @@ import { SessionHeader } from "./session-header";
 import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { openModelEffortModal } from "./model-effort-modal";
+import { registerCta } from "../../shared/chat/cta-registry";
 
 const HEADER_STATUS_CLASSES = [
   "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention", "st-rate-limited",
@@ -169,33 +170,19 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
   }
 }
 
-function showPickupCta(pane: HTMLElement, sess: Instance): void {
-  if (pane.querySelector(".pickup-cta-bar")) return;
-  const project = { path: String(sess.cwd ?? ""), name: projectName(sess) };
-
-  const bar = document.createElement("div");
-  bar.className = "pickup-cta-bar";
-  bar.innerHTML = `
-    <i class="ph ph-hand-fist"></i>
-    <span class="pickup-cta-label">next-ai-prompt ready</span>
-    <button class="pickup-cta-btn">Close &amp; start new chat with /pickup</button>
-    <button class="pickup-cta-dismiss icon-btn" title="Dismiss"><i class="ph ph-x"></i></button>
-  `;
-
-  const thinking = pane.querySelector<HTMLElement>(".session-thinking");
-  if (thinking) pane.insertBefore(bar, thinking);
-  else pane.appendChild(bar);
-
-  bar.querySelector(".pickup-cta-dismiss")?.addEventListener("click", () => bar.remove());
-
-  bar.querySelector(".pickup-cta-btn")?.addEventListener("click", async () => {
-    bar.remove();
+registerCta("pickup", {
+  label: "Close & start new chat with /pickup",
+  icon: "hand-fist",
+  handler: async () => {
+    const sess = state.sessions.find(s => s.session_id === state.selectedId);
+    if (!sess) return;
+    const project = { path: String(sess.cwd ?? ""), name: projectName(sess) };
     const config = await openModelEffortModal(project.path, project.name);
     if (!config) return;
     void state.composer?.sendText("/close");
     state.launchNewChatCallback?.(project, { ...config, initialMessage: "/pickup" });
-  });
-}
+  },
+});
 
 export async function selectSession(sessionId: string, pane: HTMLElement): Promise<void> {
   // Mobile single-pane: opening a chat reveals the chat pane (CSS only acts on
@@ -346,7 +333,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
     renderer.onNextAiPromptDone = () => {
       if (state.renderer !== renderer) return;
-      showPickupCta(pane, sess);
+      renderer.injectCta("pickup");
     };
     // Track Claude's self-reported turn status for this session so the sidebar
     // shows a red "answer me" flag for questions and a calm icon otherwise.

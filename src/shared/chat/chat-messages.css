@@ -677,3 +677,36 @@
   transform: scale(1.05);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
+
+/* ── In-message CTA buttons (injected by renderer.injectCta) ─────────────── */
+.msg-cta {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.msg-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  transition: opacity 0.15s;
+}
+
+.msg-cta-btn:hover {
+  opacity: 0.85;
+}
+
+.msg-cta-btn i.ph {
+  font-size: 14px;
+}

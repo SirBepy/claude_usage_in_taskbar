@@ -13,6 +13,7 @@ import { ChatPaginator } from "./chat-pagination";
 import { TurnFooterRegistry, type TurnChipKey, type TurnUsageTotals } from "./turn-chips";
 import { buildMessageEl, foldClosedRange, revealTranscript } from "./chat-dom-renderer";
 import { handleChatEvent, bulkLoadEvents, type HandleEventOpts } from "./chat-event-handler";
+import { getCta } from "./cta-registry";
 
 export interface SessionMeta {
   model: string | null;
@@ -181,6 +182,7 @@ export class ChatRenderer {
     this.container.addEventListener("click", this.handleToolChipClick);
     this.container.addEventListener("click", this.handleToolFileClick);
     this.container.addEventListener("click", this.handleRetryClick);
+    this.container.addEventListener("click", this.handleCtaClick);
     this.paginator = new ChatPaginator(container, {
       getSessionId: () => this.sessionId,
       getMessages: () => this.messages,
@@ -346,6 +348,42 @@ export class ChatRenderer {
     btn.disabled = true;
     this.onSendText("continue");
   };
+
+  private handleCtaClick = (e: MouseEvent): void => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>(".msg-cta-btn");
+    if (!btn) return;
+    const id = btn.dataset.ctaId;
+    if (!id) return;
+    const action = getCta(id);
+    if (!action) return;
+    btn.closest<HTMLElement>(".msg-cta")?.remove();
+    void action.handler();
+  };
+
+  /** Append an action button to the last assistant message bubble. */
+  injectCta(actionId: string): void {
+    const action = getCta(actionId);
+    if (!action) return;
+    const last = [...this.container.querySelectorAll<HTMLElement>(".msg.assistant")].at(-1);
+    if (!last) return;
+    if (last.querySelector(`.msg-cta[data-cta-id="${actionId}"]`)) return;
+
+    const wrap = document.createElement("div");
+    wrap.className = "msg-cta";
+    wrap.dataset.ctaId = actionId;
+
+    const btn = document.createElement("button");
+    btn.className = "msg-cta-btn";
+    btn.dataset.ctaId = actionId;
+    if (action.icon) {
+      const icon = document.createElement("i");
+      icon.className = `ph ph-${action.icon}`;
+      btn.appendChild(icon);
+    }
+    btn.appendChild(document.createTextNode(action.label));
+    wrap.appendChild(btn);
+    last.appendChild(wrap);
+  }
 
   private handleToolChipClick = (e: MouseEvent): void => {
     const chip = (e.target as HTMLElement).closest<HTMLElement>(".tool-chip");
