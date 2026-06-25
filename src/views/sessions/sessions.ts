@@ -1,9 +1,7 @@
 ﻿import { render } from "lit-html";
-import { showView } from "../../shared/navigation";
 import { template, detachedTemplate } from "./template";
 import { invoke } from "../../shared/ipc";
 import * as shortcuts from "../../shared/shortcuts";
-import { showToast } from "../../shared/toast";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
 import "./session-avatar.css";
@@ -13,11 +11,11 @@ import "./model-effort-modal.css";
 import "./new-project-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
-import { openModelEffortModal, type SessionConfig } from "./model-effort-modal";
+import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
-import { loadSort, LS_SORT, projectName, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
+import { loadSort, LS_SORT, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu } from "./sidebar";
 import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
@@ -39,40 +37,32 @@ import {
   getSelectedSessionId,
   replayPendingPrompt,
 } from "./permission-modal";
-
-
-let _pane: HTMLElement | null = null;
-let _pendingOpenPicker = false;
-let _pendingHistoryResume: string | null = null;
-let _pendingNewChat: { project: { path: string; name: string }; config: SessionConfig } | null = null;
+import {
+  setPaneRef,
+  consumePendingOpenPicker,
+  consumePendingHistoryResume,
+  consumePendingNewChat,
+  selectSessionByIndex,
+  selectSessionBySlot,
+  assignCurrentToSlot,
+  closeFocusedChat,
+} from "./session-controls";
+export {
+  queueHistoryResume,
+  queueSessionSelect,
+  queueNewChat,
+  triggerNewSessionGlobal,
+  selectSessionByIndex,
+  selectSessionBySlot,
+  assignCurrentToSlot,
+  closeFocusedChat,
+} from "./session-controls";
 
 /** Session ids for which we have already called ensureSessionCharacter this
  * runtime. Prevents redundant IPC chatter on every instances-changed event.
  * Cleared on unmount so a fresh mount re-ensures any sessions that appeared
  * while the view was hidden. */
 const _ensuredSessionIds = new Set<string>();
-
-export function queueHistoryResume(sessionId: string): void {
-  _pendingHistoryResume = sessionId;
-}
-
-/**
- * Select an already-live session on the next Sessions-view mount. Used by the
- * session-detail "Open in chats" CTA. Functionally the same select-on-mount as
- * history-resume (both target a session that's live in the registry).
- */
-export function queueSessionSelect(sessionId: string): void {
-  _pendingHistoryResume = sessionId;
-}
-
-/**
- * Launch a brand-new chat for a known project on the next Sessions-view mount.
- * The project + model/effort config are resolved by the caller (e.g. the
- * project-detail "+" button) so no project-picker is shown here.
- */
-export function queueNewChat(project: { path: string; name: string }, config: SessionConfig): void {
-  _pendingNewChat = { project, config };
-}
 
 // ── Daemon setup stall detection ──────────────────────────────────────────────
 
@@ -112,45 +102,6 @@ function disarmSetupStallTimer(): void {
   }
 }
 
-export function triggerNewSessionGlobal(): void {
-  if (_pane) {
-    void startNewSession(_pane);
-  } else {
-    _pendingOpenPicker = true;
-    showView("sessions");
-  }
-}
-
-export function selectSessionByIndex(index: number): void {
-  if (!_pane) return;
-  const id = state.sortedSessionIds[index];
-  if (id) void selectSession(id, _pane);
-}
-
-export function selectSessionBySlot(slot: number): void {
-  if (!_pane) return;
-  const sessionId = shortcuts.getSlotAssignment(slot);
-  if (!sessionId) {
-    showToast(`No chat assigned to slot ${slot} — press Ctrl+Shift+${slot} in a chat to assign it`);
-    return;
-  }
-  const exists = state.sessions.find(s => s.session_id === sessionId);
-  if (!exists) {
-    showToast(`Chat assigned to slot ${slot} is no longer active`);
-    return;
-  }
-  void selectSession(sessionId, _pane);
-}
-
-export function assignCurrentToSlot(slot: number): void {
-  const id = state.selectedId;
-  if (!id) { showToast("No active chat to assign"); return; }
-  shortcuts.setSlotAssignment(slot, id);
-  const sess = state.sessions.find(s => s.session_id === id);
-  const label = sess ? projectName(sess) : id.slice(0, 8);
-  showToast(`Slot ${slot} → ${label}`);
-}
-
 function discardStuckPending(pane: HTMLElement): void {
   const pending = state.pendingNewSession;
   if (!pending) return;
@@ -165,14 +116,6 @@ function discardStuckPending(pane: HTMLElement): void {
     discardDraft(pane);
     updateThinkingBar();
   })();
-}
-
-export function closeFocusedChat(): void {
-  const id = state.selectedId;
-  if (!id) return;
-  const sess = state.sessions.find(s => s.session_id === id);
-  if (!sess?.busy) return;
-  void invoke<void>("cancel_turn", { sessionId: id });
 }
 
 export async function renderSessionsView(root: HTMLElement): Promise<() => void> {
@@ -194,7 +137,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     return () => { /* no-op */ };
   }
 
-  _pane = pane;
+  setPaneRef(pane);
   state.launchNewChatCallback = (project, config) => { void launchNewSession(pane, project, config); };
   initThinkingBar(pane);
 
@@ -226,8 +169,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       .catch((err) => console.error("[rate-limit] auto-continue send failed", sid, err));
   });
 
-  if (_pendingOpenPicker) {
-    _pendingOpenPicker = false;
+  if (consumePendingOpenPicker()) {
     void startNewSession(pane);
   }
 
@@ -298,26 +240,25 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   try {
     // If a new chat was queued (e.g. project-detail "+"), launch it now. Takes
     // precedence over history-resume / last-selected restore.
-    if (_pendingNewChat) {
-      const { project, config } = _pendingNewChat;
-      _pendingNewChat = null;
+    const pendingNew = consumePendingNewChat();
+    if (pendingNew) {
+      const { project, config } = pendingNew;
       await launchNewSession(pane, project, config);
       updateThinkingBar();
-    } else if (_pendingHistoryResume) {
-      const sid = _pendingHistoryResume;
-      _pendingHistoryResume = null;
-      if (state.sessions.find(s => s.session_id === sid)) {
+    } else {
+      const sid = consumePendingHistoryResume();
+      if (sid && state.sessions.find(s => s.session_id === sid)) {
         await selectSession(sid, pane);
         updateThinkingBar();
-      }
-    } else if (!state.pendingNewSession && !state.selectedId) {
-      // Restore the last-viewed session across reloads. Skipped when a pending
-      // draft was just restored (it owns the active pane) or when history-resume
-      // already picked one above.
-      const lastId = loadLastSelectedSession();
-      if (lastId && state.sessions.find(s => s.session_id === lastId)) {
-        await selectSession(lastId, pane);
-        updateThinkingBar();
+      } else if (!state.pendingNewSession && !state.selectedId) {
+        // Restore the last-viewed session across reloads. Skipped when a pending
+        // draft was just restored (it owns the active pane) or when history-resume
+        // already picked one above.
+        const lastId = loadLastSelectedSession();
+        if (lastId && state.sessions.find(s => s.session_id === lastId)) {
+          await selectSession(lastId, pane);
+          updateThinkingBar();
+        }
       }
     }
   } catch (err) {
@@ -639,7 +580,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
  */
 function teardownState(): void {
   unwatchCurrentExternalSession();
-  _pane = null;
+  setPaneRef(null);
   initThinkingBar(null);
   if (state.unlistenInstances) {
     try { state.unlistenInstances(); } catch { /* ignore */ }
