@@ -112,7 +112,13 @@ export class ChatRenderer {
   // Set when an AUQ tool_use closes the streaming slot via enqueueTurnClose,
   // so the result line's finalizing AssistantMessage (which carries the
   // already-rendered pre-AUQ text) doesn't create a duplicate bubble.
+  // auqPreContent records what the streaming slot contained at the moment AUQ
+  // fired, so the suppression branch can distinguish the protocol re-emit
+  // (same content → suppress) from genuine post-AUQ output (different content
+  // → render). Without this, a file-watcher delivery of real post-AUQ content
+  // while auqPendingResult is still true silently drops the message.
   auqPendingResult = false;
+  auqPreContent: string | null = null;
   // By-type cumulative tool tally state (counts + per-target details, dedup by
   // tool_use id). Owns the data behind the statusline `Read x4 · ...` tally.
   tallyState = new ToolTallyState();

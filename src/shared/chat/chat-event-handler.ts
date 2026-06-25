@@ -136,23 +136,34 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
           r.messages.push(msg);
         }
       } else {
+        const joined = blocksToText(ev.content);
         if (r.streamingIndex !== null) {
           r.messages[r.streamingIndex] = msg;
           r.dirtyIndices.add(r.streamingIndex);
           r.streamingIndex = null;
           r.auqPendingResult = false;
+          r.auqPreContent = null;
+          r.setTurnStatus(detectStatusToken(joined));
         } else if (r.auqPendingResult) {
           // The result line re-emits the pre-AUQ text as a finalized
-          // AssistantMessage, but that slot was already rendered and finalized by
-          // enqueueTurnClose when the AUQ fired. Suppress the duplicate.
+          // AssistantMessage. Suppress it only if the content matches what was
+          // in the streaming slot when AUQ fired. If it doesn't match, this is
+          // genuine post-AUQ content (e.g. the file watcher won the race and
+          // delivered real output while auqPendingResult was still true) —
+          // render it and update status normally.
+          const isReemit = joined === (r.auqPreContent ?? "");
           r.auqPendingResult = false;
+          r.auqPreContent = null;
+          if (!isReemit) {
+            r.messages.push(msg);
+            r.setTurnStatus(detectStatusToken(joined));
+          }
+          // Re-emit suppressed: no status update — the post-AUQ final will
+          // fire setTurnStatus when it arrives via its own streaming path.
         } else {
           r.messages.push(msg);
+          r.setTurnStatus(detectStatusToken(joined));
         }
-      }
-      if (!ev.streaming) {
-        const joined = blocksToText(ev.content);
-        r.setTurnStatus(detectStatusToken(joined));
       }
       // Update live token estimate from accumulated streamed assistant text
       if (r.activeTurnChipKey !== null) {
@@ -169,6 +180,16 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       // fall through to the normal chip path.
       if (ev.tool_name === "AskUserQuestion" && !ev.parent_tool_use_id) {
         r.auqPendingResult = true;
+        // Save the streaming slot's current text before enqueueTurnClose zeros
+        // it. The suppression branch uses this to tell apart the protocol
+        // re-emit (same text → suppress) from real post-AUQ content delivered
+        // by the file watcher while auqPendingResult is still true.
+        if (r.streamingIndex !== null) {
+          const existing = r.messages[r.streamingIndex] as RenderedMessage;
+          r.auqPreContent = blocksToText(existing.content ?? []);
+        } else {
+          r.auqPreContent = null;
+        }
         enqueueTurnClose(r);
         r.messages.push({
           kind: "question",
@@ -352,6 +373,7 @@ export async function bulkLoadEvents(r: ChatRenderer, events: ChatEvent[]): Prom
   r.dirtyIndices.clear();
   r.streamingIndex = null;
   r.auqPendingResult = false;
+  r.auqPreContent = null;
   r.fileEdits = [];
   r.lastActivity = null;
   r.activityToolCanon = null;
