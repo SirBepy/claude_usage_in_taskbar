@@ -53,25 +53,24 @@ fn tool_list_response(id: &Value) -> Value {
             "tools": [
                 {
                     "name": TOOL_APPROVAL,
-                    "description": "Request user permission for a tool invocation. Returns {behavior: 'allow'|'deny'}.",
+                    "description": "Permission relay. Returns {behavior:'allow'|'deny'}.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
-                            "tool_name": {"type": "string", "description": "Name of the tool needing permission"},
-                            "input": {"type": "object", "description": "Input that will be passed to the tool"}
+                            "tool_name": {"type": "string"},
+                            "input": {"type": "object"}
                         },
                         "required": ["tool_name", "input"]
                     }
                 },
                 {
                     "name": TOOL_QUESTION,
-                    "description": "Ask the user one or more questions and get their answers.",
+                    "description": "Present questions to user. Returns answers.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "questions": {
                                 "type": "array",
-                                "description": "Questions to ask",
                                 "items": {
                                     "type": "object",
                                     "properties": {
