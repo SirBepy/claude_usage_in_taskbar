@@ -119,27 +119,38 @@ export function handleCopyClick(e: MouseEvent): void {
     } else {
       const msg = btn.closest(".msg") as HTMLElement | null;
       if (!msg) return;
-      const clone = msg.cloneNode(true) as HTMLElement;
-      clone.querySelector(".msg-copy-btn")?.remove();
-      const html = clone.innerHTML;
-      const plain = clone.textContent ?? "";
-      void navigator.clipboard
-        .write([
-          new ClipboardItem({
-            "text/html": new Blob([html], { type: "text/html" }),
-            "text/plain": new Blob([plain.trim()], { type: "text/plain" }),
-          }),
-        ])
-        .then(() => {
-          const icon = btn.querySelector("i");
-          if (!icon) return;
-          icon.className = "ph ph-check";
-          btn.classList.add("copied");
-          setTimeout(() => {
-            icon.className = "ph ph-copy";
-            btn.classList.remove("copied");
-          }, 1500);
-        });
+
+      // Hide the copy button so it's excluded from the selection
+      btn.style.visibility = "hidden";
+
+      const range = document.createRange();
+      range.selectNodeContents(msg);
+      const sel = window.getSelection();
+      const prevRanges: Range[] = [];
+      if (sel) {
+        for (let i = 0; i < sel.rangeCount; i++) prevRanges.push(sel.getRangeAt(i));
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      // execCommand('copy') captures computed styles, matching native Ctrl+C behaviour
+      document.execCommand("copy");
+
+      // Restore state
+      btn.style.visibility = "";
+      if (sel) {
+        sel.removeAllRanges();
+        prevRanges.forEach((r) => sel.addRange(r));
+      }
+
+      const icon = btn.querySelector("i");
+      if (!icon) return;
+      icon.className = "ph ph-check";
+      btn.classList.add("copied");
+      setTimeout(() => {
+        icon.className = "ph ph-copy";
+        btn.classList.remove("copied");
+      }, 1500);
       return;
     }
   }
