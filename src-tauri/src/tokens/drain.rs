@@ -67,18 +67,40 @@ fn line_drain(v: &serde_json::Value) -> Option<(f64, u64)> {
     Some((usd, tokens))
 }
 
-/// Cost-weighted drain UNITS for ONE transcript file = sum over assistant usage
-/// lines of token*relative-price. The weights are the per-token model prices, so
-/// an opus output token outweighs a haiku cache-read; the absolute scale is
-/// meaningless (it's only ever used as a ratio), so this is NOT dollars and is
-/// never shown to the user. Missing/malformed files yield 0.0 (never panic).
-pub fn transcript_drain_units(path: &Path) -> f64 {
+/// Parses an RFC 3339 string (e.g. "2026-06-22T17:31:45.803Z") into a
+/// `SystemTime`. Shared by `line_timestamp` and `ipc::drain`.
+pub fn rfc3339_to_system_time(s: &str) -> Option<SystemTime> {
+    let dt = chrono::DateTime::parse_from_rfc3339(s).ok()?;
+    let secs = dt.timestamp();
+    if secs < 0 { return None; }
+    Some(UNIX_EPOCH + Duration::new(secs as u64, dt.timestamp_subsec_nanos()))
+}
+
+/// Parses a transcript line's top-level `timestamp` into a `SystemTime`. `None`
+/// when absent or unparseable — assistant usage lines always carry one, so `None`
+/// means the line isn't a usage line we'd count anyway.
+fn line_timestamp(v: &serde_json::Value) -> Option<SystemTime> {
+    rfc3339_to_system_time(v.get("timestamp").and_then(|t| t.as_str())?)
+}
+
+/// Cost-weighted drain UNITS for ONE transcript file. `since: None` counts every
+/// assistant usage line (lifetime); `since: Some(cutoff)` counts only lines whose
+/// `timestamp` is at or after the cutoff (windowed). Missing/malformed files yield
+/// 0.0 (never panic). Lines without a parseable timestamp are excluded when a
+/// cutoff is set (can't place them in the window).
+pub fn transcript_drain_units(path: &Path, since: Option<SystemTime>) -> f64 {
     let Ok(file) = std::fs::File::open(path) else { return 0.0 };
     let reader = BufReader::new(file);
     let mut total = 0.0;
     for line in reader.lines().map_while(|r| r.ok()) {
         if line.trim().is_empty() { continue }
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        if let Some(cutoff) = since {
+            match line_timestamp(&v) {
+                Some(ts) if ts >= cutoff => {}
+                _ => continue,
+            }
+        }
         if let Some((usd, _)) = line_drain(&v) {
             total += usd;
         }
@@ -86,17 +108,17 @@ pub fn transcript_drain_units(path: &Path) -> f64 {
     total
 }
 
-/// Lifetime drain UNITS for a session incl. merged subagents: the main
-/// transcript plus every `subagents/*.jsonl` under it. Resolves the main
-/// transcript the same way `walker`/`backfill` do.
-pub fn drain_units_for_session(cwd: &Path, session_id: &str) -> f64 {
+/// Drain UNITS for a session incl. merged subagents (main transcript + every
+/// `subagents/*.jsonl`). `since: None` = lifetime; `since: Some(cutoff)` =
+/// windowed (only lines at or after cutoff). Resolves the main transcript the
+/// same way `walker`/`backfill` do.
+pub fn drain_units_for_session(cwd: &Path, session_id: &str, since: Option<SystemTime>) -> f64 {
     let mut total = 0.0;
     if let Some(main) = transcript_for_session(cwd, session_id) {
-        total += transcript_drain_units(&main);
+        total += transcript_drain_units(&main, since);
     }
     // Subagent transcripts live at
-    // `<projects>/<encoded-cwd>/<session-id>/subagents/*.jsonl` (mirrors how
-    // backfill locates them: the parent session id is the dir two levels above).
+    // `<projects>/<encoded-cwd>/<session-id>/subagents/*.jsonl`.
     if let Some(projects) = claude_projects_dir() {
         let sub_dir = projects
             .join(encode_cwd_as_project_dir(cwd))
@@ -106,69 +128,7 @@ pub fn drain_units_for_session(cwd: &Path, session_id: &str) -> f64 {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                    total += transcript_drain_units(&path);
-                }
-            }
-        }
-    }
-    total
-}
-
-/// Parses a transcript line's top-level `timestamp` (RFC 3339, e.g.
-/// "2026-06-22T17:31:45.803Z") into a `SystemTime`. `None` when absent or
-/// unparseable — assistant usage lines always carry one, so a `None` here means
-/// the line isn't a usage line we'd count anyway.
-fn line_timestamp(v: &serde_json::Value) -> Option<SystemTime> {
-    let ts = v.get("timestamp").and_then(|t| t.as_str())?;
-    let dt = chrono::DateTime::parse_from_rfc3339(ts).ok()?;
-    let secs = dt.timestamp();
-    if secs < 0 {
-        return None;
-    }
-    Some(UNIX_EPOCH + Duration::new(secs as u64, dt.timestamp_subsec_nanos()))
-}
-
-/// Cost-weighted drain UNITS for ONE transcript file, counting only assistant
-/// usage lines whose `timestamp` is at or after `cutoff`. Used to measure a
-/// chat's drain *within the current rolling window* (since its reset boundary),
-/// which is what calibrates the window-capacity estimate. Lines without a
-/// parseable timestamp are excluded (can't place them in the window).
-pub fn transcript_drain_units_since(path: &Path, cutoff: SystemTime) -> f64 {
-    let Ok(file) = std::fs::File::open(path) else { return 0.0 };
-    let reader = BufReader::new(file);
-    let mut total = 0.0;
-    for line in reader.lines().map_while(|r| r.ok()) {
-        if line.trim().is_empty() { continue }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
-        match line_timestamp(&v) {
-            Some(ts) if ts >= cutoff => {}
-            _ => continue,
-        }
-        if let Some((units, _)) = line_drain(&v) {
-            total += units;
-        }
-    }
-    total
-}
-
-/// Windowed drain UNITS for a session incl. merged subagents (main transcript +
-/// every `subagents/*.jsonl`), counting only lines at or after `cutoff`. Mirrors
-/// `drain_units_for_session` but time-bounded.
-pub fn drain_units_for_session_since(cwd: &Path, session_id: &str, cutoff: SystemTime) -> f64 {
-    let mut total = 0.0;
-    if let Some(main) = transcript_for_session(cwd, session_id) {
-        total += transcript_drain_units_since(&main, cutoff);
-    }
-    if let Some(projects) = claude_projects_dir() {
-        let sub_dir = projects
-            .join(encode_cwd_as_project_dir(cwd))
-            .join(session_id)
-            .join("subagents");
-        if let Ok(entries) = std::fs::read_dir(&sub_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
-                    total += transcript_drain_units_since(&path, cutoff);
+                    total += transcript_drain_units(&path, since);
                 }
             }
         }
@@ -375,13 +335,33 @@ mod tests {
             + 2000.0 * 75e-6
             + 4000.0 * 18.75e-6
             + 8000.0 * 1.5e-6;
-        let got = transcript_drain_units(&path);
+        let got = transcript_drain_units(&path, None);
         assert!((got - expected).abs() < 1e-12, "got {got}, expected {expected}");
     }
 
     #[test]
     fn transcript_drain_missing_file_is_zero() {
-        assert_eq!(transcript_drain_units(Path::new("nope-not-real.jsonl")), 0.0);
+        assert_eq!(transcript_drain_units(Path::new("nope-not-real.jsonl"), None), 0.0);
+    }
+
+    #[test]
+    fn transcript_drain_since_excludes_earlier_lines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        // Two lines: one before cutoff (2026-01-01), one after (2026-06-01).
+        let content = [
+            r#"{"timestamp":"2025-12-31T23:59:59Z","type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"output_tokens":0}}}"#,
+            r#"{"timestamp":"2026-06-01T00:00:00Z","type":"assistant","message":{"model":"claude-sonnet-4-5","usage":{"input_tokens":500,"output_tokens":0}}}"#,
+        ].join("\n");
+        std::fs::write(&path, content).unwrap();
+        let cutoff = rfc3339_to_system_time("2026-01-01T00:00:00Z").unwrap();
+        let windowed = transcript_drain_units(&path, Some(cutoff));
+        let lifetime = transcript_drain_units(&path, None);
+        // Only the June line should count in the windowed sum.
+        let expected_windowed = 500.0 * 3e-6;
+        let expected_lifetime = 1000.0 * 3e-6 + 500.0 * 3e-6;
+        assert!((windowed - expected_windowed).abs() < 1e-12, "windowed={windowed}");
+        assert!((lifetime - expected_lifetime).abs() < 1e-12, "lifetime={lifetime}");
     }
 
     #[test]

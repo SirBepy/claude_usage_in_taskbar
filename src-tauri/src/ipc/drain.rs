@@ -16,7 +16,7 @@ use crate::state::AppState;
 use crate::tokens::{self, capacity, drain as drain_engine, ChatDrain, MessageDrain};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use tauri::State;
 
 const FIVE_HOURS: Duration = Duration::from_secs(5 * 60 * 60);
@@ -79,15 +79,6 @@ struct WindowCtx {
     start: Option<SystemTime>,
 }
 
-fn parse_rfc3339(s: &str) -> Option<SystemTime> {
-    let dt = chrono::DateTime::parse_from_rfc3339(s).ok()?;
-    let secs = dt.timestamp();
-    if secs < 0 {
-        return None;
-    }
-    Some(UNIX_EPOCH + Duration::new(secs as u64, dt.timestamp_subsec_nanos()))
-}
-
 /// The 5h and weekly window contexts from the latest usage snapshot.
 fn windows_from_state(state: &AppState) -> (WindowCtx, WindowCtx) {
     let snap = state.current_usage.lock().unwrap();
@@ -95,11 +86,11 @@ fn windows_from_state(state: &AppState) -> (WindowCtx, WindowCtx) {
         Some(s) => (
             WindowCtx {
                 util: Some(s.five_hour.utilization),
-                start: parse_rfc3339(&s.five_hour.resets_at).and_then(|r| r.checked_sub(FIVE_HOURS)),
+                start: drain_engine::rfc3339_to_system_time(&s.five_hour.resets_at).and_then(|r| r.checked_sub(FIVE_HOURS)),
             },
             WindowCtx {
                 util: Some(s.seven_day.utilization),
-                start: parse_rfc3339(&s.seven_day.resets_at).and_then(|r| r.checked_sub(SEVEN_DAYS)),
+                start: drain_engine::rfc3339_to_system_time(&s.seven_day.resets_at).and_then(|r| r.checked_sub(SEVEN_DAYS)),
             },
         ),
         None => (
@@ -125,7 +116,7 @@ fn compute_capacities(
     let mut est = capacity::load(&path);
 
     let now = SystemTime::now();
-    let stale = parse_rfc3339(&est.updated_at)
+    let stale = drain_engine::rfc3339_to_system_time(&est.updated_at)
         .and_then(|t| now.duration_since(t).ok())
         .map(|age| age >= RECALIBRATE_AFTER)
         .unwrap_or(true);
@@ -137,7 +128,7 @@ fn compute_capacities(
                 (Some(u), Some(start)) if u >= capacity::UTIL_FLOOR_PCT => {
                     let visible: f64 = resolved
                         .iter()
-                        .map(|(id, cwd, _)| drain_engine::drain_units_for_session_since(cwd, id, start))
+                        .map(|(id, cwd, _)| drain_engine::drain_units_for_session(cwd, id, Some(start)))
                         .sum();
                     let next = capacity::calibrate_window(prev, visible, u);
                     if next != prev {
@@ -233,7 +224,7 @@ pub async fn chat_drain(
     // Heavy file parsing off the async runtime.
     let result = tokio::task::spawn_blocking(move || {
         let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly);
-        let lifetime = drain_engine::drain_units_for_session(&target_cwd, &target);
+        let lifetime = drain_engine::drain_units_for_session(&target_cwd, &target, None);
         let messages = drain_engine::message_drains(&main_transcript);
         build_chat_drain(
             &target,
@@ -279,7 +270,7 @@ pub async fn chat_drains(
         let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly);
         let mut chats = HashMap::new();
         for (id, cwd, transcript) in &resolved {
-            let lifetime = drain_engine::drain_units_for_session(cwd, id);
+            let lifetime = drain_engine::drain_units_for_session(cwd, id, None);
             let cd = build_chat_drain(
                 id,
                 transcript,
