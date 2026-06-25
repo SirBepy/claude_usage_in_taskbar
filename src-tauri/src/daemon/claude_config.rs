@@ -14,7 +14,7 @@ use std::path::PathBuf;
 /// which only honors the title from the response to user-turn 1, 5, or 15 - so
 /// the title refines as the chat grows without churning every turn. The marker
 /// rides every response (cheap); the read side gates which ones count.
-pub(crate) const TURN_STATUS_PROMPT: &str = "At the end of every response, append two marker lines with no other commentary and no markdown formatting. First, on its own line, a short conversation title in the form <cc-title:Your Title> using 3 to 6 plain words that capture the main topic discussed so far; output this line on every response. Then, on the final line, output exactly one status marker: <cc-status:done> if you have finished and are not waiting on anything, <cc-status:question> if you are asking the user a question or otherwise waiting for their input or decision, or <cc-status:waiting> if you have finished your part but are blocked on an external process you intend to resume on (you launched a CI/CD pipeline, started a long-running or background command, or scheduled a wake). Always end with exactly one such status marker.";
+pub(crate) const TURN_STATUS_PROMPT: &str = "End EVERY response with exactly two bare lines - no surrounding text or markdown: <cc-title:3-6 word topic summary> then <cc-status:done|question|waiting>. done=finished; question=awaiting user input or decision; waiting=blocked on an external process you launched (pipeline, background command, scheduled wake).";
 
 /// Write a temporary .mcp.json file for the given turn and return its path.
 /// Returns None if the app-data dir is unavailable (non-fatal; permission
