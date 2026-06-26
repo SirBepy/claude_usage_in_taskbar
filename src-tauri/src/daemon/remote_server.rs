@@ -87,6 +87,10 @@ const SAFE_METHODS: &[&str] = &[
     "list_auto_accept",
     "load_history_page",
     "read_attachment",
+    // Write: phone composer paperclip upload. Bytes land in the path-validated
+    // chat-attachments dir (write_attachment rejects path-traversal session ids),
+    // so this is not an arbitrary-write primitive.
+    "paste_attachment",
     "list_characters",
     "list_project_groups",
     "character_asset_url",
@@ -643,6 +647,8 @@ mod tests {
             "respond_question",
             "respond_permission",
             "load_history_page",
+            "read_attachment",
+            "paste_attachment",
             "list_characters",
             "list_project_groups",
             "character_asset_url",
