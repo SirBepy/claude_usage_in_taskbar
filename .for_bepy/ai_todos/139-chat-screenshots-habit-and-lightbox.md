@@ -29,6 +29,13 @@ Joe wants visual results to land where he is (the conversation) and be easy to i
 - "Interesting enough to surface" is a judgment call - keep the convention light (surface on visual results / on request), don't auto-spam every screenshot. Explicit-or-on-request first, broaden later.
 - Prefer a built-in/lightweight lightbox over a library (platform primitive over dependency, per global rules).
 
+## Open UX question (decide with Joe at build time)
+
+Should "click to enlarge" use a dedicated lightbox, or open the image in the **todo 138 preview window's canvas** (which already does fullscreen / zoom / device-width)?
+
+- Claude's lean: keep the screenshot landing INLINE in chat (anchored to the turn that produced it - that context is the point, and a separate image shouldn't get clobbered by the next push). But route "enlarge" into the preview-window canvas rather than building a separate lightbox. One big-viewer surface, two entry points (a chat image, or a pushed HTML preview). Less to build; the two features reinforce each other.
+- Joe was unsure and wants to revisit. NOT decided - this is [UX], Joe's call on feel.
+
 ## Success criteria
 
 - Clicking any chat image opens it full-screen; Esc / backdrop closes it; works desktop + phone.
