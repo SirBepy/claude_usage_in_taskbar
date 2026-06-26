@@ -61,6 +61,30 @@ Rejected shortcut: ignoring cc-status until after `result` line globally would b
 A finer gate (only `done` waits for `result`; `question`/`waiting` fires immediately) may be
 the right shape.
 
+## New repro (2026-06-26) - empty first turn + hide-during-turn
+
+Joe's screenshot (chat "greeting", Haiku): brand-new chat, sent "hi", then immediately
+**hid the chat** via the ⋮ menu. The first turn rendered a usage pill showing
+`↑ 0 tok · 1m 48s` but **NO assistant bubble at all** - the reply text was swallowed
+entirely (1m48s elapsed but 0 output tokens recorded). Follow-ups "hello??" and "did you not
+see my first msg" then worked normally (96 / 123 tok), and Claude claimed it had "already
+asked what's the task" - i.e. the model believes it replied to "hi", but the UI never showed
+it. Two new angles to check on top of the three above:
+
+- **First-turn-after-spawn:** the swallow happened on the very first turn of a freshly spawned
+  `claude -p` (system-init re-emit territory; see [[project_claude_cli_stream_json]] -
+  "resume turns re-emit system init"). Check whether the first turn's streamed text is being
+  attributed to the init line and dropped.
+- **Hide-during-turn:** Joe hid the chat mid-turn. Hiding only writes localStorage + rerenders
+  the sidebar (`sidebar-ctx-menu.ts` hide action) and does NOT detach the active renderer, so
+  in theory it shouldn't drop output - but confirm the in-flight turn's events still commit to
+  the renderer when the row is hidden, and that reopening from the Hidden section replays the
+  full transcript (the assistant text must be in the JSONL even if the live render missed it).
+
+Note: the durable AUQ question state (registry `set_awaiting("question")` in
+`permission.rs::ask_question_decision`, added 2026-06-26) is adjacent to symptom B but does
+NOT fix the swallow - it only keeps the sidebar row in "Input Needed" across a reopen.
+
 ## Acceptance
 
 - Start a session, ask something that triggers a long multi-tool response. Send a follow-up

@@ -316,14 +316,17 @@ export function renderSidebar(listEl: HTMLElement): void {
     });
   }
 
-  const SEGMENT_LABELS = ["Input Needed", "Done", "In Progress", "Closing", "Waiting for Reset"];
-  const segmented: Map<number, typeof sorted> = new Map([[0, []], [1, []], [2, []], [3, []], [4, []]]);
+  const SEGMENT_LABELS = ["Input Needed", "Done", "In Progress", "Closing", "Waiting for Reset", "Waiting"];
+  const segmented: Map<number, typeof sorted> = new Map([[0, []], [1, []], [2, []], [3, []], [4, []], [5, []]]);
   for (const s of sorted) {
     segmented.get(sessionSegment(s, unread, attention, question, closing, rateLimited))!.push(s);
   }
 
   let sessionIndex = 0;
-  for (const seg of [0, 1, 2, 3, 4]) {
+  // "Waiting" (5, parked on an external process) renders right after
+  // "In Progress" (2) so the blocked-on-a-script chats sit next to the
+  // actively-running ones without disturbing the other groups' order.
+  for (const seg of [0, 1, 2, 5, 3, 4]) {
     const group = segmented.get(seg)!;
     if (group.length === 0) continue;
     entries.push({

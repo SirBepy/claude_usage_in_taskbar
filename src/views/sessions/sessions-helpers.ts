@@ -40,18 +40,22 @@ export function paneEmptyStateHtml(connected: boolean | null, stalled: boolean):
   return `<div class="session-empty session-empty--setup"><i class="ph ph-spinner"></i><span>Setting up...</span></div>`;
 }
 
-/** 0=NeedsPermission, 1=Question, 2=Working, 3=Done(unread), 4=YourTurn, 5=External/Automated.
+/** 0=NeedsPermission, 1=Question, 2=Working, 3=Waiting(external process),
+ * 4=Done(unread), 5=YourTurn, 6=External/Automated.
  * Question (Claude is waiting on the user) sorts above Working so idle-blocked
- * agents surface first for triage. */
+ * agents surface first for triage. Waiting (parked on a CI run / long command)
+ * sorts just below Working and is its OWN tier - it used to share Working's
+ * bucket, which hid the distinction between "actively running" and "blocked on
+ * a script". */
 export function statusPriority(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>): number {
   if (attention.has(i.session_id)) return 0;
-  if (i.kind === "external" || i.kind === "automated") return 5;
+  if (i.kind === "external" || i.kind === "automated") return 6;
   if (i.busy && i.awaiting !== "question") return 2;
   if (question.has(i.session_id)) return 1;
-  // Parked on an external process (CI / long command): an in-progress flavor.
-  if (i.awaiting === "waiting") return 2;
-  if (unread.has(i.session_id)) return 3;
-  return 4;
+  // Parked on an external process (CI / long command): its own status tier.
+  if (i.awaiting === "waiting") return 3;
+  if (unread.has(i.session_id)) return 4;
+  return 5;
 }
 
 export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>, rateLimited: ReadonlySet<string> = new Set()): string {
@@ -67,7 +71,8 @@ export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<st
 }
 
 /** Maps a session to its display segment index.
- *  0=Input Needed, 1=Done, 2=In Progress, 3=Closing, 4=Waiting for Reset */
+ *  0=Input Needed, 1=Done, 2=In Progress, 3=Closing, 4=Waiting for Reset,
+ *  5=Waiting (parked on an external process). */
 export function sessionSegment(
   s: Instance,
   unread: Set<string>,
@@ -80,7 +85,8 @@ export function sessionSegment(
   if (rateLimited.has(s.session_id)) return 4;
   const priority = statusPriority(s, unread, attention, question);
   if (priority === 0 || priority === 1) return 0; // Input Needed
-  if (priority === 2 || priority === 5) return 2; // In Progress
+  if (priority === 2 || priority === 6) return 2; // In Progress (busy + external/automated)
+  if (priority === 3) return 5; // Waiting on an external process (CI / long command)
   return 1; // Done
 }
 

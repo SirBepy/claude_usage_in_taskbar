@@ -145,6 +145,17 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     // the lossy notifier broadcast drops the frame.
     ctx.state.add_prompt(&id, "question-requested", payload.clone()).await;
     ctx.state.fire_blocked_prompt(session_id.as_deref(), &id);
+    // Durable "waiting on the user" state. An AskUserQuestion turn never emits an
+    // `awaiting:question` result line (claude pauses on the deny-feedback and
+    // resumes after the answer), so the turn-done path in `lifecycle.rs` never
+    // records it. Without this the only signal is the frontend's in-memory
+    // questionSessions set, which gets clobbered when the chat is reopened and
+    // its transcript replayed - the row then falls out of "Input Needed" before
+    // the user has answered. Recording it on the registry makes it survive a
+    // reopen (the sidebar unions `awaiting === "question"` into its question set).
+    if let Some(sid) = session_id.as_deref() {
+        ctx.state.registry.set_awaiting(sid, Some("question".into()));
+    }
     ctx.state.notifier.publish("question_request", payload);
     // Character "asking" sound. An AskUserQuestion turn does NOT end with an
     // `awaiting:question` result (claude continues after the deny-feedback), so
@@ -170,6 +181,13 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
         }
     };
     ctx.state.remove_prompt(&id).await;
+    // Answer in hand (or the prompt was dropped): clear the durable question
+    // state so the resuming turn reads as "running" rather than staying parked
+    // in "Input Needed". The turn's eventual `result` line overwrites this with
+    // the real end-of-turn status (done / question / waiting).
+    if let Some(sid) = session_id.as_deref() {
+        ctx.state.registry.set_awaiting(sid, None);
+    }
     deny_decision(&format_answers(&questions, &answers))
 }
 
