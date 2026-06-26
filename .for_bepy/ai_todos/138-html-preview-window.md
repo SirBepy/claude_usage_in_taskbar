@@ -68,5 +68,57 @@ The daemon owns preview state so both sources and (later) the phone hit one plac
 - CSP updated in both locations; no regression to existing chat image rendering.
 - (Designed-for, not shipped v1) the same channel can serve the phone PWA later with no store rewrite.
 
-## Open question for build-time (not blocking the plan)
-- Inner-iframe network policy: block external `connect-src` by default vs allow. Lean block-by-default + later opt-in toggle.
+## Implementation-readiness addendum (gaps resolved, concrete seams)
+
+Confirmed against code so a fresh implementer doesn't block. Each is a DECISION with a lean; the few genuine judgment calls are tagged [decide at build].
+
+### Transport + auth (the big one)
+The daemon runs TWO servers:
+- **Hook server :27182** - UNAUTHENTICATED, localhost-trusted. Terminal Claude's existing curl relay already posts here (`src-tauri/src/daemon/claude_config.rs:54-78` builds the curl; endpoints in `src-tauri/src/daemon/hooks_server/`, intentionally no token per `hooks_server/mod.rs:1-6`).
+- **Remote server :27183** - bearer-token gated, `SAFE_METHODS` allowlist (`src-tauri/src/daemon/remote_server.rs:77-103`), serves the phone.
+
+Decision:
+- **Push (write):** new endpoint `POST /hooks/preview` on the **hook server (27182)**, unauthenticated localhost - mirrors the existing relay exactly. Both terminal Claude (curl) and the in-app AI use it. No token plumbing for the curl skill.
+- **Read (list/get) for the window + future phone:** add `list_previews` / `get_preview` RPC methods on the remote server AND add both names to `SAFE_METHODS` (the allowlist is the security boundary; new method = explicit entry, `remote_server.rs:77-103`).
+- **Security note [SEC]:** an unauthenticated localhost POST means anything running on Joe's machine can inject HTML into the window. For a single-user personal app this matches the existing hook-server trust model and is acceptable. State it; don't add auth.
+
+### Live-update seam
+- Global, not per-session. Publish via the daemon-wide `Notifier` (`src-tauri/src/daemon/notifier.rs:18` `publish("preview", json!(...))`) - previews are app-global, not tied to one chat broadcast.
+- Lossy under load (`broadcast` capacity drop, caveat at `remote_server.rs:437`), so the window MUST also poll `list_previews` on focus/open, not rely solely on the push (consistent with `project_daemon_notifier_broadcast_lossy`).
+
+### Store scope + semantics
+- ONE global preview timeline (not per-session). Snapshot: `{id, slug, title, html, source, session_id?, version, created_at}`.
+- `version` (the `v3` in the mockup) = count of pushes for that `slug`. Same slug → version++ and replace the live entry in place; new/absent slug → new entry, becomes live. "Live" = the most-recently-pushed snapshot.
+- In-memory, cap ~30 (log when older drop). [decide at build] persist last-N to disk so previews survive an app restart - lean NO (ephemeral, fails the persistence test).
+
+### Rendering details
+- `<iframe sandbox="allow-scripts" srcdoc>` fills the canvas with internal scroll. Do NOT try to auto-size to content height (opaque sandboxed origin can't be measured). Device-width control sets the iframe WRAPPER width only.
+- HTML input: accept a full document; if a fragment (no `<html>`/`<body>`), wrap in minimal boilerplate before srcdoc. Cap payload (~2MB) → reject + log.
+- Inner srcdoc carries its own restrictive `<meta>` CSP. [decide at build] inner-iframe network policy: block external `connect-src` by default vs allow - lean block-by-default + later opt-in toggle.
+- Parent CSP: add `frame-src 'self'` to BOTH locations (`src/index.html` meta + `src-tauri/tauri.conf.json`). Verify srcdoc+sandbox interaction at build (may also need `child-src`).
+- Empty state: panel/window shows a "No previews yet" placeholder (how to push: `/preview` or ask the chat AI).
+- Header actions: open-in-browser = write current html to a temp file + `opener::open` (or open `GET /api/preview/{id}`); copy-HTML = clipboard.
+
+### Frontend mount point
+- Right-rail panel = a new flex sibling AFTER `.session-pane` inside `.sessions-layout` (`src/views/sessions/template.ts:66-72`), mounted in `renderSessionsView()` (`src/views/sessions/sessions.ts:121-138`). Shared `renderPreview(root,{mode})` drives both the rail and the pop-out window (label `preview`, opened via new `open_preview_window` IPC mirroring `open_chats_window` in `src-tauri/src/ipc/window.rs`).
+- Dock state (docked/popped + width) persisted (real cross-reopen behavior); device-width + auto-refresh defaults can stay in-memory.
+
+### Plumbing the implementer must not forget
+- New IPC types (`push_preview`/`list_previews`/`get_preview`, `PreviewSnapshot`, `PreviewMeta`) need an `export_types.rs` entry + regen via `cargo test --test export_types` (use the `CARGO_TARGET_DIR` trick if the dev exe is locked) - `project_ipc_generated_source_of_truth`.
+- ts-rs can't parse `skip_serializing_if`/`alias` on the new types - keep them plain (`project_ts_rs_serde_attr_limits`).
+
+### Test plan (project floor expects it)
+- Daemon RPC test: push → list → get, and slug-replace vs new-slug semantics (extend the daemon e2e per `feedback_use_existing_test_harness_before_manual`).
+- UI regression: WebdriverIO/jsdom test driving render + dock/pop toggle (UI bug → drive the UI, `feedback_ui_bug_regression_drives_ui`).
+
+### Suggested build phasing
+1. Store + `POST /hooks/preview` + minimal window view that renders the live snapshot (terminal push → visible). Vertical slice.
+2. History rail + slug/version semantics + `list_previews`/`get_preview` + live-update via Notifier (+ focus poll).
+3. Dock/pop + persistence + the in-chat "preview pushed" chip.
+4. Skills: terminal `/preview` skill + in-app AI convention (rides on todo 136 injection).
+5. (Deferred) phone read path + tie the 139 lightbox into this canvas as the shared big-viewer.
+
+## Remaining genuine choices for Joe (everything else is decided)
+- Persist previews across app restart? (lean no)
+- Inner-iframe network: blocked by default? (lean yes)
+- These are tagged [decide at build] above - safe defaults are in place, so they don't block the handoff.
