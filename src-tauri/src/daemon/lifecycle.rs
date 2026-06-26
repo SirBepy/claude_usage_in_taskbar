@@ -433,9 +433,9 @@ mod tests {
             .position(|a| a == "--append-system-prompt")
             .expect("--append-system-prompt must be present");
         let prompt = args.get(p + 1).map(String::as_str).unwrap_or("");
-        assert!(prompt.contains("<cc-status:done>"), "prompt must name the done marker: {prompt}");
-        assert!(prompt.contains("<cc-status:question>"), "prompt must name the question marker: {prompt}");
+        assert!(prompt.contains("<cc-status:done|question|waiting>"), "prompt must describe the status marker: {prompt}");
         assert!(prompt.contains("<cc-title:"), "prompt must request the title marker: {prompt}");
+        assert!(prompt.contains("<cc-progress:"), "prompt must request the progress marker: {prompt}");
     }
 
     #[tokio::test]

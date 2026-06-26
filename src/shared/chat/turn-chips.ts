@@ -83,6 +83,9 @@ interface TurnFooterState {
    * stays RE-SETTLEABLE: watched external sessions stream one usage event per
    * assistant line, and each must overwrite the totals with the bigger sum. */
   settled: boolean;
+  /** Indeterminate/deterministic progress bar shown while the turn is active. */
+  progressBar: HTMLElement | null;
+  progressFill: HTMLElement | null;
 }
 
 /** Build tooltip text for the settled token breakdown. */
@@ -126,6 +129,8 @@ export class TurnFooterRegistry {
       tickTimer: null,
       turnStartMs: 0,
       settled: false,
+      progressBar: null,
+      progressFill: null,
     });
     return footer;
   }
@@ -216,6 +221,11 @@ export class TurnFooterRegistry {
     }
     st.tokenTextNode!.nodeValue = `${formatTokenCount(totals.outputTokens)} tok`;
     st.metaRow!.title = buildTooltip(totals);
+    if (st.progressBar) {
+      st.progressBar.remove();
+      st.progressBar = null;
+      st.progressFill = null;
+    }
   }
 
   /**
@@ -234,6 +244,47 @@ export class TurnFooterRegistry {
     if (st.turnStartMs > 0) {
       st.timeTextNode!.nodeValue = formatTurnDuration(Date.now() - st.turnStartMs);
     }
+    if (st.progressBar) {
+      st.progressBar.remove();
+      st.progressBar = null;
+      st.progressFill = null;
+    }
+  }
+
+  /**
+   * Show an indeterminate progress bar at the top of the turn footer. Called
+   * on the first tool_use of a turn so it only appears for multi-step work.
+   * No-op if already created or if the turn has already settled.
+   */
+  ensureProgressBar(key: TurnChipKey): void {
+    const st = this.turns.get(key);
+    if (!st || st.settled || st.progressBar) return;
+    const bar = document.createElement("div");
+    bar.className = "turn-progress turn-progress--indeterminate";
+    const fill = document.createElement("div");
+    fill.className = "turn-progress-fill";
+    bar.appendChild(fill);
+    if (st.metaRow) {
+      st.metaRow.insertAdjacentElement("afterend", bar);
+    } else {
+      st.footer.prepend(bar);
+    }
+    st.progressBar = bar;
+    st.progressFill = fill;
+  }
+
+  /**
+   * Update the progress bar to a deterministic N/M state. Creates the bar if
+   * it doesn't exist. No-op when the turn has already settled.
+   */
+  setProgress(key: TurnChipKey, n: number, m: number): void {
+    const st = this.turns.get(key);
+    if (!st || st.settled) return;
+    if (!st.progressBar) this.ensureProgressBar(key);
+    if (!st.progressBar || !st.progressFill) return;
+    const pct = m > 0 ? Math.min(100, Math.round((n / m) * 100)) : 0;
+    st.progressFill.style.width = `${pct}%`;
+    st.progressBar.classList.remove("turn-progress--indeterminate");
   }
 
   /** Remove every footer and clear all timers (renderer detach / bulk reset). */

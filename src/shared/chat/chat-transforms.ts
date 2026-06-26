@@ -16,7 +16,7 @@ import {
   noiseAssistantLabel,
 } from "./chat-classifiers";
 export type { RenderedMessage } from "./chat-classifiers";
-export { isBoundaryMessage, stripStatusToken, detectStatusToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, noiseAssistantLabel, isNoiseAssistantText } from "./chat-classifiers";
+export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, noiseAssistantLabel, isNoiseAssistantText } from "./chat-classifiers";
 
 const md = new MarkdownIt({
   html: false,

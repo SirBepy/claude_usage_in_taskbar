@@ -36,18 +36,25 @@ const TITLE_TAIL_RE = /<c(?:c(?:-(?:t(?:i(?:t(?:l(?:e(?::[^>]*)?)?)?)?)?)?)?)?\s
 const TITLE_XML_TOKEN_RE = /<cc-title>[\s\S]*?<\/cc-title>/gi;
 const TITLE_XML_TAIL_RE = /<cc-title>[\s\S]*$/i;
 
-/** Strips both the status and title markers (complete or partial) plus trailing
- * whitespace, so neither ever reaches the rendered message body. */
+// Turn-progress marker. Claude emits `<cc-progress:N/M>` in its text during
+// multi-step tasks so the app can show a progress bar. Never displayed.
+const PROGRESS_TOKEN_RE = /<cc-progress:\d+\/\d+>/gi;
+const PROGRESS_TAIL_RE = /<c(?:c(?:-(?:p(?:r(?:o(?:g(?:r(?:e(?:s(?:s(?::(?:\d+(?:\/\d*)?)?)?)?)?)?)?)?)?)?)?)?)\s*$/i;
+
+/** Strips the status, title, autopilot, and progress markers (complete or
+ * partial) plus trailing whitespace, so none ever reaches the rendered body. */
 export function stripStatusToken(text: string): string {
   return text
     .replace(STATUS_TOKEN_RE, "")
     .replace(TITLE_TOKEN_RE, "")
     .replace(TITLE_XML_TOKEN_RE, "")
     .replace(AUTOPILOT_TOKEN_RE, "")
+    .replace(PROGRESS_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
     .replace(TITLE_XML_TAIL_RE, "")
     .replace(AUTOPILOT_TAIL_RE, "")
+    .replace(PROGRESS_TAIL_RE, "")
     .replace(/\s+$/, "");
 }
 
@@ -56,6 +63,18 @@ export function detectStatusToken(text: string): "done" | "question" | "waiting"
   const matches = [...text.matchAll(/<cc-status:(done|question|waiting)>/gi)];
   if (matches.length === 0) return null;
   return matches[matches.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting";
+}
+
+/** Last progress marker in `text`, or null if none. Returns { n, m } where n
+ * is the current step (1-based) and m is the total step count. */
+export function detectProgressToken(text: string): { n: number; m: number } | null {
+  const matches = [...text.matchAll(/<cc-progress:(\d+)\/(\d+)>/gi)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1]!;
+  const n = parseInt(last[1]!, 10);
+  const m = parseInt(last[2]!, 10);
+  if (m <= 0 || n < 0 || n > m) return null;
+  return { n, m };
 }
 
 export interface RenderedMessage {

@@ -10,6 +10,7 @@ import {
   cleanUserBlocks,
   isCompactUserMessage,
   detectStatusToken,
+  detectProgressToken,
   isSilentSystemUserMessage,
   isResumeContinuationUserMessage,
   noiseAssistantLabel,
@@ -165,11 +166,15 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
           r.setTurnStatus(detectStatusToken(joined));
         }
       }
-      // Update live token estimate from accumulated streamed assistant text
+      // Update live token estimate and check for a progress marker.
       if (r.activeTurnChipKey !== null) {
         const joined = blocksToText(ev.content);
         r.activeTurnStreamedText = joined;
         r.turnFooters.updateLiveTokenEstimate(r.activeTurnChipKey, joined);
+        if (!r.hydrating) {
+          const prog = detectProgressToken(joined);
+          if (prog) r.turnFooters.setProgress(r.activeTurnChipKey, prog.n, prog.m);
+        }
       }
       touched = true;
       break;
@@ -239,6 +244,9 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       }
       r.activityToolCanon = canonicalTool(ev.tool_name);
       r.setActivity(describeActivity(ev.tool_name, ev.input));
+      if (r.activeTurnChipKey !== null && !r.hydrating) {
+        r.turnFooters.ensureProgressBar(r.activeTurnChipKey);
+      }
       touched = true;
       break;
     }

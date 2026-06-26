@@ -402,6 +402,32 @@
   margin: 0;
 }
 
+/* Live-turn progress bar: appears on the first tool_use, removed when the
+   turn settles. Indeterminate by default; switches to deterministic width
+   once Claude emits a <cc-progress:N/M> marker. */
+.turn-progress {
+  height: 3px;
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.turn-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+.turn-progress--indeterminate .turn-progress-fill {
+  width: 32% !important;
+  transition: none;
+  animation: turn-progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes turn-progress-slide {
+  0%   { transform: translateX(-300%); }
+  100% { transform: translateX(400%); }
+}
+
 .turn-meta-chips {
   display: flex;
   align-items: center;
