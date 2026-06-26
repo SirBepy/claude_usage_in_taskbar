@@ -206,6 +206,19 @@
   background: transparent;
 }
 
+/* The "Hidden (N)" header doubles as the expand/collapse toggle, so it must
+   stay clickable even though the base group-header rule disables pointer
+   events. Without this the click never reaches the [data-hidden-toggle]
+   handler and the hidden list can't be opened. */
+.sessions-list li.session-group-hidden-toggle {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.sessions-list li.session-group-hidden-toggle:hover {
+  color: var(--color-text, #ccc);
+}
+
 .sessions-list li.active {
   background: var(--color-primary);
   color: var(--color-background);
