@@ -83,6 +83,8 @@ export class Composer {
   private lastKeyAt = 0;
   private cv: ComposerVoice;
   private micBtn: HTMLButtonElement | null = null;
+  private attachBtn: HTMLButtonElement | null = null;
+  private fileInput: HTMLInputElement | null = null;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -226,6 +228,9 @@ export class Composer {
           <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
         </div>
         <div class="composer-actions">
+          <button class="composer-attach icon-btn" ${this.disabled ? "disabled" : ""} title="Attach image or file">
+            <i class="ph ph-paperclip"></i>
+          </button>
           <button class="composer-mic icon-btn" ${this.disabled ? "disabled" : ""} title="Voice dictation (tap to start/stop)">
             <i class="ph ph-microphone"></i>
           </button>
@@ -234,12 +239,15 @@ export class Composer {
           </button>
         </div>
       </div>
+      <input type="file" class="composer-file-input" accept="image/*,application/pdf,text/plain,.log,.md,.csv,.json" multiple hidden>
     `;
     this.textarea = this.root.querySelector<HTMLTextAreaElement>(".composer-textarea");
     this.highlightEl = this.root.querySelector<HTMLElement>(".composer-highlight");
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
     this.micBtn = this.root.querySelector<HTMLButtonElement>(".composer-mic");
+    this.attachBtn = this.root.querySelector<HTMLButtonElement>(".composer-attach");
+    this.fileInput = this.root.querySelector<HTMLInputElement>(".composer-file-input");
     // The popup div was inside root.innerHTML, so it's gone after the swap.
     // Rebuild it on every render and keep the provider's cache.
     this.popup?.destroy();
@@ -265,6 +273,21 @@ export class Composer {
         if (this.highlightEl && this.textarea) this.highlightEl.scrollTop = this.textarea.scrollTop;
       });
       this.sendBtn?.addEventListener("click", () => void this.send());
+      this.attachBtn?.addEventListener("click", () => {
+        if (!this.fileInput) return;
+        this.fileInput.value = "";
+        this.fileInput.click();
+      });
+      this.fileInput?.addEventListener("change", () => {
+        const files = this.fileInput?.files;
+        if (!files?.length) return;
+        void (async () => {
+          for (const file of Array.from(files)) {
+            await this.attachBlob(file, file.name);
+          }
+          if (this.fileInput) this.fileInput.value = "";
+        })();
+      });
       this.micBtn?.addEventListener("click", () => {
         if (this.disabled) return;
         this.textarea?.focus();
