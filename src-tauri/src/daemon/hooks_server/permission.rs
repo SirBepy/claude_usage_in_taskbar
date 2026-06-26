@@ -89,6 +89,10 @@ pub(super) async fn on_question_request(
         Ok(val) => (StatusCode::OK, Json(val)),
         Err(_) => {
             ctx.state.pending.lock().await.remove(&body.id);
+            ctx.state.notifier.publish(
+                "question_expired",
+                json!({ "session_id": body.session_id, "id": body.id }),
+            );
             (StatusCode::OK, Json(json!({"answers": {}})))
         }
     };
@@ -158,6 +162,10 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
         Ok(val) => val.get("answers").cloned().unwrap_or(Value::Null),
         Err(_) => {
             ctx.state.pending.lock().await.remove(&id);
+            ctx.state.notifier.publish(
+                "question_expired",
+                json!({ "session_id": session_id, "id": id }),
+            );
             Value::Null
         }
     };

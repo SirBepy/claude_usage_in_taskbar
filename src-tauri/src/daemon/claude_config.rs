@@ -60,7 +60,7 @@ pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
     // turn left hanging. 3600 + 60s slack so the server's response always lands
     // first; --connect-timeout fails fast if the daemon isn't up.
     let command = format!(
-        "curl -s --connect-timeout 10 --max-time 3660 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/ask-question",
+        "curl -s --connect-timeout 10 --max-time 3660 --retry 2 --retry-delay 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/ask-question",
         daemon_hook_port()
     );
     let config = serde_json::json!({
