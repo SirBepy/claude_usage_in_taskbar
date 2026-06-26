@@ -66,6 +66,14 @@ export function template() {
       <div class="view-body sessions-layout">
         <aside class="sessions-sidebar">
           <ul id="sessions-list" class="sessions-list"></ul>
+          <button
+            class="sessions-fab"
+            id="sessionsFab"
+            title="New chat"
+            aria-label="New chat"
+          >
+            <i class="ph ph-plus"></i>
+          </button>
         </aside>
         <main class="session-pane" id="session-pane">
           <div class="session-empty session-empty--setup"><i class="ph ph-spinner"></i><span>Setting up...</span></div>

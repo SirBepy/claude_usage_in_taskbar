@@ -398,6 +398,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     newBtn.addEventListener("click", () => void startNewSession(pane));
   }
 
+  // Wire the floating "new chat" CTA on the chats list (same action as +New).
+  const fab = root.querySelector<HTMLButtonElement>("#sessionsFab");
+  fab?.addEventListener("click", () => void startNewSession(pane));
+
   // Mobile back button: return from the chat pane to the session list overlay.
   // Only visible on ≤768px in chat mode (CSS-driven); a no-op on desktop.
   const backBtn = root.querySelector<HTMLButtonElement>("#sessionsBackBtn");

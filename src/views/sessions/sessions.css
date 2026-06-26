@@ -87,6 +87,50 @@
   background: var(--color-surface-alt);
   /* Mobile list pane: clear the notch above its search/header row (0 on desktop). */
   padding-top: env(safe-area-inset-top);
+  /* Anchor for the floating "new chat" CTA. */
+  position: relative;
+}
+
+/* Floating "new chat" CTA, pinned bottom-right of the chats list. Lives in the
+   sidebar so it sits over the list on every viewport, and hides automatically
+   in mobile chat mode (the sidebar is display:none there). */
+.sessions-fab {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+}
+
+.sessions-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.sessions-fab:active {
+  transform: translateY(0);
+}
+
+.sessions-fab[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sessions-fab i {
+  font-size: 1.6rem;
+  line-height: 1;
 }
 
 .sessions-sort {
@@ -119,7 +163,9 @@
 .sessions-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  /* Bottom padding clears the floating "new chat" CTA so the last chat row can
+     always scroll out from under it. */
+  padding: 0 0 84px;
   overflow-y: auto;
   flex: 1;
   /* Positioning context for exiting rows, which are pinned position:absolute
@@ -1221,5 +1267,32 @@
   }
   .view-sessions[data-mobile-pane="chat"] .sessions-back {
     display: inline-flex;
+  }
+
+  /* Touch has no hover, so the per-row ⋮ menu (revealed on hover at desktop)
+     would never appear. Keep it always visible on mobile. */
+  .session-row-menu-btn {
+    visibility: visible;
+  }
+
+  /* Phone bubbles: the desktop 32px side margins waste a third of a narrow
+     screen. Trim them and let bubbles use nearly the full width. */
+  .session-messages {
+    padding: 12px 12px;
+  }
+  .msg.user {
+    max-width: 92%;
+    margin-left: 12px;
+  }
+  .msg.assistant {
+    max-width: 94%;
+    margin-right: 12px;
+  }
+
+  /* 16px input text stops iOS Safari from auto-zooming the page on focus. The
+     highlight backdrop MUST match the textarea metrics or the caret drifts. */
+  .composer-textarea,
+  .composer-highlight {
+    font-size: 16px;
   }
 }

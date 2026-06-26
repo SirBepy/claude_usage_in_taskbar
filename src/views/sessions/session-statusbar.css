@@ -31,13 +31,24 @@
   justify-content: center;
 }
 
+/* Rows scroll horizontally instead of clipping: on a narrow (phone) width the
+   chips overflow the bar and the user can swipe to reach the rest. Scrollbar is
+   hidden so the 32px bar height is untouched; touch/trackpad swipe still works. */
 .sb-row {
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
   align-items: center;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sb-row::-webkit-scrollbar {
+  height: 0;
+  width: 0;
 }
 
 .sb-chips {
@@ -46,7 +57,15 @@
   gap: 4px;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sb-chips::-webkit-scrollbar {
+  height: 0;
+  width: 0;
 }
 
 .sb-chip {
@@ -61,6 +80,9 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid transparent;
   white-space: nowrap;
+  /* Keep natural width so the row overflows (and scrolls) rather than squeezing
+     each chip until its text clips mid-glyph. */
+  flex-shrink: 0;
 }
 
 .sb-chip i {
