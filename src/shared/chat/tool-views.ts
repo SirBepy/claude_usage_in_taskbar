@@ -214,7 +214,7 @@ export function renderQuestionCardHtml(m: RenderedMessage): string {
   const firstLabel = questions[0].header || questions[0].question;
   const truncated = firstLabel.length > 55 ? firstLabel.slice(0, 53) + "…" : firstLabel;
   const badge = questions.length > 1 ? `<span class="question-card-badge">${questions.length}</span>` : "";
-  const summary = `<summary class="question-card-summary"><i class="ph ph-chat-circle-dots"></i><span>${escapeHtml(truncated)}</span>${badge}<i class="ph ph-caret-down question-card-chevron"></i></summary>`;
+  const summary = `<summary class="question-card-summary"><i class="ph ph-chat-circle-dots"></i><span class="question-card-label">${escapeHtml(truncated)}</span>${badge}<i class="ph ph-caret-down question-card-chevron"></i></summary>`;
   return `<details class="question-card-collapsible" open>${summary}${cards}</details>`;
 }
 
