@@ -150,7 +150,19 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            // Restore position/size/maximized but never visibility: the default
+            // flags include VISIBLE, which causes the window to appear before
+            // WebView2 has loaded index.html (white screen on startup when the
+            // previous session quit with the window open).
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             ipc::get_current_usage,
