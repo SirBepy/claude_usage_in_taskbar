@@ -24,7 +24,7 @@ Design mockup: `.for_bepy/preview-window-mockup.html` (open it / see `preview-do
 ### Store + channel (daemon-owned, single source of truth)
 The daemon owns preview state so both sources and (later) the phone hit one place. Mirror the existing `read_attachment` / `character_asset_url` pattern: daemon RPC method + desktop IPC proxy.
 
-- In-memory store (no persistence v1 - previews are ephemeral design artifacts; naming the cross-close behavior fails the persistence test, so default to in-memory per the persistence rule). Optional later: persist last-N to disk if Joe wants previews to survive an app restart.
+- Persisted store (see Decisions log - Joe wants a still-running session's preview to survive app restart). Daemon writes the snapshot timeline to an app-data file and reloads on start; cap the count. (This passes the persistence test: the named cross-restart behavior is "reopen the preview for a chat that's still up".)
 - Snapshot shape: `{ id, slug, title, html, source: "terminal" | "chat", session_id?, created_at }`.
 - Cap history (e.g. last 30) to bound memory; `log`/note the cap, never silently drop more.
 
@@ -89,12 +89,12 @@ Decision:
 ### Store scope + semantics
 - ONE global preview timeline (not per-session). Snapshot: `{id, slug, title, html, source, session_id?, version, created_at}`.
 - `version` (the `v3` in the mockup) = count of pushes for that `slug`. Same slug → version++ and replace the live entry in place; new/absent slug → new entry, becomes live. "Live" = the most-recently-pushed snapshot.
-- In-memory, cap ~30 (log when older drop). [decide at build] persist last-N to disk so previews survive an app restart - lean NO (ephemeral, fails the persistence test).
+- Cap ~30 (log when older drop). **DECIDED (Joe, 2026-06-26): PERSIST to disk** - on app restart, a still-running session's preview must still be visible, so the store survives restart (not pure in-memory). Persist the snapshot timeline (or at least previews tied to live sessions) to an app-data file; reload on daemon start.
 
 ### Rendering details
 - `<iframe sandbox="allow-scripts" srcdoc>` fills the canvas with internal scroll. Do NOT try to auto-size to content height (opaque sandboxed origin can't be measured). Device-width control sets the iframe WRAPPER width only.
 - HTML input: accept a full document; if a fragment (no `<html>`/`<body>`), wrap in minimal boilerplate before srcdoc. Cap payload (~2MB) → reject + log.
-- Inner srcdoc carries its own restrictive `<meta>` CSP. [decide at build] inner-iframe network policy: block external `connect-src` by default vs allow - lean block-by-default + later opt-in toggle.
+- Inner srcdoc carries its own `<meta>` CSP. **Network policy (Joe, 2026-06-26): do NOT hard-block** - Joe wants the option to allow network (e.g. a preview that fetches data). Lean: allow network, OR ship a default-off toggle that's trivially flippable; do not bake in a hard block. Revisit feel at build.
 - Parent CSP: add `frame-src 'self'` to BOTH locations (`src/index.html` meta + `src-tauri/tauri.conf.json`). Verify srcdoc+sandbox interaction at build (may also need `child-src`).
 - Empty state: panel/window shows a "No previews yet" placeholder (how to push: `/preview` or ask the chat AI).
 - Header actions: open-in-browser = write current html to a temp file + `opener::open` (or open `GET /api/preview/{id}`); copy-HTML = clipboard.
@@ -118,7 +118,7 @@ Decision:
 4. Skills: terminal `/preview` skill + in-app AI convention (rides on todo 136 injection).
 5. (Deferred) phone read path + tie the 139 lightbox into this canvas as the shared big-viewer.
 
-## Remaining genuine choices for Joe (everything else is decided)
-- Persist previews across app restart? (lean no)
-- Inner-iframe network: blocked by default? (lean yes)
-- These are tagged [decide at build] above - safe defaults are in place, so they don't block the handoff.
+## Decisions log
+- Persist previews across app restart? **YES** (Joe, 2026-06-26) - a still-running session's preview must survive restart.
+- Inner-iframe network blocked by default? **NO hard block** (Joe, 2026-06-26) - keep network available / easily toggled on.
+- Everything else in this doc is decided. Plan is handoff-ready.
