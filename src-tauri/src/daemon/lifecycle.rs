@@ -260,9 +260,23 @@ pub async fn spawn_session(
             }
         }
         map_for_pump.remove(&pump_session.session_id);
-        // Process exited: mark the session ended so the UI reflects it.
-        let now = chrono::Utc::now().to_rfc3339();
-        state_for_pump.registry.mark_ended(&pump_session.session_id, crate::types::EndReason::ProcessGone, &now);
+        // Interactive sessions: `claude -p --input-format=stream-json` exits after
+        // completing each turn. Keep the registry entry live so the sidebar keeps
+        // showing the session. The next send_message will find the session missing
+        // from the SessionMap, get -32004 NotFound, and auto-respawn with --resume.
+        // For non-Interactive kinds (External / Automated) a process exit really
+        // does mean the session is gone, so mark it ended as before.
+        let is_interactive = state_for_pump.registry
+            .get(&pump_session.session_id)
+            .map(|i| matches!(i.kind, crate::sessions::kinds::InstanceKind::Interactive))
+            .unwrap_or(false);
+        if is_interactive {
+            // Clear busy in case the process exited mid-turn without a result line.
+            state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
+        } else {
+            let now = chrono::Utc::now().to_rfc3339();
+            state_for_pump.registry.mark_ended(&pump_session.session_id, crate::types::EndReason::ProcessGone, &now);
+        }
         state_for_pump.notifier.publish(
             "instances_changed",
             serde_json::json!({"instances": state_for_pump.registry.list()}),
