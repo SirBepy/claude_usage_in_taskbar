@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="docked">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Preview Window - design mockup</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --color-accent: #9d7dfc;
+    --color-background: #16151f;
+    --color-surface: #1e1d2b;
+    --color-surface-alt: #242334;
+    --color-text: #e2e0f0;
+    --color-text-muted: #6b6990;
+    --color-border: #2d2c44;
+    --term: #6ee7b7;   /* terminal-source dot */
+    --chat: #9d7dfc;   /* chat-AI-source dot */
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #0c0b12;
+    color: var(--color-text);
+    font: 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+    padding: 22px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+
+  /* ---- top legend / controls ---- */
+  .legend {
+    width: 1180px; max-width: 100%;
+    display: flex; align-items: center; gap: 14px;
+    color: var(--color-text-muted);
+  }
+  .legend b { color: var(--color-text); font-weight: 600; }
+  .legend .spacer { flex: 1; }
+  .modeswitch { display: flex; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; }
+  .modeswitch button {
+    background: transparent; color: var(--color-text-muted); border: 0;
+    padding: 6px 12px; cursor: pointer; font: inherit; font-weight: 600;
+  }
+  .modeswitch button.on { background: var(--color-accent); color: #14121d; }
+  .src-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
+
+  /* ---- the chat window frame ---- */
+  .winframe {
+    width: 1180px; max-width: 100%; height: 720px;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: 12px; overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  .titlebar {
+    height: 38px; flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    font-weight: 600; color: var(--color-text-muted);
+  }
+  .titlebar .dot { width: 11px; height: 11px; border-radius: 50%; background: #3a3850; }
+  .titlebar .grow { flex: 1; }
+  .body { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- left: conversation ---- */
+  .chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .messages { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 80%; padding: 9px 12px; border-radius: var(--radius); }
+  .msg.user { align-self: flex-end; background: var(--color-accent); color: #14121d; }
+  .msg.ai { align-self: flex-start; background: var(--color-surface); border: 1px solid var(--color-border); }
+  .pushchip {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 10px; border-radius: 8px; cursor: pointer;
+    background: var(--color-surface-alt); border: 1px solid var(--color-border);
+    color: var(--color-text); font-weight: 600;
+  }
+  .pushchip i { color: var(--color-accent); }
+  .pushchip small { color: var(--color-text-muted); font-weight: 500; }
+  .composer { flex: none; padding: 12px; border-top: 1px solid var(--color-border); }
+  .composer .box { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 9px 12px; color: var(--color-text-muted); }
+
+  /* ---- right: docked preview panel ---- */
+  .preview {
+    flex: none; width: 520px; display: flex; flex-direction: column;
+    background: var(--color-surface); border-left: 1px solid var(--color-border);
+  }
+  [data-mode="popped"] .preview { display: none; }
+  [data-mode="popped"] .dock-hint { display: flex; }
+  .dock-hint {
+    display: none; flex: none; width: 300px; border-left: 1px dashed var(--color-border);
+    align-items: center; justify-content: center; text-align: center; padding: 24px;
+    color: var(--color-text-muted); flex-direction: column; gap: 10px;
+  }
+  .dock-hint i { font-size: 30px; color: var(--color-border); }
+
+  .pv-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--color-border); }
+  .pv-title { font-weight: 700; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .pv-title .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pv-title .ver { color: var(--color-text-muted); font-weight: 500; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; background: var(--color-surface-alt); border: 1px solid var(--color-border); font-size: 11px; font-weight: 600; }
+  .live { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--term); font-weight: 700; }
+  .live .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--term); box-shadow: 0 0 0 0 var(--term); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(110,231,183,.5);} 70%{box-shadow:0 0 0 7px rgba(110,231,183,0);} 100%{box-shadow:0 0 0 0 rgba(110,231,183,0);} }
+  .pv-head .grow { flex: 1; }
+  .iconbtn { width: 30px; height: 30px; border: 0; background: transparent; color: var(--color-text-muted); border-radius: 7px; cursor: pointer; font-size: 16px; display: grid; place-items: center; }
+  .iconbtn:hover { background: var(--color-surface-alt); color: var(--color-text); }
+
+  .pv-sub { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--color-border); }
+  .seg { display: flex; background: var(--color-surface-alt); border-radius: 7px; padding: 2px; }
+  .seg button { border: 0; background: transparent; color: var(--color-text-muted); padding: 4px 9px; border-radius: 5px; cursor: pointer; font: inherit; font-weight: 600; font-size: 11px; display: inline-flex; gap: 5px; align-items: center; }
+  .seg button.on { background: var(--color-surface); color: var(--color-text); }
+  .toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; color: var(--color-text-muted); font-weight: 600; font-size: 11px; cursor: pointer; }
+  .toggle .sw { width: 30px; height: 17px; border-radius: 999px; background: var(--color-accent); position: relative; }
+  .toggle .sw::after { content: ""; position: absolute; top: 2px; right: 2px; width: 13px; height: 13px; border-radius: 50%; background: #14121d; }
+
+  .pv-body { flex: 1; display: flex; min-height: 0; }
+  /* history rail */
+  .rail { flex: none; width: 132px; border-right: 1px solid var(--color-border); overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
+  .rail .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--color-text-muted); padding: 2px 4px; }
+  .snap { border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; cursor: pointer; background: var(--color-background); }
+  .snap.sel { border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+  .snap .thumb { height: 56px; background: linear-gradient(135deg,#2a2740,#1a1828); display: grid; place-items: center; color: var(--color-text-muted); font-size: 18px; }
+  .snap .meta { padding: 5px 7px; }
+  .snap .meta .t { font-weight: 700; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .snap .meta .s { font-size: 10px; color: var(--color-text-muted); display: flex; align-items: center; gap: 5px; }
+  .snap.livecard .meta .t::after { content: "LIVE"; float: right; color: var(--term); font-size: 9px; }
+
+  /* canvas */
+  .canvas { flex: 1; min-width: 0; padding: 14px; display: flex; align-items: flex-start; justify-content: center; overflow: auto;
+    background-color: var(--color-background);
+    background-image: linear-gradient(45deg,#1a1928 25%,transparent 25%),linear-gradient(-45deg,#1a1928 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1928 75%),linear-gradient(-45deg,transparent 75%,#1a1928 75%);
+    background-size: 18px 18px; background-position: 0 0,0 9px,9px -9px,-9px 0; }
+  .frame { background: #fff; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.45); overflow: hidden; transition: width .25s ease; }
+  .frame[data-w="desktop"] { width: 100%; }
+  .frame[data-w="tablet"]  { width: 300px; }
+  .frame[data-w="phone"]   { width: 190px; }
+  iframe { width: 100%; height: 420px; border: 0; display: block; }
+</style>
+</head>
+<body>
+
+  <div class="legend">
+    <span><b>Preview Window</b> mockup &mdash; theme-void dark</span>
+    <span style="color:var(--term)"><span class="src-dot" style="background:var(--term)"></span> terminal Claude push</span>
+    <span style="color:var(--chat)"><span class="src-dot" style="background:var(--chat)"></span> in-app chat AI push</span>
+    <span class="spacer"></span>
+    <div class="modeswitch">
+      <button data-set="docked" class="on">Docked panel</button>
+      <button data-set="popped">Popped-out</button>
+    </div>
+  </div>
+
+  <div class="winframe">
+    <div class="titlebar">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span style="margin-left:8px">Claude Companion &mdash; Chats</span>
+      <span class="grow"></span>
+      <span id="modename">login-page preview docked</span>
+    </div>
+
+    <div class="body">
+      <!-- conversation -->
+      <div class="chat">
+        <div class="messages">
+          <div class="msg user">Mock up the login screen for the new theme.</div>
+          <div class="msg ai">Done. Pushing a preview of the login page now &mdash; open it in the panel.</div>
+          <div class="pushchip"><i class="ph-fill ph-monitor-play"></i> Preview pushed: <span class="name">login-page</span> <small>&middot; v3 &middot; just now</small></div>
+          <div class="msg user">Tighten the spacing and show it again.</div>
+          <div class="msg ai">Refreshed the same preview in place (still <b>login-page</b>, now v3).</div>
+        </div>
+        <div class="composer"><div class="box">Message Claude&hellip;</div></div>
+      </div>
+
+      <!-- docked preview panel -->
+      <div class="preview">
+        <div class="pv-head">
+          <span class="pv-title"><i class="ph ph-monitor-play" style="color:var(--color-accent)"></i>
+            <span class="name">login-page</span><span class="ver">&middot; v3</span></span>
+          <span class="badge"><span class="src-dot" style="background:var(--term)"></span> terminal</span>
+          <span class="live"><span class="pulse"></span> LIVE</span>
+          <span class="grow"></span>
+          <button class="iconbtn" title="Refresh"><i class="ph ph-arrow-clockwise"></i></button>
+          <button class="iconbtn" title="Open in browser"><i class="ph ph-arrow-square-out"></i></button>
+          <button class="iconbtn" title="Copy HTML"><i class="ph ph-copy"></i></button>
+          <button class="iconbtn" id="popbtn" title="Pop out to its own window"><i class="ph ph-arrows-out-simple"></i></button>
+          <button class="iconbtn" title="Close panel"><i class="ph ph-x"></i></button>
+        </div>
+
+        <div class="pv-sub">
+          <div class="seg">
+            <button class="on" data-w="desktop"><i class="ph ph-monitor"></i> Desktop</button>
+            <button data-w="tablet"><i class="ph ph-device-tablet"></i> Tablet</button>
+            <button data-w="phone"><i class="ph ph-device-mobile"></i> Phone</button>
+          </div>
+          <span class="toggle"><span class="sw"></span> Auto-refresh</span>
+        </div>
+
+        <div class="pv-body">
+          <div class="rail">
+            <div class="lbl">History</div>
+            <div class="snap sel livecard">
+              <div class="thumb"><i class="ph ph-sign-in"></i></div>
+              <div class="meta"><div class="t">login-page</div><div class="s"><span class="src-dot" style="background:var(--term)"></span> v3 &middot; now</div></div>
+            </div>
+            <div class="snap">
+              <div class="thumb"><i class="ph ph-sign-in"></i></div>
+              <div class="meta"><div class="t">login-page</div><div class="s"><span class="src-dot" style="background:var(--term)"></span> v2 &middot; 2m</div></div>
+            </div>
+            <div class="snap">
+              <div class="thumb"><i class="ph ph-squares-four"></i></div>
+              <div class="meta"><div class="t">dashboard</div><div class="s"><span class="src-dot" style="background:var(--chat)"></span> v1 &middot; 9m</div></div>
+            </div>
+            <div class="snap">
+              <div class="thumb"><i class="ph ph-table"></i></div>
+              <div class="meta"><div class="t">pricing</div><div class="s"><span class="src-dot" style="background:var(--term)"></span> v1 &middot; 21m</div></div>
+            </div>
+          </div>
+
+          <div class="canvas">
+            <div class="frame" data-w="desktop">
+              <iframe sandbox="allow-scripts" srcdoc='
+                <!doctype html><html><head><meta charset=utf-8><style>
+                  body{margin:0;font:14px system-ui;background:#f4f2fb;color:#1a1830;height:420px;display:grid;place-items:center}
+                  .card{background:#fff;padding:26px 24px;border-radius:14px;box-shadow:0 12px 40px rgba(80,60,160,.18);width:240px}
+                  h2{margin:0 0 4px;font-size:18px}p{margin:0 0 18px;color:#7876a0;font-size:12px}
+                  label{font-size:11px;color:#7876a0}input{width:100%;padding:9px;margin:4px 0 12px;border:1px solid #d8d6ea;border-radius:8px;font:inherit}
+                  button{width:100%;padding:10px;border:0;border-radius:8px;background:#7c5ce7;color:#fff;font-weight:700;cursor:pointer}
+                  .logo{width:34px;height:34px;border-radius:9px;background:#7c5ce7;margin:0 auto 12px;display:grid;place-items:center;color:#fff;font-weight:800}
+                </style></head><body><form class=card onsubmit="return false">
+                  <div class=logo>C</div><h2>Welcome back</h2><p>Sign in to Claude Companion</p>
+                  <label>Email</label><input value="joe@example.com">
+                  <label>Password</label><input type=password value="0000000000">
+                  <button>Sign in</button></form></body></html>'></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- popped-out hint (shown when mode=popped) -->
+      <div class="dock-hint">
+        <i class="ph ph-arrow-square-out"></i>
+        <div><b style="color:var(--color-text)">Preview popped out</b><br>
+        It is now its own OS window (same layout, full size).<br>The chat reclaims this space.</div>
+        <button class="iconbtn" style="width:auto;padding:6px 14px;background:var(--color-surface-alt);color:var(--color-text)" id="dockbtn"><i class="ph ph-arrows-in-simple"></i>&nbsp; Dock back</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const html = document.documentElement;
+  const setMode = m => { html.dataset.mode = m;
+    document.querySelectorAll('.modeswitch button').forEach(b => b.classList.toggle('on', b.dataset.set === m));
+    document.getElementById('modename').textContent = m === 'docked' ? 'login-page preview docked' : 'login-page preview popped out';
+  };
+  document.querySelectorAll('.modeswitch button').forEach(b => b.onclick = () => setMode(b.dataset.set));
+  document.getElementById('popbtn').onclick = () => setMode('popped');
+  document.getElementById('dockbtn').onclick = () => setMode('docked');
+  document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.seg button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    document.querySelector('.frame').dataset.w = b.dataset.w;
+  });
+  document.querySelectorAll('.snap').forEach(s => s.onclick = () => {
+    document.querySelectorAll('.snap').forEach(x => x.classList.remove('sel')); s.classList.add('sel');
+  });
+</script>
+</body>
+</html>
