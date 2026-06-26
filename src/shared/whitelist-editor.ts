@@ -210,6 +210,7 @@ export async function renderWhitelistEditor(
   function rebuildGroupsHtml(): void {
     const groupsDiv = host.querySelector<HTMLElement>(".wle-groups");
     if (!groupsDiv) return;
+    groupsDiv.classList.remove("wle-groups-disabled");
     groupsDiv.innerHTML = buildGroupsHtml(groups, currentWl);
     wireCheckboxes();
     void hydrateCharacterIcons(host);
