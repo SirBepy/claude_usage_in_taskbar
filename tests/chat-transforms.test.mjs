@@ -2,9 +2,13 @@ import { describe, it, expect } from "vitest";
 import { renderBlocks, renderMessage, cleanUserBlocks, base64ToUtf8, detectStatusToken, highlightComposerInput } from "../src/shared/chat/chat-transforms.ts";
 import { setSlashEntries } from "../src/shared/chat/slash-registry.ts";
 
+// Chip conversion is a USER-message-only concern (third arg = fileChips). The
+// tokens are composer sentinels; only user blocks legitimately carry them.
+const userBlocks = (blocks) => renderBlocks(blocks, false, true);
+
 describe("renderBlocks — file token handling", () => {
   it("converts a standalone <file:path::name> token to an attachment-chip", () => {
-    const html = renderBlocks([{ type: "text", text: "<file:/data/uuid.pdf::report.pdf>" }]);
+    const html = userBlocks([{ type: "text", text: "<file:/data/uuid.pdf::report.pdf>" }]);
     expect(html).not.toContain("&lt;file:");
     expect(html).toContain("attachment-chip");
     expect(html).toContain('data-attachment-path="/data/uuid.pdf"');
@@ -12,20 +16,20 @@ describe("renderBlocks — file token handling", () => {
   });
 
   it("preserves text before and after a file token", () => {
-    const html = renderBlocks([{ type: "text", text: "here is a file <file:/data/img.png::photo.png> and some text after" }]);
+    const html = userBlocks([{ type: "text", text: "here is a file <file:/data/img.png::photo.png> and some text after" }]);
     expect(html).toContain("here is a file");
     expect(html).toContain("and some text after");
     expect(html).toContain("attachment-chip");
   });
 
   it("handles a file token without a display name", () => {
-    const html = renderBlocks([{ type: "text", text: "<file:/data/uuid.png>" }]);
+    const html = userBlocks([{ type: "text", text: "<file:/data/uuid.png>" }]);
     expect(html).toContain("attachment-chip");
     expect(html).toContain("uuid.png");
   });
 
   it("handles multiple file tokens in one block", () => {
-    const html = renderBlocks([
+    const html = userBlocks([
       { type: "text", text: "<file:/a.pdf::a.pdf> and <file:/b.txt::b.txt>" },
     ]);
     const matches = (html.match(/attachment-chip/g) ?? []).length;
@@ -33,16 +37,45 @@ describe("renderBlocks — file token handling", () => {
   });
 
   it("does not affect text blocks without file tokens", () => {
-    const html = renderBlocks([{ type: "text", text: "just regular text" }]);
+    const html = userBlocks([{ type: "text", text: "just regular text" }]);
     expect(html).not.toContain("attachment-chip");
     expect(html).toContain("just regular text");
   });
 
   it("handles Windows absolute paths with drive letter colon", () => {
-    const html = renderBlocks([{ type: "text", text: "<file:C:\\Users\\data\\uuid.pdf::report.pdf>" }]);
+    const html = userBlocks([{ type: "text", text: "<file:C:\\Users\\data\\uuid.pdf::report.pdf>" }]);
     expect(html).toContain("attachment-chip");
     expect(html).toContain('data-attachment-path="C:\\Users\\data\\uuid.pdf"');
     expect(html).toContain("report.pdf");
+  });
+});
+
+describe("renderBlocks — file tokens are chipped ONLY in user messages (todo 140)", () => {
+  // Regression: Claude writing example text like "sent as <file:PATH>" was being
+  // turned into a broken ⚠️ chip. Chip conversion must be gated to user messages.
+  const exampleText = "they get sent as <file:/some/path.png::displayname> mentions";
+
+  it("does NOT chip a file token in the default (assistant/tool) render path", () => {
+    const html = renderBlocks([{ type: "text", text: exampleText }]);
+    expect(html).not.toContain("attachment-chip");
+    expect(html).toContain("displayname");
+  });
+
+  it("renderMessage(assistant) leaves <file:> example text as plain markdown", () => {
+    const html = renderMessage({ kind: "assistant", content: [{ type: "text", text: exampleText }], ts: 0 });
+    expect(html).not.toContain("attachment-chip");
+    expect(html).toContain("displayname");
+  });
+
+  it("renderMessage(user) still converts a real <file:> attachment to a chip", () => {
+    const html = renderMessage({ kind: "user", content: [{ type: "text", text: "<file:/data/uuid.pdf::report.pdf>" }], ts: 0 });
+    expect(html).toContain("attachment-chip");
+    expect(html).toContain("report.pdf");
+  });
+
+  it("tool_result text with a <file:> token is not chipped", () => {
+    const html = renderMessage({ kind: "tool_result", tool_use_id: "y", output: { type: "text", text: exampleText }, is_error: false, ts: 0 });
+    expect(html).not.toContain("attachment-chip");
   });
 });
 
@@ -131,7 +164,7 @@ describe("renderBlocks — pasted-log chip", () => {
   const body = "Hello 世界\nsecond line\nthird line";
 
   it("collapses a <pasted-log> wrapper into a chip, not raw text", () => {
-    const html = renderBlocks([{ type: "text", text: `<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
+    const html = userBlocks([{ type: "text", text: `<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
     expect(html).toContain("pasted-log-chip");
     expect(html).toContain("pasted_log.txt");
     // the body must NOT render as visible text
@@ -140,14 +173,14 @@ describe("renderBlocks — pasted-log chip", () => {
   });
 
   it("stashes the full body (base64, utf8-safe) for the lightbox", () => {
-    const html = renderBlocks([{ type: "text", text: `<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
+    const html = userBlocks([{ type: "text", text: `<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
     const m = html.match(/data-pasted-text="([^"]*)"/);
     expect(m).toBeTruthy();
     expect(base64ToUtf8(m[1])).toBe(body);
   });
 
   it("renders typed text around the chip normally", () => {
-    const html = renderBlocks([{ type: "text", text: `look at this\n\n<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
+    const html = userBlocks([{ type: "text", text: `look at this\n\n<pasted-log name="pasted_log.txt">\n${body}\n</pasted-log>` }]);
     expect(html).toContain("look at this");
     expect(html).toContain("pasted-log-chip");
   });

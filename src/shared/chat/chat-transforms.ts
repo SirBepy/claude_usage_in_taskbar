@@ -58,8 +58,15 @@ const PASTED_LOG_RE = /<pasted-log id="([^"]+)" name="([^"]*)">\n?([\s\S]*?)\n?<
 // sees "this was voice" without raw markup (the model still receives the tag).
 const VOICE_INPUT_RE = /<voice-input\s*\/>/g;
 
-function renderTextBlock(rawText: string, breaks = false): string {
+function renderTextBlock(rawText: string, breaks = false, fileChips = false): string {
   const stripped = stripStatusToken(rawText);
+  // Only user messages legitimately carry the composer's user-only sentinels
+  // (<file:>, <pasted-log>, <voice-input>). For every other role (assistant,
+  // tool_result, system) any such token is example/code text the model wrote,
+  // so render straight markdown and never chip-convert it.
+  if (!fileChips) {
+    return `<div class="block text">${renderMarkdown(stripped, breaks)}</div>`;
+  }
   // Peel off the voice-input sentinel into a leading mic chip.
   VOICE_INPUT_RE.lastIndex = 0;
   const hasVoice = VOICE_INPUT_RE.test(stripped);
@@ -159,12 +166,12 @@ function pastedLogChipHtml(name: string, body: string): string {
   return `<div class="attachment-chip pasted-log-chip previewable" data-pasted-name="${escapeHtml(name)}" data-pasted-text="${utf8ToBase64(body)}"><i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span></div>`;
 }
 
-export function renderBlocks(blocks: ContentBlock[], breaks = false): string {
+export function renderBlocks(blocks: ContentBlock[], breaks = false, fileChips = false): string {
   return blocks
     .map((b) => {
       switch (b.type) {
         case "text":
-          return renderTextBlock(b.text, breaks);
+          return renderTextBlock(b.text, breaks, fileChips);
         case "image":
           return `<img class="block image" src="data:${escapeHtml(b.mime)};base64,${escapeHtml(b.data)}" alt="">`;
         default:
@@ -182,7 +189,7 @@ export function renderMessage(m: RenderedMessage): string {
       }
       return `<div class="msg system">${escapeHtml(m.text ?? "")}</div>`;
     case "user":
-      return `<div class="msg user">${renderBlocks(m.content ?? [], true)}</div>`;
+      return `<div class="msg user">${renderBlocks(m.content ?? [], true, true)}</div>`;
     case "assistant": {
       const blocks = m.content ?? [];
       const firstBlock = blocks[0];
