@@ -213,6 +213,15 @@ export class HttpTransport implements Transport {
         // Pasted chat-image attachments. The daemon path-validates against the
         // chat-attachments dir, so a malicious path can't read arbitrary files.
         return this.rpc<T>("read_attachment", { path: args.path });
+      case "paste_attachment":
+        // Composer paperclip upload from the phone: the daemon writes the bytes
+        // into <app-data>/chat-attachments/<session>/ and returns the PC-side
+        // path, which the composer turns into a <file:...> mention on send.
+        return this.rpc<T>("paste_attachment", {
+          session_id: args.sessionId ?? args.session_id,
+          base64_data: args.base64Data ?? args.base64_data,
+          mime: args.mime,
+        });
       case "resolve_whitelist_characters":
         return this.rpc<T>("resolve_whitelist_characters", {
           project_id: args.projectId ?? args.project_id,

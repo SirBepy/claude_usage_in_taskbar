@@ -139,6 +139,19 @@
   align-self: flex-end;
 }
 
+/* The paperclip is a mobile-only affordance: on desktop you attach by pasting
+   or drag-and-drop, so the button is hidden and only appears at the phone
+   breakpoint (same 768px the composer uses for its mobile Enter behavior). */
+.composer-attach {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .composer-attach {
+    display: flex;
+  }
+}
+
 .composer-row--tall .composer-actions {
   flex-direction: column;
 }
