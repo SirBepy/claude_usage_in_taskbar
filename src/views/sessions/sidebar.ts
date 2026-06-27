@@ -16,6 +16,8 @@ import {
   loadHiddenSessions,
   saveHiddenSessions,
   loadHiddenCollapsed,
+  isSegCollapsed,
+  resetSegCollapse,
 } from "./sessions-helpers";
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
@@ -328,37 +330,46 @@ export function renderSidebar(listEl: HTMLElement): void {
   // actively-running ones without disturbing the other groups' order.
   for (const seg of [0, 1, 2, 5, 3, 4]) {
     const group = segmented.get(seg)!;
-    if (group.length === 0) continue;
+    if (group.length === 0) {
+      resetSegCollapse(seg);
+      continue;
+    }
+    const segCollapsed = isSegCollapsed(seg);
+    const chevronCls = segCollapsed ? "ph-caret-right" : "ph-caret-down";
     entries.push({
       key: `__seg:${seg}__`,
-      html: `<li class="session-group-header" data-row-key="__seg:${seg}__">${SEGMENT_LABELS[seg]}</li>`,
+      html: `<li class="session-group-header session-group-seg-toggle" data-seg-toggle="${seg}" data-row-key="__seg:${seg}__">
+        <i class="ph ${chevronCls}" style="margin-right:4px;font-size:10px;vertical-align:middle"></i>${SEGMENT_LABELS[seg]}
+      </li>`,
     });
-    for (const s of group) {
-      const i = sessionIndex++;
-      const isActive = s.session_id === state.selectedId;
-      const needsAttention = attention.has(s.session_id);
-      const isClosing = isSessionClosing(s.session_id);
-      const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml, rateLimited);
-      let kbdHint = "";
-      if (isManualSlots) {
-        const slot = slotBySession[s.session_id];
-        if (slot) kbdHint = ` data-kbd-hint="${slot}"`;
-      } else {
-        if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
+    if (!segCollapsed) {
+      for (const s of group) {
+        const i = sessionIndex++;
+        const isActive = s.session_id === state.selectedId;
+        const needsAttention = attention.has(s.session_id);
+        const isClosing = isSessionClosing(s.session_id);
+        const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml, rateLimited);
+        let kbdHint = "";
+        if (isManualSlots) {
+          const slot = slotBySession[s.session_id];
+          if (slot) kbdHint = ` data-kbd-hint="${slot}"`;
+        } else {
+          if (i < 9) kbdHint = ` data-kbd-hint="${i + 1}"`;
+        }
+        entries.push({
+          key: `s:${s.session_id}`,
+          html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
+            ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
+            <div class="session-row-text">
+              <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>
+              <span class="session-row-subtitle">${escapeHtml(projectName(s))}${sort === "drain" ? drainChipHtml(drainMap.get(s.session_id)) : ""}</span>
+            </div>
+            <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
+              <i class="ph ph-dots-three-vertical"></i>
+            </button>
+          </li>`,
+        });
       }
-      entries.push({
-        key: `s:${s.session_id}`,
-        html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
-          ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
-          <div class="session-row-text">
-            <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>
-            <span class="session-row-subtitle">${escapeHtml(projectName(s))}${sort === "drain" ? drainChipHtml(drainMap.get(s.session_id)) : ""}</span>
-          </div>
-          <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">
-            <i class="ph ph-dots-three-vertical"></i>
-          </button>
-        </li>`,
-      });
     }
   }
 

@@ -219,6 +219,15 @@
   color: var(--color-text, #ccc);
 }
 
+.sessions-list li.session-group-seg-toggle {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.sessions-list li.session-group-seg-toggle:hover {
+  color: var(--color-text, #ccc);
+}
+
 .sessions-list li.active {
   background: var(--color-primary);
   color: var(--color-background);

@@ -179,6 +179,24 @@ export function saveHiddenCollapsed(collapsed: boolean): void {
   catch { /* ignore */ }
 }
 
+// ── Per-segment collapse state (in-memory only, resets to default on section disappear) ──
+// Segments collapsed by default: 3 = Closing
+const SEG_DEFAULT_COLLAPSED = new Set([3]);
+const segCollapseOverrides = new Map<number, boolean>();
+
+export function isSegCollapsed(seg: number): boolean {
+  if (segCollapseOverrides.has(seg)) return segCollapseOverrides.get(seg)!;
+  return SEG_DEFAULT_COLLAPSED.has(seg);
+}
+
+export function toggleSegCollapse(seg: number): void {
+  segCollapseOverrides.set(seg, !isSegCollapsed(seg));
+}
+
+export function resetSegCollapse(seg: number): void {
+  segCollapseOverrides.delete(seg);
+}
+
 export function loadSort(): SessionSort {
   try {
     const v = localStorage.getItem(LS_SORT);

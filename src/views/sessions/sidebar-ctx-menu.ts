@@ -10,6 +10,7 @@ import {
   saveHiddenSessions,
   loadHiddenCollapsed,
   saveHiddenCollapsed,
+  toggleSegCollapse,
 } from "./sessions-helpers";
 import { closeChat } from "./close-chat";
 import { loadAnimEnabled, markSessionExiting } from "./sidebar-anim";
@@ -159,6 +160,15 @@ document.addEventListener("click", (e) => {
   const toggle = (e.target as HTMLElement).closest<HTMLElement>("[data-hidden-toggle]");
   if (toggle) {
     saveHiddenCollapsed(!loadHiddenCollapsed());
+    rerenderSidebar?.();
+  }
+});
+
+document.addEventListener("click", (e) => {
+  const segToggle = (e.target as HTMLElement).closest<HTMLElement>("[data-seg-toggle]");
+  if (segToggle) {
+    const seg = parseInt(segToggle.dataset.segToggle!, 10);
+    toggleSegCollapse(seg);
     rerenderSidebar?.();
   }
 });
