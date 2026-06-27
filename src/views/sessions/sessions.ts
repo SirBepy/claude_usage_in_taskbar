@@ -528,6 +528,10 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     state.composer = null;
     setActiveSession(null);
     pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
+    // Optimistic removal: drop the row immediately without waiting for
+    // instances-changed from the daemon (which takes a few seconds).
+    state.sessions = state.sessions.filter(s => s.session_id !== sessionId);
+    renderSidebar(listEl);
   };
   document.addEventListener("cc:session-closed", onSessionClosed);
 
