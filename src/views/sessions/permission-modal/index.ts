@@ -19,7 +19,7 @@
 import { invoke } from "../../../shared/ipc";
 import { getTransport } from "../../../shared/transport";
 import { reconcilePendingPrompts } from "./remote-prompt-poll";
-import { dismissQuestionCard, extractQuestions, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
+import { extractQuestions, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
 import {
   allowPermission,
@@ -182,10 +182,10 @@ function handleQuestionRequested(payload: QuestionRequestedPayload): void {
   showQuestionCard(payload);
 }
 
-/** A prompt closed on the daemon (timed out, or answered elsewhere). Remove its
- *  card if it's the one on screen, and clear any park so it can't re-surface. */
+/** A prompt closed on the daemon (answered elsewhere or timed out). Clear its
+ *  park so it doesn't re-surface on session switch, but leave the card on
+ *  screen - the user dismisses it explicitly. */
 function handlePromptResolved(id: string): void {
-  dismissQuestionCard(id);
   clearPendingPromptById(id);
   rerenderSidebar();
 }
