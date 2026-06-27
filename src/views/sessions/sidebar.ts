@@ -28,7 +28,6 @@ import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/p
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { setRerenderCallback } from "./sidebar-ctx-menu";
 export { closeCtxMenu, openDraftCtxMenu, openCtxMenu } from "./sidebar-ctx-menu";
-export type { CtxMenuActions } from "./sidebar-ctx-menu";
 
 let sidebarListEl: HTMLElement | null = null;
 

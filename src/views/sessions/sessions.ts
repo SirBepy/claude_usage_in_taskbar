@@ -11,7 +11,6 @@ import "./model-effort-modal.css";
 import "./new-project-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
-import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
@@ -418,15 +417,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     const sid = li?.dataset.sessionId;
     if (!li || !sid) return;
     e.preventDefault();
-    openCtxMenu(sid, li, {
-      onNewHere: (project) => {
-        void (async () => {
-          const config = await openModelEffortModal(project.path, project.name);
-          if (!config) return;
-          await launchNewSession(pane, project, config);
-        })();
-      },
-    });
+    openCtxMenu(sid, li);
   });
 
   listEl.addEventListener("click", (e) => {
@@ -437,15 +428,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       const sid = menuBtn.dataset.sessionId;
       const parkedPid = menuBtn.dataset.parkedPlaceholderId;
       if (sid) {
-        openCtxMenu(sid, menuBtn, {
-          onNewHere: (project) => {
-            void (async () => {
-              const config = await openModelEffortModal(project.path, project.name);
-              if (!config) return;
-              await launchNewSession(pane, project, config);
-            })();
-          },
-        });
+        openCtxMenu(sid, menuBtn);
       } else if (parkedPid) {
         openDraftCtxMenu(menuBtn, () => {
           state.parkedDrafts = state.parkedDrafts.filter(d => d.placeholderId !== parkedPid);

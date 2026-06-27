@@ -24,7 +24,6 @@ export interface ChatMenuCtx {
   readOnly: boolean;
   autoAcceptOn: boolean;
   isHidden: boolean;
-  onNewHere?: (p: { path: string; name: string }) => void;
   viewChanges?: () => void;
   onAfterAction?: () => void;
   onDiscard?: () => void;
@@ -230,20 +229,6 @@ export function buildChatMenuBlock(
 
   // ── Agent ▸ ────────────────────────────────────────────────────────────────
   const agentItems: ItemDesc[] = [
-    {
-      icon: "plus",
-      label: "New chat here",
-      run: isDraft || !cwd
-        ? undefined
-        : () => {
-            if (ctx.onNewHere) {
-              const parts = cwd.split(/[\\/]/).filter(Boolean);
-              const name = parts[parts.length - 1] ?? cwd;
-              ctx.onNewHere({ path: cwd, name });
-            }
-          },
-      disabledReason: isDraft ? "Start a chat first" : (!cwd ? "No project directory" : (!ctx.onNewHere ? "No project directory" : undefined)),
-    },
     {
       icon: "copy",
       label: "Copy PID",

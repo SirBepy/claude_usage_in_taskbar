@@ -34,11 +34,6 @@ export function closeCtxMenu(): void {
   }
 }
 
-export interface CtxMenuActions {
-  /** "New agent here" - start a new session in this row's cwd. */
-  onNewHere: (project: { path: string; name: string }) => void;
-}
-
 export function openDraftCtxMenu(anchor: HTMLElement, onDiscard: () => void): void {
   closeCtxMenu();
   const pending = state.pendingNewSession;
@@ -69,7 +64,6 @@ export function openDraftCtxMenu(anchor: HTMLElement, onDiscard: () => void): vo
 export function openCtxMenu(
   sessionId: string,
   anchor: HTMLElement,
-  actions: CtxMenuActions,
 ): void {
   closeCtxMenu();
 
@@ -98,7 +92,6 @@ export function openCtxMenu(
     autoAcceptOn: isAutoAccept(sessionId),
     isHidden,
     viewChanges,
-    onNewHere: (project) => actions.onNewHere(project),
     onAfterAction: () => {
       closeCtxMenu();
       rerenderSidebar?.();
