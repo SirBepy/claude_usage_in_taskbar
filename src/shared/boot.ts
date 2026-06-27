@@ -211,6 +211,15 @@ function tryInitialRender(): void {
   }
 }
 
+function applyThemeFromSettings(s: SettingsShape): void {
+  const fullId = (s.theme as string) || "void";
+  const isLight = fullId.endsWith("-light");
+  const baseId = isLight ? fullId.replace("-light", "") : fullId;
+  const el = document.documentElement;
+  el.dataset.theme = baseId;
+  el.dataset.mode = isLight ? "light" : "dark";
+}
+
 function coerceSettings(s: SettingsShape): SettingsShape {
   const colorApplyTo = (s.colorApplyTo as Record<string, boolean | undefined> | undefined) || {};
   s.colorApplyTo = {
@@ -244,11 +253,11 @@ export function initBoot(): void {
     if (s) {
       const coerced = coerceSettings(s);
       setSettings(coerced);
+      applyThemeFromSettings(coerced);
     }
     initSettings = true;
     tryInitialRender();
   }).catch(() => {
-    // Browser (HttpTransport) degrades to no settings; unblock render gate.
     initSettings = true;
     tryInitialRender();
   });

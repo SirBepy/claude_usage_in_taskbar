@@ -104,6 +104,9 @@ const SAFE_METHODS: &[&str] = &[
     "get_history",
     "get_token_history",
     "get_active_sessions",
+    // Visual settings (theme, colors) so the phone mirrors the desktop appearance.
+    // set_settings is deliberately NOT here (phone must not mutate desktop settings).
+    "get_settings",
 ];
 
 /// Start the remote-access server. Best-effort: a bind failure disables remote

@@ -253,11 +253,8 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("get_token_history", null);
       case "get_active_sessions":
         return this.rpc<T>("get_active_sessions", null);
-      // Safe-default stub: the daemon doesn't serve this (app-process-only),
-      // but boot reads it unconditionally. Return null so boot continues.
       case "get_settings":
-        // Boot already handles null gracefully (boot.ts `if (s)` guard).
-        return null as unknown as T;
+        return this.rpc<T>("get_settings", null);
       // No remote path: poll_now (a CDP scrape needing Chrome), takeover,
       // editor/window/local-FS commands, and file watchers. Degrade clearly.
       default:
