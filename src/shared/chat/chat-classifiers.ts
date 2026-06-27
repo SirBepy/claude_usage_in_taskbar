@@ -16,6 +16,10 @@ import type { ContentBlock } from "../../types/ipc.generated";
 // trailing "<".
 const STATUS_TOKEN_RE = /<cc-status:(?:done|question|waiting)>/gi;
 const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?|w(?:a(?:i(?:t(?:i(?:n(?:g)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
+// Some model invocations emit XML-style `<cc-status>done</cc-status>` instead
+// of the colon form; handle both so neither variant leaks into rendered text.
+const STATUS_XML_TOKEN_RE = /<cc-status>(?:done|question|waiting)<\/cc-status>/gi;
+const STATUS_XML_TAIL_RE = /<cc-status>[\s\S]*$/i;
 
 // Autopilot marker emitted by the /autopilot skill to signal on/off state.
 // The app reads it to toggle the sidebar badge; it must never display in chat.
@@ -46,11 +50,13 @@ const PROGRESS_TAIL_RE = /<c(?:c(?:-(?:p(?:r(?:o(?:g(?:r(?:e(?:s(?:s(?::(?:\d+(?
 export function stripStatusToken(text: string): string {
   return text
     .replace(STATUS_TOKEN_RE, "")
+    .replace(STATUS_XML_TOKEN_RE, "")
     .replace(TITLE_TOKEN_RE, "")
     .replace(TITLE_XML_TOKEN_RE, "")
     .replace(AUTOPILOT_TOKEN_RE, "")
     .replace(PROGRESS_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
+    .replace(STATUS_XML_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
     .replace(TITLE_XML_TAIL_RE, "")
     .replace(AUTOPILOT_TAIL_RE, "")
@@ -58,11 +64,14 @@ export function stripStatusToken(text: string): string {
     .replace(/\s+$/, "");
 }
 
-/** Last status marker in `text`, or null if none. */
+/** Last status marker in `text`, or null if none. Handles both colon form
+ *  (`<cc-status:done>`) and XML form (`<cc-status>done</cc-status>`). */
 export function detectStatusToken(text: string): "done" | "question" | "waiting" | null {
-  const matches = [...text.matchAll(/<cc-status:(done|question|waiting)>/gi)];
-  if (matches.length === 0) return null;
-  return matches[matches.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting";
+  const colon = [...text.matchAll(/<cc-status:(done|question|waiting)>/gi)];
+  const xml = [...text.matchAll(/<cc-status>(done|question|waiting)<\/cc-status>/gi)];
+  const all = [...colon, ...xml].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+  if (all.length === 0) return null;
+  return all[all.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting";
 }
 
 /** Last progress marker in `text`, or null if none. Returns { n, m } where n
