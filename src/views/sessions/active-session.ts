@@ -33,7 +33,7 @@ import {
 } from "./permission-modal";
 import { snapshotActiveCardDraft } from "./permission-modal/question-ui";
 import { savePendingPromptDraft } from "./permission-modal/gating";
-import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
+import { markSessionExiting } from "./sidebar-anim";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
@@ -408,18 +408,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         timestamp: BigInt(Date.now()),
       } as ChatEvent);
 
-      // `/close`: keep the chat VISIBLE in a "closing" state and run the skill
-      // in the background (AskUserQuestion modals still surface via the
-      // background gate). Only when the turn ends do we actually end the session
-      // - `clear_session` now KILLS the daemon process, not just hides the row -
-      // and then drop it from the UI. Replaces the old "vanish immediately but
-      // keep running" behaviour (orphaned-process leak, still shown on mobile).
+      // `/close`: slide the row out immediately (same animation as context-menu
+      // close) and run the skill in the background. AskUserQuestion modals still
+      // surface via the background gate. clear_session fires once the turn ends.
       if (isCloseCommand(blocks)) {
         const cwd = String(sess.cwd ?? ".");
         addBackgroundSession(sessionId);
-        markSessionClosing(sessionId);
         const listEl = document.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) renderSidebar(listEl);
+        if (listEl) markSessionExiting(listEl, sessionId);
 
         // Wait for the /close turn to actually finish before tearing down.
         // send_message resolves immediately (stdin write), so .finally() would
@@ -430,7 +426,6 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
           invoke<void>("clear_session", { sessionId })
             .catch(() => {})
             .finally(() => {
-              unmarkSessionClosing(sessionId);
               if (state.selectedId === sessionId) {
                 dismountActivePane({ rerenderSidebar: true });
               } else {
