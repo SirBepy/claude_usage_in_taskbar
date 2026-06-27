@@ -82,8 +82,14 @@ function beginExitAt(li: HTMLLIElement, top: number, left: number, width: number
 // Safe for single-row exits (markSessionExiting). For multi-row exits use
 // the batch-capture pattern in reconcileList to avoid reflow corruption.
 function beginExit(li: HTMLLIElement): void {
+  // Read any active FLIP translateY before clearing it. offsetTop reflects the
+  // post-reflow layout position, but the transform visually offsets the row.
+  // Pin at the visual position so this row doesn't land on top of another
+  // already-exiting row that occupies the same layout slot.
+  const m = getComputedStyle(li).transform;
+  const flipDy = m && m !== "none" ? new DOMMatrix(m).m42 : 0;
   clearFlipState(li);
-  beginExitAt(li, li.offsetTop, li.offsetLeft, li.offsetWidth, li.offsetHeight);
+  beginExitAt(li, li.offsetTop + flipDy, li.offsetLeft, li.offsetWidth, li.offsetHeight);
 }
 
 function updateNode(kept: HTMLLIElement, html: string): void {
@@ -228,7 +234,20 @@ export function reconcileList(
 
   const newKeys = new Set(visibleEntries.map(e => e.key));
 
-  // Clear FLIP state on soon-to-exit rows first: transforms are visual-only
+  // Read any active FLIP translateY on soon-to-exit rows BEFORE clearing their
+  // transform. A prior-cycle exit FLIP-moves these rows: offsetTop lands at the
+  // new (post-reflow) slot, but the transform still visually offsets them. We
+  // pin at the VISUAL position so each row exits from where the user sees it
+  // and not from the same slot as another already-pinned exiting row.
+  const exitFlipDy = new Map<HTMLLIElement, number>();
+  for (const [k, li] of existing) {
+    if (!newKeys.has(k)) {
+      const m = getComputedStyle(li).transform;
+      exitFlipDy.set(li, m && m !== "none" ? new DOMMatrix(m).m42 : 0);
+    }
+  }
+
+  // Clear FLIP state on soon-to-exit rows: transforms are visual-only
   // and don't affect offsetTop, but getBoundingClientRect on adjacent survivors
   // could include their bulk, so clear before snapshotting survivors.
   for (const [k, li] of existing) {
@@ -245,10 +264,12 @@ export function reconcileList(
   // calling applyPin on any of them. Each applyPin sets position:absolute which
   // reflows siblings — so a second row in the loop would read a post-reflow
   // offsetTop and get pinned at the wrong (often overlapping) position.
+  // Add the pre-captured FLIP offset so each row pins at its visual position.
   const exitGeoms = new Map<HTMLLIElement, [number, number, number, number]>();
   for (const [k, li] of existing) {
     if (!newKeys.has(k)) {
-      exitGeoms.set(li, [li.offsetTop, li.offsetLeft, li.offsetWidth, li.offsetHeight]);
+      const flipDy = exitFlipDy.get(li) ?? 0;
+      exitGeoms.set(li, [li.offsetTop + flipDy, li.offsetLeft, li.offsetWidth, li.offsetHeight]);
     }
   }
 
