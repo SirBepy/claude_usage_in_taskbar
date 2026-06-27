@@ -55,7 +55,9 @@ export async function navigateTo(name: string): Promise<void> {
   if (view) {
     hideAllLegacyViews();
     currentRoot.style.display = "";
-    render(html``, currentRoot);
+    // Don't clear currentRoot before the async render: the blank gap between
+    // the clear and the first lit paint is the white-screen window. The view's
+    // own render() call reconciles the DOM in place once it resolves.
     const result = await view(currentRoot);
     if (typeof result === "function") currentTeardown = result;
   } else {

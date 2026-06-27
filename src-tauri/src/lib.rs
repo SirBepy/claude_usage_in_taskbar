@@ -126,11 +126,14 @@ pub fn run() {
     #[cfg(not(debug_assertions))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            use tauri::Manager;
+            use tauri::{Emitter, Manager};
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
+                // Emit navigate-to-dashboard so the webview is never left in a
+                // blank state when the window is surfaced by a second launch.
+                let _ = window.emit("navigate-to-dashboard", ());
             }
         }));
     }
@@ -540,8 +543,11 @@ pub fn run() {
                         // the detached daemon, not this window, so closing here
                         // never interrupts in-flight turns. Full quit lives in
                         // the tray menu; X just tucks the window away.
+                        // No pre-hide navigation eval: the async JS clear+render
+                        // gap would leave the webview blank; every re-open path
+                        // (tray menu, single-instance) already emits
+                        // navigate-to-dashboard which re-renders on show.
                         api.prevent_close();
-                        let _ = w.eval("window.navigateTo && window.navigateTo('dashboard')");
                         let _ = w.hide();
                     }
                 });
