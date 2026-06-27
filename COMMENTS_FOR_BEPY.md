@@ -1,5 +1,24 @@
 # Comments for Bepy
 
+## 2026-06-27 03:59 - /autopilot: todo 140 session-menu rework (merged top-right ⋮, draft handling)
+
+GOAL (Joe): kill the double-⋮; one top-right context-aware menu (Variant B: General section + "This chat" section), remove the chat-pane-header ⋮ + changes button, Sort to Settings, When done submenu, sidebar rows reuse the same 4-submenu block. Drafts: same options, disable what's impossible with a hover-tooltip reason. Brainstormed + web-previewed with him first (C:\tmp\menu-preview.html). Deployed via /commit pushnbump.
+
+Built via one sonnet implementation subagent (orchestrated). New shared module `chat-menu.ts` (`buildChatMenuBlock(ctx, closeMenu)`) feeds BOTH the top-right "This chat" section AND the sidebar row/draft menus. View-changes reaches the active session via a new `state.activeChatActions` seam set in active-session.ts. Files: chat-menu.ts (new), view-more-menu.ts (rewrite to Variant B), sidebar-ctx-menu.ts (delegates to the block), session-header.ts (more-btn + changes-btn removed), state.ts, active-session.ts, sessions.ts, sessions-helpers.ts (saveSort), template.ts, settings.ts, sessions.css. Deleted orphaned more-menu.ts.
+
+Decision needed: the todo's old draft table marked Auto-accept / Change character / Hide enabled for drafts, but a draft has no session/process/pid/applied-character so those code paths need a sessionId.
+Resolved via: direct judgment, aligning to Joe's explicit "disable if not possible, show why on hover". Picked: for drafts enable ONLY Open project in (path known) + Delete draft; disable the rest with specific reasons (Hide = "Not available until the chat starts", Move-to-terminal/View-changes/Copy-PID/Detach = "No active agent", Auto-accept/Change-character = "Available once the chat starts", New-chat-here = "Start a chat first"). Reason: enabling them would need new draft-config plumbing (new scope) - the honest read of "disable what isn't possible". Where: chat-menu.ts draft branch. Revisit: yes - if Joe wants pre-start character/auto-accept config on a draft, that's a follow-up (route the menu items to the draft composer).
+
+Decision needed: Sort persistence when moving the control to Settings.
+Resolved via: direct judgment. Picked: keep sort in its existing localStorage key (added saveSort), just render the select in Settings + a cc-sort-changed event the sessions view listens for to re-render live. Reason: avoids a backend Settings field + ts-rs regen for a purely-local UI pref. Where: settings.ts, sessions-helpers.ts, sessions.ts. Revisit: no.
+
+Decision needed: View changes on a NON-active sidebar row (no live ChangesPanel).
+Resolved via: direct judgment. Picked: disabled with reason "Open the chat to view changes" unless the row IS the active session. Reason: the panel only exists for the mounted session; selecting-then-toggling is racy. Where: sidebar-ctx-menu.ts. Revisit: no.
+
+Cleanup deviation: left `setChangesBadge`/`onChangesClick` as documented no-op stubs on SessionHeader (still called by active-session.ts + pending-pane.ts). Removing them would churn 4 files + orphan the dedupeByPath import for zero behavioral gain right before a push. Minor code-health for a future /close pass. Also: the changes-COUNT badge is no longer surfaced (View changes item shows no count). Revisit: optional.
+
+VERIFY: `pnpm tsc --noEmit` = zero new errors (only the 3 pre-existing: tool-views.ts:214 x2, vendor/tauri_kit/stack.ts:47). `pnpm build` green (✓ 10.31s). NOT live-verified: this is a desktop-webview UI change and the app can't be hosted headlessly here (supervised-run's job object blocks the daemon) - menu interaction QA is in BEPY_TODOS Visual QA.
+
 ## 2026-06-20 - /autopilot: per-chat token drain feature (ALL chunks done + deployed)
 
 GOAL (Joe): see which running chat is "the vampire" draining his Max 5x limit, as a % of a 5h (and weekly) session. Brainstormed + specced with him first (cost-weighted drain, "% of a 5h session" ruler via calibration against the scraped utilization, statusbar chip + click-popover rundown, sortable drain column in the sidebar). Spec: docs/superpowers/specs/2026-06-20-per-chat-token-drain-design.md.

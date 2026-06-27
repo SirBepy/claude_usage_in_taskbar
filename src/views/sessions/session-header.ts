@@ -1,5 +1,4 @@
 import { escapeHtml } from "../../shared/escape-html";
-import { openMoreMenu } from "./more-menu";
 import { projBadgeHtml } from "./sidebar";
 
 export interface SessionHeaderBindOpts {
@@ -13,10 +12,9 @@ export interface SessionHeaderBindOpts {
 }
 
 /**
- * The session pane header — avatar, title/meta, changes badge, and ⋮ menu.
- * Used by both the pending (draft) pane and the active-session pane so the
- * header is built and wired exactly once. Start in draft mode; call
- * bindSession() when the real session id is known to upgrade to the live menu.
+ * The session pane header - avatar, title/meta, and discard button (drafts).
+ * The per-session more-btn and changes-btn have moved to the top-right view-more
+ * menu ("This chat" section and Chat submenu respectively).
  */
 export class SessionHeader {
   readonly el: HTMLElement;
@@ -24,11 +22,7 @@ export class SessionHeader {
   private readonly _wrap: HTMLElement;
   private readonly _titleEl: HTMLElement;
   private readonly _metaEl: HTMLElement;
-  private readonly _changesBtn: HTMLButtonElement;
-  private readonly _moreBtn: HTMLButtonElement;
 
-  private _sessionId: string | null = null;
-  private _readOnly = false;
   private readonly _onDiscard: (() => void) | undefined;
 
   onChangesClick: (() => void) | null = null;
@@ -50,36 +44,16 @@ export class SessionHeader {
       `<button class="icon-btn discard-btn" title="Discard draft">`,
       `  <i class="ph ph-x-circle"></i>`,
       `</button>`,
-      `<button class="icon-btn changes-btn" title="Show all file changes in this chat" hidden>`,
-      `  <i class="ph ph-git-diff"></i><span class="changes-count" hidden></span>`,
-      `</button>`,
-      `<button class="icon-btn more-btn" title="More options" hidden>`,
-      `  <i class="ph ph-dots-three-vertical"></i>`,
-      `</button>`,
     ].join("");
 
     this.el = el;
     this._wrap = el.querySelector(".session-header-avatar-wrap")!;
     this._titleEl = el.querySelector(".title")!;
     this._metaEl = el.querySelector(".meta")!;
-    this._changesBtn = el.querySelector(".changes-btn")!;
-    this._moreBtn = el.querySelector(".more-btn")!;
 
     el.querySelector<HTMLButtonElement>(".discard-btn")?.addEventListener("click", () => {
       this._onDiscard?.();
     });
-
-    this._moreBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openMoreMenu(
-        this._moreBtn,
-        this._sessionId,
-        this._readOnly,
-        this._sessionId === null ? this._onDiscard : undefined,
-      );
-    });
-
-    this._changesBtn.addEventListener("click", () => { this.onChangesClick?.(); });
 
     // Char-click delegate on the header element so it survives avatar swaps.
     el.addEventListener("click", (e) => {
@@ -103,11 +77,11 @@ export class SessionHeader {
     }
   }
 
-  setChangesBadge(n: number): void {
-    const badge = this._changesBtn.querySelector<HTMLElement>(".changes-count");
-    if (!badge) return;
-    badge.textContent = String(n);
-    badge.toggleAttribute("hidden", n === 0);
+  /** No-op kept for call-site compatibility. Changes badge moved to view-more menu. */
+  setChangesBadge(_n: number): void {
+    // The badge counter previously shown on the header changes-btn is gone.
+    // pending-pane.ts and active-session.ts still call this; it is a no-op so
+    // they don't need changes.
   }
 
   setAvatar(charId: string | null, url: string | null, status: string, cwd?: string | null): void {
@@ -130,19 +104,11 @@ export class SessionHeader {
   }
 
   /**
-   * Upgrade from draft to live session. Switches the more-menu to the full
-   * session menu, removes the cancel button (stop-turn lives in the menu now),
-   * and unhides the changes button. Call once when the real session id is known.
+   * Upgrade from draft to live session. Removes the discard button.
+   * More-btn and changes-btn are in the view-more-menu; nothing to show here.
    */
   bindSession(opts: SessionHeaderBindOpts): void {
-    this._sessionId = opts.sessionId;
-    this._readOnly = opts.readOnly;
-    this._moreBtn.classList.toggle("has-indicator", !!opts.autoAcceptOn);
-
     this.el.querySelector(".discard-btn")?.remove();
-
-    this._changesBtn.removeAttribute("hidden");
-    this._moreBtn.removeAttribute("hidden");
 
     if (opts.charId !== undefined && opts.charStatus !== undefined) {
       this.setAvatar(opts.charId ?? null, opts.charUrl ?? null, opts.charStatus, opts.cwd);

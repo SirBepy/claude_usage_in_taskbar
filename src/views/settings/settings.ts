@@ -3,6 +3,7 @@ import { openSidemenu } from "../../shared/sidemenu";
 import { saveSettings } from "../../shared/settings-save";
 import { getSettings } from "../../shared/state";
 import { api } from "../../shared/api";
+import { loadSort, saveSort } from "../sessions/sessions-helpers";
 import type { DatasetInfo, DatasetId, RetentionPolicy } from "../../types/ipc.generated";
 import "./settings.css";
 
@@ -200,6 +201,18 @@ export async function renderSettingsView(
   try { await hydrateSettingsRoot(); }
   catch (e) { console.error("[settings root] render failed", e); }
 
+  // Sort chats select (persists to the same localStorage key sessions.ts reads).
+  const sortSelect = root.querySelector<HTMLSelectElement>("#settings-sort-chats");
+  if (sortSelect) {
+    sortSelect.value = loadSort();
+    sortSelect.addEventListener("change", () => {
+      const v = sortSelect.value as "status" | "recent" | "name" | "drain";
+      saveSort(v);
+      // Dispatch an event so the sessions view can re-render if it's mounted.
+      document.dispatchEvent(new CustomEvent("cc-sort-changed"));
+    });
+  }
+
   // Fresh container each render -> rebind the delegated Data listeners.
   dataWired = false;
   try { await refreshDataSection(); }
@@ -249,6 +262,15 @@ function template() {
           <div class="kit-row kit-nav-row" id="nav-statusline">
             <span class="kit-row-label">Statusline</span>
             <span class="kit-nav-arrow">›</span>
+          </div>
+          <div class="kit-row">
+            <span class="kit-row-label">Sort chats by</span>
+            <select id="settings-sort-chats" class="kit-select">
+              <option value="status">Status</option>
+              <option value="recent">Recent</option>
+              <option value="name">Name</option>
+              <option value="drain">Token drain</option>
+            </select>
           </div>
         </div>
 

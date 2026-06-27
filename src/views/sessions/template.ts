@@ -38,13 +38,6 @@ export function template() {
         the bound listeners intact.
       -->
       <div id="view-more-host" hidden>
-        <label class="view-more-sort-label" for="sessions-sort">Sort by</label>
-        <select id="sessions-sort" class="sessions-sort sessions-sort-inline">
-          <option value="status">Status</option>
-          <option value="recent">Recent</option>
-          <option value="name">Name</option>
-          <option value="drain">Token drain</option>
-        </select>
         <button
           class="smore-item"
           id="newSessionBtn"

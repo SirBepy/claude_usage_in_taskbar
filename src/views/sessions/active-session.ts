@@ -156,6 +156,7 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
   state.composer = null;
   state.changesPanel?.unmount();
   state.changesPanel = null;
+  state.activeChatActions = null;
   setThinkingActivity(null);
   setActiveSession(null);
   const pane = document.querySelector<HTMLElement>(".session-pane #session-pane")
@@ -359,6 +360,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       // and respects mute settings. Playing here too causes a double sound.
     };
     header.onChangesClick = () => panel.toggle();
+    // Expose the panel toggle through the state seam so view-more-menu and
+    // sidebar-ctx-menu can offer "View changes" for the active session.
+    state.activeChatActions = { viewChanges: () => panel.toggle() };
     await renderer.attach(sessionId);
     // Bail if a newer mount or selectSession superseded us during await.
     if (state.mountId !== myMount || state.selectedId !== sessionId) {

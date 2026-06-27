@@ -205,6 +205,11 @@ export function loadSort(): SessionSort {
   return "status";
 }
 
+export function saveSort(v: SessionSort): void {
+  try { localStorage.setItem(LS_SORT, v); }
+  catch { /* ignore */ }
+}
+
 export function loadStateStyle(): SessionStateStyle {
   try {
     const v = localStorage.getItem(LS_STATE_STYLE);

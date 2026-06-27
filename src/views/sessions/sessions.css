@@ -683,6 +683,32 @@
   width: 100%;
 }
 
+/* ── Shared section label (greyed uppercase, like sort label) ──────────── */
+.smore-section-label {
+  display: block;
+  padding: 6px 10px 2px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Disabled menu items (tooltip via title attr, no pointer-events:none) ─ */
+.smore-item.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Armed when-done parent row shows amber text for the countdown/label */
+.smore-item.smore-has-sub.is-on .when-done-parent-text {
+  color: #fbbf24;
+}
+.smore-item.smore-has-sub.is-on i:first-child {
+  color: #fbbf24;
+}
+
 /* Active when-done toggle (armed) reuses the amber accent. */
 .smore-item.is-on,
 .smore-item.is-on i {

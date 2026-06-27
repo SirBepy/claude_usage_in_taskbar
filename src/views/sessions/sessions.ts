@@ -15,7 +15,7 @@ import { openModelEffortModal } from "./model-effort-modal";
 import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
-import { loadSort, LS_SORT, sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
+import { sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu } from "./sidebar";
 import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
@@ -408,14 +408,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   backBtn?.addEventListener("click", () => view.setAttribute("data-mobile-pane", "list"));
 
 
-  const sortSelect = root.querySelector<HTMLSelectElement>("#sessions-sort");
-  if (sortSelect) {
-    sortSelect.value = loadSort();
-    sortSelect.addEventListener("change", () => {
-      try { localStorage.setItem(LS_SORT, sortSelect.value); } catch { /* ignore */ }
-      renderSidebar(listEl);
-    });
-  }
+  // Sort select moved to Settings. No binding needed here; sessions.ts reads
+  // the persisted localStorage value on each renderSidebar call via loadSort().
 
   // Right-click anywhere on a session row opens the same context menu the
   // hover-revealed ⋮ button does (the button stays for discoverability).
@@ -554,8 +548,25 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   };
   document.addEventListener("cc:session-closed", onSessionClosed);
 
+  // When the Settings view changes the sort preference, rerender the sidebar.
+  const onSortChanged = () => {
+    if (state.mountId !== myMount) return;
+    renderSidebar(listEl);
+  };
+  document.addEventListener("cc-sort-changed", onSortChanged);
+
+  // view-more-menu dispatches this when the draft "Delete draft" is tapped.
+  const onDiscardPendingDraft = () => {
+    if (state.mountId !== myMount) return;
+    if (state.pendingNewSession?.firstMessageSent) discardStuckPending(pane);
+    else { discardDraft(pane); updateThinkingBar(); }
+  };
+  document.addEventListener("discard-pending-draft", onDiscardPendingDraft);
+
   return () => {
     document.removeEventListener("cc:session-closed", onSessionClosed);
+    document.removeEventListener("cc-sort-changed", onSortChanged);
+    document.removeEventListener("discard-pending-draft", onDiscardPendingDraft);
     if (unlistenDragEnter) { try { unlistenDragEnter(); } catch { /* ignore */ } unlistenDragEnter = null; }
     if (unlistenDragLeave) { try { unlistenDragLeave(); } catch { /* ignore */ } unlistenDragLeave = null; }
     if (unlistenFileDrop) { try { unlistenFileDrop(); } catch { /* ignore */ } unlistenFileDrop = null; }

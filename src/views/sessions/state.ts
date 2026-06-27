@@ -79,6 +79,10 @@ export interface SessionsState {
   daemonSetupStalled: boolean;
   /** Set by sessions.ts on mount. Called by active-session when the pickup CTA launches a new chat. */
   launchNewChatCallback: ((project: { path: string; name: string }, config: SessionConfig) => void) | null;
+  /** Seam for the active session's ChangesPanel.toggle(). Set by active-session.ts when a
+   * pane mounts; cleared on unmount. Allows the view-more-menu and sidebar ctx-menu to
+   * invoke "View changes" for the currently-selected session without importing active-session. */
+  activeChatActions: { viewChanges: () => void } | null;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -102,6 +106,7 @@ export function createInitialState(mountId: number): SessionsState {
     daemonConnected: null,
     daemonSetupStalled: false,
     launchNewChatCallback: null,
+    activeChatActions: null,
   };
 }
 
