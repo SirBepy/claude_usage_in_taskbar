@@ -4,6 +4,9 @@ import { isAutoAccept, setAutoAccept, autoAcceptParked } from "./permission-moda
 import { closeChat } from "./close-chat";
 import { state } from "./state";
 import { registerMenuCloser, closeAllMenus } from "./menu-registry";
+import type { ContentBlock } from "../../types/ipc.generated";
+import { openModelEffortModal } from "./model-effort-modal";
+import { projectName } from "./sessions-helpers";
 
 // The ⋮ "More options" dropdown shared by the active-session header and a
 // freshly-started chat header, so both surfaces show the exact same menu
@@ -42,6 +45,25 @@ function positionSubmenu(sub: HTMLElement, parentItem: HTMLElement): void {
   sub.style.top = `${top}px`;
 }
 
+function waitForTurnDone(sessionId: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let sawBusy = false;
+    const check = () => {
+      const sess = state.sessions.find(s => s.session_id === sessionId);
+      if (!sess) { resolve(); return; }
+      if (sess.busy) {
+        sawBusy = true;
+        setTimeout(check, 500);
+      } else if (sawBusy) {
+        resolve();
+      } else {
+        setTimeout(check, 300);
+      }
+    };
+    setTimeout(check, 200);
+  });
+}
+
 export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, readOnly: boolean, onDiscard?: () => void): void {
   closeAllMenus();
 
@@ -63,6 +85,7 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
     items.push(`<button class="smore-item" data-action="detach"><i class="ph ph-arrow-square-out"></i>Detach</button>`);
     if (!readOnly) {
       items.push(`<div class="smore-sep"></div>`);
+      items.push(`<button class="smore-item" data-action="handoff-continue"><i class="ph ph-arrows-clockwise"></i>Hand off to new chat</button>`);
       items.push(`<button class="smore-item smore-danger" data-action="close"><i class="ph ph-x-circle"></i>Close session</button>`);
     }
   }
@@ -148,6 +171,19 @@ export function openMoreMenu(btn: HTMLButtonElement, sessionId: string | null, r
           try { await invoke<void>("detach_window", { sessionId }); }
           catch (err) { console.warn("[sessions] detach_window unavailable", err); }
           break;
+        case "handoff-continue": {
+          const sess = state.sessions.find(s => s.session_id === sessionId);
+          if (!sess) return;
+          const project = { path: String(sess.cwd ?? ""), name: projectName(sess) };
+          const config = await openModelEffortModal(project.path, project.name);
+          if (!config) return;
+          const blocks: ContentBlock[] = [{ type: "text", text: "/next-ai-prompt" }];
+          await invoke<void>("send_message", { sessionId, cwd: project.path, blocks });
+          await waitForTurnDone(sessionId);
+          void invoke<void>("send_message", { sessionId, cwd: project.path, blocks: [{ type: "text", text: "/close" }] });
+          state.launchNewChatCallback?.(project, { ...config, initialMessage: "/pickup" });
+          break;
+        }
         case "close":
           void closeChat(sessionId);
           break;
