@@ -195,6 +195,7 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     return typeof s === "string";
   };
 
+  let isCollapsed = false;
   let activeTab = opts.initialDraft?.activeTab ?? 0;
   let firstRender = true;
   const render = () => {
@@ -273,10 +274,30 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     `;
 
     host.innerHTML = renderCardShell(title, body, footer);
-    if (!firstRender) {
-      host.querySelector(".prompt-card")?.classList.add("prompt-card--no-anim");
-    }
+    const card = host.querySelector<HTMLElement>(".prompt-card");
+    if (!firstRender) card?.classList.add("prompt-card--no-anim");
     firstRender = false;
+
+    if (card) {
+      if (isCollapsed) card.classList.add("prompt-card--collapsed");
+      const header = card.querySelector<HTMLElement>(".prompt-card__header");
+      if (header) {
+        const collapseBtn = document.createElement("button");
+        collapseBtn.type = "button";
+        collapseBtn.className = "prompt-card__collapse";
+        collapseBtn.setAttribute("aria-label", isCollapsed ? "Expand" : "Collapse");
+        collapseBtn.innerHTML = `<i class="ph ${isCollapsed ? "ph-caret-up" : "ph-caret-down"}"></i>`;
+        collapseBtn.addEventListener("click", () => {
+          isCollapsed = !isCollapsed;
+          card.classList.toggle("prompt-card--collapsed", isCollapsed);
+          collapseBtn.setAttribute("aria-label", isCollapsed ? "Expand" : "Collapse");
+          const icon = collapseBtn.querySelector("i");
+          if (icon) icon.className = `ph ${isCollapsed ? "ph-caret-up" : "ph-caret-down"}`;
+          requestAnimationFrame(() => syncMessagesPadding());
+        });
+        header.appendChild(collapseBtn);
+      }
+    }
 
     host.querySelectorAll<HTMLButtonElement>(".prompt-tab").forEach((tabBtn) => {
       tabBtn.addEventListener("click", () => {
