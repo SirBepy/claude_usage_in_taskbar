@@ -63,6 +63,11 @@ export interface ComposerOptions {
 
 let _composerInstanceCount = 0;
 
+// field-sizing: content lets the browser auto-grow textareas without the
+// JS height:"auto"→scrollHeight trick that caused a one-frame glow glitch.
+const supportsFieldSizing =
+  typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+
 export class Composer {
   private root: HTMLElement;
   private opts: ComposerOptions;
@@ -307,8 +312,16 @@ export class Composer {
   private autoResize(): void {
     const ta = this.textarea;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${ta.scrollHeight}px`;
+    if (supportsFieldSizing) {
+      // CSS field-sizing: content handles height automatically — clear any
+      // inline height that might override it, then let the browser do the work.
+      ta.style.height = "";
+    } else {
+      // Fallback: manually resize. Setting height to "auto" first forces the
+      // browser to recalculate scrollHeight from the text content.
+      ta.style.height = "auto";
+      ta.style.height = `${ta.scrollHeight}px`;
+    }
     this.root.querySelector<HTMLElement>(".composer-row")?.classList.toggle("composer-row--tall", ta.scrollHeight > 44);
   }
 

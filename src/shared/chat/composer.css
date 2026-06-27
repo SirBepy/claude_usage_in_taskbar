@@ -94,6 +94,11 @@
   width: 100%;
   resize: none;
   box-sizing: border-box;
+  /* field-sizing: content lets the browser auto-grow the textarea natively,
+     avoiding the JS height:"auto"→height:scrollHeight pattern that caused a
+     one-frame box-shadow render at the wrong size after line wraps. */
+  field-sizing: content;
+  min-height: 36px;
   max-height: 200px;
   overflow-y: auto;
   background: transparent;
