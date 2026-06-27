@@ -94,6 +94,10 @@
 /* Floating "new chat" CTA, pinned bottom-right of the chats list. Lives in the
    sidebar so it sits over the list on every viewport, and hides automatically
    in mobile chat mode (the sidebar is display:none there). */
+@media (min-width: 641px) {
+  .sessions-fab { display: none; }
+}
+
 .sessions-fab {
   position: absolute;
   right: 16px;
@@ -985,6 +989,7 @@
   flex-shrink: 0;
   border-top: 1px solid var(--color-border);
   background: var(--color-background);
+  max-width: max-content;
 }
 
 .session-thinking[hidden] {

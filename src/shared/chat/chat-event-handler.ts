@@ -173,7 +173,10 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
         r.turnFooters.updateLiveTokenEstimate(r.activeTurnChipKey, joined);
         if (!r.hydrating) {
           const prog = detectProgressToken(joined);
-          if (prog) r.turnFooters.setProgress(r.activeTurnChipKey, prog.n, prog.m);
+          if (prog) {
+            r.turnFooters.setProgress(r.activeTurnChipKey, prog.n, prog.m);
+            r.onProgressUpdate?.(prog.n, prog.m);
+          }
         }
       }
       touched = true;
@@ -244,9 +247,6 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       }
       r.activityToolCanon = canonicalTool(ev.tool_name);
       r.setActivity(describeActivity(ev.tool_name, ev.input));
-      if (r.activeTurnChipKey !== null && !r.hydrating) {
-        r.turnFooters.ensureProgressBar(r.activeTurnChipKey);
-      }
       touched = true;
       break;
     }

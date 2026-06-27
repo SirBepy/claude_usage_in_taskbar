@@ -127,6 +127,7 @@ export class ChatRenderer {
   public onToolTally: ((t: ToolTally) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
   public onStatusUpdate: ((status: "done" | "question" | "waiting" | null) => void) | null = null;
+  public onProgressUpdate: ((n: number, m: number) => void) | null = null;
   public onSendText: ((text: string) => void) | null = null;
   /** Fired when a next-ai-prompt skill turn completes. Active-session wires this to show the pickup CTA. */
   public onNextAiPromptDone: (() => void) | null = null;

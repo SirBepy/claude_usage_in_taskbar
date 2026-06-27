@@ -36,7 +36,7 @@ import { savePendingPromptDraft } from "./permission-modal/gating";
 import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
-import { setThinkingActivity, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
+import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { openModelEffortModal } from "./model-effort-modal";
 import { registerCta } from "../../shared/chat/cta-registry";
@@ -332,6 +332,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     // Let the file viewer's Diff tab resolve this session's edits for any file.
     setFileEditsProvider(() => renderer.getFileEdits());
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
+    renderer.onProgressUpdate = (n, m) => setThinkingProgress(n, m);
     renderer.onNextAiPromptDone = () => {
       if (state.renderer !== renderer) return;
       renderer.injectCta("pickup");
