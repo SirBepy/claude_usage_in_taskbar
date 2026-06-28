@@ -94,11 +94,8 @@
 /* Floating "new chat" CTA, pinned bottom-right of the chats list. Lives in the
    sidebar so it sits over the list on every viewport, and hides automatically
    in mobile chat mode (the sidebar is display:none there). */
-@media (min-width: 641px) {
-  .sessions-fab { display: none; }
-}
-
 .sessions-fab {
+  display: none;
   position: absolute;
   right: 16px;
   bottom: 16px;
@@ -109,13 +106,16 @@
   border: none;
   background: var(--color-primary);
   color: var(--color-background);
-  display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 20;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+}
+
+@media (max-width: 640px) {
+  .sessions-fab { display: flex; }
 }
 
 .sessions-fab:hover {
