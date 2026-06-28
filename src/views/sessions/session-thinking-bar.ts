@@ -64,14 +64,7 @@ export function updateThinkingBar(): void {
     state.heldMessages?.renderChip();
     return;
   }
-  // Only show when there's an active cc-progress N/M step count.
-  if (_progressN === null) {
-    bar.setAttribute("hidden", "");
-    if (textEl) textEl.textContent = "";
-    state.heldMessages?.renderChip();
-    return;
-  }
   bar.removeAttribute("hidden");
-  if (textEl) textEl.textContent = `Step ${_progressN} of ${_progressM}`;
+  if (textEl) textEl.textContent = _progressN !== null ? `Step ${_progressN} of ${_progressM}` : "";
   state.heldMessages?.renderChip();
 }
