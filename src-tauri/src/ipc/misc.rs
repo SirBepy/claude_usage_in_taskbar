@@ -69,12 +69,25 @@ pub async fn copy_logs(app: AppHandle) -> Result<(), String> {
 
 /// Frontend signals it loaded successfully. Watchdog in lib.rs::setup uses
 /// this to detect a stalled webview (WebView2 "can't reach this page" error)
-/// and trigger a reload. Idempotent; safe to call from every page load.
+/// and trigger a reload. Also drains any pending main-window navigation that
+/// was queued while the webview was still loading (see `pending_main_nav`).
+/// Idempotent; safe to call from every page load.
 #[tauri::command]
 pub fn frontend_ready(app: AppHandle) {
     use std::sync::atomic::Ordering;
+    use tauri::{Emitter, Manager};
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         state.frontend_alive.store(true, Ordering::SeqCst);
+        let pending = state.pending_main_nav.lock().unwrap().take();
+        if let Some(nav) = pending {
+            if let Some(w) = app.get_webview_window("main") {
+                if nav == "dashboard" {
+                    let _ = w.emit("navigate-to-dashboard", ());
+                } else if let Some(cwd) = nav.strip_prefix("project:") {
+                    let _ = w.emit("navigate-to-project", cwd.to_string());
+                }
+            }
+        }
     }
 }
 

@@ -47,7 +47,13 @@ pub async fn detach_window(session_id: String, app: AppHandle) -> Result<(), Str
         existing.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tauri::webview::PageLoadEvent;
     let url = format!("index.html#detached?session={}", session_id);
+    let shown = Arc::new(AtomicBool::new(false));
+    // Built hidden so it doesn't flash white while WebView2 loads the page.
+    // on_page_load fires once the page finishes loading; we show + focus then.
     tauri::WebviewWindowBuilder::new(
         &app,
         &label,
@@ -58,6 +64,13 @@ pub async fn detach_window(session_id: String, app: AppHandle) -> Result<(), Str
         &session_id[..session_id.len().min(8)]
     ))
     .inner_size(800.0, 600.0)
+    .visible(false)
+    .on_page_load(move |w, payload| {
+        if payload.event() == PageLoadEvent::Finished && !shown.swap(true, Ordering::SeqCst) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    })
     .build()
     .map_err(|e| e.to_string())?;
     Ok(())

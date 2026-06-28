@@ -2,6 +2,8 @@
 //! (ai_todo 101). Owns the `session-chats` window lifecycle plus the
 //! dashboard-surfacing and pending-open handoff commands.
 
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
@@ -10,7 +12,18 @@ pub fn open_dashboard(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.set_focus();
-        let _ = w.emit("navigate-to-dashboard", ());
+        let alive = app
+            .try_state::<crate::state::AppState>()
+            .map(|s| s.frontend_alive.load(Ordering::SeqCst))
+            .unwrap_or(true);
+        if alive {
+            let _ = w.emit("navigate-to-dashboard", ());
+        } else {
+            // Webview is still loading; queue for frontend_ready to drain.
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                *state.pending_main_nav.lock().unwrap() = Some("dashboard".into());
+            }
+        }
     }
 }
 
@@ -24,7 +37,17 @@ pub fn open_dashboard_project(app: AppHandle, cwd: String) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.set_focus();
-        let _ = w.emit("navigate-to-project", cwd);
+        let alive = app
+            .try_state::<crate::state::AppState>()
+            .map(|s| s.frontend_alive.load(Ordering::SeqCst))
+            .unwrap_or(true);
+        if alive {
+            let _ = w.emit("navigate-to-project", cwd);
+        } else {
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                *state.pending_main_nav.lock().unwrap() = Some(format!("project:{cwd}"));
+            }
+        }
     }
 }
 
@@ -32,9 +55,12 @@ pub fn open_dashboard_project(app: AppHandle, cwd: String) {
 /// tauri-plugin-window-state can restore the saved size + position before the
 /// window is ever painted. Without this the window flashes briefly at the
 /// inner_size default in the OS-default spot, then jumps to its remembered
-/// geometry. Shown + focused right after build (the plugin restores state
-/// synchronously during window creation).
+/// geometry. Shown + focused only after the page finishes loading (via
+/// `on_page_load`) to avoid the white flash while WebView2 initialises.
 fn build_chats_window(app: &AppHandle) -> Result<(), String> {
+    use std::sync::atomic::AtomicBool;
+    use tauri::webview::PageLoadEvent;
+    let shown = Arc::new(AtomicBool::new(false));
     let window = tauri::WebviewWindowBuilder::new(
         app,
         "session-chats",
@@ -45,6 +71,12 @@ fn build_chats_window(app: &AppHandle) -> Result<(), String> {
     .min_inner_size(600.0, 400.0)
     .resizable(true)
     .visible(false)
+    .on_page_load(move |w, payload| {
+        if payload.event() == PageLoadEvent::Finished && !shown.swap(true, Ordering::SeqCst) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    })
     .build()
     .map_err(|e| e.to_string())?;
     // Hide on close instead of destroying, mirroring the main window's
@@ -55,7 +87,6 @@ fn build_chats_window(app: &AppHandle) -> Result<(), String> {
         let w = window.clone();
         window.on_window_event(move |event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                use std::sync::atomic::Ordering;
                 let quitting = w
                     .app_handle()
                     .try_state::<crate::state::AppState>()
@@ -69,8 +100,6 @@ fn build_chats_window(app: &AppHandle) -> Result<(), String> {
             }
         });
     }
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
 

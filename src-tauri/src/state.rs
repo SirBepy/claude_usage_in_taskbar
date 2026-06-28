@@ -45,6 +45,10 @@ pub struct AppState {
     /// The chats window drains it on boot via `take_pending_new_chat`. Holds
     /// `(project_path, project_name, model, effort)`.
     pub pending_new_chat: Mutex<Option<(String, String, String, String)>>,
+    /// A pending main-window navigation queued while `frontend_alive` was false
+    /// (webview still loading). Drained by `frontend_ready` once JS is running.
+    /// Value is "dashboard" or "project:{cwd}".
+    pub pending_main_nav: Mutex<Option<String>>,
     /// True while the meeting watcher detects an active meeting (camera/mic in
     /// use, or an allowlisted meeting app producing audio). Read by
     /// `notifications::rules::fire` and the tray tooltip. Always false on
@@ -91,6 +95,7 @@ impl AppState {
             frontend_alive: Arc::new(AtomicBool::new(false)),
             pending_chat_open: Mutex::new(None),
             pending_new_chat: Mutex::new(None),
+            pending_main_nav: Mutex::new(None),
             meeting_active: Arc::new(AtomicBool::new(false)),
             news_inflight: Arc::new(Mutex::new(std::collections::HashSet::new())),
             when_done: Arc::new(Mutex::new(crate::when_done::WhenDoneInner::default())),
