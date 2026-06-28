@@ -34,6 +34,7 @@ import {
 import { snapshotActiveCardDraft } from "./permission-modal/question-ui";
 import { savePendingPromptDraft } from "./permission-modal/gating";
 import { markSessionExiting } from "./sidebar-anim";
+import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
@@ -408,14 +409,15 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         timestamp: BigInt(Date.now()),
       } as ChatEvent);
 
-      // `/close`: slide the row out immediately (same animation as context-menu
-      // close) and run the skill in the background. AskUserQuestion modals still
-      // surface via the background gate. clear_session fires once the turn ends.
+      // `/close`: mark the row as "closing" (red dimmed state) while the
+      // retrospective skill runs in the background, then tear down once done.
+      // AskUserQuestion modals still surface via the background gate.
       if (isCloseCommand(blocks)) {
         const cwd = String(sess.cwd ?? ".");
         addBackgroundSession(sessionId);
+        markSessionClosing(sessionId);
         const listEl = document.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) markSessionExiting(listEl, sessionId);
+        if (listEl) renderSidebar(listEl);
 
         // Wait for the /close turn to actually finish before tearing down.
         // send_message resolves immediately (stdin write), so .finally() would
@@ -423,6 +425,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         // finalize only on turn_usage (turn complete) or session_ended (crash).
         const finalize = () => {
           removeBackgroundSession(sessionId);
+          unmarkSessionClosing(sessionId);
+          const exitListEl = document.querySelector<HTMLElement>("#sessions-list");
+          if (exitListEl) markSessionExiting(exitListEl, sessionId);
           invoke<void>("clear_session", { sessionId })
             .catch(() => {})
             .finally(() => {
