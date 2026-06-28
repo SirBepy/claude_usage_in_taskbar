@@ -12,7 +12,7 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::util::process::mark_listener_non_inheritable;
+use claude_conductor_lib::util::process::mark_listener_non_inheritable;
 use std::process::{Command, Stdio};
 
 #[tokio::test]

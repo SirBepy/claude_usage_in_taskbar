@@ -9,7 +9,7 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon::hooks_server::bind_hook_listener;
+use claude_conductor_lib::daemon::hooks_server::bind_hook_listener;
 use std::process::{Command, Stdio};
 
 #[tokio::test]

@@ -1,5 +1,5 @@
 //! RPC method registration, grouped by category. Each submodule exposes one or
-//! more `register_*` fns; the daemon bin (`src/bin/cc_companion_daemon.rs`)
+//! more `register_*` fns; the daemon bin (`src/bin/cc_conductor_daemon.rs`)
 //! calls them in sequence at startup to populate the Router.
 
 mod channels;

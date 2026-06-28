@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::channels::vault_detector;
+use claude_conductor_lib::channels::vault_detector;
 
 #[test]
 fn parses_vault_paths_from_obsidian_json() {

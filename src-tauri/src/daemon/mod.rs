@@ -1,5 +1,5 @@
-//! Daemon-side modules. The binary at `src/bin/cc_companion_daemon.rs`
-//! consumes these via the `claude_usage_tauri_lib` library crate.
+//! Daemon-side modules. The binary at `src/bin/cc_conductor_daemon.rs`
+//! consumes these via the `claude_conductor_lib` library crate.
 
 pub mod broadcast;
 pub mod channel_adopt;
@@ -43,7 +43,7 @@ use std::path::PathBuf;
 
 fn app_data_dir() -> PathBuf {
     let mut p = dirs::data_dir().expect("data_dir");
-    p.push("claude-usage-tauri");
+    p.push("claude-conductor");
     p
 }
 
@@ -55,7 +55,7 @@ fn load_initial_settings() -> Settings {
     crate::settings::load(&path)
 }
 
-/// Daemon process entry. Called by the standalone `cc-companion-daemon` bin
+/// Daemon process entry. Called by the standalone `cc-conductor-daemon` bin
 /// (used by the daemon e2e tests) and by the app binary when launched with
 /// `--daemon`. Assumes a Tokio multi-thread runtime is already active.
 pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

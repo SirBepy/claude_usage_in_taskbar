@@ -1,9 +1,9 @@
-// Pre-dev cleanup: kill any STALE Claude Usage instance (prod or dev)
+// Pre-dev cleanup: kill any STALE Claude Conductor instance (prod or dev)
 // and free Vite's port 1420 so `cargo tauri dev` can start cleanly.
 //
 // IMPORTANT: cargo runs the new binary in parallel with this script. With
 // a cached build the new exe is already running by the time we get here,
-// so taskkill /IM "claude-usage-tauri.exe" would terminate the brand-new
+// so taskkill /IM "claude-conductor.exe" would terminate the brand-new
 // instance (exit code 1, no panic). We filter by process start time and
 // only kill instances older than the grace window.
 import { execSync } from 'node:child_process';
@@ -45,7 +45,7 @@ function listStalePids(processName) {
 }
 
 const stalePids = new Set();
-for (const exe of ['claude-usage-tauri.exe', 'Claude Usage.exe']) {
+for (const exe of ['claude-conductor.exe', 'Claude Conductor.exe']) {
   for (const p of listStalePids(exe)) stalePids.add(p);
 }
 for (const pid of stalePids) quiet(`taskkill /F /T /PID ${pid}`);

@@ -36,7 +36,7 @@ used to verify end-to-end transcription without a microphone.
 ## Run manually (debug)
 
 ```powershell
-.\.venv\Scripts\python.exe server.py --app-data "$env:APPDATA\claude-usage-tauri"
+.\.venv\Scripts\python.exe server.py --app-data "$env:APPDATA\claude-conductor"
 ```
 
 ## Notes

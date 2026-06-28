@@ -1,6 +1,6 @@
 //! Integration test for character loader against a real temp dir layout.
 
-use claude_usage_tauri_lib::characters::loader;
+use claude_conductor_lib::characters::loader;
 use std::fs;
 use tempfile::TempDir;
 

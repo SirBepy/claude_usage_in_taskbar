@@ -55,7 +55,7 @@ fn init_daemon_file_logger() {
             use std::io::Write;
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
                 let ts = chrono::Utc::now().to_rfc3339();
-                let _ = writeln!(f, "[{ts} ERROR claude_usage_tauri_lib] daemon PANIC: {info}");
+                let _ = writeln!(f, "[{ts} ERROR claude_conductor_lib] daemon PANIC: {info}");
                 let _ = f.flush();
             }
             orig(info);
@@ -142,7 +142,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
-                .level_for("claude_usage_tauri_lib", log::LevelFilter::Debug)
+                .level_for("claude_conductor_lib", log::LevelFilter::Debug)
                 .build(),
         )
         .plugin(tauri_plugin_autostart::init(
@@ -318,7 +318,7 @@ pub fn run() {
             when_done::get_when_done_state,
         ])
         .setup(|app| {
-            log::info!("claude-usage-tauri started");
+            log::info!("claude-conductor started");
             #[cfg(target_os = "macos")]
             {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);

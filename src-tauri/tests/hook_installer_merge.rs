@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::hooks::installer::{merge_hooks, HookConfig};
+use claude_conductor_lib::hooks::installer::{merge_hooks, HookConfig};
 
 #[test]
 fn merges_into_empty_settings() {

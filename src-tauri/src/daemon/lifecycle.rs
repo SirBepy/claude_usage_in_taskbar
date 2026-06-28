@@ -101,7 +101,7 @@ pub async fn spawn_session(
     ));
     if let Some(ref mcp_path) = mcp_config_path {
         cmd.arg("--permission-prompt-tool")
-           .arg("mcp__cc_companion__approval_prompt")
+           .arg("mcp__cc_conductor__approval_prompt")
            .arg("--mcp-config")
            .arg(mcp_path);
     }

@@ -31,7 +31,7 @@ pub fn pipe_name_for_user() -> String {
     // suffix (empty in production) isolates test daemons (ai_todo 71).
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
     let inst = crate::daemon::instance::instance_suffix();
-    format!(r"\\.\pipe\cc-companion-daemon-{user}{inst}")
+    format!(r"\\.\pipe\cc-conductor-daemon-{user}{inst}")
 }
 
 pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {

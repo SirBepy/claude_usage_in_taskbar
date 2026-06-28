@@ -1,19 +1,19 @@
 [package]
-name = "claude-usage-tauri"
+name = "claude-conductor"
 version = "0.1.110"
 edition = "2021"
 rust-version = "1.80"
-# Two bins live here (the app + cc-companion-daemon). `cargo tauri dev`/`cargo
+# Two bins live here (the app + cc-conductor-daemon). `cargo tauri dev`/`cargo
 # run` need this to know which one is the app.
-default-run = "claude-usage-tauri"
+default-run = "claude-conductor"
 
 [lib]
-name = "claude_usage_tauri_lib"
+name = "claude_conductor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "cc-companion-daemon"
-path = "src/bin/cc_companion_daemon.rs"
+name = "cc-conductor-daemon"
+path = "src/bin/cc_conductor_daemon.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

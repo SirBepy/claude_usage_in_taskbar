@@ -49,7 +49,7 @@ pub use storage::*;
 pub use remote_access::*;
 
 // Re-export test helper submodules so integration tests can reach them via
-// `claude_usage_tauri_lib::ipc::projects_test_helpers` and
-// `claude_usage_tauri_lib::ipc::legacy_import_test_helpers`.
+// `claude_conductor_lib::ipc::projects_test_helpers` and
+// `claude_conductor_lib::ipc::legacy_import_test_helpers`.
 pub use projects::projects_test_helpers;
 pub use projects::legacy_import_test_helpers;

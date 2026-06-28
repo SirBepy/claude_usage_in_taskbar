@@ -38,7 +38,7 @@ function parseMcp(tool: string): { server: string } | null {
   return null;
 }
 
-/** "playwright" -> "Playwright", "cc_companion" -> "Cc Companion". */
+/** "playwright" -> "Playwright", "cc_conductor" -> "Cc Conductor". */
 function prettyMcpServer(server: string): string {
   return server
     .split(/[_-]/)

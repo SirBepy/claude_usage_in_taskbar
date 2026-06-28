@@ -1,7 +1,7 @@
 //! Live integration tests against claude.ai.
 //!
 //! These tests read the sessionKey the app persists at
-//! `%APPDATA%\claude-usage-tauri\session.txt` (written by the native-auth flow
+//! `%APPDATA%\claude-conductor\session.txt` (written by the native-auth flow
 //! in `src/auth.rs`) and exercise the real HTTP scraper end-to-end.
 //!
 //! Design goals (per WORKFLOWS_FOR_SIRBEPY discussion 2026-04-19):
@@ -13,9 +13,9 @@
 //!   3. Setting env var `CLAUDE_LIVE_TESTS_STRICT=1` flips the skip into a
 //!      hard fail. Useful for CI once auth is wired up there.
 
-use claude_usage_tauri_lib::settings::paths;
-use claude_usage_tauri_lib::scraping::{self as scraper, ScrapeError};
-use claude_usage_tauri_lib::auth::session;
+use claude_conductor_lib::settings::paths;
+use claude_conductor_lib::scraping::{self as scraper, ScrapeError};
+use claude_conductor_lib::auth::session;
 
 const CLAUDE_BASE: &str = "https://claude.ai";
 

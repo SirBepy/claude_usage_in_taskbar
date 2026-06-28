@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::characters::loader;
+use claude_conductor_lib::characters::loader;
 use std::path::PathBuf;
 
 fn bundled_dir() -> PathBuf {

@@ -32,7 +32,7 @@ pub fn build_tooltip(
     icon_s: &IconSettings,
     now: DateTime<Utc>,
 ) -> String {
-    let Some(snap) = snap else { return "Claude Usage — initializing…".into(); };
+    let Some(snap) = snap else { return "Claude Conductor — initializing…".into(); };
     let sess = session_pct(snap);
     let weekly = weekly_pct(snap);
     let sess_safe = calc_safe_pct(&snap.five_hour.resets_at, FIVE_HOUR_MS, now);

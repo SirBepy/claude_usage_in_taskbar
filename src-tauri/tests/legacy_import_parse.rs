@@ -1,5 +1,5 @@
-use claude_usage_tauri_lib::ipc::legacy_import_test_helpers as h;
-use claude_usage_tauri_lib::types::Settings;
+use claude_conductor_lib::ipc::legacy_import_test_helpers as h;
+use claude_conductor_lib::types::Settings;
 
 #[test]
 fn parses_old_config_into_project_with_automation() {

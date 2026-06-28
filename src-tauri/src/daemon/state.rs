@@ -1,6 +1,6 @@
 //! Daemon-side shared state container. Owns the registry, session map,
 //! settings cache, notifier, and pending request map. One `Arc<DaemonState>`
-//! is constructed in `bin/cc_companion_daemon.rs` and injected into the hook
+//! is constructed in `bin/cc_conductor_daemon.rs` and injected into the hook
 //! server, RPC handlers, and detector loop.
 
 use crate::channels::manager::Manager as ChannelsManager;

@@ -1,6 +1,6 @@
-use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
-use claude_usage_tauri_lib::sessions::registry::{Registry, RegisterInput};
-use claude_usage_tauri_lib::types::{EndReason, Instance, Settings};
+use claude_conductor_lib::sessions::kinds::InstanceKind;
+use claude_conductor_lib::sessions::registry::{Registry, RegisterInput};
+use claude_conductor_lib::types::{EndReason, Instance, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;
 

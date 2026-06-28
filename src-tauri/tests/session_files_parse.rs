@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::hooks::session_files;
+use claude_conductor_lib::hooks::session_files;
 use std::io::Write;
 
 #[test]

@@ -36,7 +36,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         .icon_as_template(false)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("Claude Usage")
+        .tooltip("Claude Conductor")
         .on_menu_event(|app, event| {
             match event.id.as_ref() {
                 "open" => crate::ipc::open_dashboard(app.clone()),

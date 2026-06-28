@@ -1,5 +1,5 @@
-use claude_usage_tauri_lib::tray::icon_render::{render, render_spin, urgency_rgb, DisplayMode, IconCtx, SIZE};
-use claude_usage_tauri_lib::tray::threshold::{
+use claude_conductor_lib::tray::icon_render::{render, render_spin, urgency_rgb, DisplayMode, IconCtx, SIZE};
+use claude_conductor_lib::tray::threshold::{
     ColorApplyTo, ColorMode, ColorStop, DefaultDisplay, IconSettings, IconStyle, PaceColors,
     SafePaceColorMode,
 };

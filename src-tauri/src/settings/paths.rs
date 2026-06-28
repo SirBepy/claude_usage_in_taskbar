@@ -4,11 +4,11 @@ use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
 /// Returns the directory where we store everything: settings, history, session.
-/// On Windows this is `%APPDATA%\claude-usage-tauri`.
+/// On Windows this is `%APPDATA%\claude-conductor`.
 pub fn data_dir() -> Result<PathBuf> {
     let base = dirs::config_dir()
         .ok_or_else(|| anyhow!("could not resolve user config dir"))?;
-    Ok(base.join("claude-usage-tauri"))
+    Ok(base.join("claude-conductor"))
 }
 
 pub fn settings_file() -> Result<PathBuf> {
@@ -67,7 +67,7 @@ pub fn log_file() -> anyhow::Result<std::path::PathBuf> {
     let d = ensure_data_dir()?;
     let p = d.join("logs");
     std::fs::create_dir_all(&p).ok();
-    Ok(p.join("claude-usage-tauri.log"))
+    Ok(p.join("claude-conductor.log"))
 }
 
 /// Target-triple suffix Tauri appends to sidecar binaries at build and bundle

@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::files::scan;
+use claude_conductor_lib::files::scan;
 use std::fs;
 use std::process::Command;
 

@@ -377,7 +377,7 @@ pub fn daemon_addr_for_current_user() -> String {
     {
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
         let inst = crate::daemon::instance::instance_suffix();
-        format!(r"\\.\pipe\cc-companion-daemon-{user}{inst}")
+        format!(r"\\.\pipe\cc-conductor-daemon-{user}{inst}")
     }
     #[cfg(unix)]
     {
@@ -434,20 +434,20 @@ mod tests {
     async fn persistent_client_health_against_real_daemon() {
         // Isolated test instance: distinct pipe/lockfile/hook-port so this never
         // touches a real daemon the user has running (ai_todo 71). NOTE: no
-        // `Stop-Process cc-companion-daemon` here on purpose - that used to kill
+        // `Stop-Process cc-conductor-daemon` here on purpose - that used to kill
         // the user's real daemon.
         const INSTANCE: &str = "test-pclient";
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-        let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+        let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{INSTANCE}");
 
         // Clear only THIS instance's stale lockfile.
         if let Some(app_data) = dirs::data_dir() {
-            let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
+            let lock = app_data.join("claude-conductor").join(format!("daemon-{INSTANCE}.lock"));
             let _ = std::fs::remove_file(&lock);
         }
 
         let build = Command::new("cargo")
-            .args(["build", "--bin", "cc-companion-daemon"])
+            .args(["build", "--bin", "cc-conductor-daemon"])
             .current_dir(std::env::current_dir().unwrap())
             .status()
             .expect("cargo build");
@@ -456,7 +456,7 @@ mod tests {
         let mut exe = std::env::current_dir().unwrap();
         exe.push("target");
         exe.push("debug");
-        exe.push("cc-companion-daemon.exe");
+        exe.push("cc-conductor-daemon.exe");
         let mut child = Command::new(&exe)
             .env("CC_DAEMON_INSTANCE", INSTANCE)
             // Don't launch real automation channels from a test daemon.

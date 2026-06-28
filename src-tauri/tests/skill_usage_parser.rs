@@ -1,5 +1,5 @@
-use claude_usage_tauri_lib::skill_usage::parser::parse_transcript;
-use claude_usage_tauri_lib::skill_usage::types::InvocationSource;
+use claude_conductor_lib::skill_usage::parser::parse_transcript;
+use claude_conductor_lib::skill_usage::types::InvocationSource;
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {

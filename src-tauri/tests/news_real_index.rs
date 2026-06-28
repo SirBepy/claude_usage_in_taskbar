@@ -3,7 +3,7 @@
 //! markup shifts and the selector mix needs updating. The fixture is a
 //! verbatim curl response stored under tests/fixtures/.
 
-use claude_usage_tauri_lib::news::scraper::parse_index;
+use claude_conductor_lib::news::scraper::parse_index;
 
 const FIXTURE: &str = include_str!("fixtures/anthropic-news-2026-05-09.html");
 

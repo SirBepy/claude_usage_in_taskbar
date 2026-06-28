@@ -129,7 +129,7 @@ function template() {
         >
           <i class="ph ph-list"></i>
         </button>
-        <h2>Claude Usage</h2>
+        <h2>Claude Conductor</h2>
         <button
           class="icon-btn"
           id="refreshNowBtn"

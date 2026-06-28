@@ -10,8 +10,8 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon::frame::{read_frame, write_frame};
-use claude_usage_tauri_lib::daemon::health::PROTOCOL_VERSION;
+use claude_conductor_lib::daemon::frame::{read_frame, write_frame};
+use claude_conductor_lib::daemon::health::PROTOCOL_VERSION;
 use serde_json::json;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -21,7 +21,7 @@ fn daemon_exe() -> std::path::PathBuf {
     let mut p = std::env::current_dir().unwrap();
     p.push("target");
     p.push("debug");
-    p.push("cc-companion-daemon.exe");
+    p.push("cc-conductor-daemon.exe");
     p
 }
 
@@ -30,7 +30,7 @@ async fn handshake_health_and_graceful_shutdown() {
     // Build the daemon first; cargo doesn't auto-build sibling [[bin]]s for
     // integration tests of the lib crate.
     let build = Command::new("cargo")
-        .args(["build", "--bin", "cc-companion-daemon"])
+        .args(["build", "--bin", "cc-conductor-daemon"])
         .current_dir(std::env::current_dir().unwrap())
         .status()
         .expect("cargo build");
@@ -47,7 +47,7 @@ async fn handshake_health_and_graceful_shutdown() {
     // Clear any stale lockfile from a previous failed run; a zombie PID in
     // the lockfile would block the new daemon from acquiring the lock.
     if let Some(app_data) = dirs::data_dir() {
-        let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
+        let lock = app_data.join("claude-conductor").join(format!("daemon-{INSTANCE}.lock"));
         let _ = std::fs::remove_file(&lock);
     }
 
@@ -61,7 +61,7 @@ async fn handshake_health_and_graceful_shutdown() {
         .expect("spawn daemon");
 
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+    let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{INSTANCE}");
 
     // Retry-connect with a short backoff until the daemon has bound the pipe.
     let mut pipe = None;

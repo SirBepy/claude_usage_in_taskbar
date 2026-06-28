@@ -1,5 +1,5 @@
-use claude_usage_tauri_lib::slash::enumerate::scan_dirs;
-use claude_usage_tauri_lib::slash::SlashSource;
+use claude_conductor_lib::slash::enumerate::scan_dirs;
+use claude_conductor_lib::slash::SlashSource;
 use std::fs;
 
 #[test]

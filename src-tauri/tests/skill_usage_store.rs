@@ -1,5 +1,5 @@
-use claude_usage_tauri_lib::skill_usage::store;
-use claude_usage_tauri_lib::skill_usage::types::{
+use claude_conductor_lib::skill_usage::store;
+use claude_conductor_lib::skill_usage::types::{
     InvocationSource, SkillUsageEvent, TokenBreakdown,
 };
 

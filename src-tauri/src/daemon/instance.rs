@@ -1,7 +1,7 @@
 //! Daemon instance identity. The production daemon is a singleton keyed by the
 //! current user. Tests set `CC_DAEMON_INSTANCE` to a label so the spawned test
 //! daemon uses a DISTINCT pipe name, lockfile, and hook port - never colliding
-//! with (or killing) a real `cc-companion-daemon` the user has running.
+//! with (or killing) a real `cc-conductor-daemon` the user has running.
 //! See ai_todo 71.
 
 /// Optional instance suffix, e.g. `-test`, derived from `CC_DAEMON_INSTANCE`.

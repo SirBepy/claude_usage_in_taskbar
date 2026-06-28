@@ -41,7 +41,7 @@ pub enum HookBindError {
     #[error(
         "port 127.0.0.1:{0} is bound but no daemon answers /health on it. \
          Likely orphaned children of a dead daemon are holding an inherited \
-         copy of the listen socket: look for claude.exe / claude-usage-tauri.exe \
+         copy of the listen socket: look for claude.exe / claude-conductor.exe \
          processes whose parent is gone and kill them to free the port"
     )]
     ZombiePort(u16),

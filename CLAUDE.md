@@ -1,6 +1,6 @@
 @~/.claude/snippets/full-auto.md
 
-# Claude Companion
+# Claude Conductor
 
 Cross-platform Tauri 2 app (Rust + vanilla JS webview). Usage monitoring via CDP-driven Chrome scraping, interactive Claude chat sessions (daemon-hosted persistent `claude` per session), hooks/MCP permission relay, and channel management.
 

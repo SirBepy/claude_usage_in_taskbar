@@ -8,8 +8,8 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon_client::PersistentClient;
-use claude_usage_tauri_lib::types::Settings;
+use claude_conductor_lib::daemon_client::PersistentClient;
+use claude_conductor_lib::types::Settings;
 use serde_json::{json, Value};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -38,14 +38,14 @@ async fn external_session_without_matching_channel_stays_external() {
     // port discovered from the suffixed port file.
     const INSTANCE: &str = "test-channels";
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
-    let app_data = dirs::data_dir().unwrap().join("claude-usage-tauri");
+    let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{INSTANCE}");
+    let app_data = dirs::data_dir().unwrap().join("claude-conductor");
     let _ = std::fs::remove_file(app_data.join(format!("daemon-{INSTANCE}.lock")));
     let port_file = app_data.join(format!("hooks_port-{INSTANCE}.txt"));
     let _ = std::fs::remove_file(&port_file);
 
     let build = Command::new("cargo")
-        .args(["build", "--bin", "cc-companion-daemon"])
+        .args(["build", "--bin", "cc-conductor-daemon"])
         .current_dir(std::env::current_dir().unwrap())
         .status()
         .expect("cargo build");
@@ -53,7 +53,7 @@ async fn external_session_without_matching_channel_stays_external() {
     let mut exe = std::env::current_dir().unwrap();
     exe.push("target");
     exe.push("debug");
-    exe.push("cc-companion-daemon.exe");
+    exe.push("cc-conductor-daemon.exe");
     let mut child = Command::new(&exe)
         .env("CC_DAEMON_INSTANCE", INSTANCE)
         .env("CC_DAEMON_NO_AUTOSTART", "1")

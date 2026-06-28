@@ -18,15 +18,15 @@ import { spawn, execSync } from "node:child_process";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const debugDir = path.resolve(repoRoot, "src-tauri", "target", "debug");
-const application = path.join(debugDir, "claude-usage-tauri.exe");
-const daemonBin = path.join(debugDir, "cc-companion-daemon.exe");
+const application = path.join(debugDir, "claude-conductor.exe");
+const daemonBin = path.join(debugDir, "cc-conductor-daemon.exe");
 const tauriDriverBin = path.resolve(os.homedir(), ".cargo", "bin", "tauri-driver.exe");
 const edgeDriver = path.resolve(__dirname, "drivers", "msedgedriver.exe");
 // Isolated instance: distinct pipe/lockfile/hook-port so the harness daemon and
-// any app-respawned daemon never collide with a real cc-companion-daemon the
+// any app-respawned daemon never collide with a real cc-conductor-daemon the
 // user has running (ai_todo 71 / ai_todo 74).
 const DAEMON_INSTANCE = "wdio";
-const daemonLock = path.join(os.homedir(), "AppData", "Roaming", "claude-usage-tauri", `daemon-${DAEMON_INSTANCE}.lock`);
+const daemonLock = path.join(os.homedir(), "AppData", "Roaming", "claude-conductor", `daemon-${DAEMON_INSTANCE}.lock`);
 // The debug app binary loads Tauri's devUrl (http://localhost:1420), not the
 // bundled dist/. So the harness runs the vite dev server itself rather than
 // requiring a slow `cargo tauri build`. Spawn vite's JS directly to skip the
@@ -53,7 +53,7 @@ async function waitForServer(url, timeoutMs) {
       // this check the Tauri app loads the FOREIGN SPA and every spec dies with
       // a baffling `window.showView is not a function` / missing `#sidemenu`.
       // Require a marker unique to this app's index.html before proceeding.
-      if (lastBody.includes('id="sidemenu"') || lastBody.includes("<title>Claude Usage</title>")) {
+      if (lastBody.includes('id="sidemenu"') || lastBody.includes("<title>Claude Conductor</title>")) {
         return;
       }
       // Reachable but wrong app — fail fast with an actionable message rather
@@ -123,11 +123,11 @@ export const config = {
   onComplete: () => {
     if (daemon) daemon.kill();
     if (vite) vite.kill();
-    // Clean up any claude-usage-tauri.exe --daemon orphan the app may have
+    // Clean up any claude-conductor.exe --daemon orphan the app may have
     // spawned during the kill/respawn test (ai_todo 74).
     try {
       execSync(
-        "powershell -Command \"Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'claude-usage-tauri.exe' -and $_.CommandLine -like '*--daemon*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"",
+        "powershell -Command \"Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'claude-conductor.exe' -and $_.CommandLine -like '*--daemon*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"",
         { stdio: "ignore" }
       );
     } catch {}

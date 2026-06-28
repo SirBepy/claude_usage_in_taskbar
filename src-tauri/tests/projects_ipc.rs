@@ -4,8 +4,8 @@
 //! harness, so we test the extracted pure helpers directly. The wrappers are
 //! thin glue around these.
 
-use claude_usage_tauri_lib::ipc::projects_test_helpers as h;
-use claude_usage_tauri_lib::types::{Avatar, ProjectConfig, ProjectsSortBy, Settings};
+use claude_conductor_lib::ipc::projects_test_helpers as h;
+use claude_conductor_lib::types::{Avatar, ProjectConfig, ProjectsSortBy, Settings};
 
 fn sample_project(id: &str, path: &str) -> ProjectConfig {
     ProjectConfig {

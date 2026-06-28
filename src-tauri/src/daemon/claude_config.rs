@@ -24,7 +24,7 @@ pub(crate) fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathB
     let exe = std::env::current_exe().ok()?;
     let config = serde_json::json!({
         "mcpServers": {
-            "cc_companion": {
+            "cc_conductor": {
                 "command": exe.to_string_lossy(),
                 "args": ["--mcp-permission"],
                 "env": {"CC_SESSION_ID": tracking_id}

@@ -13,7 +13,7 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon_client::PersistentClient;
+use claude_conductor_lib::daemon_client::PersistentClient;
 use serde_json::{json, Value};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -22,7 +22,7 @@ fn daemon_exe() -> std::path::PathBuf {
     let mut p = std::env::current_dir().unwrap();
     p.push("target");
     p.push("debug");
-    p.push("cc-companion-daemon.exe");
+    p.push("cc-conductor-daemon.exe");
     p
 }
 
@@ -31,17 +31,17 @@ fn daemon_exe() -> std::path::PathBuf {
 async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient, String) {
     // Isolated test instance (ai_todo 71): distinct pipe/lock + ephemeral hook
     // port (discovered from the suffixed port file). NO `Stop-Process
-    // cc-companion-daemon` - that used to kill the user's real daemon.
+    // cc-conductor-daemon` - that used to kill the user's real daemon.
     const INSTANCE: &str = "test-chat";
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
-    let app_data = dirs::data_dir().unwrap().join("claude-usage-tauri");
+    let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{INSTANCE}");
+    let app_data = dirs::data_dir().unwrap().join("claude-conductor");
     let _ = std::fs::remove_file(app_data.join(format!("daemon-{INSTANCE}.lock")));
     let port_file = app_data.join(format!("hooks_port-{INSTANCE}.txt"));
     let _ = std::fs::remove_file(&port_file);
 
     let build = Command::new("cargo")
-        .args(["build", "--bin", "cc-companion-daemon"])
+        .args(["build", "--bin", "cc-conductor-daemon"])
         .status()
         .expect("cargo build");
     assert!(build.success());
@@ -51,7 +51,7 @@ async fn spawn_daemon_and_connect() -> (std::process::Child, PersistentClient, S
         // Surface the daemon's debug log (publishes + lag drops) on the test's
         // own stderr so `--nocapture` runs show exactly what was published vs
         // delivered.
-        .env("RUST_LOG", "info,claude_usage_tauri_lib=debug")
+        .env("RUST_LOG", "info,claude_conductor_lib=debug")
         // Don't let the test daemon launch real automation channels (each spawn
         // registers a fresh Claude desktop bridge - they pile up across runs).
         .env("CC_DAEMON_NO_AUTOSTART", "1")
@@ -428,7 +428,7 @@ async fn end_to_end_no_duplicate_events() {
 fn interactive_snapshot_path() -> std::path::PathBuf {
     dirs::data_dir()
         .unwrap()
-        .join("claude-usage-tauri")
+        .join("claude-conductor")
         .join("interactive-sessions-test-chat.json")
 }
 

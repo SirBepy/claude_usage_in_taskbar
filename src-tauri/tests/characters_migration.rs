@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::settings::load;
+use claude_conductor_lib::settings::load;
 use std::io::Write;
 use tempfile::NamedTempFile;
 

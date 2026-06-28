@@ -1,6 +1,6 @@
 //! Phase 0 spike: confirm whether claude CLI supports stream-json in interactive PTY mode.
 //! Gated behind --ignored; manual run only:
-//!   cargo test -p claude-usage-tauri --test spike_pty -- --ignored --nocapture
+//!   cargo test -p claude-conductor --test spike_pty -- --ignored --nocapture
 //!
 //! Phase 0 result (2026-05-07): stream-json only works with --print.
 //! See docs/superpowers/specs/2026-05-07-claude-chat-hub-design.md "Phase 0 result".

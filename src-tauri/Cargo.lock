@@ -955,7 +955,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "claude-usage-tauri"
+name = "claude-conductor"
 version = "0.1.110"
 dependencies = [
  "ab_glyph",

@@ -2,7 +2,7 @@
 //! We bypass axum routing and invoke the parse + store helpers directly,
 //! since spinning up a full Tauri AppHandle in a unit test is heavyweight.
 
-use claude_usage_tauri_lib::skill_usage::{parser, store};
+use claude_conductor_lib::skill_usage::{parser, store};
 use std::path::PathBuf;
 
 #[test]

@@ -6,7 +6,7 @@
 // 3. Kill/respawn: daemon dies unexpectedly; app reconnect loop respawns it.
 //
 // All run against an isolated CC_DAEMON_INSTANCE=wdio daemon so tests never
-// touch a real cc-companion-daemon the user has running. Free - no billed turn.
+// touch a real cc-conductor-daemon the user has running. Free - no billed turn.
 
 import { execSync } from "node:child_process";
 
@@ -15,15 +15,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Checks for either the standalone harness daemon or the app-respawned daemon.
 function companionDaemonRunning() {
   const csv = execSync("tasklist /FO CSV /NH", { encoding: "utf8" });
-  return /"cc-companion-daemon\.exe"/i.test(csv);
+  return /"cc-conductor-daemon\.exe"/i.test(csv);
 }
 
-// Checks for a claude-usage-tauri.exe process launched with --daemon (the app's
+// Checks for a claude-conductor.exe process launched with --daemon (the app's
 // reconnect-loop respawn target after the harness daemon is killed).
 function respawnedDaemonRunning() {
   try {
     const count = execSync(
-      "powershell -Command \"(Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'claude-usage-tauri.exe' -and $_.CommandLine -like '*--daemon*' }).Count\"",
+      "powershell -Command \"(Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'claude-conductor.exe' -and $_.CommandLine -like '*--daemon*' }).Count\"",
       { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] }
     ).trim();
     return parseInt(count, 10) > 0;
@@ -72,12 +72,12 @@ describe("Daemon lifecycle: close/reopen and kill/respawn (ai_todo 74)", () => {
   });
 
   it("app reconnect loop respawns daemon after unexpected exit", async () => {
-    // Kill the harness daemon (cc-companion-daemon.exe). The app's
+    // Kill the harness daemon (cc-conductor-daemon.exe). The app's
     // run_app_subscription loop detects the pipe drop and calls ensure_daemon()
-    // which spawns `claude-usage-tauri.exe --daemon` with CC_DAEMON_INSTANCE
+    // which spawns `claude-conductor.exe --daemon` with CC_DAEMON_INSTANCE
     // inherited from the app env (so it uses the wdio pipe, not production).
     try {
-      execSync("powershell -Command \"Get-Process -Name cc-companion-daemon -ErrorAction SilentlyContinue | Stop-Process -Force\"");
+      execSync("powershell -Command \"Get-Process -Name cc-conductor-daemon -ErrorAction SilentlyContinue | Stop-Process -Force\"");
     } catch {}
 
     // Wait up to 20s for the respawned daemon to appear.

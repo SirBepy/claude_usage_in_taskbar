@@ -3,9 +3,9 @@
 // or unrelated shells/nodes.
 //
 // Targets (in kill order):
-//   claude-usage-tauri.exe --daemon  (daemon child of the debug app)
-//   cc-companion-daemon.exe          (standalone daemon exe)
-//   claude-usage-tauri.exe           (main debug app)
+//   claude-conductor.exe --daemon  (daemon child of the debug app)
+//   cc-conductor-daemon.exe          (standalone daemon exe)
+//   claude-conductor.exe           (main debug app)
 //   cargo-tauri.exe                  (tauri CLI process)
 //   node.exe with this project's vite in CommandLine
 //   claude.exe --remote-control      (channel bridge spawned by the daemon)
@@ -70,14 +70,14 @@ function killPid(pid) {
 // Escape backslashes for a PowerShell single-quoted regex string.
 const projEscaped = projectRoot.replace(/\\/g, '\\\\');
 
-// 1. Daemon child: claude-usage-tauri.exe with --daemon flag.
-for (const pid of pidsByCommandLine('claude-usage-tauri.exe', '--daemon')) killPid(pid);
+// 1. Daemon child: claude-conductor.exe with --daemon flag.
+for (const pid of pidsByCommandLine('claude-conductor.exe', '--daemon')) killPid(pid);
 
 // 2. Standalone daemon exe.
-for (const pid of pidsByName('cc-companion-daemon.exe')) killPid(pid);
+for (const pid of pidsByName('cc-conductor-daemon.exe')) killPid(pid);
 
 // 3. Main debug app (after daemon so /T cleans its subtree first).
-for (const pid of pidsByName('claude-usage-tauri.exe')) killPid(pid);
+for (const pid of pidsByName('claude-conductor.exe')) killPid(pid);
 
 // 4. cargo-tauri CLI.
 for (const pid of pidsByName('cargo-tauri.exe')) killPid(pid);
@@ -89,7 +89,7 @@ for (const pid of pidsByCommandLine('node.exe', `vite.*${projEscaped}|${projEsca
 for (const pid of pidsByCommandLine('claude.exe', '--remote-control')) killPid(pid);
 
 // 7. Stale daemon.lock: remove if the recorded PID is gone.
-const lockPath = join(env.APPDATA ?? '', 'claude-usage-tauri', 'daemon.lock');
+const lockPath = join(env.APPDATA ?? '', 'claude-conductor', 'daemon.lock');
 if (existsSync(lockPath)) {
   try {
     const lockPid = readFileSync(lockPath, 'utf8').trim();

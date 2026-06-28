@@ -1,4 +1,4 @@
-use claude_usage_tauri_lib::slash::parse::{extract_args, parse_frontmatter};
+use claude_conductor_lib::slash::parse::{extract_args, parse_frontmatter};
 
 #[test]
 fn parses_description_from_frontmatter() {

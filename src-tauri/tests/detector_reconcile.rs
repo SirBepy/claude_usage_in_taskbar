@@ -1,7 +1,7 @@
-use claude_usage_tauri_lib::sessions::detector::{ReconcileInput, reconcile};
-use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
-use claude_usage_tauri_lib::sessions::registry::{Registry, RegisterInput};
-use claude_usage_tauri_lib::types::{EndReason, Settings};
+use claude_conductor_lib::sessions::detector::{ReconcileInput, reconcile};
+use claude_conductor_lib::sessions::kinds::InstanceKind;
+use claude_conductor_lib::sessions::registry::{Registry, RegisterInput};
+use claude_conductor_lib::types::{EndReason, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;
 

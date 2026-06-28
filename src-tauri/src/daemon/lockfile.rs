@@ -52,7 +52,7 @@ mod tests {
 
     fn tmpfile(name: &str) -> PathBuf {
         let mut p = env::temp_dir();
-        p.push(format!("cc-companion-daemon-test-{}-{}.lock", name, std::process::id()));
+        p.push(format!("cc-conductor-daemon-test-{}-{}.lock", name, std::process::id()));
         let _ = fs::remove_file(&p);
         p
     }

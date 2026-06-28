@@ -5,22 +5,22 @@
 //! file. Instead, we drop `export` from the derives and write the file
 //! ourselves by composing each type's `decl()` into a single output.
 
-use claude_usage_tauri_lib::context_status::ContextStatus;
-use claude_usage_tauri_lib::ipc::ai_todos::AiTodoEntry;
-use claude_usage_tauri_lib::ipc::git::GitInfo;
-use claude_usage_tauri_lib::ipc::misc::TextFileData;
-use claude_usage_tauri_lib::notifications::piper::{PiperStatus, VoiceEntry};
-use claude_usage_tauri_lib::sessions::kinds::InstanceKind;
-use claude_usage_tauri_lib::skill_usage::types::{
+use claude_conductor_lib::context_status::ContextStatus;
+use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
+use claude_conductor_lib::ipc::git::GitInfo;
+use claude_conductor_lib::ipc::misc::TextFileData;
+use claude_conductor_lib::notifications::piper::{PiperStatus, VoiceEntry};
+use claude_conductor_lib::sessions::kinds::InstanceKind;
+use claude_conductor_lib::skill_usage::types::{
     InstalledSkill, InvocationCounts, InvocationSource, SkillDetail, SkillUsageEntry,
     SkillUsageEvent, SkillUsageWeek, TokenBreakdown,
 };
-use claude_usage_tauri_lib::ipc::storage::{DatasetId, DatasetInfo};
-use claude_usage_tauri_lib::slash::{SlashEntry, SlashSource};
-use claude_usage_tauri_lib::storage::{RetentionPolicies, RetentionPolicy};
-use claude_usage_tauri_lib::tokens::record::{BackfillResult, TokenRecord};
-use claude_usage_tauri_lib::types::*;
-use claude_usage_tauri_lib::when_done::{ProtocolPhase, ProtocolState, TerminalAction};
+use claude_conductor_lib::ipc::storage::{DatasetId, DatasetInfo};
+use claude_conductor_lib::slash::{SlashEntry, SlashSource};
+use claude_conductor_lib::storage::{RetentionPolicies, RetentionPolicy};
+use claude_conductor_lib::tokens::record::{BackfillResult, TokenRecord};
+use claude_conductor_lib::types::*;
+use claude_conductor_lib::when_done::{ProtocolPhase, ProtocolState, TerminalAction};
 use tauri_kit_audio::AudioOutputDevice;
 use std::fs;
 use std::path::PathBuf;
@@ -85,9 +85,9 @@ fn emit_ipc_types() {
     out.push_str(&decl::<BackfillResult>());
 
     // token drain (per-chat cost + leaderboard)
-    out.push_str(&decl::<claude_usage_tauri_lib::tokens::MessageDrain>());
-    out.push_str(&decl::<claude_usage_tauri_lib::tokens::ChatDrain>());
-    out.push_str(&decl::<claude_usage_tauri_lib::ipc::DrainBoard>());
+    out.push_str(&decl::<claude_conductor_lib::tokens::MessageDrain>());
+    out.push_str(&decl::<claude_conductor_lib::tokens::ChatDrain>());
+    out.push_str(&decl::<claude_conductor_lib::ipc::DrainBoard>());
 
     // piper
     out.push_str(&decl::<VoiceEntry>());

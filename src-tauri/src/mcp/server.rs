@@ -180,7 +180,7 @@ pub fn run_stdio() {
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "cc_companion", "version": "0.1.0"}
+                    "serverInfo": {"name": "cc_conductor", "version": "0.1.0"}
                 }
             }),
             "notifications/initialized" => continue,
@@ -268,7 +268,7 @@ mod tests {
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "cc_companion", "version": "0.1.0"}
+                    "serverInfo": {"name": "cc_conductor", "version": "0.1.0"}
                 }
             }),
             "tools/list" => tool_list_response(&id),
@@ -293,7 +293,7 @@ mod tests {
             27182,
             "",
         );
-        assert_eq!(resp["result"]["serverInfo"]["name"], "cc_companion");
+        assert_eq!(resp["result"]["serverInfo"]["name"], "cc_conductor");
         assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
     }
 

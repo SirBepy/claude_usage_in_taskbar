@@ -1,5 +1,32 @@
 # Comments for Bepy
 
+## 2026-06-28 - /autopilot: rename "Claude Usage" -> "Claude Conductor" (CC)
+
+GOAL (Joe): full naming consistency across the app identity; sole user, fine reinstalling; approved bundle-id + app-data + daemon-bin + pipe lockstep changes. Don't break anything.
+
+Naming map applied (LIVE files only; archival docs/.for_bepy left as historical record):
+- Display "Claude Usage" -> "Claude Conductor"
+- pkg/bin/app-data/log `claude-usage-tauri` -> `claude-conductor`
+- lib crate `claude_usage_tauri_lib` -> `claude_conductor_lib`
+- daemon bin/pipe/sock `cc-companion-daemon` -> `cc-conductor-daemon`
+- MCP server + daemon-src-file `cc_companion`/`cc_companion_daemon` -> `cc_conductor`/`cc_conductor_daemon`
+- bundle id `com.aiusage.taskbar.tauri` -> `com.sirbepy.claudeconductor`
+
+Decision needed: rename hook matcher `aiusage-taskbar` (Joe unsure, "3.3")?
+Resolved via: direct judgment (Explore confirmed it's not live identity).
+Picked: KEEP `aiusage-taskbar` + `aiusage-hook`. Reason: live hook entries are matcher-less; `aiusage-taskbar` is only a LEGACY_MATCHER compat shim that strips OLD v1 entries on next launch, and `aiusage-hook.{ps1,sh}` are pinned global hook-script filenames referenced by ~/.claude/settings.json. Renaming breaks old-install cleanup / orphans global hooks for zero user-visible gain. Where: hooks/installer.rs, daemon/hooks_server. Revisit: no.
+
+Decision needed: daemon internal name (Joe ambivalent, "cc-companion isn't horrible").
+Resolved via: direct judgment toward stated consistency goal. Picked: cc-conductor-daemon (CC prefix retained). Revisit: no.
+
+Decision needed: bundle identifier value.
+Picked: com.sirbepy.claudeconductor (reverse-DNS, no hyphens for macOS cleanliness, matches publisher SirBepy). Revisit: no.
+
+Parked (manual/external): GitHub repo + project folder stay `claude_usage_in_taskbar` (repo rename is a remote action; folder slug is a path fixture in walker.rs). Optional follow-up only; GitHub 301-redirects keep the updater URL working if renamed later.
+
+RUN_LEDGER:
+- inventory sweep (Explore) -> complete, drove the map above
+
 ## 2026-06-27 03:59 - /autopilot: todo 140 session-menu rework (merged top-right ⋮, draft handling)
 
 GOAL (Joe): kill the double-⋮; one top-right context-aware menu (Variant B: General section + "This chat" section), remove the chat-pane-header ⋮ + changes button, Sort to Settings, When done submenu, sidebar rows reuse the same 4-submenu block. Drafts: same options, disable what's impossible with a hover-tooltip reason. Brainstormed + web-previewed with him first (C:\tmp\menu-preview.html). Deployed via /commit pushnbump.

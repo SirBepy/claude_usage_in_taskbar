@@ -8,7 +8,7 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon_client::PersistentClient;
+use claude_conductor_lib::daemon_client::PersistentClient;
 use serde_json::json;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -17,7 +17,7 @@ fn daemon_exe() -> std::path::PathBuf {
     let mut p = std::env::current_dir().unwrap();
     p.push("target");
     p.push("debug");
-    p.push("cc-companion-daemon.exe");
+    p.push("cc-conductor-daemon.exe");
     p
 }
 
@@ -25,18 +25,18 @@ fn daemon_exe() -> std::path::PathBuf {
 #[ignore]
 async fn end_to_end_one_turn() {
     // Isolated test instance: distinct pipe/lockfile/hook-port so this never
-    // touches a real daemon (ai_todo 71). No `Stop-Process cc-companion-daemon`
+    // touches a real daemon (ai_todo 71). No `Stop-Process cc-conductor-daemon`
     // on purpose - that used to kill the user's real daemon.
     const INSTANCE: &str = "test-session";
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+    let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{INSTANCE}");
     if let Some(app_data) = dirs::data_dir() {
-        let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
+        let lock = app_data.join("claude-conductor").join(format!("daemon-{INSTANCE}.lock"));
         let _ = std::fs::remove_file(&lock);
     }
 
     let build = Command::new("cargo")
-        .args(["build", "--bin", "cc-companion-daemon"])
+        .args(["build", "--bin", "cc-conductor-daemon"])
         .status()
         .expect("cargo build");
     assert!(build.success());

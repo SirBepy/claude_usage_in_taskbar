@@ -1,5 +1,5 @@
 {
-  "name": "claude-usage-tauri-tests",
+  "name": "claude-conductor-tests",
   "private": true,
   "version": "0.1.118",
   "type": "module",

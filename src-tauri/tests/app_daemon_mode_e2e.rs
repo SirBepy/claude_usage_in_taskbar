@@ -1,6 +1,6 @@
 //! End-to-end: the APP binary launched with `--daemon` runs the daemon (Phase 6
 //! Task 2) - same flow `ensure_daemon` uses in production to spawn the daemon.
-//! Mirrors daemon_smoke but spawns `claude-usage-tauri.exe --daemon` instead of
+//! Mirrors daemon_smoke but spawns `claude-conductor.exe --daemon` instead of
 //! the standalone bin, proving the arg branch routes to `run_daemon_main`.
 //!
 //! `#[ignore]`'d: building the full app bin is heavy and dist-sensitive, and
@@ -9,8 +9,8 @@
 
 #![cfg(windows)]
 
-use claude_usage_tauri_lib::daemon::frame::{read_frame, write_frame};
-use claude_usage_tauri_lib::daemon::health::PROTOCOL_VERSION;
+use claude_conductor_lib::daemon::frame::{read_frame, write_frame};
+use claude_conductor_lib::daemon::health::PROTOCOL_VERSION;
 use serde_json::json;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -23,20 +23,20 @@ async fn app_binary_daemon_mode_serves_and_shuts_down() {
     const INSTANCE: &str = "test-appdaemon";
 
     let build = Command::new("cargo")
-        .args(["build", "--bin", "claude-usage-tauri"])
+        .args(["build", "--bin", "claude-conductor"])
         .current_dir(std::env::current_dir().unwrap())
         .status()
         .expect("cargo build");
-    assert!(build.success(), "cargo build --bin claude-usage-tauri failed");
+    assert!(build.success(), "cargo build --bin claude-conductor failed");
 
     let mut exe = std::env::current_dir().unwrap();
     exe.push("target");
     exe.push("debug");
-    exe.push("claude-usage-tauri.exe");
+    exe.push("claude-conductor.exe");
     assert!(exe.exists(), "app exe missing: {}", exe.display());
 
     if let Some(app_data) = dirs::data_dir() {
-        let lock = app_data.join("claude-usage-tauri").join(format!("daemon-{INSTANCE}.lock"));
+        let lock = app_data.join("claude-conductor").join(format!("daemon-{INSTANCE}.lock"));
         let _ = std::fs::remove_file(&lock);
     }
 
@@ -52,7 +52,7 @@ async fn app_binary_daemon_mode_serves_and_shuts_down() {
         .expect("spawn app --daemon");
 
     let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let pipe_name = format!(r"\\.\pipe\cc-companion-daemon-{user}-{INSTANCE}");
+    let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{INSTANCE}");
 
     let mut pipe = None;
     for _ in 0..60 {

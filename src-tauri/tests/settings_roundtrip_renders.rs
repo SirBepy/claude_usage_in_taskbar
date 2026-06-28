@@ -1,6 +1,6 @@
-use claude_usage_tauri_lib::tray::icon_render as icon;
-use claude_usage_tauri_lib::tray::icon_render::{DisplayMode, IconCtx};
-use claude_usage_tauri_lib::tray::threshold::{IconSettings, IconStyle};
+use claude_conductor_lib::tray::icon_render as icon;
+use claude_conductor_lib::tray::icon_render::{DisplayMode, IconCtx};
+use claude_conductor_lib::tray::threshold::{IconSettings, IconStyle};
 
 #[test]
 fn switching_icon_style_changes_rendered_bytes() {

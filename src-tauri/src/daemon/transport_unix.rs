@@ -15,9 +15,9 @@ use tokio::net::UnixListener;
 /// The instance suffix (empty in production) isolates test daemons (ai_todo 71).
 pub fn socket_path_for_user() -> PathBuf {
     let mut p = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
-    p.push("claude-usage-tauri");
+    p.push("claude-conductor");
     let inst = crate::daemon::instance::instance_suffix();
-    p.push(format!("cc-companion-daemon{inst}.sock"));
+    p.push(format!("cc-conductor-daemon{inst}.sock"));
     p
 }
 
