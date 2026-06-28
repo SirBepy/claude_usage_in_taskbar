@@ -87,7 +87,15 @@ export function discardDraft(pane: HTMLElement): void {
 export async function resumeDraft(pane: HTMLElement): Promise<void> {
   const pending = state.pendingNewSession;
   if (!pending || pending.firstMessageSent) return;
-  if (state.selectedId === pending.placeholderId) return;
+  if (state.selectedId === pending.placeholderId) {
+    // On mobile the back button hides the pane via CSS but leaves selectedId
+    // intact. If we're in list mode, just switch back to the chat pane.
+    const view = document.querySelector<HTMLElement>(".view-sessions");
+    if (view?.getAttribute("data-mobile-pane") === "list") {
+      view.setAttribute("data-mobile-pane", "chat");
+    }
+    return;
+  }
 
   state.statusbar?.destroy();
   state.statusbar = null;
