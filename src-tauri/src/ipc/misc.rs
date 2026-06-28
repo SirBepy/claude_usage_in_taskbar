@@ -105,11 +105,78 @@ pub struct VersionInfo {
 }
 
 #[tauri::command]
-pub fn get_version_info(app: AppHandle) -> VersionInfo {
-    let version = get_app_version(app);
-    let build_date = option_env!("BUILD_DATE").unwrap_or("unknown").to_string();
+pub async fn get_version_info(app: AppHandle) -> VersionInfo {
+    let version = get_app_version(app.clone());
+    let base_date = option_env!("BUILD_DATE").unwrap_or("unknown").to_string();
+    let build_date = if base_date == "unknown" {
+        base_date
+    } else {
+        let data_dir = app.path().app_data_dir().ok();
+        match data_dir {
+            Some(dir) => fetch_build_datetime(&version, &base_date, &dir).await,
+            None => base_date,
+        }
+    };
     let installed_at = load_or_record_install_date(&version);
     VersionInfo { version, build_date, installed_at }
+}
+
+/// Returns `"YYYY-MM-DD HH:MM"` for the given version by fetching the GitHub
+/// release `published_at` field. Caches the result so only the first call per
+/// version hits the network. Falls back to `base_date` (`"YYYY-MM-DD"`) on any
+/// error so the UI always shows at least a date.
+async fn fetch_build_datetime(version: &str, base_date: &str, data_dir: &std::path::Path) -> String {
+    // Local / non-release builds: nothing to fetch.
+    if version == "local-build" || version == "unknown" {
+        return base_date.to_string();
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct BuildTimeCache { version: String, datetime: String }
+
+    let cache_path = data_dir.join("build-time-cache.json");
+
+    // Cache hit?
+    if let Ok(raw) = std::fs::read_to_string(&cache_path) {
+        if let Ok(c) = serde_json::from_str::<BuildTimeCache>(&raw) {
+            if c.version == version {
+                return c.datetime;
+            }
+        }
+    }
+
+    // Fetch from GitHub releases API.
+    let url = format!(
+        "https://api.github.com/repos/SirBepy/claude_usage_in_taskbar/releases/tags/v{version}"
+    );
+    let result: Option<String> = async {
+        #[derive(serde::Deserialize)]
+        struct GhRelease { published_at: Option<String> }
+
+        let client = reqwest::Client::builder()
+            .user_agent("claude-companion-app")
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .ok()?;
+        let resp = client.get(&url).send().await.ok()?;
+        let release: GhRelease = resp.json().await.ok()?;
+        let iso = release.published_at?;
+        // ISO 8601: "2026-06-28T13:35:00Z" → "2026-06-28 13:35"
+        let date_part = iso.get(..10)?;
+        let time_part = iso.get(11..16)?;
+        Some(format!("{date_part} {time_part}"))
+    }.await;
+
+    match result {
+        Some(datetime) => {
+            let cache = BuildTimeCache { version: version.to_string(), datetime: datetime.clone() };
+            if let Ok(json) = serde_json::to_string(&cache) {
+                let _ = std::fs::write(&cache_path, json);
+            }
+            datetime
+        }
+        None => base_date.to_string(),
+    }
 }
 
 fn load_or_record_install_date(current_version: &str) -> Option<String> {
