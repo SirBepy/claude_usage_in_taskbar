@@ -11,6 +11,89 @@ pub fn data_dir() -> Result<PathBuf> {
     Ok(base.join("claude-conductor"))
 }
 
+/// Pre-rename data directory (`%APPDATA%\claude-usage-tauri`). The app shipped
+/// under this name before the "Claude Conductor" rename; user data (settings,
+/// `companion.db`, characters, sound packs, etc.) still lives here for anyone who
+/// upgrades across the rename. See `migrate_legacy_data_dir`.
+fn legacy_data_dir() -> Result<PathBuf> {
+    let base = dirs::config_dir()
+        .ok_or_else(|| anyhow!("could not resolve user config dir"))?;
+    Ok(base.join("claude-usage-tauri"))
+}
+
+/// One-shot, non-destructive migration of pre-rename user data into the current
+/// data dir. Copies any file present in the legacy dir but MISSING in the new dir
+/// (recursively), never overwriting a file the new build already wrote. Guarded by
+/// a marker so it runs at most once, even across app/daemon restarts.
+///
+/// Without this, the rename silently pointed the app at an empty data dir and
+/// orphaned every prior install's history, settings, and characters.
+pub fn migrate_legacy_data_dir() {
+    let (Ok(legacy), Ok(new)) = (legacy_data_dir(), data_dir()) else { return };
+    if !legacy.exists() || legacy == new {
+        return;
+    }
+    let marker = new.join(".migrated-from-claude-usage-tauri");
+    if marker.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all(&new) {
+        log::warn!("legacy migration: could not create data dir: {e:#}");
+        return;
+    }
+    let copied = copy_missing_recursive(&legacy, &new);
+    if copied > 0 {
+        log::info!("legacy migration: recovered {copied} file(s) from claude-usage-tauri");
+    }
+    // Write the marker regardless so a partially-failed copy doesn't loop forever;
+    // copy_missing_recursive already logged any per-file failures.
+    if let Err(e) = std::fs::write(&marker, b"migrated\n") {
+        log::warn!("legacy migration: could not write marker: {e:#}");
+    }
+}
+
+/// Copies every file under `src` into the mirrored path under `dst`, skipping any
+/// file that already exists in `dst`. Returns the number of files copied. Skips
+/// ephemeral runtime artifacts (locks, port files, logs) that the new instance
+/// owns and regenerates.
+fn copy_missing_recursive(src: &std::path::Path, dst: &std::path::Path) -> usize {
+    let mut copied = 0;
+    let entries = match std::fs::read_dir(src) {
+        Ok(e) => e,
+        Err(e) => {
+            log::warn!("legacy migration: cannot read {}: {e:#}", src.display());
+            return 0;
+        }
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        // Ephemeral / instance-owned files the new process regenerates.
+        if name_str.ends_with(".lock")
+            || name_str.starts_with("hooks_port")
+            || name_str == "daemon.log"
+            || name_str == "mcp"
+        {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if from.is_dir() {
+            if let Err(e) = std::fs::create_dir_all(&to) {
+                log::warn!("legacy migration: mkdir {} failed: {e:#}", to.display());
+                continue;
+            }
+            copied += copy_missing_recursive(&from, &to);
+        } else if !to.exists() {
+            match std::fs::copy(&from, &to) {
+                Ok(_) => copied += 1,
+                Err(e) => log::warn!("legacy migration: copy {} failed: {e:#}", from.display()),
+            }
+        }
+    }
+    copied
+}
+
 pub fn settings_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("settings.json"))
 }

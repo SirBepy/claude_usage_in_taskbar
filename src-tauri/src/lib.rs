@@ -79,6 +79,11 @@ fn init_daemon_file_logger() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // One-shot recovery of pre-rename user data (claude-usage-tauri ->
+    // claude-conductor). Runs before any data access in either mode so the
+    // daemon and GUI both see migrated settings/history/characters.
+    paths::migrate_legacy_data_dir();
+
     // Daemon mode: when launched as `<exe> --daemon`, run the daemon and exit
     // before constructing the Tauri app (no window, no single-instance plugin).
     if std::env::args().any(|a| a == "--daemon") {
