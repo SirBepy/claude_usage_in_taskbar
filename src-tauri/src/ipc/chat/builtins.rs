@@ -38,7 +38,21 @@ pub async fn clear_session(
     let guard = state.daemon_client.lock().await;
     if let Some(client) = guard.as_ref() {
         if is_interactive {
-            let _ = client.end_session(&session_id).await;
+            // Fire-and-forget the graceful subprocess teardown. Awaiting
+            // end_session blocks for up to 3 seconds (stdin close + wait +
+            // force-kill), which kept the session alive in the registry long
+            // enough for race conditions to re-surface it in the sidebar (delayed
+            // instances_changed broadcasts arriving after stickyExitKeys cleared,
+            // segment expansions during the kill window, etc.).  Spawning here
+            // lets mark_session_ended + reseed run immediately so the sidebar
+            // reflects the session as gone the moment the animation plays.
+            // end_session still cleans up the subprocess and MCP config in the
+            // background; the cloned client shares the same pipe via Arc.
+            let client_bg = client.clone();
+            let session_id_bg = session_id.clone();
+            tokio::spawn(async move {
+                let _ = client_bg.end_session(&session_id_bg).await;
+            });
         }
         let _ = client.mark_session_ended(&session_id).await;
         // Re-seed the instance cache directly rather than waiting for the

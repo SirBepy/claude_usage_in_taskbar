@@ -31,6 +31,7 @@ type WriteHalf = tokio::io::WriteHalf<tokio::net::windows::named_pipe::NamedPipe
 #[cfg(unix)]
 type WriteHalf = tokio::io::WriteHalf<tokio::net::UnixStream>;
 
+#[derive(Clone)]
 pub struct PersistentClient {
     writer: Arc<Mutex<WriteHalf>>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
