@@ -101,14 +101,15 @@ describe("custom chip-panel views", () => {
     r.detach();
   });
 
-  it("Questions chip pairs each question with the answer given", () => {
+  it("question card pairs each question with the answer given", () => {
     const { r, container } = makeRenderer();
     r.handleEvent(toolUseEvent("AskUserQuestion", { questions: [{ question: "Pick one?", header: "Choice" }] }, "q1"));
     r.handleEvent(toolResultEvent("q1", "User answered the question(s):\nQ: Pick one?\nA: Option A"));
 
-    const chip = container.querySelector('.tool-chip[data-tool="AskUserQuestion"]');
-    expect(chip).not.toBeNull();
-    expect(chip.querySelector(".tool-chip-label").textContent).toBe("Questions");
+    // AskUserQuestion now renders as a standalone kind:"question" card
+    // (renderQuestionCardHtml), not a generic tool-chip.
+    const card = container.querySelector(".question-card");
+    expect(card).not.toBeNull();
 
     const qa = container.querySelector(".tool-qa");
     expect(qa.querySelector(".tool-qa-header").textContent).toBe("Choice");

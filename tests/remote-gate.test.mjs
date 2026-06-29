@@ -65,7 +65,7 @@ describe("ensureRemoteToken - Tauri webview (NO-OP path)", () => {
     globalThis.document = makeDocument();
 
     const { ensureRemoteToken } = await import("../src/shared/remote-gate.ts");
-    expect(ensureRemoteToken()).toBe(true);
+    expect(await ensureRemoteToken()).toBe(true);
     // Gate form must NOT have been added.
     expect(globalThis.document._children).toHaveLength(0);
   });
@@ -78,7 +78,7 @@ describe("ensureRemoteToken - browser with token present", () => {
     globalThis.document = makeDocument();
 
     const { ensureRemoteToken } = await import("../src/shared/remote-gate.ts");
-    expect(ensureRemoteToken()).toBe(true);
+    expect(await ensureRemoteToken()).toBe(true);
     expect(globalThis.document._children).toHaveLength(0);
   });
 
@@ -88,7 +88,7 @@ describe("ensureRemoteToken - browser with token present", () => {
     globalThis.document = makeDocument();
 
     const { ensureRemoteToken } = await import("../src/shared/remote-gate.ts");
-    expect(ensureRemoteToken()).toBe(true);
+    expect(await ensureRemoteToken()).toBe(true);
   });
 });
 
@@ -101,7 +101,7 @@ describe("ensureRemoteToken - browser with NO token", () => {
     globalThis.setTimeout = (fn, _ms) => { try { fn(); } catch {} return 0; };
 
     const { ensureRemoteToken } = await import("../src/shared/remote-gate.ts");
-    const result = ensureRemoteToken();
+    const result = await ensureRemoteToken();
     expect(result).toBe(false);
   });
 
@@ -113,7 +113,7 @@ describe("ensureRemoteToken - browser with NO token", () => {
     globalThis.setTimeout = (fn, _ms) => { try { fn(); } catch {} return 0; };
 
     const { ensureRemoteToken } = await import("../src/shared/remote-gate.ts");
-    ensureRemoteToken();
+    await ensureRemoteToken();
 
     expect(doc._children).toHaveLength(1);
     expect(doc._children[0].id).toBe("rc-token-gate");
@@ -131,24 +131,12 @@ describe("ensureRemoteToken - browser with NO token", () => {
     globalThis.setTimeout = () => 0;
 
     const { ensureRemoteToken } = await import("../src/shared/remote-gate.ts");
-    // When storage is broken, gate treats it as safe-to-proceed (returns true).
-    expect(() => ensureRemoteToken()).not.toThrow();
-    expect(ensureRemoteToken()).toBe(true);
+    // When storage is broken, gate treats it as safe-to-proceed (resolves true).
+    await expect(ensureRemoteToken()).resolves.toBe(true);
   });
 });
 
-describe("HttpTransport get_settings safe default", () => {
-  it("returns null for get_settings instead of throwing RemoteUnavailableError", async () => {
-    globalThis.window = {};
-    globalThis.localStorage = makeLocalStorage({ [REMOTE_TOKEN_KEY]: "tok" });
-
-    const { HttpTransport } = await import("../src/shared/transport.ts");
-    const t = new HttpTransport();
-    // Should resolve to null, not reject.
-    const result = await t.call("get_settings");
-    expect(result).toBeNull();
-  });
-  // get_history is no longer a safe-default stub: it forwards to the daemon's
-  // rpc (usage history from the shared db). That forwarding is covered in
-  // tests/transport-http.test.mjs with a mocked fetch.
-});
+// get_settings is no longer a safe-default stub: like get_history/get_token_history
+// it now forwards to the daemon's rpc (settings served from the shared store, so
+// the phone populates). That forwarding is covered in tests/transport-http.test.mjs
+// with a mocked fetch.

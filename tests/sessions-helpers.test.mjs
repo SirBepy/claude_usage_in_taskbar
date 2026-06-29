@@ -77,17 +77,20 @@ describe("statusPriority", () => {
   it("busy wins over a stale question flag", () => {
     expect(statusPriority(makeInstance({ session_id: "q-id", busy: true }), unread, noAttention, question)).toBe(2);
   });
-  it("returns 3 for unread not-busy interactive", () => {
-    expect(statusPriority(makeInstance({ session_id: "unread-id", busy: false }), unread, noAttention, noQuestion)).toBe(3);
+  it("returns 3 for a session parked on an external process (waiting)", () => {
+    expect(statusPriority(makeInstance({ session_id: "wait-id", busy: false, awaiting: "waiting" }), unread, noAttention, noQuestion)).toBe(3);
   });
-  it("returns 4 for read not-busy interactive", () => {
-    expect(statusPriority(makeInstance({ session_id: "other-id", busy: false }), unread, noAttention, noQuestion)).toBe(4);
+  it("returns 4 for unread not-busy interactive", () => {
+    expect(statusPriority(makeInstance({ session_id: "unread-id", busy: false }), unread, noAttention, noQuestion)).toBe(4);
   });
-  it("returns 5 for external", () => {
-    expect(statusPriority(makeInstance({ kind: "external" }), unread, noAttention, noQuestion)).toBe(5);
+  it("returns 5 for read not-busy interactive", () => {
+    expect(statusPriority(makeInstance({ session_id: "other-id", busy: false }), unread, noAttention, noQuestion)).toBe(5);
+  });
+  it("returns 6 for external", () => {
+    expect(statusPriority(makeInstance({ kind: "external" }), unread, noAttention, noQuestion)).toBe(6);
   });
   it("external wins over busy", () => {
-    expect(statusPriority(makeInstance({ kind: "external", busy: true }), unread, noAttention, noQuestion)).toBe(5);
+    expect(statusPriority(makeInstance({ kind: "external", busy: true }), unread, noAttention, noQuestion)).toBe(6);
   });
 });
 
