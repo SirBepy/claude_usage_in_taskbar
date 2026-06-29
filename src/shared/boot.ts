@@ -39,7 +39,7 @@ function activeViewName(): string {
 
 // ── Live token history merge ───────────────────────────────────────────────
 async function fetchTokenHistoryWithLive(): Promise<TokenRecord[]> {
-  const history = (await api.getTokenHistory()) ?? [];
+  const history = (await api.getTokenHistory().catch(() => [])) ?? [];
   try {
     const active = (await api.getActiveSessions()) ?? [];
     if (active.length) return [...history, ...active];
@@ -247,6 +247,13 @@ export function initBoot(): void {
   void fetchTokenHistoryWithLive().then((th) => {
     initTokens = th;
     setTokenHistory(th);
+    tryInitialRender();
+  }).catch(() => {
+    // Mirror the getUsageHistory/getSettings fallbacks: a cold-boot RPC failure
+    // (daemon not up yet) must still unblock the initial-render gate, or the
+    // dashboard window stays a permanent white screen until tray > Open Dashboard
+    // (which bypasses the gate by calling showView directly).
+    initTokens = [];
     tryInitialRender();
   });
   void api.getSettings().then((s) => {
