@@ -2,6 +2,7 @@ import { state } from "./state";
 
 let _progressN: number | null = null;
 let _progressM: number = 0;
+let _activity: string | null = null;
 let _pane: HTMLElement | null = null;
 
 export function initThinkingBar(pane: HTMLElement | null): void {
@@ -9,6 +10,7 @@ export function initThinkingBar(pane: HTMLElement | null): void {
 }
 
 export function setThinkingActivity(s: string | null): void {
+  _activity = s;
   if (s === null) {
     _progressN = null;
     _progressM = 0;
@@ -65,6 +67,10 @@ export function updateThinkingBar(): void {
     return;
   }
   bar.removeAttribute("hidden");
-  if (textEl) textEl.textContent = _progressN !== null ? `Step ${_progressN} of ${_progressM}` : "";
+  if (textEl) {
+    if (_progressN !== null) textEl.textContent = `Step ${_progressN} of ${_progressM}`;
+    else if (_activity) textEl.textContent = _activity;
+    else textEl.textContent = "Thinking…";
+  }
   state.heldMessages?.renderChip();
 }
