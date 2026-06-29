@@ -32,6 +32,7 @@ import * as shortcuts from "./shortcuts";
 import { triggerNewSessionGlobal } from "../views/sessions/sessions";
 import { showView } from "./navigation";
 import { isRemote } from "./transport";
+import { wireInitialFetches } from "./initial-render-gate";
 
 function activeViewName(): string {
   return window.location.hash.replace(/^#/, "") || "dashboard";
@@ -199,18 +200,6 @@ async function maybeOfferLegacyImport(): Promise<void> {
   }
 }
 
-// ── Initial-render gating ──────────────────────────────────────────────────
-let initUsage: unknown = null;
-let initTokens: TokenRecord[] | null = null;
-let initSettings = false;
-
-function tryInitialRender(): void {
-  if (initUsage && initTokens && initSettings) {
-    refreshDashboard();
-    void runDeadPathCheck();
-  }
-}
-
 function applyThemeFromSettings(s: SettingsShape): void {
   const fullId = (s.theme as string) || "void";
   const isLight = fullId.endsWith("-light");
@@ -234,39 +223,25 @@ function coerceSettings(s: SettingsShape): SettingsShape {
 
 // ── Public entrypoint ──────────────────────────────────────────────────────
 export function initBoot(): void {
-  // Initial data fetches.
-  void api.getUsageHistory().then((h) => {
-    initUsage = h;
-    setUsageHistory(h);
-    tryInitialRender();
-  }).catch(() => {
-    // Browser (HttpTransport) degrades to empty history; unblock render gate.
-    initUsage = [];
-    tryInitialRender();
-  });
-  void fetchTokenHistoryWithLive().then((th) => {
-    initTokens = th;
-    setTokenHistory(th);
-    tryInitialRender();
-  }).catch(() => {
-    // Mirror the getUsageHistory/getSettings fallbacks: a cold-boot RPC failure
-    // (daemon not up yet) must still unblock the initial-render gate, or the
-    // dashboard window stays a permanent white screen until tray > Open Dashboard
-    // (which bypasses the gate by calling showView directly).
-    initTokens = [];
-    tryInitialRender();
-  });
-  void api.getSettings().then((s) => {
-    if (s) {
-      const coerced = coerceSettings(s);
-      setSettings(coerced);
-      applyThemeFromSettings(coerced);
-    }
-    initSettings = true;
-    tryInitialRender();
-  }).catch(() => {
-    initSettings = true;
-    tryInitialRender();
+  // Initial data fetches: render once all three settle (success OR failure, so
+  // a failed fetch can't wedge the gate - see wireInitialFetches).
+  wireInitialFetches({
+    fetchUsage: () => api.getUsageHistory(),
+    fetchTokens: () => fetchTokenHistoryWithLive(),
+    fetchSettings: () => api.getSettings(),
+    onUsage: (h) => setUsageHistory(h),
+    onTokens: (t) => setTokenHistory(t),
+    onSettings: (s) => {
+      if (s) {
+        const coerced = coerceSettings(s);
+        setSettings(coerced);
+        applyThemeFromSettings(coerced);
+      }
+    },
+    onReady: () => {
+      refreshDashboard();
+      void runDeadPathCheck();
+    },
   });
 
   // Live subscriptions.
