@@ -131,15 +131,9 @@ pub fn run() {
     #[cfg(not(debug_assertions))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            use tauri::{Emitter, Manager};
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-                // Emit navigate-to-dashboard so the webview is never left in a
-                // blank state when the window is surfaced by a second launch.
-                let _ = window.emit("navigate-to-dashboard", ());
-            }
+            // Surface the dashboard on a second launch, building it if the user
+            // has not opened it yet this session (main is lazy - ai_todo 143).
+            crate::ipc::open_dashboard(app.clone());
         }));
     }
 
@@ -329,6 +323,13 @@ pub fn run() {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             crate::tray::setup(app.handle())?;
+
+            // The main dashboard window is built lazily on first open (see
+            // `build_main_window`), NOT eagerly here - an eager startup window
+            // flashes a white ghost frame on Windows (ai_todo 143). Usage
+            // polling runs in the backend `scheduler::spawn` loop and does not
+            // need this window.
+
 
             // One-time legacy import into SQLite for all three datasets. Each
             // importer renames its source to `.bak` on success, so the on-disk
@@ -532,31 +533,9 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(crate::daemon_link::run_app_subscription(app_handle));
             }
-            if let Some(window) = app.get_webview_window("main") {
-                let w = window.clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        use std::sync::atomic::Ordering;
-                        let quitting = w.app_handle()
-                            .try_state::<crate::state::AppState>()
-                            .map(|s| s.should_quit.load(Ordering::SeqCst))
-                            .unwrap_or(false);
-                        if quitting {
-                            return;
-                        }
-                        // Hide-to-tray, never block. Chat sessions are owned by
-                        // the detached daemon, not this window, so closing here
-                        // never interrupts in-flight turns. Full quit lives in
-                        // the tray menu; X just tucks the window away.
-                        // No pre-hide navigation eval: the async JS clear+render
-                        // gap would leave the webview blank; every re-open path
-                        // (tray menu, single-instance) already emits
-                        // navigate-to-dashboard which re-renders on show.
-                        api.prevent_close();
-                        let _ = w.hide();
-                    }
-                });
-            }
+            // (Main-window hide-to-tray lives in `build_main_window`; the window
+            // is built lazily on first open, so there is nothing to wire here.)
+
             // Webview boot watchdog. If `frontend_ready` IPC never fires
             // within ~6s, force-navigate the main window back to the start
             // URL. Covers: WebView2 showing "localhost refused to connect"
@@ -569,15 +548,18 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     use std::sync::atomic::Ordering;
                     tokio::time::sleep(std::time::Duration::from_secs(6)).await;
-                    let mut attempts = 0u32;
-                    while !alive.load(Ordering::SeqCst) && attempts < 24 {
-                        attempts += 1;
-                        let url = boot_start_url();
+                    // Bound by wall-clock (~2 min from boot). The main window is
+                    // lazy, so it usually does not exist here; only act when it
+                    // does - an unopened dashboard is not a stalled one.
+                    let mut ticks = 0u32;
+                    let mut acted = false;
+                    while !alive.load(Ordering::SeqCst) && ticks < 24 {
+                        ticks += 1;
                         if let Some(w) = h.get_webview_window("main") {
+                            acted = true;
+                            let url = boot_start_url();
                             log::warn!(
-                                "frontend not ready after {}s; reloading main webview -> {}",
-                                6 + (attempts - 1) * 5,
-                                url
+                                "main webview not ready (tick {ticks}); reloading -> {url}"
                             );
                             if let Ok(parsed) = url.parse::<tauri::Url>() {
                                 let _ = w.navigate(parsed);
@@ -586,13 +568,11 @@ pub fn run() {
                         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     }
                     if alive.load(Ordering::SeqCst) {
-                        if attempts > 0 {
-                            log::info!("frontend recovered after {attempts} reload attempt(s)");
+                        if acted {
+                            log::info!("main webview recovered after {ticks} reload tick(s)");
                         }
-                    } else {
-                        log::error!(
-                            "frontend never reported ready after {attempts} reload attempts; giving up"
-                        );
+                    } else if acted {
+                        log::error!("main webview never reported ready; giving up");
                     }
                 });
             }

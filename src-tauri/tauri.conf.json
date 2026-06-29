@@ -11,20 +11,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Claude Conductor",
-        "url": "index.html",
-        "width": 520,
-        "height": 720,
-        "minWidth": 360,
-        "resizable": true,
-        "visible": false,
-        "decorations": true,
-        "dragDropEnabled": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com https://unpkg.com; script-src 'self' 'unsafe-inline' blob: https://unpkg.com; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:27183 ws://localhost:27183",
       "dangerousDisableAssetCspModification": ["style-src"]
