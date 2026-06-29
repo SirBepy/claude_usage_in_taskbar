@@ -2,7 +2,8 @@
 
 ### Urgent
 
-- Relaunch the Claude Usage tray app if it's not running - usage tracking is off while it's down.
+- **RENAME (v0.2.0, this session): reinstall to get "Claude Conductor".** The app was renamed Claude Usage -> Claude Conductor with a NEW bundle id (`com.sirbepy.claudeconductor`) + NEW app-data dir (`%APPDATA%\claude-conductor`). The OLD "Claude Usage" app keeps running stale until you uninstall it and install the 0.2.0 build (it installs side-by-side as a separate app, not an auto-update). Prior settings/characters/history under `%APPDATA%\claude-usage-tauri` do NOT carry over. Every QA item below that references `%APPDATA%\claude-usage-tauri` now means `\claude-conductor`. Optional cleanup: delete the stray **v0.1.119** GitHub release (superseded by 0.2.0; 0.2.0 is "latest" for the updater).
+- Relaunch the Claude Conductor tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 - SECURITY pass: eyeball the remote SAFE_METHODS allowlist diff from the 2026-06-18 run (8 read-only methods added in src-tauri/src/daemon/remote_server.rs). Autopilot judged these safe (all read-only, no new RCE surface) but the allowlist IS the security boundary, so confirm.
 
