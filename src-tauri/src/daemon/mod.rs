@@ -19,6 +19,7 @@ pub mod lockfile;
 pub mod methods;
 pub mod notifier;
 pub mod push;
+mod remote_handlers;
 pub mod remote_server;
 pub mod rpc;
 pub mod session;
