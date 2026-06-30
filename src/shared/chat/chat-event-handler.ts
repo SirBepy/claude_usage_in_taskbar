@@ -11,6 +11,7 @@ import {
   isCompactUserMessage,
   detectStatusToken,
   detectProgressToken,
+  detectHandoffToken,
   isSilentSystemUserMessage,
   isResumeContinuationUserMessage,
   noiseAssistantLabel,
@@ -165,6 +166,7 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
           r.messages.push(msg);
           r.setTurnStatus(detectStatusToken(joined));
         }
+        if (!r.hydrating && detectHandoffToken(joined)) r.onHandoffReady?.();
       }
       // Update live token estimate and check for a progress marker.
       if (r.activeTurnChipKey !== null) {

@@ -41,6 +41,7 @@ import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateT
 import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
 import { openModelEffortModal } from "./model-effort-modal";
 import { registerCta } from "../../shared/chat/cta-registry";
+import { completeHandoff } from "./handoff";
 
 const HEADER_STATUS_CLASSES = [
   "st-working", "st-question", "st-done", "st-your-turn", "st-external", "st-attention", "st-rate-limited",
@@ -337,6 +338,11 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     renderer.onNextAiPromptDone = () => {
       if (state.renderer !== renderer) return;
       renderer.injectCta("pickup");
+    };
+    renderer.onHandoffReady = () => {
+      if (state.renderer !== renderer) return;
+      if (state.selectedId !== sessionId) return;
+      completeHandoff(sessionId);
     };
     // Track Claude's self-reported turn status for this session so the sidebar
     // shows a red "answer me" flag for questions and a calm icon otherwise.

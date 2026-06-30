@@ -15,6 +15,7 @@ import {
   loadHiddenSessions,
   saveHiddenSessions,
 } from "./sessions-helpers";
+import { triggerHandoff } from "./handoff";
 
 export interface ChatMenuCtx {
   kind: "live" | "draft";
@@ -229,6 +230,16 @@ export function buildChatMenuBlock(
 
   // ── Agent ▸ ────────────────────────────────────────────────────────────────
   const agentItems: ItemDesc[] = [
+    {
+      icon: "handshake",
+      label: "Handoff to next AI",
+      run: isDraft || !sessionId || !cwd
+        ? undefined
+        : async () => {
+            await triggerHandoff(sessionId, cwd);
+          },
+      disabledReason: isDraft ? "No active agent" : (!sessionId ? "No session" : (!cwd ? "No project directory" : undefined)),
+    },
     {
       icon: "copy",
       label: "Copy PID",

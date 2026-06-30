@@ -45,8 +45,16 @@ const TITLE_XML_TAIL_RE = /<cc-title>[\s\S]*$/i;
 const PROGRESS_TOKEN_RE = /<cc-progress:\d+\/\d+>/gi;
 const PROGRESS_TAIL_RE = /<c(?:c(?:-(?:p(?:r(?:o(?:g(?:r(?:e(?:s(?:s(?::(?:\d+(?:\/\d*)?)?)?)?)?)?)?)?)?)?)?)?)\s*$/i;
 
-/** Strips the status, title, autopilot, and progress markers (complete or
- * partial) plus trailing whitespace, so none ever reaches the rendered body. */
+// Handoff-ready sentinel. The app injects a prompt asking Claude to write a
+// session handoff file; Claude ends the turn with `<HANDOFF_READY/>` to signal
+// completion. The app opens a new chat automatically on detection. Never shown.
+// Tail pattern catches an incomplete trailing `<HANDOFF_READY` fragment so it
+// never flashes mid-stream (the sentinel appears at turn end, but guard anyway).
+const HANDOFF_TOKEN_RE = /<HANDOFF_READY\s*\/>/gi;
+const HANDOFF_TAIL_RE = /<HANDOFF_READY[^>]*\s*$/i;
+
+/** Strips the status, title, autopilot, progress, and handoff markers (complete
+ * or partial) plus trailing whitespace, so none ever reaches the rendered body. */
 export function stripStatusToken(text: string): string {
   return text
     .replace(STATUS_TOKEN_RE, "")
@@ -55,13 +63,20 @@ export function stripStatusToken(text: string): string {
     .replace(TITLE_XML_TOKEN_RE, "")
     .replace(AUTOPILOT_TOKEN_RE, "")
     .replace(PROGRESS_TOKEN_RE, "")
+    .replace(HANDOFF_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(STATUS_XML_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
     .replace(TITLE_XML_TAIL_RE, "")
     .replace(AUTOPILOT_TAIL_RE, "")
     .replace(PROGRESS_TAIL_RE, "")
+    .replace(HANDOFF_TAIL_RE, "")
     .replace(/\s+$/, "");
+}
+
+/** True when `text` contains the `<HANDOFF_READY/>` sentinel. */
+export function detectHandoffToken(text: string): boolean {
+  return /<HANDOFF_READY\s*\/>/i.test(text);
 }
 
 /** Last status marker in `text`, or null if none. Handles both colon form
