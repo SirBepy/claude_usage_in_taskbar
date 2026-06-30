@@ -281,6 +281,8 @@ pub fn run() {
             ipc::write_text_file,
             ipc::get_git_info,
             ipc::get_git_dirty,
+            ipc::get_recent_branches,
+            ipc::get_commit_sync,
             ipc::context_status,
             ipc::count_ai_todos,
             ipc::list_ai_todos,

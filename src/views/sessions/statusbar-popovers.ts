@@ -118,6 +118,157 @@ export class DrainPopover {
   }
 }
 
+// ─────────────────────────────── Branch ────────────────────────────────────
+
+export interface BranchEntry { name: string; current: boolean; short_sha: string | null; upstream: string | null; }
+
+export class BranchPopover {
+  private el: HTMLElement | null = null;
+  private cleanup: (() => void) | null = null;
+
+  get isOpen(): boolean { return this.el !== null; }
+
+  open(anchor: HTMLElement, branches: BranchEntry[]): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.el?.remove();
+    const pop = document.createElement("div");
+    pop.className = "sb-git-popover sb-branch-popover";
+    pop.innerHTML = this.buildHtml(branches);
+    document.body.appendChild(pop);
+    this.el = pop;
+    this.reposition(anchor);
+    const onOutside = (e: MouseEvent) => {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) this.close();
+    };
+    setTimeout(() => document.addEventListener("click", onOutside), 0);
+    this.cleanup = () => document.removeEventListener("click", onOutside);
+  }
+
+  close(): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.el?.remove();
+    this.el = null;
+  }
+
+  toggle(anchor: HTMLElement, branches: BranchEntry[]): void {
+    if (this.el) this.close();
+    else this.open(anchor, branches);
+  }
+
+  reanchor(anchor: HTMLElement): void { this.reposition(anchor); }
+
+  private reposition(anchor: HTMLElement): void {
+    if (!this.el) return;
+    const rect = anchor.getBoundingClientRect();
+    const maxLeft = window.innerWidth - this.el.offsetWidth - 8;
+    this.el.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
+    const below = window.innerHeight - rect.bottom;
+    if (below >= this.el.offsetHeight + 8 || below >= rect.top) {
+      this.el.style.top = `${rect.bottom + 4}px`;
+      this.el.style.bottom = "";
+    } else {
+      this.el.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+      this.el.style.top = "";
+    }
+  }
+
+  private buildHtml(branches: BranchEntry[]): string {
+    const header = `<div class="sb-git-pop-header"><i class="ph ph-git-branch"></i>Recent branches</div>`;
+    if (branches.length === 0) return `${header}<div class="sb-git-pop-empty">No branches found</div>`;
+    const rows = branches.map((b) => {
+      const check = b.current ? `<i class="ph ph-check sb-git-pop-check"></i>` : `<span class="sb-git-pop-check-pad"></span>`;
+      const sha = b.short_sha ? `<span class="sb-git-pop-sha">${escapeHtml(b.short_sha)}</span>` : "";
+      const up = b.upstream ? `<span class="sb-git-pop-upstream">${escapeHtml(b.upstream)}</span>` : "";
+      return `<div class="sb-git-pop-row${b.current ? " current" : ""}">${check}<span class="sb-git-pop-name">${escapeHtml(b.name)}</span>${sha}${up}</div>`;
+    }).join("");
+    return `${header}<div class="sb-git-pop-list">${rows}</div>`;
+  }
+}
+
+// ─────────────────────────────── Commits ───────────────────────────────────
+
+export interface CommitEntry { short_sha: string; message: string; }
+export interface CommitSync { ahead: CommitEntry[]; behind: CommitEntry[]; has_upstream: boolean; }
+
+export class CommitsPopover {
+  private el: HTMLElement | null = null;
+  private cleanup: (() => void) | null = null;
+
+  get isOpen(): boolean { return this.el !== null; }
+
+  open(anchor: HTMLElement, sync: CommitSync): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.el?.remove();
+    const pop = document.createElement("div");
+    pop.className = "sb-git-popover sb-commits-popover";
+    pop.innerHTML = this.buildHtml(sync);
+    document.body.appendChild(pop);
+    this.el = pop;
+    this.reposition(anchor);
+    const onOutside = (e: MouseEvent) => {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) this.close();
+    };
+    setTimeout(() => document.addEventListener("click", onOutside), 0);
+    this.cleanup = () => document.removeEventListener("click", onOutside);
+  }
+
+  close(): void {
+    this.cleanup?.();
+    this.cleanup = null;
+    this.el?.remove();
+    this.el = null;
+  }
+
+  toggle(anchor: HTMLElement, sync: CommitSync): void {
+    if (this.el) this.close();
+    else this.open(anchor, sync);
+  }
+
+  reanchor(anchor: HTMLElement): void { this.reposition(anchor); }
+
+  private reposition(anchor: HTMLElement): void {
+    if (!this.el) return;
+    const rect = anchor.getBoundingClientRect();
+    const maxLeft = window.innerWidth - this.el.offsetWidth - 8;
+    this.el.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
+    const below = window.innerHeight - rect.bottom;
+    if (below >= this.el.offsetHeight + 8 || below >= rect.top) {
+      this.el.style.top = `${rect.bottom + 4}px`;
+      this.el.style.bottom = "";
+    } else {
+      this.el.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+      this.el.style.top = "";
+    }
+  }
+
+  private buildHtml(sync: CommitSync): string {
+    if (!sync.has_upstream) {
+      return `<div class="sb-git-pop-empty">No upstream configured for this branch</div>`;
+    }
+    const { ahead, behind } = sync;
+    if (ahead.length === 0 && behind.length === 0) {
+      return `<div class="sb-git-pop-empty"><i class="ph ph-check-circle"></i> Up to date with upstream</div>`;
+    }
+    const parts: string[] = [];
+    if (ahead.length > 0) {
+      const rows = ahead.map((c) =>
+        `<div class="sb-git-pop-commit"><span class="sb-git-pop-sha">${escapeHtml(c.short_sha)}</span><span class="sb-git-pop-msg">${escapeHtml(c.message)}</span></div>`
+      ).join("");
+      parts.push(`<div class="sb-git-pop-section ahead"><i class="ph ph-arrow-up"></i>Outgoing <span class="sb-git-pop-count">${ahead.length}</span></div><div class="sb-git-pop-list">${rows}</div>`);
+    }
+    if (behind.length > 0) {
+      const rows = behind.map((c) =>
+        `<div class="sb-git-pop-commit"><span class="sb-git-pop-sha">${escapeHtml(c.short_sha)}</span><span class="sb-git-pop-msg">${escapeHtml(c.message)}</span></div>`
+      ).join("");
+      parts.push(`<div class="sb-git-pop-section behind"><i class="ph ph-arrow-down"></i>Incoming <span class="sb-git-pop-count">${behind.length}</span></div><div class="sb-git-pop-list">${rows}</div>`);
+    }
+    return parts.join("");
+  }
+}
+
 // ─────────────────────────────── AI Todos ──────────────────────────────────
 
 export class AiTodosPopover {

@@ -175,6 +175,103 @@ pub async fn get_git_info(cwd: String) -> GitInfo {
     .unwrap_or(GitInfo { branch: None, repo: None, ahead: None, behind: None, sha: None, insertions: None, deletions: None })
 }
 
+#[derive(serde::Serialize)]
+pub struct BranchEntry {
+    pub name: String,
+    pub current: bool,
+    pub short_sha: Option<String>,
+    pub upstream: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct CommitEntry {
+    pub short_sha: String,
+    pub message: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct CommitSync {
+    pub ahead: Vec<CommitEntry>,
+    pub behind: Vec<CommitEntry>,
+    pub has_upstream: bool,
+}
+
+/// Returns recent local branches sorted by last commit date (most recent first),
+/// up to 15. Each entry carries the current-branch marker, short SHA, and
+/// tracking upstream ref if configured.
+#[tauri::command]
+pub async fn get_recent_branches(cwd: String) -> Vec<BranchEntry> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&cwd).args([
+            "branch",
+            "--sort=-committerdate",
+            "--format=%(HEAD)|%(refname:short)|%(objectname:short)|%(upstream:short)",
+        ]);
+        crate::util::process::hide_console(&mut cmd);
+        let out = cmd
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default();
+        out.lines()
+            .take(15)
+            .filter_map(|line| {
+                let mut parts = line.splitn(4, '|');
+                let head = parts.next()?;
+                let name = parts.next()?.trim().to_string();
+                if name.is_empty() { return None; }
+                let short_sha = parts.next().map(|s| s.trim()).filter(|s| !s.is_empty()).map(str::to_string);
+                let upstream = parts.next().map(|s| s.trim()).filter(|s| !s.is_empty()).map(str::to_string);
+                Some(BranchEntry { name, current: head.trim() == "*", short_sha, upstream })
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Returns the list of commits that are ahead (local-only) and behind (upstream-only)
+/// the tracking branch. Used for the VSCode-style sync popover on the commits chip.
+#[tauri::command]
+pub async fn get_commit_sync(cwd: String) -> CommitSync {
+    let empty = CommitSync { ahead: vec![], behind: vec![], has_upstream: false };
+    tauri::async_runtime::spawn_blocking(move || {
+        fn run(cwd: &str, args: &[&str]) -> Option<String> {
+            let mut cmd = std::process::Command::new("git");
+            cmd.arg("-C").arg(cwd).args(args);
+            crate::util::process::hide_console(&mut cmd);
+            cmd.output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        }
+        fn parse_log(raw: Option<String>) -> Vec<CommitEntry> {
+            raw.unwrap_or_default()
+                .lines()
+                .take(50)
+                .filter_map(|l| {
+                    let (sha, msg) = l.split_once('|')?;
+                    Some(CommitEntry { short_sha: sha.trim().to_string(), message: msg.to_string() })
+                })
+                .collect()
+        }
+        if run(&cwd, &["rev-parse", "@{u}"]).is_none() {
+            return CommitSync { ahead: vec![], behind: vec![], has_upstream: false };
+        }
+        CommitSync {
+            ahead: parse_log(run(&cwd, &["log", "--pretty=format:%h|%s", "@{u}..HEAD"])),
+            behind: parse_log(run(&cwd, &["log", "--pretty=format:%h|%s", "HEAD..@{u}"])),
+            has_upstream: true,
+        }
+    })
+    .await
+    .unwrap_or(empty)
+}
+
 #[cfg(test)]
 mod git_info_tests {
     use super::parse_shortstat;

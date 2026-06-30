@@ -414,3 +414,138 @@
   font-size: 0.78rem;
   font-style: italic;
 }
+
+/* ── Branch + commits git popovers ─────────────────────────────────────────── */
+
+.sb-chip.sb-branch-btn,
+.sb-chip.sb-commits-btn { cursor: pointer; }
+.sb-chip.sb-branch-btn:hover { color: #86efac; background: rgba(74, 222, 128, 0.1); border-color: rgba(74, 222, 128, 0.35); }
+.sb-chip.sb-commits-btn:hover { background: rgba(129, 140, 248, 0.1); border-color: rgba(129, 140, 248, 0.35); }
+
+.sb-git-popover {
+  position: fixed;
+  z-index: 500;
+  min-width: 280px;
+  max-width: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-family: 'Fira Code', monospace;
+  font-size: 0.75rem;
+  overflow: hidden;
+}
+
+.sb-git-pop-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sb-git-pop-header i { font-size: 0.85rem; }
+
+.sb-git-pop-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.sb-git-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  min-width: 0;
+}
+
+.sb-git-pop-row.current { background: rgba(74, 222, 128, 0.06); }
+
+.sb-git-pop-check { color: #4ade80; font-size: 0.8rem; flex-shrink: 0; }
+.sb-git-pop-check-pad { display: inline-block; width: 0.8rem; flex-shrink: 0; }
+
+.sb-git-pop-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text);
+}
+
+.sb-git-pop-row.current .sb-git-pop-name { color: #4ade80; font-weight: 600; }
+
+.sb-git-pop-sha {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.sb-git-pop-upstream {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  color: #818cf8;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.sb-git-pop-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 12px;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-style: italic;
+  justify-content: center;
+}
+
+.sb-git-pop-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sb-git-pop-section.ahead { color: #4ade80; }
+.sb-git-pop-section.behind { color: #60a5fa; }
+.sb-git-pop-section i { font-size: 0.85rem; }
+.sb-git-pop-count { font-weight: 400; opacity: 0.8; }
+
+.sb-git-pop-commit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 12px;
+  min-width: 0;
+}
+
+.sb-git-pop-commit .sb-git-pop-sha {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+
+.sb-git-pop-msg {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text);
+  font-size: 0.75rem;
+}

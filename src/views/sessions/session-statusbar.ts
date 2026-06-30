@@ -19,7 +19,7 @@ import {
   type SessionCounts,
   type StatusbarOptions,
 } from "./session-statusbar-helpers";
-import { DrainPopover, AiTodosPopover, EffortPopover, ModelPopover } from "./statusbar-popovers";
+import { DrainPopover, AiTodosPopover, EffortPopover, ModelPopover, BranchPopover, CommitsPopover, type BranchEntry, type CommitSync } from "./statusbar-popovers";
 export {
   loadStatuslineRows,
   saveStatuslineRows,
@@ -79,6 +79,8 @@ export class SessionStatusbar {
   private aiTodosPopover = new AiTodosPopover();
   private effortPopover = new EffortPopover();
   private modelPopover = new ModelPopover();
+  private branchPopover = new BranchPopover();
+  private commitsPopover = new CommitsPopover();
 
   constructor(container: HTMLElement, startedAt: string | null, rows: ChipType[][], opts: StatusbarOptions = {}) {
     this.container = container;
@@ -315,7 +317,7 @@ export class SessionStatusbar {
       case "thinking":
         return this.meta.hasThinking ? `<span class="sb-chip sb-thinking active${this.animClass("thinking")}"><i class="ph ph-brain"></i>thinking</span>` : "";
       case "branch": {
-        if (this.gitInfo.branch) return `<span class="sb-chip sb-branch${this.animClass("branch")}"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`;
+        if (this.gitInfo.branch) return `<span class="sb-chip sb-branch sb-branch-btn${this.animClass("branch")}" role="button" tabindex="0"><i class="ph ph-git-branch"></i>${escapeHtml(this.gitInfo.branch)}</span>`;
         if (!this.gitInfoLoaded) return this.skeletonChip("branch", "sb-branch", "ph-git-branch", "60px");
         return "";
       }
@@ -408,7 +410,7 @@ export class SessionStatusbar {
     else if (mode === "behind") { txt = `↓${b ?? 0}`; icon = "ph-arrow-down"; }
     else { txt = `↑${a ?? 0} ↓${b ?? 0}`; }
     const key = `commits_${mode}`;
-    return `<span class="sb-chip sb-commits${this.animClass(key)}" title="${a ?? 0} ahead, ${b ?? 0} behind upstream"><i class="ph ${icon}"></i>${txt}</span>`;
+    return `<span class="sb-chip sb-commits sb-commits-btn${this.animClass(key)}" role="button" tabindex="0" title="${a ?? 0} ahead, ${b ?? 0} behind upstream"><i class="ph ${icon}"></i>${txt}</span>`;
   }
 
   private renderDirty(): string {
@@ -484,6 +486,24 @@ export class SessionStatusbar {
       this.drainPopover.toggle(anchor);
     });
 
+    this.container.querySelector<HTMLElement>(".sb-branch-btn")?.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const anchor = e.currentTarget as HTMLElement;
+      if (this.branchPopover.isOpen) { this.branchPopover.close(); return; }
+      if (!this.cwd) return;
+      const branches = await invoke<BranchEntry[]>("get_recent_branches", { cwd: this.cwd });
+      this.branchPopover.open(anchor, branches);
+    });
+
+    this.container.querySelector<HTMLElement>(".sb-commits-btn")?.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const anchor = e.currentTarget as HTMLElement;
+      if (this.commitsPopover.isOpen) { this.commitsPopover.close(); return; }
+      if (!this.cwd) return;
+      const sync = await invoke<CommitSync>("get_commit_sync", { cwd: this.cwd });
+      this.commitsPopover.open(anchor, sync);
+    });
+
     this.effortPopover.wire(
       this.container,
       this.sessionId,
@@ -500,6 +520,16 @@ export class SessionStatusbar {
     if (this.drainPopover.isOpen) {
       const anchor = this.container.querySelector<HTMLElement>(".sb-drain-btn");
       if (anchor) this.drainPopover.open(anchor);
+    }
+    if (this.branchPopover.isOpen) {
+      const anchor = this.container.querySelector<HTMLElement>(".sb-branch-btn");
+      if (anchor) this.branchPopover.reanchor(anchor);
+      else this.branchPopover.close();
+    }
+    if (this.commitsPopover.isOpen) {
+      const anchor = this.container.querySelector<HTMLElement>(".sb-commits-btn");
+      if (anchor) this.commitsPopover.reanchor(anchor);
+      else this.commitsPopover.close();
     }
   }
 }
