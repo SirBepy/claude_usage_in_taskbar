@@ -295,6 +295,7 @@ pub fn run() {
             ipc::generate_news_summary,
             ipc::list_slash_commands,
             ipc::list_project_files,
+            ipc::read_file_as_base64,
             ipc::get_skill_usage_week,
             ipc::get_skill_usage_detail,
             ipc::list_installed_skills,
