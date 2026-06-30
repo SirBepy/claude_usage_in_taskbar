@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { userEvent, assistantEvent } from "./helpers/chat-events.mjs";
+import { userEvent, assistantEvent, streamingEvent } from "./helpers/chat-events.mjs";
 
 const invokeMock = vi.fn();
 vi.mock("../src/shared/ipc.ts", () => ({ invoke: invokeMock }));
@@ -144,6 +144,90 @@ describe("SessionEventStore pagination", () => {
     });
     const users = sessionEvents.events(sid).filter((e) => e.type === "user_message");
     expect(users).toHaveLength(1);
+  });
+
+  it("reconcileLatest recovers a turn the lossy live channel dropped", async () => {
+    const sid = "sess-reconcile";
+    // First load: one completed turn (u1 -> a1).
+    invokeMock.mockResolvedValueOnce({
+      events: [userEvent("u1", 0), assistantEvent("a1", 0)],
+      oldest_seq: 0,
+      newest_seq: 1,
+      has_more: false,
+    });
+    await sessionEvents.loadInitial(sid);
+    // A later turn (u2 -> a2) completed while the chat was backgrounded, but the
+    // assistant frame was dropped by the lossy daemon->app notifier and never
+    // reached the store. The authoritative transcript HAS it.
+    invokeMock.mockResolvedValueOnce({
+      events: [
+        userEvent("u1", 0),
+        assistantEvent("a1", 0),
+        userEvent("u2", 0),
+        assistantEvent("a2 recovered", 0),
+      ],
+      oldest_seq: 0,
+      newest_seq: 3,
+      has_more: false,
+    });
+    const seen = [];
+    const unsub = sessionEvents.subscribe(sid, (ev) => seen.push(ev));
+    await sessionEvents.reconcileLatest(sid);
+    unsub();
+    const assistants = sessionEvents.events(sid).filter((e) => e.type === "assistant_message");
+    expect(assistants.map((e) => e.content[0].text)).toEqual(["a1", "a2 recovered"]);
+    // Only the genuinely-missing events were re-delivered (no double-render of a1/u1).
+    expect(seen.map((e) => e.content[0].text)).toEqual(["u2", "a2 recovered"]);
+  });
+
+  it("reconcileLatest is a no-op when the cache already has the latest turn", async () => {
+    const sid = "sess-reconcile-noop";
+    invokeMock.mockResolvedValueOnce({
+      events: [userEvent("u1", 0), assistantEvent("a1", 0)],
+      oldest_seq: 0,
+      newest_seq: 1,
+      has_more: false,
+    });
+    await sessionEvents.loadInitial(sid);
+    // Transcript matches the cache exactly: nothing to recover.
+    invokeMock.mockResolvedValueOnce({
+      events: [userEvent("u1", 0), assistantEvent("a1", 0)],
+      oldest_seq: 0,
+      newest_seq: 1,
+      has_more: false,
+    });
+    const seen = [];
+    const unsub = sessionEvents.subscribe(sid, (ev) => seen.push(ev));
+    await sessionEvents.reconcileLatest(sid);
+    unsub();
+    expect(seen).toHaveLength(0);
+    expect(sessionEvents.events(sid).filter((e) => e.type === "assistant_message")).toHaveLength(1);
+  });
+
+  it("reconcileLatest does not double-recover a final that matches a cached streaming partial", async () => {
+    const sid = "sess-reconcile-stream";
+    invokeMock.mockResolvedValueOnce({
+      events: [userEvent("u1", 0)],
+      oldest_seq: 0,
+      newest_seq: 0,
+      has_more: false,
+    });
+    await sessionEvents.loadInitial(sid);
+    // The live channel delivered the streaming partials (full text accrued) but
+    // the finalized line; the transcript stores it as a finalized assistant with
+    // the same text. It must NOT be recovered as a fresh message.
+    sessionEvents.pushSynthetic(sid, streamingEvent("the full answer", 0));
+    invokeMock.mockResolvedValueOnce({
+      events: [userEvent("u1", 0), assistantEvent("the full answer", 0)],
+      oldest_seq: 0,
+      newest_seq: 1,
+      has_more: false,
+    });
+    const seen = [];
+    const unsub = sessionEvents.subscribe(sid, (ev) => seen.push(ev));
+    await sessionEvents.reconcileLatest(sid);
+    unsub();
+    expect(seen).toHaveLength(0);
   });
 
   it("loadOlder returns null when hasMore is false", async () => {

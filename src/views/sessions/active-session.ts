@@ -394,6 +394,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       overlay?.remove();
     }
     historyLoaded = true;
+    // Self-heal against the lossy daemon->app notifier: a turn that completed
+    // while this session was backgrounded may be missing from the cache even
+    // though the sidebar marked it "done". Re-read the transcript tail and paint
+    // anything the live channel dropped. Fire-and-forget so reopen stays instant;
+    // recovered events arrive via the live subscriber path.
+    void sessionEvents.reconcileLatest(sessionId, sess.cwd ? String(sess.cwd) : undefined);
     // Sync sidebar once after replay: questionSessions is now populated but no
     // renderSidebar fired during replay (suppressed to avoid FLIP flicker).
     const rootEl = document.querySelector<HTMLElement>(".view-sessions");

@@ -134,6 +134,64 @@ class SessionEventStore {
   }
 
   /**
+   * Re-read the authoritative JSONL transcript tail and recover any committed
+   * message the live channel never delivered. The daemon->app notifier is lossy
+   * (drops frames under backpressure - see project_daemon_notifier_broadcast_lossy),
+   * so a turn that completed while this session was backgrounded can be absent
+   * from the cache even though the sidebar marked it "done" (that status rides a
+   * separate, more reliable channel). loadInitial is deliberately idempotent and
+   * will NOT refetch once cached, so without this a reopened session shows the
+   * stale cache until a manual refresh. This always hits the page and self-heals.
+   *
+   * Recovered events are appended in transcript order and pushed through the
+   * normal subscriber path so an open renderer paints them. Double-render-safe:
+   * only events whose content signature is absent from the cache are recovered.
+   * A finalized assistant whose text matches a cached streaming partial counts
+   * as already present (the partial covers its finalized form). No-op until
+   * initialLoaded - there is nothing to reconcile against before the first load.
+   */
+  async reconcileLatest(sessionId: string, cwd?: string): Promise<void> {
+    const entry = this.cache.get(sessionId);
+    if (!entry || !entry.initialLoaded) return;
+    let page: HistoryPage;
+    try {
+      const args: { sessionId: string; cwd?: string; messageLimit: number } = {
+        sessionId,
+        messageLimit: INITIAL_PAGE_SIZE,
+      };
+      if (cwd) args.cwd = cwd;
+      page = await invoke<HistoryPage>("load_history_page", args);
+    } catch {
+      return; // no transcript yet / read error - nothing to reconcile against
+    }
+    const have = new Set<string>();
+    for (const ev of entry.events) {
+      const s = this.sigOf(ev);
+      if (s !== null) {
+        have.add(s);
+      } else if (ev.type === "assistant_message") {
+        // Streaming partial: its accumulated text covers the finalized form, so
+        // a matching page final isn't a fresh drop. The last partial carries the
+        // full text, which equals the final's sig.
+        const t = this.contentText(ev);
+        if (t !== null) have.add(`a:${t}`);
+      }
+    }
+    const missing = page.events.filter((ev) => {
+      const s = this.sigOf(ev);
+      return s !== null && !have.has(s);
+    });
+    if (missing.length === 0) return;
+    for (const ev of missing) {
+      entry.events.push(ev);
+      this.recordSig(entry, ev);
+      entry.subscribers.forEach((fn) => {
+        try { fn(ev); } catch { /* ignore */ }
+      });
+    }
+  }
+
+  /**
    * Fetch the previous page of older messages and prepend them to the cache.
    * Returns the prepended slice, or null if there is nothing more to load
    * or a load is already in flight.
