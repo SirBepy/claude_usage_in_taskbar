@@ -3,7 +3,8 @@
 // partial/final transcript via callbacks. No auto-stop: recording runs until
 // the caller calls stop().
 import { invoke } from "../../ipc";
-import { isRemote, remoteToken } from "../../transport";
+import { isRemote } from "../../transport";
+import { remoteToken } from "../../http-transport";
 import { getSelectedMic, listMics } from "./voice-devices";
 
 export type VoiceState = "idle" | "connecting" | "recording" | "error";

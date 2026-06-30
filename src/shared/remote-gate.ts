@@ -15,7 +15,7 @@
  * This is a complete NO-OP inside the Tauri webview (window.__TAURI__ present).
  */
 
-import { REMOTE_TOKEN_KEY, REMOTE_TOKEN_EXPIRED_KEY } from "./transport";
+import { REMOTE_TOKEN_KEY, REMOTE_TOKEN_EXPIRED_KEY } from "./http-transport";
 
 /** True when the previous token was rejected (401) and cleared by the transport. */
 function consumeExpiredFlag(): boolean {

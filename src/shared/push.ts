@@ -8,7 +8,7 @@
 // calls these - push is a phone-only feature gated by isRemote() at the call
 // site.
 
-import { remoteToken } from "./transport";
+import { remoteToken } from "./http-transport";
 
 /** localStorage flag mirroring "the user turned push on" so the toggle reflects
  *  reality across reloads without re-querying permission state. */
