@@ -45,6 +45,30 @@ const TITLE_XML_TAIL_RE = /<cc-title>[\s\S]*$/i;
 const PROGRESS_TOKEN_RE = /<cc-progress:\d+\/\d+>/gi;
 const PROGRESS_TAIL_RE = /<c(?:c(?:-(?:p(?:r(?:o(?:g(?:r(?:e(?:s(?:s(?::(?:\d+(?:\/\d*)?)?)?)?)?)?)?)?)?)?)?)?)\s*$/i;
 
+// PR preview markers emitted by the /create-pr skill before asking for
+// confirmation. The app strips them from chat display and renders a PR card
+// instead. <cc-pr-title:> carries the plain-text title; <cc-pr-body:> and
+// <cc-pr-commits:> carry base64-encoded markdown body and commits JSON.
+const PR_TITLE_TOKEN_RE = /<cc-pr-title:[^>]*>/gi;
+const PR_TITLE_TAIL_RE = /<cc-pr-title(?::[^>]*)?\s*$/i;
+const PR_BODY_TOKEN_RE = /<cc-pr-body:[A-Za-z0-9+/=\n]*>/gi;
+const PR_BODY_TAIL_RE = /<cc-pr-body(?::[A-Za-z0-9+/=]*)?\s*$/i;
+const PR_COMMITS_TOKEN_RE = /<cc-pr-commits:[A-Za-z0-9+/=\n]*>/gi;
+const PR_COMMITS_TAIL_RE = /<cc-pr-commits(?::[A-Za-z0-9+/=]*)?\s*$/i;
+
+/** Returns the PR preview data if all three markers are present, or null. */
+export function detectPrPreviewToken(text: string): { title: string; bodyB64: string; commitsB64: string } | null {
+  const titleMatch = /<cc-pr-title:([^>]*)>/i.exec(text);
+  const bodyMatch = /<cc-pr-body:([A-Za-z0-9+/=\n]*)>/i.exec(text);
+  const commitsMatch = /<cc-pr-commits:([A-Za-z0-9+/=\n]*)>/i.exec(text);
+  if (!titleMatch || !bodyMatch || !commitsMatch) return null;
+  return {
+    title: titleMatch[1] ?? "",
+    bodyB64: (bodyMatch[1] ?? "").replace(/\s/g, ""),
+    commitsB64: (commitsMatch[1] ?? "").replace(/\s/g, ""),
+  };
+}
+
 // Handoff-ready sentinel. The app injects a prompt asking Claude to write a
 // session handoff file; Claude ends the turn with `<HANDOFF_READY/>` to signal
 // completion. The app opens a new chat automatically on detection. Never shown.
@@ -53,8 +77,9 @@ const PROGRESS_TAIL_RE = /<c(?:c(?:-(?:p(?:r(?:o(?:g(?:r(?:e(?:s(?:s(?::(?:\d+(?
 const HANDOFF_TOKEN_RE = /<HANDOFF_READY\s*\/>/gi;
 const HANDOFF_TAIL_RE = /<HANDOFF_READY[^>]*\s*$/i;
 
-/** Strips the status, title, autopilot, progress, and handoff markers (complete
- * or partial) plus trailing whitespace, so none ever reaches the rendered body. */
+/** Strips the status, title, autopilot, progress, handoff, and PR preview
+ * markers (complete or partial) plus trailing whitespace, so none ever reaches
+ * the rendered body. */
 export function stripStatusToken(text: string): string {
   return text
     .replace(STATUS_TOKEN_RE, "")
@@ -64,6 +89,9 @@ export function stripStatusToken(text: string): string {
     .replace(AUTOPILOT_TOKEN_RE, "")
     .replace(PROGRESS_TOKEN_RE, "")
     .replace(HANDOFF_TOKEN_RE, "")
+    .replace(PR_TITLE_TOKEN_RE, "")
+    .replace(PR_BODY_TOKEN_RE, "")
+    .replace(PR_COMMITS_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(STATUS_XML_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
@@ -71,6 +99,9 @@ export function stripStatusToken(text: string): string {
     .replace(AUTOPILOT_TAIL_RE, "")
     .replace(PROGRESS_TAIL_RE, "")
     .replace(HANDOFF_TAIL_RE, "")
+    .replace(PR_TITLE_TAIL_RE, "")
+    .replace(PR_BODY_TAIL_RE, "")
+    .replace(PR_COMMITS_TAIL_RE, "")
     .replace(/\s+$/, "");
 }
 

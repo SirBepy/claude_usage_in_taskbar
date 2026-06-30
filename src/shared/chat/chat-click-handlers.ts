@@ -2,6 +2,7 @@ import { base64ToUtf8 } from "./chat-transforms";
 import { openLightbox } from "./lightbox";
 import { chipToLightboxContent } from "./attachment-hydrator";
 import { showView } from "../navigation";
+import { escapeHtml } from "../escape-html";
 
 let tableOverlay: HTMLDivElement | null = null;
 
@@ -66,6 +67,54 @@ export function handleSlashClick(e: MouseEvent): void {
   e.preventDefault();
   (window as unknown as { skillDetailTarget?: string }).skillDetailTarget = target;
   showView("skill-detail");
+}
+
+let prModalOverlay: HTMLDivElement | null = null;
+
+function closePrModal(): void {
+  if (!prModalOverlay) return;
+  prModalOverlay.remove();
+  prModalOverlay = null;
+  document.removeEventListener("keydown", onPrModalEsc);
+}
+
+function onPrModalEsc(e: KeyboardEvent): void {
+  if (e.key === "Escape") closePrModal();
+}
+
+export function handlePrPreviewClick(e: MouseEvent): void {
+  const btn = (e.target as Element).closest<HTMLButtonElement>(".pr-preview-btn");
+  if (!btn) return;
+  const card = btn.closest<HTMLElement>(".pr-preview-card");
+  if (!card) return;
+  const tmpl = card.querySelector<HTMLTemplateElement>("template.pr-modal-tpl");
+  if (!tmpl) return;
+
+  closePrModal();
+
+  const overlay = document.createElement("div");
+  overlay.className = "pr-modal-overlay";
+  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) closePrModal(); });
+  prModalOverlay = overlay;
+
+  const modal = document.createElement("div");
+  modal.className = "pr-modal";
+
+  const header = document.createElement("div");
+  header.className = "pr-modal-header";
+  const title = card.dataset.prTitle ?? "PR Preview";
+  header.innerHTML = `<i class="ph ph-git-pull-request"></i><span class="pr-modal-title">${escapeHtml(title)}</span><button class="pr-modal-close" aria-label="Close"><i class="ph ph-x"></i></button>`;
+  header.querySelector<HTMLButtonElement>(".pr-modal-close")!.addEventListener("click", closePrModal);
+
+  const content = document.createElement("div");
+  content.className = "pr-modal-content";
+  content.appendChild(tmpl.content.cloneNode(true));
+
+  modal.appendChild(header);
+  modal.appendChild(content);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  document.addEventListener("keydown", onPrModalEsc);
 }
 
 export function handleAttachmentClick(e: MouseEvent): void {

@@ -14,9 +14,10 @@ import {
   isResumeContinuationUserMessage,
   isSilentSystemUserMessage,
   noiseAssistantLabel,
+  detectPrPreviewToken,
 } from "./chat-classifiers";
 export type { RenderedMessage } from "./chat-classifiers";
-export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, detectHandoffToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, noiseAssistantLabel, isNoiseAssistantText } from "./chat-classifiers";
+export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, detectHandoffToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, noiseAssistantLabel, isNoiseAssistantText, detectPrPreviewToken } from "./chat-classifiers";
 
 const md = new MarkdownIt({
   html: false,
@@ -166,6 +167,26 @@ function pastedLogChipHtml(name: string, body: string): string {
   return `<div class="attachment-chip pasted-log-chip previewable" data-pasted-name="${escapeHtml(name)}" data-pasted-text="${utf8ToBase64(body)}"><i class="ph ph-file-text"></i><span class="chip-name">${escapeHtml(name)}</span></div>`;
 }
 
+/** Builds the inline PR preview card HTML. All content is pre-rendered so the
+ * click handler only needs to surface the hidden template. */
+export function renderPrPreviewCard(title: string, bodyB64: string, commitsB64: string): string {
+  const body = base64ToUtf8(bodyB64);
+  const renderedBody = body ? renderMarkdown(body) : "<p><em>No description.</em></p>";
+  let commitsHtml = "";
+  try {
+    const commits = JSON.parse(base64ToUtf8(commitsB64)) as Array<{ sha: string; msg: string }>;
+    commitsHtml = commits
+      .map(
+        (c) =>
+          `<div class="pr-commit-item"><code class="pr-commit-sha">${escapeHtml(c.sha.slice(0, 7))}</code><span class="pr-commit-msg">${escapeHtml(c.msg)}</span></div>`,
+      )
+      .join("");
+  } catch {
+    commitsHtml = "";
+  }
+  return `<div class="pr-preview-card" data-pr-title="${escapeHtml(title)}"><div class="pr-card-strip"><i class="ph ph-git-pull-request"></i><span class="pr-card-label">PR ready — review before creating</span><button class="pr-preview-btn">Preview</button></div><template class="pr-modal-tpl"><div class="pr-modal-commits"><div class="pr-commits-header"><i class="ph ph-git-commit"></i>Commits</div><div class="pr-commits-list">${commitsHtml || '<span class="pr-commits-empty">No commits</span>'}</div></div><div class="pr-modal-body-content"><h1 class="pr-body-title">${escapeHtml(title)}</h1>${renderedBody}</div></template></div>`;
+}
+
 export function renderBlocks(blocks: ContentBlock[], breaks = false, fileChips = false): string {
   return blocks
     .map((b) => {
@@ -201,7 +222,15 @@ export function renderMessage(m: RenderedMessage): string {
       const retryBtn = isApiError
         ? `<button class="api-retry-btn"><i class="ph ph-arrow-clockwise"></i>Retry</button>`
         : "";
-      return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(blocks)}${retryBtn}</div>`;
+      let prCard = "";
+      if (!m.streaming) {
+        for (const b of blocks) {
+          if (b.type !== "text") continue;
+          const pr = detectPrPreviewToken(b.text);
+          if (pr) { prCard = renderPrPreviewCard(pr.title, pr.bodyB64, pr.commitsB64); break; }
+        }
+      }
+      return `<div class="msg assistant${m.streaming ? " streaming" : ""}"><button class="copy-btn msg-copy-btn" aria-label="Copy message"><i class="ph ph-copy"></i></button>${renderBlocks(blocks)}${retryBtn}${prCard}</div>`;
     }
     case "tool_use": {
       const view = parseFileEdit(m.tool ?? "", m.input);
