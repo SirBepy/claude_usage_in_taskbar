@@ -140,18 +140,25 @@ const LS_LAST_SELECTED = "cc_last_selected_session";
  * restore the last-viewed chat after a reload / app restart. Pending
  * placeholder ids (prefix "pending-") are not persisted - they are tracked
  * via the separate pending-session storage in pending-flow.ts.
+ *
+ * Deselecting (`id === null`) does NOT erase the persisted id. A daemon
+ * restart (dev rebuild, crash, app update) transiently empties the session
+ * list, which fires `setActiveSession(null)` to clear the pane; if that also
+ * wiped the persisted id, the restore-on-reconnect would find nothing and the
+ * user would land on a blank app and have to hunt their chat down in History.
+ * Persistence is cleared only by an explicit close via `clearLastSelectedSession`.
+ * Restoring a genuinely-ended session is already prevented by the
+ * `state.sessions.find(...)` guard at the restore sites in sessions.ts.
  */
 export function setActiveSession(id: string | null): void {
   state.selectedId = id;
   setSelectedSessionId(id);
-  try {
-    if (id && !id.startsWith("pending-")) {
+  if (id && !id.startsWith("pending-")) {
+    try {
       localStorage.setItem(LS_LAST_SELECTED, id);
-    } else if (id === null) {
-      localStorage.removeItem(LS_LAST_SELECTED);
+    } catch {
+      /* quota or storage disabled */
     }
-  } catch {
-    /* quota or storage disabled */
   }
 }
 
@@ -160,5 +167,18 @@ export function loadLastSelectedSession(): string | null {
     return localStorage.getItem(LS_LAST_SELECTED);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Forget the persisted last-viewed chat. Called only on an explicit close so a
+ * deliberately-closed chat is not re-opened on the next mount. NOT called on a
+ * transient deselect (see setActiveSession).
+ */
+export function clearLastSelectedSession(): void {
+  try {
+    localStorage.removeItem(LS_LAST_SELECTED);
+  } catch {
+    /* storage disabled */
   }
 }

@@ -12,7 +12,7 @@ import "./new-project-modal.css";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
 import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
-import { state, resetState, setActiveSession, loadLastSelectedSession } from "./state";
+import { state, resetState, setActiveSession, loadLastSelectedSession, clearLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
 import { sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu } from "./sidebar";
@@ -527,6 +527,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     state.composer?.destroy();
     state.composer = null;
     setActiveSession(null);
+    // Explicit close: forget the persisted chat so a restart doesn't re-open it.
+    clearLastSelectedSession();
     pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
     // Optimistic removal: drop the row immediately without waiting for
     // instances-changed from the daemon (which takes a few seconds).
