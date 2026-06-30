@@ -202,11 +202,23 @@ export function isBoundaryMessage(m: RenderedMessage): boolean {
 // stdout via `<local-command-stdout>`. These are session bookkeeping, not
 // content the user wants to see in the chat.
 //
-// command-name/message/local-command-stdout: strip the ENTIRE block including
-// content (the name "rate-it" or stdout output should not appear in the bubble).
-// command-args: strip only the tags, keep content (it's the user's typed text).
+// command-message/local-command-stdout: strip the ENTIRE block including
+// content (the menu label "commit" / stdout output should not appear in the
+// bubble). command-args: strip only the tags, keep content (it's the user's
+// typed text). command-name: its content already carries the leading slash
+// (e.g. "/commit"), captured separately below and reattached to the front
+// of the args, instead of being deleted, so the normalized text reconstructs
+// the same "/name args" string the composer's optimistic echo carries. The
+// two must match byte-for-byte: this normalized form also feeds the live
+// dedup signature (sigOf in event-store.ts) that reconciles the runner
+// stream's synthetic echo against the file watcher's JSONL-sourced copy of
+// the same turn. Deleting the name (the old behavior) made the two sigs
+// differ, "/commit pushnbump" vs "pushnbump", so the watcher's delivery
+// was never recognized as a duplicate and rendered as a second, chip-less
+// bubble underneath the real one.
+const COMMAND_NAME_RE = /<command-name(?:\s[^>]*)?>([\s\S]*?)<\/command-name>/i;
 const COMMAND_BLOCK_RE = /<(?:command-name|command-message|local-command-stdout)(?:\s[^>]*)?>[\s\S]*?<\/(?:command-name|command-message|local-command-stdout)>/gi;
-const COMMAND_TAG_RE = /<\/?(?:command-name|command-message|command-args|local-command-stdout)(?:\s[^>]*)?>/gi;
+const COMMAND_ARGS_TAG_RE = /<\/?command-args(?:\s[^>]*)?>/gi;
 
 // When /compact runs, Claude Code injects the generated summary back into the
 // conversation as a user message with this wrapper. The summary can be thousands
@@ -229,14 +241,19 @@ const SKILL_BODY_RE = /^Base directory for this skill:[\s\S]*$/m;
 
 // Normalize raw user-message text for display and cross-source dedup: removes
 // the command scaffolding Claude Code adds when expanding slash commands, leaving
-// only the user's typed text (which lives between the command-args tags).
+// only the user's typed text (the command-name's "/word" reattached to the
+// front of the command-args content — see COMMAND_NAME_RE above for why).
 export function normalizeUserMessageText(text: string): string {
-  return text
+  const nameMatch = COMMAND_NAME_RE.exec(text);
+  const body = text
     .replace(COMMAND_BLOCK_RE, "")
-    .replace(COMMAND_TAG_RE, "")
+    .replace(COMMAND_ARGS_TAG_RE, "")
     .replace(SKILL_BODY_RE, "")
     .replace(TASK_NOTIFICATION_RE, "")
     .trim();
+  const name = nameMatch?.[1]?.trim();
+  if (!name) return body;
+  return body ? `${name} ${body}` : name;
 }
 
 export function isCompactUserMessage(blocks: ContentBlock[]): boolean {
