@@ -5,6 +5,20 @@ priority: medium
 area: frontend
 ---
 
+## Status (2026-07-01)
+
+Implemented once (thin 3px sweeping bar at the top of the window, driven off
+`state.sessions`/`state.questionSessions`, wired through `renderSidebar()`).
+Joe looked it over and didn't like the visual direction - parked rather than
+shipped. The attempt is preserved in a local git stash (`ai_todo 134: progress
+bar attempt - parked, Joe didn't like the visual direction`) so it's not lost,
+but NOT applied to the working tree and NOT committed.
+
+Next time this is picked up: brainstorm the look/placement again from scratch
+(don't just re-apply the stash) - the data-source plan below (busy/awaiting
+state, no new IPC) is still sound, but the visual treatment needs a different
+idea.
+
 ## What
 
 Add a visible progress bar / activity indicator to the app that updates in real time as the AI is working. The goal is to make "AI is doing something right now" feel viscerally obvious rather than inferred from text status chips.
