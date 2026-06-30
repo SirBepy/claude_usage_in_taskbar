@@ -198,7 +198,7 @@ export function buildChatMenuBlock(
     },
   ];
 
-  // ── Configure ▸ ────────────────────────────────────────────────────────────
+  // ── Configure items (merged into Chat) ─────────────────────────────────────
   const autoOn = ctx.autoAcceptOn;
   const configureItems: ItemDesc[] = [
     {
@@ -227,6 +227,7 @@ export function buildChatMenuBlock(
       disabledReason: isDraft ? "Available once the chat starts" : (!sessionId ? "No session" : undefined),
     },
   ];
+  const allChatItems = [...chatItems, ...configureItems];
 
   // ── Agent ▸ ────────────────────────────────────────────────────────────────
   const agentItems: ItemDesc[] = [
@@ -298,8 +299,7 @@ export function buildChatMenuBlock(
   }
 
   appendSubMenu(makeSubParent("folder-open", "Open project in", openProjectItems), openProjectItems);
-  appendSubMenu(makeSubParent("chat-dots", "Chat", chatItems), chatItems);
-  appendSubMenu(makeSubParent("gear", "Configure", configureItems), configureItems);
+  appendSubMenu(makeSubParent("chat-dots", "Chat", allChatItems), allChatItems);
   appendSubMenu(makeSubParent("robot", "Agent", agentItems), agentItems);
 
   // ── Close / Delete draft ────────────────────────────────────────────────────
