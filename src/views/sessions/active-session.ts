@@ -35,6 +35,7 @@ import { snapshotActiveCardDraft } from "./permission-modal/question-ui";
 import { savePendingPromptDraft } from "./permission-modal/gating";
 import { markSessionExiting } from "./sidebar-anim";
 import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
+import { awaitCloseThenFinalize } from "./close-finalize";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
@@ -452,20 +453,32 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
             });
         };
 
-        let finalized = false;
-        const unsub = sessionEvents.subscribe(sessionId, (ev) => {
-          if (ev.type === "turn_usage" || ev.type === "session_ended") {
-            if (finalized) return;
-            finalized = true;
-            unsub();
-            finalize();
-          }
+        // Tear down once the /close turn settles. The fast path is the live
+        // turn_usage / session_ended event, but that rides the lossy daemon->app
+        // notifier and can be dropped (which used to leave the chat stuck in
+        // "closing" forever). awaitCloseThenFinalize races it against an
+        // authoritative registry poll so close always completes. The poll tracks
+        // the busy true->false transition so it can't finalize in the brief
+        // window before the skill's turn has started running.
+        let sawBusy = false;
+        const triggerFinalize = awaitCloseThenFinalize({
+          subscribe: (onEvent) => sessionEvents.subscribe(sessionId, onEvent),
+          pollSettled: async () => {
+            const all = await invoke<Instance[]>("list_instances");
+            const inst = (all || []).find((i) => i.session_id === sessionId);
+            if (!inst || inst.ended_at) return "settled"; // already gone / ended
+            if (inst.busy) { sawBusy = true; return "running"; }
+            // Not busy: settled once we've seen the turn run, or the daemon
+            // recorded a turn verdict (awaiting). Otherwise we're still pre-start.
+            return sawBusy || inst.awaiting ? "settled" : "running";
+          },
+          finalize,
         });
 
         invoke<void>("send_message", { sessionId, cwd, blocks })
           .catch(err => {
             console.error("[sessions] background /close send_message failed", err);
-            if (!finalized) { finalized = true; unsub(); finalize(); }
+            triggerFinalize();
           });
         return;
       }
