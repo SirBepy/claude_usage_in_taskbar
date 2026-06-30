@@ -8,7 +8,7 @@
 use claude_conductor_lib::context_status::ContextStatus;
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::git::GitInfo;
-use claude_conductor_lib::ipc::misc::TextFileData;
+use claude_conductor_lib::ipc::files::TextFileData;
 use claude_conductor_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_conductor_lib::sessions::kinds::InstanceKind;
 use claude_conductor_lib::skill_usage::types::{
