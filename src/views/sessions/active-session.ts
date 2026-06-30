@@ -35,7 +35,7 @@ import { snapshotActiveCardDraft } from "./permission-modal/question-ui";
 import { savePendingPromptDraft } from "./permission-modal/gating";
 import { markSessionExiting } from "./sidebar-anim";
 import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
-import { awaitCloseThenFinalize } from "./close-finalize";
+import { watchCloseLifecycle } from "./close-finalize";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
@@ -130,14 +130,6 @@ export async function changeCharacterForSession(sessionId: string): Promise<void
   const root = document.querySelector<HTMLElement>(".view-sessions");
   const listEl = root?.querySelector<HTMLElement>("#sessions-list");
   if (listEl) renderSidebar(listEl);
-}
-
-function isCloseCommand(blocks: ContentBlock[]): boolean {
-  const text = blocks
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-  return text.includes("/close");
 }
 
 let _watchedId: string | null = null;
@@ -422,21 +414,41 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         timestamp: BigInt(Date.now()),
       } as ChatEvent);
 
-      // `/close`: mark the row as "closing" (red dimmed state) while the
-      // retrospective skill runs in the background, then tear down once done.
-      // AskUserQuestion modals still surface via the background gate.
-      if (isCloseCommand(blocks)) {
-        const cwd = String(sess.cwd ?? ".");
-        addBackgroundSession(sessionId);
-        markSessionClosing(sessionId);
-        const listEl = document.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) renderSidebar(listEl);
-
-        // Wait for the /close turn to actually finish before tearing down.
-        // send_message resolves immediately (stdin write), so .finally() would
-        // have killed the process before the skill ran. Instead, subscribe and
-        // finalize only on turn_usage (turn complete) or session_ended (crash).
-        const finalize = () => {
+      // Watch this turn for the /close skill's own lifecycle markers - never
+      // guess from the user's typed text (a "/close" substring anywhere in
+      // the message, even inside unrelated prose, used to mark the row
+      // "closing" before the skill had even started running). The row is
+      // promoted to "closing" only once <cc-close:starting> confirms the
+      // skill is genuinely running, and torn down only once <cc-close:done>
+      // confirms Phase 6 is actually killing the terminal - a settled turn
+      // without it (e.g. `/close --dont-close`) reverts the row to normal
+      // instead of ripping the chat away. See close-finalize.ts.
+      const cwd = String(sess.cwd ?? ".");
+      let sawBusy = false;
+      const cancelCloseWatch = watchCloseLifecycle({
+        subscribe: (onEvent) => sessionEvents.subscribe(sessionId, onEvent),
+        pollSettled: async () => {
+          const all = await invoke<Instance[]>("list_instances");
+          const inst = (all || []).find((i) => i.session_id === sessionId);
+          if (!inst || inst.ended_at) return "settled"; // already gone / ended
+          if (inst.busy) { sawBusy = true; return "running"; }
+          // Not busy: settled once we've seen the turn run, or the daemon
+          // recorded a turn verdict (awaiting). Otherwise we're still pre-start.
+          return sawBusy || inst.awaiting ? "settled" : "running";
+        },
+        onStarting: () => {
+          addBackgroundSession(sessionId);
+          markSessionClosing(sessionId);
+          const listEl = document.querySelector<HTMLElement>("#sessions-list");
+          if (listEl) renderSidebar(listEl);
+        },
+        onStandDown: () => {
+          removeBackgroundSession(sessionId);
+          unmarkSessionClosing(sessionId);
+          const listEl = document.querySelector<HTMLElement>("#sessions-list");
+          if (listEl) renderSidebar(listEl);
+        },
+        finalize: () => {
           removeBackgroundSession(sessionId);
           unmarkSessionClosing(sessionId);
           const exitListEl = document.querySelector<HTMLElement>("#sessions-list");
@@ -451,46 +463,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
                 if (el) renderSidebar(el);
               }
             });
-        };
-
-        // Tear down once the /close turn settles. The fast path is the live
-        // turn_usage / session_ended event, but that rides the lossy daemon->app
-        // notifier and can be dropped (which used to leave the chat stuck in
-        // "closing" forever). awaitCloseThenFinalize races it against an
-        // authoritative registry poll so close always completes. The poll tracks
-        // the busy true->false transition so it can't finalize in the brief
-        // window before the skill's turn has started running.
-        let sawBusy = false;
-        const triggerFinalize = awaitCloseThenFinalize({
-          subscribe: (onEvent) => sessionEvents.subscribe(sessionId, onEvent),
-          pollSettled: async () => {
-            const all = await invoke<Instance[]>("list_instances");
-            const inst = (all || []).find((i) => i.session_id === sessionId);
-            if (!inst || inst.ended_at) return "settled"; // already gone / ended
-            if (inst.busy) { sawBusy = true; return "running"; }
-            // Not busy: settled once we've seen the turn run, or the daemon
-            // recorded a turn verdict (awaiting). Otherwise we're still pre-start.
-            return sawBusy || inst.awaiting ? "settled" : "running";
-          },
-          finalize,
-        });
-
-        invoke<void>("send_message", { sessionId, cwd, blocks })
-          .catch(err => {
-            console.error("[sessions] background /close send_message failed", err);
-            triggerFinalize();
-          });
-        return;
-      }
+        },
+      });
 
       try {
-        await invoke<void>("send_message", {
-          sessionId,
-          cwd: String(sess.cwd ?? "."),
-          blocks,
-        });
+        await invoke<void>("send_message", { sessionId, cwd, blocks });
       } catch (err) {
         console.error("[sessions] send_message failed", err);
+        cancelCloseWatch();
         alert(`Send failed: ${err}`);
       }
     };
