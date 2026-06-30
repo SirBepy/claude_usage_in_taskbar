@@ -110,6 +110,39 @@ export function handlePrPreviewClick(e: MouseEvent): void {
   content.className = "pr-modal-content";
   content.appendChild(tmpl.content.cloneNode(true));
 
+  // Replace broken local-path images with a placeholder (local paths can't
+  // resolve inside the webview; screenshots are drag-in-on-GitHub only).
+  content.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
+    const src = img.getAttribute("src") ?? "";
+    const isRemote = src.startsWith("https://") || src.startsWith("http://") || src.startsWith("data:");
+    if (!isRemote) {
+      const ph = document.createElement("div");
+      ph.className = "pr-img-placeholder";
+      ph.innerHTML = '<i class="ph ph-image"></i><span>Screenshot — drag into GitHub after creating the PR</span>';
+      img.replaceWith(ph);
+    } else {
+      img.addEventListener("error", () => {
+        const ph = document.createElement("div");
+        ph.className = "pr-img-placeholder";
+        ph.innerHTML = '<i class="ph ph-image"></i><span>Screenshot — drag into GitHub after creating the PR</span>';
+        img.replaceWith(ph);
+      });
+    }
+  });
+
+  // Render mermaid code blocks as styled diagram placeholders. markdown-it
+  // outputs <pre><code class="language-mermaid">; GitHub renders these
+  // natively but the in-app modal doesn't have mermaid.js.
+  content.querySelectorAll<HTMLElement>("code.language-mermaid").forEach((code) => {
+    const pre = code.closest("pre");
+    if (!pre) return;
+    const source = code.textContent ?? "";
+    const wrap = document.createElement("div");
+    wrap.className = "pr-mermaid-placeholder";
+    wrap.innerHTML = `<div class="pr-mermaid-header"><i class="ph ph-flow-arrow"></i><span>Diagram — renders on GitHub</span></div><pre class="pr-mermaid-source">${escapeHtml(source)}</pre>`;
+    pre.replaceWith(wrap);
+  });
+
   modal.appendChild(header);
   modal.appendChild(content);
   overlay.appendChild(modal);
