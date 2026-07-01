@@ -211,7 +211,7 @@ export function renderQuestionCardHtml(m: RenderedMessage): string {
     }
     return `<div class="tool-qa">${header}<div class="tool-qa-q">${escapeHtml(q.question)}</div>${answerHtml}</div>`;
   }).join("");
-  const firstLabel = questions[0].header || questions[0].question;
+  const firstLabel = questions[0]?.header || questions[0]?.question || "";
   const truncated = firstLabel.length > 55 ? firstLabel.slice(0, 53) + "…" : firstLabel;
   const badge = questions.length > 1 ? `<span class="question-card-badge">${questions.length}</span>` : "";
   const summary = `<summary class="question-card-summary"><i class="ph ph-chat-circle-dots"></i><span class="question-card-label">${escapeHtml(truncated)}</span>${badge}<i class="ph ph-caret-down question-card-chevron"></i></summary>`;
