@@ -70,17 +70,6 @@ export function flushRender(r: ChatRenderer): void {
     }
     r.container.appendChild(frag);
   }
-  if (r.activeTurnStart !== null) {
-    for (let i = r.activeTurnStart; i < r.messageEls.length; i++) {
-      const el = r.messageEls[i];
-      const msg = r.messages[i];
-      if (el && msg && msg.kind !== "user") {
-        // Shimmer while the turn is in flight; drop it once the turn settles
-        // (its end-of-turn usage arrived) even though the turn stays open.
-        el.classList.toggle("msg--working", !r.activeTurnSettled);
-      }
-    }
-  }
   processTurnCloseQueue(r);
   ensureActiveTurnFooter(r);
   if (r.activeTurnStart !== null) {
@@ -220,7 +209,6 @@ export function enqueueTurnClose(r: ChatRenderer): void {
   // data-tool-grouped, so processTurnCloseQueue won't re-fold them.
   clearRunningHighlight(r);
   r.activeToolGroups.clear();
-  r.activeTurnSettled = false;
   if (r.activeTurnChipKey !== null) {
     const turnStart = r.activeTurnStart ?? r.messages.length;
     // Trim trailing noise-tail messages (e.g. "Request interrupted by user")

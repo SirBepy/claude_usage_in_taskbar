@@ -59,11 +59,6 @@ export class ChatRenderer {
   meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
   _cumulative: CumulativeUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, turns: 0, costUsd: 0 };
   activeTurnStart: number | null = null;
-  // True once the active turn has produced its end-of-turn usage (live: the
-  // single `result` TurnUsage). Stops the working shimmer WITHOUT closing the
-  // turn, so a later usage event (history replays one per assistant line) does
-  // not orphan the turn's remaining tool rows. Reset when the next turn opens.
-  activeTurnSettled = false;
   // Per-renderer footer registry (instance state - chip keys are a local
   // sequence, a shared registry would collide across renderer instances).
   turnFooters = new TurnFooterRegistry();

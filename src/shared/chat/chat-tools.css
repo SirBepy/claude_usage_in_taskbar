@@ -634,11 +634,6 @@
   white-space: nowrap;
 }
 
-/* Working messages: dimmed during active turn and inside open details. */
-.msg--working {
-  opacity: 0.55;
-}
-
 /* Read-only option labels (inline rendering; interaction is in the modal) */
 .ask-option-label {
   display: inline-block;

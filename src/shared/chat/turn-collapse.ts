@@ -473,10 +473,10 @@ function recoverGroupsFromDom(
 }
 
 /**
- * Finalize a closed turn: drop the working shimmer from its final answer and
- * fold any not-yet-grouped tool rows (covers bulk replay where multiple turns
- * close inside one render flush). Reuses an existing strip for this turn (if a
- * prior flush already started one) so a chunk-straddling turn stays ONE strip.
+ * Finalize a closed turn: fold any not-yet-grouped tool rows (covers bulk
+ * replay where multiple turns close inside one render flush). Reuses an
+ * existing strip for this turn (if a prior flush already started one) so a
+ * chunk-straddling turn stays ONE strip.
  */
 export function applyTurnCollapse(
   messages: RenderedMessage[],
@@ -486,13 +486,6 @@ export function applyTurnCollapse(
   stripHost?: HTMLElement | null,
 ): void {
   if (end <= start) return;
-
-  for (let i = end - 1; i >= start; i--) {
-    if (messages[i]?.kind === "assistant") {
-      messageEls[i]?.classList.remove("msg--working");
-      break;
-    }
-  }
 
   groupToolRange(messages, messageEls, start, end, recoverGroupsFromDom(messageEls, start, end), stripHost);
 }
