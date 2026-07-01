@@ -21,6 +21,13 @@ const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?
 const STATUS_XML_TOKEN_RE = /<cc-status>(?:done|question|waiting)<\/cc-status>/gi;
 const STATUS_XML_TAIL_RE = /<cc-status>[\s\S]*$/i;
 
+// Malformed hybrid: colon-opened but XML-closed, e.g. <cc-status:question</cc-status>.
+// Observed in the wild from some model invocations. Standalone tail pattern
+// (not an extension of STATUS_TAIL_RE) since the existing nested-optional
+// chain can't absorb a literal embedded "<" partway through.
+const STATUS_HYBRID_TOKEN_RE = /<cc-status:(?:done|question|waiting)<\/cc-status>/gi;
+const STATUS_HYBRID_TAIL_RE = /<cc-status:(?:done|question|waiting)?<(?:\/(?:c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s)?)?)?)?)?)?)?)?)?)?\s*$/i;
+
 // Autopilot marker emitted by the /autopilot skill to signal on/off state.
 // The app reads it to toggle the sidebar badge; it must never display in chat.
 const AUTOPILOT_TOKEN_RE = /<cc-autopilot:(?:on|off)>/gi;
@@ -108,6 +115,7 @@ export function stripStatusToken(text: string): string {
   return text
     .replace(STATUS_TOKEN_RE, "")
     .replace(STATUS_XML_TOKEN_RE, "")
+    .replace(STATUS_HYBRID_TOKEN_RE, "")
     .replace(TITLE_TOKEN_RE, "")
     .replace(TITLE_XML_TOKEN_RE, "")
     .replace(AUTOPILOT_TOKEN_RE, "")
@@ -120,6 +128,7 @@ export function stripStatusToken(text: string): string {
     .replace(CLOSE_DONE_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(STATUS_XML_TAIL_RE, "")
+    .replace(STATUS_HYBRID_TAIL_RE, "")
     .replace(TITLE_TAIL_RE, "")
     .replace(TITLE_XML_TAIL_RE, "")
     .replace(AUTOPILOT_TAIL_RE, "")
@@ -142,7 +151,11 @@ export function detectHandoffToken(text: string): boolean {
 export function detectStatusToken(text: string): "done" | "question" | "waiting" | null {
   const colon = [...text.matchAll(/<cc-status:(done|question|waiting)>/gi)];
   const xml = [...text.matchAll(/<cc-status>(done|question|waiting)<\/cc-status>/gi)];
-  const all = [...colon, ...xml].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+  // Group index [1] is shared across colon/xml/hybrid by construction (each
+  // pattern has exactly one capture group at position 1, the status word).
+  // A future 4th variant must preserve this or the merge below breaks silently.
+  const hybrid = [...text.matchAll(/<cc-status:(done|question|waiting)<\/cc-status>/gi)];
+  const all = [...colon, ...xml, ...hybrid].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
   if (all.length === 0) return null;
   return all[all.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting";
 }

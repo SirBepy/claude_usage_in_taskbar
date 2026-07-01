@@ -230,6 +230,17 @@ describe("status marker", () => {
     expect(html).not.toContain("cc-status");
     expect(html).toContain("Watching the build");
   });
+  it("strips a malformed hybrid marker (colon-opened, XML-closed) and detects it", () => {
+    const html = renderBlocks([{ type: "text", text: "All done here.\n<cc-status:question</cc-status>" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("All done here");
+    expect(detectStatusToken("All done here.\n<cc-status:question</cc-status>")).toBe("question");
+  });
+  it("never leaks a partial hybrid marker mid-stream", () => {
+    const html = renderBlocks([{ type: "text", text: "Watching the build.\n<cc-status:question<" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("Watching the build");
+  });
 });
 
 describe("title marker — XML form", () => {
