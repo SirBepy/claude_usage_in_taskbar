@@ -8,6 +8,27 @@ use axum::{extract::State as AxState, http::StatusCode, response::IntoResponse, 
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Duration;
+
+/// How long the daemon holds a permission/question prompt open waiting for the
+/// user before giving up. The curl `--max-time` and the PreToolUse hook's
+/// `timeout` field (both in `daemon::claude_config::write_hook_settings`) are set
+/// to 3660s so they out-wait this by 60s - the daemon's response always lands
+/// before the hook process is killed. Without this bound the `rx.await` blocks
+/// until Claude Code's own PreToolUse ceiling (600s default) kills the hook,
+/// silently truncating the intended window and dropping the answer.
+pub(crate) const PROMPT_TIMEOUT: Duration = Duration::from_secs(3600);
+
+/// Await the answer oneshot with an upper bound. `Some(val)` iff the user
+/// responded; `None` if the wait elapsed OR the sender was dropped (daemon
+/// restart / dismissal). Both map to the same "no answer" wire behavior, so
+/// callers treat them identically.
+async fn await_answer(rx: tokio::sync::oneshot::Receiver<Value>, timeout: Duration) -> Option<Value> {
+    match tokio::time::timeout(timeout, rx).await {
+        Ok(Ok(val)) => Some(val),
+        _ => None,
+    }
+}
 
 #[derive(Deserialize)]
 pub(super) struct PermRequestBody {
@@ -46,9 +67,9 @@ pub(super) async fn on_permission_request(
         "[perm-relay] published permission_request id={} tool={} session={:?} -> {} subscriber(s)",
         body.id, body.tool_name, body.session_id, subs
     );
-    let result = match rx.await {
-        Ok(val) => (StatusCode::OK, Json(val)),
-        Err(_) => {
+    let result = match await_answer(rx, PROMPT_TIMEOUT).await {
+        Some(val) => (StatusCode::OK, Json(val)),
+        None => {
             ctx.state.pending.lock().await.remove(&body.id);
             (
                 StatusCode::OK,
@@ -85,9 +106,9 @@ pub(super) async fn on_question_request(
         "[perm-relay] published question_request id={} session={:?} -> {} subscriber(s)",
         body.id, body.session_id, subs
     );
-    let result = match rx.await {
-        Ok(val) => (StatusCode::OK, Json(val)),
-        Err(_) => {
+    let result = match await_answer(rx, PROMPT_TIMEOUT).await {
+        Some(val) => (StatusCode::OK, Json(val)),
+        None => {
             ctx.state.pending.lock().await.remove(&body.id);
             ctx.state.notifier.publish(
                 "question_expired",
@@ -125,6 +146,16 @@ pub(super) async fn on_ask_question_hook(
 /// the answer, and return the PreToolUse decision. Split out from the axum
 /// handler so it can be unit-tested without an HTTP round-trip.
 pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Value {
+    ask_question_decision_with_timeout(ctx, body, PROMPT_TIMEOUT).await
+}
+
+/// `ask_question_decision` with an injectable wait bound so tests can drive the
+/// timeout branch without blocking for the full production window.
+pub(super) async fn ask_question_decision_with_timeout(
+    ctx: &Arc<HookCtx>,
+    body: Value,
+    timeout: Duration,
+) -> Value {
     let questions = body
         .get("tool_input")
         .and_then(|t| t.get("questions"))
@@ -169,9 +200,9 @@ pub(super) async fn ask_question_decision(ctx: &Arc<HookCtx>, body: Value) -> Va
     // `answers`: an object (possibly empty) iff the user actually responded;
     // Null if the sender was dropped (daemon restart etc.). The distinction
     // matters - format_answers tells the agent "no answer yet" vs "dismissed".
-    let answers = match rx.await {
-        Ok(val) => val.get("answers").cloned().unwrap_or(Value::Null),
-        Err(_) => {
+    let answers = match await_answer(rx, timeout).await {
+        Some(val) => val.get("answers").cloned().unwrap_or(Value::Null),
+        None => {
             ctx.state.pending.lock().await.remove(&id);
             ctx.state.notifier.publish(
                 "question_expired",
@@ -238,13 +269,16 @@ fn format_answers(questions: &Value, answers: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ask_question_decision, format_answers, HookCtx};
+    use super::{
+        ask_question_decision, ask_question_decision_with_timeout, format_answers, HookCtx,
+    };
     use crate::daemon::session::new_session_map;
     use crate::daemon::settings_cache::SettingsCache;
     use crate::daemon::state::DaemonState;
     use crate::types::Settings;
     use serde_json::{json, Value};
     use std::sync::Arc;
+    use std::time::Duration;
 
     #[test]
     fn format_answers_distinguishes_timeout_from_dismiss_from_answer() {
@@ -306,6 +340,29 @@ mod tests {
         assert_eq!(hso["permissionDecision"], "deny");
         let reason = hso["permissionDecisionReason"].as_str().unwrap();
         assert!(reason.contains("Tabs"), "answer not in reason: {reason}");
+    }
+
+    /// When nobody answers within the wait window, the handler must fire the
+    /// timeout branch (not block forever) and hand claude the "timed out - not a
+    /// refusal" reason. Drives the injectable-timeout seam with a short duration
+    /// so CI doesn't wait the full production hour.
+    #[tokio::test]
+    async fn ask_question_times_out_when_unanswered() {
+        let state = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let ctx = Arc::new(HookCtx { state });
+        let body = json!({
+            "session_id": "s1",
+            "tool_input": { "questions": [ { "question": "Tabs or spaces?" } ] }
+        });
+        // No answerer: the oneshot is never sent on, so only the timeout can
+        // resolve this.
+        let decision =
+            ask_question_decision_with_timeout(&ctx, body, Duration::from_millis(50)).await;
+        let reason = decision["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap();
+        assert!(reason.contains("timed out"), "expected timeout reason: {reason}");
+        assert!(!reason.contains("dismissed"), "timeout must not read as dismiss");
     }
 
     #[tokio::test]

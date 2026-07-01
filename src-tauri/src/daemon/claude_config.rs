@@ -53,12 +53,15 @@ pub(crate) fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathB
 /// permission gates (Bash/Edit/etc.).
 pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
     let dir = crate::settings::paths::mcp_temp_dir().ok()?;
-    // --max-time MUST out-wait the daemon's prompt window (PROMPT_TIMEOUT_SECS =
-    // 3600s, see hooks_server::permission). The server holds the AskUserQuestion
-    // prompt open for up to an hour so an AFK dev can answer from their phone;
-    // curl aborting first (the old 320s = 5.3min) dropped the answer with the
-    // turn left hanging. 3600 + 60s slack so the server's response always lands
-    // first; --connect-timeout fails fast if the daemon isn't up.
+    // Both --max-time AND the hook's `timeout` field MUST out-wait the daemon's
+    // prompt window (hooks_server::permission::PROMPT_TIMEOUT = 3600s). The server
+    // holds the AskUserQuestion prompt open for up to an hour so an AFK dev can
+    // answer from their phone; curl aborting first (the old 320s = 5.3min) dropped
+    // the answer with the turn left hanging. 3600 + 60s slack so the server's
+    // response always lands first. The hook `timeout` is REQUIRED: without it
+    // Claude Code caps a PreToolUse `command` hook at its 600s default and kills
+    // curl at 10min regardless of --max-time, truncating the intended window.
+    // --connect-timeout fails fast if the daemon isn't up.
     let command = format!(
         "curl -s --connect-timeout 10 --max-time 3660 --retry 2 --retry-delay 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/ask-question",
         daemon_hook_port()
@@ -68,7 +71,7 @@ pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
             "PreToolUse": [
                 {
                     "matcher": "AskUserQuestion",
-                    "hooks": [ { "type": "command", "command": command } ]
+                    "hooks": [ { "type": "command", "command": command, "timeout": 3660 } ]
                 }
             ]
         }
