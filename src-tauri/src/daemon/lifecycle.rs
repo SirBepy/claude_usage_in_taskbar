@@ -331,6 +331,7 @@ pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), Life
             content: vec![crate::types::chat::ContentBlock::Text { text: text.to_string() }],
             timestamp: now_ms,
             remote_echo: true,
+            is_meta: false,
         },
     );
     Ok(())

@@ -3,6 +3,7 @@
 // Rendering functions live in chat-transforms.ts.
 
 import type { ContentBlock } from "../../types/ipc.generated";
+import { blocksToText } from "./content-blocks";
 
 // Turn-status marker injected via `--append-system-prompt` (see
 // daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>`,
@@ -309,6 +310,16 @@ export function isResumeContinuationUserMessage(cleaned: ContentBlock[]): boolea
   const t = (first as { type: "text"; text: string }).text.trim();
   return /^continue from where you left off\.?$/i.test(t)
     || /^\[request interrupted( by user)?\]$/i.test(t);
+}
+
+/** Display label for an `isMeta:true` user turn that isn't already covered by
+ *  a more specific case above (compact, resume-continuation, silent-continue).
+ *  Claude Code injects these for things like a fired ScheduleWakeup prompt or
+ *  an autopilot loop tick - the human never typed it, so it must read as a
+ *  system note carrying the actual injected text, not a real chat bubble. */
+export function metaTurnLabel(cleaned: ContentBlock[]): string {
+  const text = blocksToText(cleaned).trim();
+  return text ? `Auto-continued: ${text}` : "Auto-continued";
 }
 
 // Assistant messages that are internal CLI noise. Returns a display label for

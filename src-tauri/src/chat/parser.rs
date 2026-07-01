@@ -267,10 +267,15 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         }
         "user" => {
             let Some(content_val) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
+            // `isMeta:true` marks a turn Claude Code injected into its own
+            // transcript (a fired ScheduleWakeup prompt, an autopilot/resume
+            // continuation, etc.) rather than something the human typed.
+            let is_meta = v.get("isMeta").and_then(|b| b.as_bool()).unwrap_or(false);
             let mut evs = vec![ChatEvent::UserMessage {
                 content: extract_content_blocks(content_val),
                 timestamp: ts,
                 remote_echo: false,
+                is_meta,
             }];
             // AUQ answers arrive as tool_result blocks inside a user message.
             // Emit a ToolResult event for each so the question card re-renders.
@@ -701,12 +706,28 @@ mod tests {
         let events = ctx.feed(format!("{}\n", line).as_bytes());
         assert_eq!(events.len(), 1);
         match &events[0] {
-            ChatEvent::UserMessage { content, .. } => {
+            ChatEvent::UserMessage { content, is_meta, .. } => {
                 match &content[0] {
                     ContentBlock::Text { text } => assert_eq!(text, "hello"),
                     _ => panic!("expected text block"),
                 }
+                assert!(!is_meta, "a plain typed message must not be flagged is_meta");
             }
+            _ => panic!("expected UserMessage"),
+        }
+    }
+
+    #[test]
+    fn flags_is_meta_user_message() {
+        // Claude Code marks a self-injected turn (a fired ScheduleWakeup prompt,
+        // an autopilot/resume continuation, etc.) with "isMeta":true instead of
+        // wrapping it in a distinguishable sentinel like <task-notification>.
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"Check on the research agent and continue once it reports back."},"timestamp":1700000000}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ChatEvent::UserMessage { is_meta, .. } => assert!(*is_meta),
             _ => panic!("expected UserMessage"),
         }
     }

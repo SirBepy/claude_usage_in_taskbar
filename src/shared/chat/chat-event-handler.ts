@@ -14,6 +14,7 @@ import {
   detectHandoffToken,
   isSilentSystemUserMessage,
   isResumeContinuationUserMessage,
+  metaTurnLabel,
   noiseAssistantLabel,
   RenderedMessage,
 } from "./chat-transforms";
@@ -75,6 +76,10 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       // Silent system turns (e.g. rate-limit auto-continue) rotate the turn
       // chip so usage is tracked but render no user bubble.
       const isSilent = !isCompact && isSilentSystemUserMessage(cleaned);
+      // isMeta:true marks a turn Claude Code injected into its own transcript
+      // (a fired ScheduleWakeup prompt, an autopilot loop tick, etc.) rather
+      // than something the human typed - must never look like a real message.
+      const isMeta = !isCompact && !isSilent && ev.is_meta;
       enqueueTurnClose(r);
       r.setActivity(null);
       r.setTurnStatus(null);
@@ -91,6 +96,8 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
         r.messages.push({ kind: "system", text: "Conversation compacted", ts, compactionN: ++r.compactionCount });
       } else if (isSilent) {
         r.messages.push({ kind: "system", text: "Continuing session…", ts });
+      } else if (isMeta) {
+        r.messages.push({ kind: "system", text: metaTurnLabel(cleaned), ts });
       } else {
         r.messages.push({ kind: "user", content: cleaned, ts });
       }

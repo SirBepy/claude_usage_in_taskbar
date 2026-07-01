@@ -13,11 +13,12 @@ import {
   cleanUserBlocks,
   isResumeContinuationUserMessage,
   isSilentSystemUserMessage,
+  metaTurnLabel,
   noiseAssistantLabel,
   detectPrPreviewToken,
 } from "./chat-classifiers";
 export type { RenderedMessage } from "./chat-classifiers";
-export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, detectHandoffToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, noiseAssistantLabel, isNoiseAssistantText, detectPrPreviewToken, detectCloseStartToken, detectCloseDoneToken } from "./chat-classifiers";
+export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, detectHandoffToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, metaTurnLabel, noiseAssistantLabel, isNoiseAssistantText, detectPrPreviewToken, detectCloseStartToken, detectCloseDoneToken } from "./chat-classifiers";
 
 const md = new MarkdownIt({
   html: false,
@@ -355,6 +356,7 @@ export function eventToRenderedMessage(ev: ChatEvent): RenderedMessage | null {
       if (cleaned.length === 0) return null;
       if (isResumeContinuationUserMessage(cleaned)) return null;
       if (isSilentSystemUserMessage(cleaned)) return { kind: "system", text: "Continuing session…", ts };
+      if (ev.is_meta) return { kind: "system", text: metaTurnLabel(cleaned), ts };
       return { kind: "user", content: cleaned, ts };
     }
     case "assistant_message": {

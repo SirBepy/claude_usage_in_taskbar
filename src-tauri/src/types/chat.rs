@@ -28,6 +28,13 @@ pub enum ChatEvent {
         /// 9/10 cannot parse `skip_serializing_if` and will break type export.
         #[serde(default)]
         remote_echo: bool,
+        /// True when the transcript line carries `"isMeta":true` - Claude
+        /// Code's own marker for a self-injected turn (a fired `ScheduleWakeup`
+        /// prompt, an autopilot/resume continuation, etc.) rather than
+        /// something the human actually typed. The frontend must never render
+        /// this identically to a real user bubble.
+        #[serde(default)]
+        is_meta: bool,
     },
     AssistantMessage {
         content: Vec<ContentBlock>,
@@ -115,6 +122,7 @@ mod tests {
             content: vec![ContentBlock::Text { text: "hi".into() }],
             timestamp: 1700000000,
             remote_echo: false,
+            is_meta: false,
         };
         let s = serde_json::to_string(&ev).unwrap();
         let back: ChatEvent = serde_json::from_str(&s).unwrap();

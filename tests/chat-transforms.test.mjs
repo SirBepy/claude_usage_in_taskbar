@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderBlocks, renderMessage, cleanUserBlocks, base64ToUtf8, detectStatusToken, highlightComposerInput } from "../src/shared/chat/chat-transforms.ts";
+import { renderBlocks, renderMessage, cleanUserBlocks, base64ToUtf8, detectStatusToken, highlightComposerInput, eventToRenderedMessage } from "../src/shared/chat/chat-transforms.ts";
 import { setSlashEntries } from "../src/shared/chat/slash-registry.ts";
 
 // Chip conversion is a USER-message-only concern (third arg = fileChips). The
@@ -312,5 +312,34 @@ describe("highlightComposerInput — live /slash coloring", () => {
   it("pads a trailing newline so backdrop height tracks the textarea", () => {
     setSlashEntries([]);
     expect(highlightComposerInput("hello\n")).toBe("hello\n ");
+  });
+});
+
+describe("eventToRenderedMessage — isMeta user turns", () => {
+  // Claude Code marks a self-injected turn (a fired ScheduleWakeup prompt, an
+  // autopilot loop tick, etc.) with isMeta:true instead of wrapping it in a
+  // sentinel. It must render as a system note, never a real user bubble -
+  // Joe should never see what looks like a message he didn't send.
+  it("renders an isMeta:true user turn as a system message carrying the text", () => {
+    const msg = eventToRenderedMessage({
+      type: "user_message",
+      content: [{ type: "text", text: "Check on the research agent and continue once it reports back." }],
+      timestamp: 1n,
+      remote_echo: false,
+      is_meta: true,
+    });
+    expect(msg.kind).toBe("system");
+    expect(msg.text).toContain("Check on the research agent and continue once it reports back.");
+  });
+
+  it("still renders a plain (isMeta:false) user turn as a user bubble", () => {
+    const msg = eventToRenderedMessage({
+      type: "user_message",
+      content: [{ type: "text", text: "hello" }],
+      timestamp: 1n,
+      remote_echo: false,
+      is_meta: false,
+    });
+    expect(msg.kind).toBe("user");
   });
 });
