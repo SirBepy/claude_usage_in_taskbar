@@ -3,7 +3,7 @@
 //! Uses `tokio::io::split` so reads and writes run concurrently without
 //! contending on a single mutex.
 
-use crate::daemon::frame::{read_frame, write_frame};
+use crate::daemon::frame::{read_frame, write_frame, FrameError};
 use crate::daemon::health::PROTOCOL_VERSION;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -77,7 +77,19 @@ impl PersistentClient {
             loop {
                 let frame = match read_frame(&mut read_half).await {
                     Ok(f) => f,
-                    Err(_) => break,
+                    Err(e) => {
+                        // Log why the pipe reader stopped so recurring drops can be
+                        // diagnosed. For io errors surface the ErrorKind (e.g.
+                        // UnexpectedEof = clean daemon shutdown vs BrokenPipe/reset).
+                        match &e {
+                            FrameError::Io(io_err) => log::warn!(
+                                "daemon pipe reader stopped: io error kind={:?}: {io_err}",
+                                io_err.kind()
+                            ),
+                            other => log::warn!("daemon pipe reader stopped: {other}"),
+                        }
+                        break;
+                    }
                 };
                 if frame.get("method").is_some() {
                     // Server-to-client notification.

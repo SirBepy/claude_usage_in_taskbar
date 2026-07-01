@@ -268,13 +268,17 @@ export function initBoot(): void {
     if (activeViewName() === "projects") void renderProjectsList();
   });
   let _daemonWasConnected = true;
+  // daemon-status-changed is an app-wide event: every window that runs initBoot
+  // (main + the Chats window) would otherwise toast the same drop, so one real
+  // reconnect looked like "over and over". Own the toast in the main window only.
+  const _isMainWindow = !document.body.classList.contains("chats-window-mode");
   api.onDaemonStatus((s) => {
     if (!s.connected) {
       _daemonWasConnected = false;
-      showToast("Daemon disconnected - reconnecting...");
+      if (_isMainWindow) showToast("Daemon disconnected - reconnecting...");
     } else if (!_daemonWasConnected) {
       _daemonWasConnected = true;
-      showToast("Daemon reconnected.");
+      if (_isMainWindow) showToast("Daemon reconnected.");
     }
   });
 

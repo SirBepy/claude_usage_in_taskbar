@@ -6,8 +6,11 @@
 - Relaunch the Claude Conductor tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
 - SECURITY pass: eyeball the remote SAFE_METHODS allowlist diff from the 2026-06-18 run (8 read-only methods added in src-tauri/src/daemon/remote_server.rs). Autopilot judged these safe (all read-only, no new RCE surface) but the allowlist IS the security boundary, so confirm.
+- The "Daemon Reconnected over and over" spam root cause was window-multiplication (main window + Chats window each toasted the same app-wide event), now fixed to main-window-only. The real drop cause (2 pipe drops on 2026-07-01) is still unconfirmed but the pipe-reader now logs the actual io::Error kind on the next drop - so no need to recall whether the PC was asleep.
 
 ### Manual QA (needs relaunch / live)
+
+- After the next build+RELAUNCH (frontend + Rust change), confirm the daemon-status toast dedupe (ai_todo 149) + pipe-drop logging (ai_todo 150): open the main window AND the Chats window at once, then force a daemon disconnect/reconnect (kill the daemon process and let the app respawn it). You should see EXACTLY ONE "Daemon disconnected..." + one "Daemon reconnected." toast total, not one pair per window. Then check `%APPDATA%\claude-conductor\` app log ("Claude Conductor.log") shows a `daemon pipe reader stopped: io error kind=...` line with the real ErrorKind (e.g. UnexpectedEof / BrokenPipe) instead of a silent drop.
 
 - After next build+relaunch, confirm the chat-close fix (commit 533f46a): open a chat, send a message, wait for the reply, then click a DIFFERENT chat in the sidebar. The first chat should remain visible in the sidebar (not vanish into History). Click back to it - transcript is there, session is live, you can continue typing.
 
