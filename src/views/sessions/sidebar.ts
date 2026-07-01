@@ -162,19 +162,28 @@ export async function refreshSessions(): Promise<void> {
     }
 
     // Mark unread for sessions that just finished a busy turn (busy true->false)
-    // and are not currently open/selected. For the ACTIVE session, the same
-    // transition is the auto-flush trigger for any held messages (unless Claude
-    // stopped to ask, in which case the held set waits for the answer).
+    // and are not currently open/selected.
     for (const s of next) {
       const wasBusy = state.prevBusyMap.get(s.session_id);
-      if (wasBusy === true && !s.busy) {
-        if (s.session_id !== state.selectedId) {
-          unread.add(s.session_id);
-        } else {
-          const isQuestion = s.awaiting === "question" || state.questionSessions.has(s.session_id);
-          state.heldMessages?.onCompletion(s.session_id, isQuestion);
-        }
+      if (wasBusy === true && !s.busy && s.session_id !== state.selectedId) {
+        unread.add(s.session_id);
       }
+    }
+
+    // Auto-flush held messages for the ACTIVE session whenever it's idle with
+    // something staged (unless Claude stopped to ask, in which case the held
+    // set waits for the answer). Checked on every refresh rather than only on
+    // the busy->false edge: the busy flag (instances-changed) and the chat
+    // message stream (which derives questionSessions from the cc-status
+    // marker) are separate, independently-lossy channels, so a one-shot edge
+    // check can race and permanently strand a held message. onCompletion() is
+    // idempotent (no-ops once the held set is empty), so re-checking on every
+    // tick — including right after switching back to a chat that finished
+    // while it wasn't selected — is safe.
+    const active = next.find(s => s.session_id === state.selectedId);
+    if (active && !active.busy && state.heldMessages?.hasItemsForActive()) {
+      const isQuestion = active.awaiting === "question" || state.questionSessions.has(active.session_id);
+      state.heldMessages.onCompletion(active.session_id, isQuestion);
     }
 
     // Update prevBusyMap for next call

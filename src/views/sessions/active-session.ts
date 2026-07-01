@@ -513,6 +513,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         getIsBusy: () => isCurrentSessionBusy(),
         onChange: () => updateThinkingBar(),
       });
+      // Switching back to a chat that already finished while it wasn't
+      // selected shouldn't require an unrelated instances-changed event to
+      // notice the held set is flushable — check right away.
+      if (!isCurrentSessionBusy() && state.heldMessages.hasItemsForActive()) {
+        const freshSess = state.sessions.find((s) => s.session_id === sessionId);
+        const isQuestion = freshSess?.awaiting === "question" || state.questionSessions.has(sessionId);
+        state.heldMessages.onCompletion(sessionId, isQuestion);
+      }
     }
     updateThinkingBar();
   }
