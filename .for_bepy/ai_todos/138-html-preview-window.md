@@ -55,6 +55,13 @@ The daemon owns preview state so both sources and (later) the phone hit one plac
 - A terminal-Claude skill (e.g. `/preview`) that takes an HTML file or inline HTML and curls it to `POST /api/preview` with a `slug` (so re-running iterates in place). This replaces the "open a localhost server in the browser" companion flow for static mockups. Document the convention so Claude reaches for the window instead of the browser.
 - The in-app chat AI path: extend the session-injected instructions (todo 136) to teach the convention - emit a preview push (sentinel or tool) the daemon turns into a snapshot. Same shape as the screenshot-inline convention (todo 132). Relates to `feedback_send_vs_display_split`.
 
+## Brainstorm / design-mockup consumer (Joe, 2026-07-01)
+
+`/brainstorm` design-mockup previews are a FIRST-CLASS consumer of this window, not just terminal Claude pushing arbitrary HTML. Today that flow writes an HTML file (e.g. `.for_bepy/multi-account-mockup.html`) and `Start-Process`es it into an external browser; it should push to this sidepane instead.
+- The in-app chat AI, when it produces a design mockup, pushes it as a `preview` snapshot (slug = mockup name) so iterate-in-place works across rounds (the multi-account brainstorm was many browser reopens that should have been in-place refreshes on one slug).
+- CTA: beyond the "Preview pushed" chip, the chat needs an OBVIOUS, persistent open/close toggle for the preview sidepane (Joe wants to dismiss/reopen the design at will, not only auto-open on push). A composer/header control that shows/hides the panel.
+- Open: whether the mockup-authoring convention is a dedicated `/brainstorm`-side skill or just the todo-136 injected instruction. Joe undecided ("idk if we should make a skill for it").
+
 ## Relationship to existing todos
 - 132 (inline screenshots) - sibling: both are "AI surfaces a visual in the app." Could share the source-badge / chip vocabulary.
 - 136 (inject formatting instructions) - the chat-AI push convention rides on this injection mechanism.

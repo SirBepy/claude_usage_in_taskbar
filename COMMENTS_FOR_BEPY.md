@@ -566,3 +566,5 @@ Decisions log (autopilot - mostly settled in brainstorm, none needed iterate-it)
 Deferred (ai_todos created): 99 project tech-icon detection; 100 AUQ relay timeout on AFK.
 
 NOT pushed yet at time of writing; main agent will run /commit pushnbump next.
+[when-done] auto-answered question with default option(s) (id fdb7686d-dbc1-47aa-901c-33f8d43b39d3)
+[when-done] auto-approved permission for tool 'Bash' (id 6bcacc34-05ee-402d-890a-b40d6266045c)

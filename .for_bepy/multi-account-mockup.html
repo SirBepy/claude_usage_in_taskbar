@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="void">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multi-account v4 - design mockup</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --color-primary: #9d7dfc; --color-secondary: #6e8fff;
+    --color-background: #16151f; --color-surface: #1e1d2b; --color-surface-alt: #242334;
+    --color-text: #e2e0f0; --color-text-muted: #6b6990; --color-border: #2d2c44;
+    --color-success: #7af0c0; --color-danger: #e05252;
+    --personal: #9d7dfc; --work: #f5a623; --fibo: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #0c0b12; color: var(--color-text); font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; line-height: 1.5; padding: 26px 22px 90px; display: flex; flex-direction: column; align-items: center; gap: 34px; }
+  h3,.board-h .t,.me-title { font-family: 'Manrope', system-ui, sans-serif; }
+
+  .legend { width: 1120px; max-width: 100%; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .legend .title { font-size: 18px; font-weight: 700; } .legend .title small { color: var(--color-text-muted); font-weight: 500; font-size: 12px; }
+  .legend .spacer { flex: 1; }
+  .acc-key { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; } .acc-key .dot { width: 10px; height: 10px; border-radius: 50%; } .acc-key small { color: var(--color-text-muted); font-weight: 500; }
+  .legend .safe-key { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; } .legend .safe-key .tickdemo { width: 2px; height: 12px; background: rgba(226,224,240,.9); border-radius: 1px; }
+
+  .board { width: 1120px; max-width: 100%; }
+  .board-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .board-h .num { width: 26px; height: 26px; border-radius: 7px; flex: none; background: var(--color-surface); border: 1px solid var(--color-border); display: grid; place-items: center; font-weight: 700; color: var(--color-primary); }
+  .board-h .t { font-size: 16px; font-weight: 700; } .board-h .d { color: var(--color-text-muted); font-size: 12.5px; }
+  .stage { background: #0f0e16; border: 1px solid var(--color-border); border-radius: 14px; padding: 22px; display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .note { font-size: 12px; color: var(--color-text-muted); line-height: 1.55; background: var(--color-surface); border: 1px dashed var(--color-border); border-radius: 8px; padding: 11px 13px; max-width: 290px; flex: 1 1 220px; }
+  .note b { color: var(--color-text); } .note .q { color: var(--color-primary); font-weight: 600; }
+
+  .win { background: var(--color-background); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; box-shadow: 0 16px 44px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .titlebar { height: 36px; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-weight: 600; font-size: 12px; }
+  .titlebar .d { width: 10px; height: 10px; border-radius: 50%; background: #37354c; } .titlebar .grow { flex: 1; }
+  .view-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--color-border); flex: none; }
+  .view-header .h2 { flex: 1; text-align: center; font-weight: 600; font-size: 15px; }
+  .icon-btn { width: 30px; height: 30px; border: 0; background: transparent; color: var(--color-text-muted); border-radius: 6px; cursor: pointer; font-size: 16px; display: grid; place-items: center; }
+  .icon-btn:hover { background: var(--color-surface-alt); color: var(--color-text); }
+  .muted { color: var(--color-text-muted); }
+  .tag { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; }
+  .tag.global { color: var(--color-secondary); background: color-mix(in srgb, var(--color-secondary) 14%, transparent); }
+  .tag.scoped { color: var(--acc, var(--color-primary)); background: color-mix(in srgb, var(--acc, var(--color-primary)) 14%, transparent); }
+  .btn { padding: 8px 14px; border-radius: 7px; cursor: pointer; font: inherit; font-weight: 600; font-size: 12.5px; border: 1px solid var(--color-border); background: var(--color-surface-alt); color: var(--color-text); display: inline-flex; align-items: center; gap: 7px; }
+  .btn.primary { background: var(--acc, var(--color-primary)); color: #14121d; border-color: var(--acc, var(--color-primary)); } .btn.ghost { background: transparent; } .btn:hover { filter: brightness(1.08); }
+
+  /* bar with safe-pace tick */
+  .bar { position: relative; height: 6px; border-radius: 4px; background: var(--color-surface-alt); }
+  .bar > span { display: block; height: 100%; width: calc(var(--p)*1%); background: var(--acc); border-radius: 4px; }
+  .bar > .tick { position: absolute; top: -2px; height: 10px; width: 2px; border-radius: 1px; background: rgba(226,224,240,.9); left: calc(var(--safe)*1%); }
+  /* current / safe-pace number pair: cur coloured, safe dimmed, "usage/safe" */
+  .nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; cursor: help; }
+  .nums .cur { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cur.under { color: var(--color-success); } .cur.over { color: var(--color-danger); }
+  .nums .safe { color: var(--color-text-muted); opacity: .5; font-size: .92em; }
+
+  /* ===================== 1. DASHBOARD ===================== */
+  .dash { width: 760px; flex: none; } .dash .view-body { padding: 16px; }
+  .sel-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+  .acard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; padding: 12px 13px; cursor: pointer; border-top: 3px solid var(--acc); transition: box-shadow .12s, background .12s; }
+  .acard:hover { background: var(--color-surface-alt); }
+  .acard.active { box-shadow: 0 0 0 2px var(--acc); background: color-mix(in srgb, var(--acc) 10%, var(--color-surface)); }
+  .acard .ah { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .acard .ah i { color: var(--acc); font-size: 15px; } .acard .ah .who { font-weight: 700; font-size: .92rem; }
+  .acard .mrow { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px; margin: 8px 0; }
+  .acard .mrow .k { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--color-text-muted); }
+  .acard .mrow .nums .cur { font-size: .82rem; }
+  .acard .reset { font-size: .66rem; color: var(--color-text-muted); margin-top: 8px; } .acard .reset b { color: var(--color-text); }
+
+  .widgets { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .widget { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; }
+  .widget .wh { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-bottom: 1px solid var(--color-border); }
+  .widget .wh .wt { font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 7px; } .widget .wh .grow { flex: 1; }
+  .widget .wh .drag { color: var(--color-text-muted); font-size: 14px; cursor: grab; }
+  .widget .wbody { padding: 12px; }
+  .add-widget-mini { margin-top: 2px; text-align: center; }
+  .add-widget-mini button { background: none; border: 0; color: var(--color-text-muted); font: inherit; font-size: 11px; cursor: pointer; opacity: .4; display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; }
+  .add-widget-mini button:hover { opacity: 1; color: var(--color-text); }
+
+  .chart-wrap { display: flex; gap: 14px; }
+  .chart { flex: 1; min-width: 0; } svg.line { width: 100%; height: 150px; display: block; }
+  .chart .xlabels { display: flex; justify-content: space-between; padding: 4px 26px 0; font-size: 11px; color: var(--color-text-muted); }
+  .chart .legend2 { font-size: 10.5px; color: var(--color-text-muted); margin-top: 5px; display: inline-flex; align-items: center; gap: 6px; }
+  .chart .legend2 .dl { width: 16px; height: 0; border-top: 1px dashed var(--color-text-muted); }
+  .worked { width: 190px; flex: none; border-left: 1px solid var(--color-border); padding-left: 12px; }
+  .worked .wl { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); margin-bottom: 7px; }
+  .worked .wrow { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 11.5px; }
+  .worked .wrow .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; } .worked .wrow .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .worked .wrow .pc { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  table.stats-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.stats-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--color-text-muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--color-border); }
+  table.stats-table td { padding: 7px 8px; border-bottom: 1px solid var(--color-border); } table.stats-table tr:last-child td { border-bottom: 0; }
+  table.stats-table .proj { display: flex; align-items: center; gap: 7px; } table.stats-table .proj i { color: var(--color-text-muted); }
+  table.stats-table .tok { font-variant-numeric: tabular-nums; text-align: right; } table.stats-table .la { color: var(--color-text-muted); text-align: right; }
+
+  /* ===================== 2. NEW-CHAT MODAL ===================== */
+  .me-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; width: 600px; box-shadow: 0 12px 36px rgba(0,0,0,.5); overflow: hidden; flex: none; }
+  .me-columns { display: flex; align-items: stretch; }
+  .me-left-col { flex: 1 1 0; min-width: 0; padding: 18px; }
+  .me-title { margin: 0 0 14px; font-size: 15px; font-weight: 700; } .me-title small { color: var(--color-text-muted); font-weight: 500; font-size: 12px; }
+  .me-label { display: block; font-size: .78rem; color: var(--color-text-muted); margin-bottom: 6px; } .me-label .hint { color: var(--acc); font-weight: 600; }
+  .me-acc-field { margin-bottom: 15px; }
+  .me-acc-collapsed { display: flex; align-items: center; gap: 10px; }
+  .me-change { background: none; border: 0; color: var(--color-text-muted); font: inherit; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .me-change:hover { color: var(--color-text); }
+  .me-acc-edit { display: flex; gap: 8px; flex-wrap: wrap; }
+  .me-acc-edit[hidden], .me-acc-collapsed[hidden], .me-remember[hidden] { display: none; }
+  .me-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 9px; border-radius: 999px; border: 1px solid var(--color-border); background: var(--color-background); cursor: pointer; font-weight: 600; font-size: 12px; }
+  .me-chip i { color: var(--ac); font-size: 14px; }
+  .me-chip.sel { border-color: var(--ac); background: color-mix(in srgb, var(--ac) 14%, var(--color-surface)); box-shadow: 0 0 0 1px var(--ac); }
+  .me-remember { display: flex; align-items: center; gap: 8px; margin-top: 11px; font-size: 12px; cursor: pointer; }
+  .me-remember input { accent-color: var(--color-primary); } .me-remember .path { color: var(--color-text-muted); font-family: 'Fira Code', monospace; font-size: 11px; }
+  .me-presets { display: flex; gap: 8px; margin-bottom: 15px; } .preset-btn { flex: 1; padding: 8px 10px; background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 6px; cursor: pointer; font-size: 12px; text-align: center; } .preset-btn.active { background: var(--color-primary); color: #14121d; border-color: var(--color-primary); }
+  .me-field { margin: 13px 0; } .me-slider { width: 100%; accent-color: var(--color-primary); }
+  .me-stop-labels { display: flex; justify-content: space-between; margin-top: 3px; } .slider-stop-label { font-size: 11px; color: var(--color-text-muted); } .slider-stop-label.active { color: var(--color-primary); font-weight: 600; }
+  .me-more { margin-top: 15px; font-size: 12px; color: var(--color-text-muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .me-actions { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }
+  .me-cancel { padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12.5px; border: 1px solid var(--color-border); background: var(--color-surface-alt); color: var(--color-text); }
+  .me-confirm { padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12.5px; font-weight: 600; border: 1px solid var(--acc); background: var(--acc); color: #14121d; display: inline-flex; align-items: center; gap: 6px; }
+  .me-char-pane { width: 190px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px 16px; border-left: 1px solid var(--color-border); background: var(--color-surface-alt); text-align: center; }
+  .me-char-portrait { width: 104px; height: 104px; border-radius: 50%; border: 2px solid var(--acc); background: var(--color-surface); display: grid; place-items: center; font-size: 2rem; color: var(--color-text-muted); }
+  .me-char-name { font-size: .9rem; font-weight: 600; } .me-char-game { font-size: .72rem; color: var(--color-text-muted); }
+  .me-char-btns { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 4px; }
+  .me-char-btn { width: 100%; padding: 6px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); display: flex; align-items: center; justify-content: center; gap: 5px; }
+
+  /* ===================== 3. ADD ACCOUNT ===================== */
+  .wizard { width: 470px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; box-shadow: 0 16px 44px rgba(0,0,0,.5); flex: none; }
+  .wz-head { padding: 15px 18px 12px; border-bottom: 1px solid var(--color-border); } .wz-head .t { font-family: 'Manrope'; font-weight: 700; font-size: 15px; }
+  .wz-steps { display: flex; align-items: center; gap: 6px; margin-top: 12px; } .wz-steps .st { display: flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 11px; font-weight: 600; } .wz-steps .st .n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--color-border); font-size: 10px; } .wz-steps .st.done .n { background: var(--color-success); color: #10241c; border-color: var(--color-success); } .wz-steps .st.cur { color: var(--color-text); } .wz-steps .st.cur .n { background: var(--color-primary); color: #14121d; border-color: var(--color-primary); } .wz-steps .line { flex: 1; height: 1px; background: var(--color-border); }
+  .wz-body { padding: 18px; }
+  .detected { display: flex; align-items: center; gap: 11px; padding: 11px 12px; background: var(--color-background); border: 1px solid color-mix(in srgb, var(--color-success) 40%, var(--color-border)); border-radius: 9px; margin-bottom: 14px; }
+  .detected .av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--work); color: #14121d; font-size: 16px; } .detected .info { flex: 1; } .detected .info .nm { font-weight: 700; } .detected .info .em { color: var(--color-text-muted); font-size: 11.5px; } .detected .ok { color: var(--color-success); font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
+  .field { margin: 12px 0; } .field label { display: block; font-size: 11.5px; color: var(--color-text-muted); margin-bottom: 5px; } .field .fake-input { width: 100%; padding: 9px 11px; background: var(--color-background); border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text); font-size: 13px; }
+  .icon-pick { display: flex; align-items: center; gap: 11px; }
+  .icon-current { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 22px; color: #14121d; background: var(--acc); }
+  .swatches { display: flex; gap: 7px; } .swatch { width: 26px; height: 26px; border-radius: 7px; cursor: pointer; border: 2px solid transparent; } .swatch.sel { border-color: var(--color-text); }
+  .wz-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
+
+  /* ===================== 4. PROJECT BINDING ===================== */
+  .subwin { width: 470px; flex: none; }
+  .auto-form { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+  .opt { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--color-border); } .opt:last-child { border-bottom: 0; }
+  .opt .oi { flex: 1; } .opt .oi .on { font-weight: 600; font-size: 12.5px; } .opt .oi .od { color: var(--color-text-muted); font-size: 11px; }
+  .switch { width: 38px; height: 22px; border-radius: 999px; background: var(--color-surface-alt); border: 1px solid var(--color-border); position: relative; flex: none; } .switch.on { background: var(--color-primary); border-color: var(--color-primary); } .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; } .switch.on::after { left: 18px; }
+  .acc-select { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 8px; background: var(--color-surface-alt); border: 1px solid color-mix(in srgb, var(--acc) 45%, var(--color-border)); cursor: pointer; font-weight: 600; font-size: 12px; } .acc-select i.aic { color: var(--acc); font-size: 15px; } .acc-select i.caret { color: var(--color-text-muted); }
+  .reverse { width: 350px; flex: none; }
+  .rev-head { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--color-border); } .rev-head .av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--work); color: #14121d; font-size: 15px; } .rev-head .nm { font-weight: 700; } .rev-head .rl { color: var(--color-text-muted); font-size: 11px; }
+  .rev-list { padding: 8px; } .rev-item { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 8px; } .rev-item:hover { background: var(--color-surface-alt); } .rev-item i.f { color: var(--color-text-muted); } .rev-item .p { flex: 1; font-family: 'Fira Code', monospace; font-size: 11px; } .rev-item .x { color: var(--color-text-muted); cursor: pointer; }
+  .rev-add { padding: 9px; } .rev-add .btn { width: 100%; justify-content: center; }
+
+  /* ===================== 5. TRAY OVERLAY ===================== */
+  .desktop { width: 500px; height: 320px; border-radius: 12px; overflow: hidden; position: relative; background: radial-gradient(120% 120% at 20% 0%, #2a2740 0%, #14131d 55%, #0d0c14 100%); border: 1px solid var(--color-border); flex: none; }
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: rgba(20,19,29,.86); backdrop-filter: blur(8px); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .tb-ico { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--color-text-muted); font-size: 15px; } .tb-ico.app { background: color-mix(in srgb, var(--color-primary) 22%, transparent); color: var(--color-primary); } .taskbar .grow { flex: 1; }
+  .tray { display: flex; align-items: center; gap: 9px; color: var(--color-text-muted); font-size: 14px; } .tray-app { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; cursor: pointer; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 16%, transparent); } .tray .clock { font-size: 10.5px; text-align: right; line-height: 1.2; }
+  /* semi-transparent by default (opacity configurable in settings); opaque on hover */
+  .overlay-card { position: absolute; right: 10px; bottom: 52px; width: 310px; background: color-mix(in srgb, var(--color-surface) 72%, transparent); backdrop-filter: blur(11px); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,.6); overflow: hidden; transform-origin: bottom right; transition: opacity .16s, transform .16s, background .16s; }
+  .overlay-card:hover { background: var(--color-surface); }
+  .overlay-card.hidden { opacity: 0; transform: scale(.94) translateY(6px); pointer-events: none; }
+  .oc-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--color-border); font-weight: 700; font-size: 12px; } .oc-head .grow { flex: 1; } .oc-head small { color: var(--color-text-muted); font-weight: 500; }
+  .oc-row { padding: 9px 11px; border-bottom: 1px solid var(--color-border); } .oc-row:last-child { border-bottom: 0; }
+  .oc-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 12px; } .oc-top i { color: var(--acc); font-size: 14px; } .oc-top .nm { font-weight: 600; } .oc-top .grow { flex: 1; } .oc-top .rs { color: var(--color-text-muted); font-size: 10.5px; }
+  .oc-metric { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 9px; margin-top: 5px; } .oc-metric .k { font-size: 9.5px; color: var(--color-text-muted); text-transform: uppercase; } .oc-metric .nums .cur { font-size: 11px; } .oc-metric .nums .safe { font-size: 10px; }
+</style>
+</head>
+<body>
+
+  <div class="legend">
+    <span class="title">Multi-account <small>&middot; v4 &middot; Claude Conductor &middot; theme-void dark</small></span>
+    <span class="spacer"></span>
+    <span class="acc-key"><span class="dot" style="background:var(--personal)"></span> Personal <small>default</small></span>
+    <span class="acc-key"><span class="dot" style="background:var(--work)"></span> Work</span>
+    <span class="acc-key"><span class="dot" style="background:var(--fibo)"></span> Fibo</span>
+    <span class="safe-key"><span class="tickdemo"></span> = safe pace (hover a number for the tooltip)</span>
+  </div>
+
+  <!-- ===================== 1. DASHBOARD ===================== -->
+  <section class="board">
+    <div class="board-h"><span class="num">1</span><span class="t">Dashboard = account selector + your widgets</span><span class="d">Numbers now read usage/safe-pace (e.g. 42%/55%); reset time is no longer red. Click a card to re-scope the graph.</span></div>
+    <div class="stage">
+      <div class="win dash">
+        <div class="titlebar"><span class="d"></span><span class="d"></span><span class="d"></span><span style="margin-left:6px">Claude Conductor</span><span class="grow"></span></div>
+        <div class="view-header"><span class="icon-btn"><i class="ph ph-list"></i></span><span class="h2">Dashboard</span><span class="icon-btn" title="Edit dashboard"><i class="ph ph-sliders-horizontal"></i></span></div>
+        <div class="view-body">
+
+          <div class="sel-row" id="selRow">
+            <div class="acard active" data-acc="personal" style="--acc:var(--personal)">
+              <div class="ah"><i class="ph ph-user"></i><span class="who">Personal</span></div>
+              <div class="mrow"><span class="k">5h</span><div class="bar" style="--p:42;--safe:55"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace. Safe pace is the even-burn line; green = under it (fine), red = over (burning too fast)."><b class="cur under">42%</b><span class="safe">/55%</span></span></div>
+              <div class="mrow"><span class="k">7d</span><div class="bar" style="--p:31;--safe:78"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">31%</b><span class="safe">/78%</span></span></div>
+              <div class="reset">resets <b>5:52 PM</b> &middot; 2h 10m</div>
+            </div>
+            <div class="acard" data-acc="work" style="--acc:var(--work)">
+              <div class="ah"><i class="ph ph-briefcase"></i><span class="who">Work</span></div>
+              <div class="mrow"><span class="k">5h</span><div class="bar" style="--p:78;--safe:60"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace. Over the safe pace = burning too fast."><b class="cur over">78%</b><span class="safe">/60%</span></span></div>
+              <div class="mrow"><span class="k">7d</span><div class="bar" style="--p:55;--safe:82"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">55%</b><span class="safe">/82%</span></span></div>
+              <div class="reset">resets <b>4:29 PM</b> &middot; 47m</div>
+            </div>
+            <div class="acard" data-acc="fibo" style="--acc:var(--fibo)">
+              <div class="ah"><i class="ph ph-palette"></i><span class="who">Fibo</span></div>
+              <div class="mrow"><span class="k">5h</span><div class="bar" style="--p:12;--safe:40"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">12%</b><span class="safe">/40%</span></span></div>
+              <div class="mrow"><span class="k">7d</span><div class="bar" style="--p:20;--safe:70"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">20%</b><span class="safe">/70%</span></span></div>
+              <div class="reset">resets <b>7:22 PM</b> &middot; 3h 40m</div>
+            </div>
+          </div>
+
+          <div class="widgets">
+            <div class="widget" id="graphWidget" style="--acc:var(--personal)">
+              <div class="wh"><span class="wt"><i class="ph ph-chart-line" style="color:var(--acc)"></i> Weekly session usage</span><span class="tag scoped" id="graphTag">Personal</span><span class="grow"></span><i class="ph ph-dots-six-vertical drag"></i></div>
+              <div class="wbody">
+                <div class="chart-wrap">
+                  <div class="chart">
+                    <svg class="line" viewBox="0 0 460 150" preserveAspectRatio="none">
+                      <line x1="30" y1="135" x2="450" y2="12" stroke="rgba(226,224,240,.9)" stroke-width="1.5" stroke-dasharray="4 4"></line>
+                      <polygon id="area" fill="var(--acc)" opacity="0.12" points=""></polygon>
+                      <polyline id="pline" fill="none" stroke="var(--acc)" stroke-width="2.5" points=""></polyline>
+                    </svg>
+                    <div class="xlabels"><span>Mon</span><span>Sun</span></div>
+                    <div class="legend2"><span class="dl"></span> dashed = safe pace (even-burn line)</div>
+                  </div>
+                  <div class="worked"><div class="wl">Worked on</div><div id="workedList"></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="widget">
+              <div class="wh"><span class="wt"><i class="ph ph-table" style="color:var(--color-secondary)"></i> Today across all projects</span><span class="tag global">Global</span><span class="grow"></span><i class="ph ph-dots-six-vertical drag"></i></div>
+              <div class="wbody">
+                <table class="stats-table">
+                  <thead><tr><th>Project</th><th style="text-align:right">Total</th><th style="text-align:right">Last active</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="proj"><i class="ph ph-folder"></i> zng-app</span></td><td class="tok">1.24M</td><td class="la">6m ago</td></tr>
+                    <tr><td><span class="proj"><i class="ph ph-folder"></i> claude_usage_in_taskbar</span></td><td class="tok">840K</td><td class="la">just now</td></tr>
+                    <tr><td><span class="proj"><i class="ph ph-folder"></i> studio-site</span></td><td class="tok">312K</td><td class="la">3h ago</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="add-widget-mini"><button><i class="ph ph-plus"></i> add widget</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="note">
+        <b>Number format:</b> <b>42%/55%</b> = current usage / safe pace, the second number dimmed, the word "safe" gone. Hover any number for the explainer tooltip.<br><br>
+        <b>Reset time:</b> no longer red just for being soon (that was misleading). Red is reserved for being over pace, on the usage number.<br><br>
+        <span class="q">Click Work / Fibo above &rarr;</span> the graph re-scopes.
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 2. NEW-CHAT MODAL ===================== -->
+  <section class="board">
+    <div class="board-h"><span class="num">2</span><span class="t">New-chat modal: show the pick, edit only if wanted</span><span class="d">Collapsed to the pre-selected account. Click "change" to choose another, then it offers to remember it.</span></div>
+    <div class="stage">
+      <div class="me-card">
+        <div class="me-columns">
+          <div class="me-left-col">
+            <h3 class="me-title">New session in <small>claude_usage_in_taskbar</small></h3>
+            <div class="me-acc-field" id="meAcc" style="--acc:var(--personal)">
+              <label class="me-label">Account <span class="hint" id="meAccHint">&middot; suggested for this folder</span></label>
+              <div class="me-acc-collapsed" id="meCollapsed">
+                <span class="me-chip sel" id="meChosen" style="--ac:var(--personal)"><i class="ph ph-user"></i> Personal</span>
+                <button class="me-change" id="meChangeBtn"><i class="ph ph-pencil-simple"></i> change</button>
+              </div>
+              <div class="me-acc-edit" id="meEdit" hidden>
+                <div class="me-chip" data-acc="personal" style="--ac:var(--personal)"><i class="ph ph-user"></i> Personal</div>
+                <div class="me-chip" data-acc="work" style="--ac:var(--work)"><i class="ph ph-briefcase"></i> Work</div>
+                <div class="me-chip" data-acc="fibo" style="--ac:var(--fibo)"><i class="ph ph-palette"></i> Fibo</div>
+              </div>
+              <label class="me-remember" id="meRemember" hidden><input type="checkbox"> Remember <b id="meRememberName" style="margin:0 3px">Work</b> for <span class="path">claude_usage_in_taskbar</span></label>
+            </div>
+            <div class="me-presets"><div class="preset-btn active">Balanced</div><div class="preset-btn">Deep</div><div class="preset-btn">Fast</div></div>
+            <div class="me-field"><label class="me-label">Model</label><input type="range" class="me-slider" min="0" max="2" value="1"><div class="me-stop-labels"><span class="slider-stop-label">Haiku</span><span class="slider-stop-label active">Sonnet</span><span class="slider-stop-label">Opus</span></div></div>
+            <div class="me-field"><label class="me-label">Effort</label><input type="range" class="me-slider" min="0" max="3" value="2"><div class="me-stop-labels"><span class="slider-stop-label">Low</span><span class="slider-stop-label">Med</span><span class="slider-stop-label active">High</span><span class="slider-stop-label">Max</span></div></div>
+            <div class="me-more"><i class="ph ph-caret-right"></i> More options (auto-allow permissions, remote chat)</div>
+            <div class="me-actions"><button class="me-cancel">Cancel</button><button class="me-confirm" id="meConfirm"><i class="ph ph-paper-plane-tilt"></i> Start on <span id="meConfirmName">Personal</span></button></div>
+          </div>
+          <div class="me-char-pane">
+            <div class="me-char-portrait" id="meChar" style="--acc:var(--personal)"><i class="ph ph-user-circle"></i></div>
+            <div class="me-char-name">Illidan</div><div class="me-char-game">Warcraft III</div>
+            <div class="me-char-btns"><button class="me-char-btn"><i class="ph ph-shuffle"></i> Reroll</button><button class="me-char-btn"><i class="ph ph-check"></i> Choose</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="note">
+        Default view shows only the <b>pre-selected</b> account, no clutter. Hit <b>change</b> to reveal the chips and pick another; changing it surfaces a <b>"Remember X for this project"</b> checkbox (writes the folder binding).<br><br>
+        <span class="q">Try it:</span> click "change", pick Work.<br><br>
+        <span class="q">Open:</span> after remembering, should it also offer "and for this whole folder tree"?
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 3. ADD ACCOUNT ===================== -->
+  <section class="board">
+    <div class="board-h"><span class="num">3</span><span class="t">Add account: connect first, name + icon auto-filled</span><span class="d">Sign in, we read name/email back. Icon auto-picked with a reroll that never clashes.</span></div>
+    <div class="stage">
+      <div class="wizard">
+        <div class="wz-head"><div class="t">Add a Claude account</div>
+          <div class="wz-steps"><span class="st done"><span class="n"><i class="ph ph-check"></i></span> Connect</span><span class="line"></span><span class="st cur"><span class="n">2</span> Confirm</span><span class="line"></span><span class="st"><span class="n">3</span> Done</span></div>
+        </div>
+        <div class="wz-body">
+          <div class="detected"><span class="av" id="detAv"><i class="ph ph-briefcase"></i></span><span class="info"><div class="nm">you@zirtue.com</div><div class="em">Zirtue &middot; Team plan</div></span><span class="ok"><i class="ph ph-check-circle"></i> connected</span></div>
+          <div class="field"><label>Account name <span class="muted">(auto-detected, editable)</span></label><div class="fake-input">Work</div></div>
+          <div class="field" id="iconField" style="--acc:var(--work)">
+            <label>Icon <span class="muted">(auto-picked, reroll if you care)</span></label>
+            <div class="icon-pick">
+              <div class="icon-current" id="iconCur"><i class="ph ph-briefcase"></i></div>
+              <button class="btn ghost" id="iconReroll"><i class="ph ph-dice-five"></i> Reroll</button>
+              <span class="muted" style="font-size:11px">won't reuse <span style="color:var(--personal)">Personal</span> or <span style="color:var(--fibo)">Fibo</span>'s icon</span>
+            </div>
+          </div>
+          <div class="field"><label>Colour</label><div class="swatches"><span class="swatch" style="background:var(--personal)"></span><span class="swatch sel" style="background:var(--work)"></span><span class="swatch" style="background:var(--fibo)"></span><span class="swatch" style="background:#38bdf8"></span><span class="swatch" style="background:#f472b6"></span></div></div>
+          <div class="wz-actions"><span class="muted" style="font-size:11px"><i class="ph ph-check-circle" style="color:var(--color-success)"></i> Subscription verified</span><button class="btn primary" style="--acc:var(--work)">Add Work</button></div>
+        </div>
+      </div>
+      <div class="note"><b>Icon: auto-picked + reroll</b> (the dice), skips icons other accounts already use. <b>Name auto-detected</b> from the login (org name + email). <span class="q">Try the dice.</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== 4. PROJECT BINDING ===================== -->
+  <section class="board">
+    <div class="board-h"><span class="num">4</span><span class="t">Bind on the project, manage from the account</span><span class="d">A row in the project's Automation settings (with the account icon). Reverse list on the account.</span></div>
+    <div class="stage">
+      <div class="win subwin">
+        <div class="titlebar"><span class="d"></span><span class="d"></span><span class="d"></span><span style="margin-left:6px">zng-app &middot; Automation</span><span class="grow"></span></div>
+        <div class="auto-form">
+          <div class="opt" style="--acc:var(--work)"><span class="oi"><div class="on">Claude account</div><div class="od">Which account new chats in this project use</div></span><span class="acc-select"><i class="ph ph-briefcase aic"></i> Work <i class="ph ph-caret-down caret"></i></span></div>
+          <div class="opt"><span class="oi"><div class="on">Enabled</div><div class="od">Allow automation for this project</div></span><span class="switch on"></span></div>
+          <div class="opt"><span class="oi"><div class="on">Start on boot</div><div class="od">Launch a session when the app starts</div></span><span class="switch"></span></div>
+          <div class="opt"><span class="oi"><div class="on">Continue previous session</div><div class="od">Resume instead of a fresh chat</div></span><span class="switch on"></span></div>
+        </div>
+      </div>
+      <div class="win reverse">
+        <div class="rev-head"><span class="av"><i class="ph ph-briefcase"></i></span><span><div class="nm">Work</div><div class="rl">Projects using this account</div></span></div>
+        <div class="rev-list">
+          <div class="rev-item"><i class="ph ph-folder f"></i><span class="p">D:\work\zng-app</span><i class="ph ph-x x"></i></div>
+          <div class="rev-item"><i class="ph ph-folder f"></i><span class="p">D:\work\zng-admin</span><i class="ph ph-x x"></i></div>
+          <div class="rev-item"><i class="ph ph-folder f"></i><span class="p">D:\work\zng-biller</span><i class="ph ph-x x"></i></div>
+        </div>
+        <div class="rev-add"><button class="btn"><i class="ph ph-plus"></i> Add a project to Work</button></div>
+      </div>
+      <div class="note">Account row carries the <b>briefcase icon</b>. Lives on the project's Automation subview (saved via the existing <span style="font-family:'Fira Code',monospace;font-size:11px">updateProject</span>). The account view (right) lists + edits its projects from the other end.</div>
+    </div>
+  </section>
+
+  <!-- ===================== 5. TRAY OVERLAY ===================== -->
+  <section class="board">
+    <div class="board-h"><span class="num">5</span><span class="t">Tray overlay: translucent, opaque on hover</span><span class="d">Semi-transparent (opacity set in Settings), solid when you hover. 5h + 7d + safe pace per account.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="overlay-card hidden" id="ovl">
+          <div class="oc-head"><i class="ph ph-gauge" style="color:var(--color-primary)"></i> Claude usage <span class="grow"></span><small>hover a number for info</small></div>
+          <div class="oc-row" style="--acc:var(--personal)">
+            <div class="oc-top"><i class="ph ph-user"></i><span class="nm">Personal</span><span class="grow"></span><span class="rs">resets 2h 10m</span></div>
+            <div class="oc-metric"><span class="k">5h</span><div class="bar" style="--p:42;--safe:55"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">42%</b><span class="safe">/55%</span></span></div>
+            <div class="oc-metric"><span class="k">7d</span><div class="bar" style="--p:31;--safe:78"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">31%</b><span class="safe">/78%</span></span></div>
+          </div>
+          <div class="oc-row" style="--acc:var(--work)">
+            <div class="oc-top"><i class="ph ph-briefcase"></i><span class="nm">Work</span><span class="grow"></span><span class="rs">resets 47m</span></div>
+            <div class="oc-metric"><span class="k">5h</span><div class="bar" style="--p:78;--safe:60"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace. Over the safe pace."><b class="cur over">78%</b><span class="safe">/60%</span></span></div>
+            <div class="oc-metric"><span class="k">7d</span><div class="bar" style="--p:55;--safe:82"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">55%</b><span class="safe">/82%</span></span></div>
+          </div>
+          <div class="oc-row" style="--acc:var(--fibo)">
+            <div class="oc-top"><i class="ph ph-palette"></i><span class="nm">Fibo</span><span class="grow"></span><span class="rs">resets 3h 40m</span></div>
+            <div class="oc-metric"><span class="k">5h</span><div class="bar" style="--p:12;--safe:40"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">12%</b><span class="safe">/40%</span></span></div>
+            <div class="oc-metric"><span class="k">7d</span><div class="bar" style="--p:20;--safe:70"><span></span><i class="tick"></i></div><span class="nums" title="usage / safe pace"><b class="cur under">20%</b><span class="safe">/70%</span></span></div>
+          </div>
+        </div>
+        <div class="taskbar">
+          <div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="tb-ico"><i class="ph ph-globe"></i></div><div class="tb-ico"><i class="ph ph-code"></i></div>
+          <div class="grow"></div>
+          <div class="tray"><i class="ph ph-wifi-high"></i><i class="ph ph-speaker-high"></i><div class="tray-app" id="trayBtn" title="toggle overlay"><i class="ph ph-gauge"></i></div><div class="clock">3:42 PM<br>7/01/26</div></div>
+        </div>
+      </div>
+      <div class="note">Click the <b>gauge icon</b> to toggle. The card is <b>translucent</b> so it sits lightly over the desktop, and goes <b>solid on hover</b>. How see-through it is = a Settings slider. Numbers use the same usage/safe-pace format.</div>
+    </div>
+  </section>
+
+<script>
+  const ACC = {
+    personal: { name:'Personal', color:'var(--personal)', data:[10,22,28,20,35,31,31], worked:[['claude_usage_in_taskbar','var(--personal)',62],['disk-doctor','var(--personal)',24],['obsidian-notes','var(--personal)',14]] },
+    work: { name:'Work', color:'var(--work)', data:[15,30,42,50,48,52,55], worked:[['zng-app','var(--work)',54],['zng-admin','var(--work)',30],['zng-biller','var(--work)',16]] },
+    fibo: { name:'Fibo', color:'var(--fibo)', data:[5,8,12,10,15,18,20], worked:[['studio-site','var(--fibo)',70],['brand-kit','var(--fibo)',30]] },
+  };
+  function pts(data){ const x0=30,x1=450,y0=135,yTop=12; return data.map((v,i)=>{ const x=x0+i*((x1-x0)/(data.length-1)); const y=y0-(v/100)*(y0-yTop); return x.toFixed(0)+','+y.toFixed(0); }); }
+  function setAccount(key){
+    const a = ACC[key];
+    document.querySelectorAll('#selRow .acard').forEach(c => c.classList.toggle('active', c.dataset.acc===key));
+    const gw = document.getElementById('graphWidget'); gw.style.setProperty('--acc', a.color);
+    document.getElementById('graphTag').textContent = a.name;
+    const p = pts(a.data);
+    document.getElementById('pline').setAttribute('points', p.join(' '));
+    document.getElementById('area').setAttribute('points', '30,135 ' + p.join(' ') + ' 450,135');
+    document.getElementById('workedList').innerHTML = a.worked.map(w => '<div class="wrow"><span class="sw" style="background:'+w[1]+'"></span><span class="nm">'+w[0]+'</span><span class="pc">'+w[2]+'%</span></div>').join('');
+  }
+  document.querySelectorAll('#selRow .acard').forEach(c => c.onclick = () => setAccount(c.dataset.acc));
+  setAccount('personal');
+
+  // new-chat modal: collapsed pick -> edit -> remember
+  const meNames = { personal:'Personal', work:'Work', fibo:'Fibo' }, meVars = { personal:'var(--personal)', work:'var(--work)', fibo:'var(--fibo)' };
+  const meIcons = { personal:'ph-user', work:'ph-briefcase', fibo:'ph-palette' };
+  const SUGGESTED = 'personal';
+  function openEdit(){ document.getElementById('meCollapsed').hidden = true; document.getElementById('meEdit').hidden = false; }
+  function chooseAcc(k){
+    document.getElementById('meAcc').style.setProperty('--acc', meVars[k]);
+    document.getElementById('meChosen').style.setProperty('--ac', meVars[k]);
+    document.getElementById('meChosen').innerHTML = '<i class="ph ' + meIcons[k] + '"></i> ' + meNames[k];
+    document.getElementById('meConfirm').style.setProperty('--acc', meVars[k]);
+    document.getElementById('meConfirmName').textContent = meNames[k];
+    document.getElementById('meChar').style.setProperty('--acc', meVars[k]);
+    document.getElementById('meAccHint').textContent = k===SUGGESTED ? '· suggested for this folder' : '· your pick';
+    document.getElementById('meEdit').hidden = true;
+    document.getElementById('meCollapsed').hidden = false;
+    const rem = document.getElementById('meRemember');
+    if (k !== SUGGESTED) { rem.hidden = false; document.getElementById('meRememberName').textContent = meNames[k]; }
+    else { rem.hidden = true; }
+  }
+  document.getElementById('meChangeBtn').onclick = openEdit;
+  document.getElementById('meChosen').onclick = openEdit;
+  document.querySelectorAll('#meEdit .me-chip').forEach(o => o.onclick = () => chooseAcc(o.dataset.acc));
+
+  // icon reroll - skip icons used by other accounts
+  const usedByOthers = ['ph-user','ph-palette'];
+  const pool = ['ph-briefcase','ph-rocket','ph-buildings','ph-lightning','ph-crown','ph-flask','ph-terminal-window','ph-cube'];
+  let ip = 0;
+  document.getElementById('iconReroll').onclick = () => {
+    let tries = 0, ico;
+    do { ico = pool[ip % pool.length]; ip++; tries++; } while (usedByOthers.includes(ico) && tries < pool.length);
+    document.getElementById('iconCur').innerHTML = '<i class="ph ' + ico + '"></i>';
+    document.getElementById('detAv').innerHTML = '<i class="ph ' + ico + '"></i>';
+  };
+
+  document.getElementById('trayBtn').onclick = () => document.getElementById('ovl').classList.toggle('hidden');
+</script>
+</body>
+</html>
