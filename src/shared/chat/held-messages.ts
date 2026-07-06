@@ -114,6 +114,11 @@ export class HeldMessages {
     return this.itemsForActive().length > 0;
   }
 
+  /** Whether ANY session (attached or backgrounded) has staged items. */
+  hasItemsFor(sid: string): boolean {
+    return (this.map.get(sid) ?? []).length > 0;
+  }
+
   /** Stage a message for the active session (called by the composer while busy). */
   stage(blocks: ContentBlock[]): void {
     const sid = this.sid;
@@ -175,6 +180,36 @@ export class HeldMessages {
     a.onChange();
     if (bundle.length === 0) return;
     await a.send(bundle);
+  }
+
+  /** Flush the held set of a BACKGROUNDED (not-attached) session. The mounted
+   * pane's HeldAttach.send closure only covers the attached session, so the
+   * caller injects a session-agnostic sender (a raw send_message invoke) here.
+   * No draft/composer semantics apply: nothing is mounted for this session.
+   * The caller gates on the question-hold check, same as onCompletion's
+   * isQuestion. Idempotent against the reselect-flush path: the held set is
+   * cleared BEFORE the async send, so an attach() + onCompletion() landing
+   * mid-send finds an empty set and no-ops. */
+  async flushBackground(sid: string, send: (blocks: ContentBlock[]) => Promise<void> | void): Promise<void> {
+    // If the session is actually mounted (e.g. the user switched to it between
+    // the caller's snapshot and now), the attached path owns it: it respects
+    // the composing defer and bundles the draft. Never send around it.
+    if (this.attached && this.attached.sessionId === sid) {
+      this.onCompletion(sid, false);
+      return;
+    }
+    const items = this.map.get(sid) ?? [];
+    if (items.length === 0) return;
+    const bundle = bundleHeld(items.map((i) => i.blocks));
+    // Clear state BEFORE sending so a concurrent flush path can't double-fire.
+    this.map.set(sid, []);
+    if (this.deferredSid === sid) this.deferredSid = null;
+    if (bundle.length === 0) return;
+    try {
+      await send(bundle);
+    } catch (err) {
+      console.error("[held] background flush send failed", err);
+    }
   }
 
   /** Busy went true->false for the active session. Auto-flush unless Claude is

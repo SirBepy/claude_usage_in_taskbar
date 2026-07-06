@@ -186,6 +186,25 @@ export async function refreshSessions(): Promise<void> {
       state.heldMessages.onCompletion(active.session_id, isQuestion);
     }
 
+    // Auto-flush held messages for BACKGROUNDED idle sessions too: a message
+    // queued in chat A must send the moment A's turn finishes, even while a
+    // different chat stays on screen. Same question gate as the active path,
+    // evaluated per session; send_message is a plain IPC call, so no pane
+    // needs to be mounted. flushBackground clears the held set before the
+    // async send, so it can't double-fire against the reselect flush in
+    // active-session.ts (which no-ops on an empty set).
+    for (const s of next) {
+      if (s.session_id === state.selectedId || s.busy) continue;
+      if (!state.heldMessages?.hasItemsFor(s.session_id)) continue;
+      const isQuestion = s.awaiting === "question" || state.questionSessions.has(s.session_id);
+      if (isQuestion) continue;
+      const sid = s.session_id;
+      const cwd = s.cwd;
+      void state.heldMessages.flushBackground(sid, (blocks) =>
+        invoke<void>("send_message", { sessionId: sid, cwd, blocks }),
+      );
+    }
+
     // Update prevBusyMap for next call
     state.prevBusyMap = new Map(next.map(s => [s.session_id, s.busy]));
 

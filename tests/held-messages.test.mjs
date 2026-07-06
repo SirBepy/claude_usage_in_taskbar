@@ -205,6 +205,96 @@ describe("HeldMessages — flush triggers", () => {
   });
 });
 
+describe("HeldMessages — background flush (non-attached session)", () => {
+  it("flushes a backgrounded session's held set via the injected sender", async () => {
+    const { held, attach, send } = makeHarness();
+    held.stage(textBlocks("alpha"));
+    held.stage(textBlocks("beta"));
+    // Switch away: sess-A's set stays behind while sess-B is mounted.
+    held.attach({ ...attach, sessionId: "sess-B" });
+    expect(held.hasItemsFor("sess-A")).toBe(true);
+
+    const bgSend = vi.fn(async () => {});
+    await held.flushBackground("sess-A", bgSend);
+
+    expect(bgSend).toHaveBeenCalledTimes(1);
+    expect(bgSend).toHaveBeenCalledWith([{ type: "text", text: "alpha\n\nbeta" }]);
+    expect(held.hasItemsFor("sess-A")).toBe(false);
+    // The mounted pane's sender must never fire for a backgrounded session.
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the session has nothing held", async () => {
+    const { held, attach } = makeHarness();
+    held.attach({ ...attach, sessionId: "sess-B" });
+
+    const bgSend = vi.fn(async () => {});
+    await held.flushBackground("sess-A", bgSend);
+
+    expect(bgSend).not.toHaveBeenCalled();
+  });
+
+  it("never double-fires when the reselect flush races a slow background send", async () => {
+    const { held, attach, send } = makeHarness();
+    held.stage(textBlocks("queued"));
+    held.attach({ ...attach, sessionId: "sess-B" });
+
+    let resolveSend;
+    const bgSend = vi.fn(() => new Promise((r) => { resolveSend = r; }));
+    const inFlight = held.flushBackground("sess-A", bgSend);
+
+    // Mid-send, the user switches back to sess-A and the reselect path fires:
+    // the held set was cleared before the async send, so this must no-op.
+    held.attach({ ...attach, sessionId: "sess-A" });
+    held.onCompletion("sess-A", false);
+
+    resolveSend();
+    await inFlight;
+
+    expect(bgSend).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("delegates to the attached path when the session is currently mounted", async () => {
+    const { held, send } = makeHarness();
+    held.stage(textBlocks("mine"));
+
+    const bgSend = vi.fn(async () => {});
+    await held.flushBackground("sess-A", bgSend);
+
+    // The mounted pane owns its session (composing defer, draft bundling):
+    // the injected sender must not bypass it.
+    expect(bgSend).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith([{ type: "text", text: "mine" }]);
+  });
+
+  it("respects the composing defer when delegating to the attached path", async () => {
+    vi.useFakeTimers();
+    try {
+      const { held, send, state } = makeHarness();
+      held.stage(textBlocks("mid-typing"));
+      state.composing = true;
+      state.busy = false;
+
+      const bgSend = vi.fn(async () => {});
+      await held.flushBackground("sess-A", bgSend);
+
+      expect(bgSend).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(held.hasItemsFor("sess-A")).toBe(true);
+
+      // Once the keystroke window lapses, the deferred flush still fires.
+      state.composing = false;
+      vi.advanceTimersByTime(2200);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith([{ type: "text", text: "mid-typing" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("HeldMessages — pending placeholder -> real id", () => {
   it("migrates a staged set so completion auto-flush matches the real id", () => {
     const { held, send, attach } = makeHarness({ sessionId: "pending-123" });
