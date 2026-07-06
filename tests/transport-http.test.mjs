@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // HttpTransport is the browser/phone transport: it maps frontend command names
-// onto the daemon's remote-access REST/WS server (see src/shared/transport.ts).
-// Node env has no DOM globals, so we stub the few it touches.
+// onto the daemon's remote-access REST/WS server (see src/shared/http-transport.ts,
+// selected by src/shared/transport.ts). Node env has no DOM globals, so we stub
+// the few it touches.
 
-const {
-  HttpTransport,
-  getTransport,
-  resetTransportForTests,
-  RemoteUnavailableError,
-  REMOTE_TOKEN_KEY,
-} = await import("../src/shared/transport.ts");
+const { getTransport, resetTransportForTests } = await import(
+  "../src/shared/transport.ts"
+);
+const { HttpTransport, RemoteUnavailableError, REMOTE_TOKEN_KEY } = await import(
+  "../src/shared/http-transport.ts"
+);
 
 let lastWs;
 class MockWebSocket {
