@@ -1,23 +1,21 @@
 # Session Handoff
 
-## What was accomplished
+Updated 2026-07-06 by the autopilot run (see COMMENTS_FOR_BEPY.md same-date ledger for full detail).
 
-Investigated Joe's "Daemon Reconnected over and over" report by reading `%APPDATA%\claude-conductor\daemon.log` and the app-side `Claude Conductor.log` (under `%LOCALAPPDATA%\com.sirbepy.claudeconductor\logs\`). Found two distinct issues: (1) a real but rare named-pipe drop today (2026-07-01, 11:26:54 and 11:29:02) where the daemon process itself stayed alive the whole time (started 07:59:54, never restarted) - root cause of the pipe drop is not captured in current logs; (2) a toast-multiplication bug where `daemon-status-changed` is a single app-wide Tauri event but every window (main, Chats, per-session chat windows) loads the same `index.html`/`main.ts` and independently runs `initBoot()`, so each real disconnect/reconnect produces one toast per open window, which is likely why it felt like "over and over and over" from only 2 real events. Also surfaced (not today's bug, but same family) a historical ~2-hour crash-restart-loop from 2026-06-29 07:43-09:53 (386+ cycles), caused by the daemon's duplicate-spawn guard only checking the HTTP hooks port (127.0.0.1:27182) for health, not the named pipe - if the pipe ever dies while the HTTP port survives, no new daemon can take over. No code was changed this session; investigation only. Was about to ask Joe 3 clarifying questions (fix toast dedupe now? confirm sleep/lock at 11:26-11:29? add pipe-drop error logging?) via AskUserQuestion when the session was interrupted.
+## Current state
 
-## Files changed
+- Tree clean at 31a298fc; cargo build, `pnpm tsc --noEmit`, and the full vitest suite (478 tests) all green.
+- The old handoff's open items are resolved: toast multiplication fixed (ai_todo 149, main-window-only), pipe-drop io::Error logging added (ai_todo 150), and the 6/29 duplicate-spawn-guard bug is tracked as ai_todo 151 (parked: needs live pipe-drop verification before touching the spawn race).
+- Only genuinely open question from the old handoff: does the 7/1 11:26-11:29 pipe drop correlate with PC sleep/lock? Only Joe can answer.
 
-None (read-only investigation; `COMMENTS_FOR_BEPY.md` shows as modified in git diff but was not touched this session).
+## Suggested next steps (triaged 2026-07-06)
 
-## Open decisions
+1. ai_todo 136 (inject formatting instructions on chat start) - highest leverage, unblocks 135/139/138.
+2. ai_todo 094 (WebView2 crash auto-recovery, Option B heartbeat) - code-complete possible, live crash-sim verify goes to BEPY_TODOS.
+3. ai_todo 146 (token source tracker) - FIRST grep whether instance_token_stats already carries the chat-vs-CLI dimension; if not, re-park.
+4. ai_todo 135 (clickable file refs) - only after 136 lands.
 
-- Whether to fix the toast-multiplication bug (scope `daemon-status-changed` toast to one place instead of every window independently reacting) - recommended, not yet approved by Joe.
-- Whether the 11:26-11:29 pipe drop correlates with PC sleep/lock - unconfirmed, only Joe can answer.
-- Whether to add I/O error detail logging to the reader task in `src-tauri/src/daemon_client/mod.rs` (currently only logs "connection lost", not the underlying `io::Error` kind) so the next pipe drop is diagnosable instead of guessed at.
-- Whether the 6/29 duplicate-spawn-guard bug (health check only covers port 27182, not the named pipe) is worth fixing separately - not yet raised with Joe.
+## Live-verify owed (Joe or a live session)
 
-## Suggested next steps
-
-- Re-ask Joe the 3 pending questions (toast dedupe fix, sleep/lock confirmation, add pipe-drop diagnostics) via AskUserQuestion - the previous attempt was interrupted before Joe answered.
-- If toast dedupe is approved: scope the `api.onDaemonStatus` toast handling in `src/shared/boot.ts:270-279` so only one window (or a single dedicated status surface) shows the toast, not every webview.
-- If diagnostics are approved: capture the actual `io::Error` in the reader task's `read_frame` failure branch in `src-tauri/src/daemon_client/mod.rs` (around line 78-81) and log it instead of the current generic "connection lost".
-- Consider whether the 6/29 duplicate-spawn race (port-27182-only health check in `src-tauri/src/daemon/mod.rs`) warrants its own ai_todo, since it caused a 2-hour crash loop and could recur.
+- 153 cross-session held-message autosend: queue a message in a busy background chat, watch it send when that chat's turn ends while another chat is selected.
+- 94/136 once implemented will add their own verify lines.

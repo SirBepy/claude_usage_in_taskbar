@@ -567,4 +567,29 @@ Deferred (ai_todos created): 99 project tech-icon detection; 100 AUQ relay timeo
 
 NOT pushed yet at time of writing; main agent will run /commit pushnbump next.
 [when-done] auto-answered question with default option(s) (id fdb7686d-dbc1-47aa-901c-33f8d43b39d3)
+
+## 2026-07-06 10:40 - autopilot run (recovered weekend "use up my tokens" job)
+
+Why this ran Monday morning: the Sat 20:30 /schedule-once task (and its two siblings for hubbub + annoying_stopwatch) misfired EARLY on Fri Jul 3 16:49:34, all three at once, during a Modern Standby power transition. Each hit the exhausted session limit, exited, and run-once.ps1 self-deleted the task, so nothing ever re-fired. Prompt was recovered from a Jul 3 transcript's sidecar dump; Joe chose "run now, in this session".
+
+RUN_LEDGER (chunk -> outcome -> sha):
+- schedule-once hardening (outside repo, ~/.claude/skills/schedule-once/): run-once.ps1 now refuses premature fires (leaves task registered) and re-arms itself ~30min after a session-limit reset (max 3 attempts) instead of self-deleting on failure. Both paths tested with fake sidecars. SKILL.md updated.
+- Landed the in-flight dirty tree as 3 units: 93e0173d (ai_todo 137 MCP relay connect-retry), f32048a7 (ai_todo 144 attach_hide_to_tray helper), f02b8200 (ai_todo 142 bundle descriptions). cargo build green. 86dffe1c resolves the three todo files.
+- 0547315d DOCS: persisted multi-account spec (docs/multi-account/), HANDOFF, ai_todos 146/153/154, mockup, pr_preview note.
+- c01efbad ai_todo 154 CSS split (lossless, diff-verified) + 7ec0f1b3 resolve.
+- c9b632d8 TEST: fixed pre-existing 22-failure transport-http.test.mjs (commit 00813633 split HttpTransport into http-transport.ts but missed the test's imports). Suite now fully green (478).
+- 6b96843b ai_todo 153 cross-session held-message autosend (flushBackground + sidebar wiring, 5 new tests, race-proof idempotency) + 31a298fc resolve.
+
+Decisions (direct judgment, none needed iterate-it):
+- 153: injected-send signature on flushBackground instead of the spec sketch's direct invoke import (keeps module IPC-free/testable); attached-session delegates to onCompletion; send errors caught (message lost on failure, same tradeoff as existing flush()).
+- 144 closed without live re-verify: pure extraction, logic byte-identical, build green.
+- tmp.csv in repo root is projector-shopping research (unrelated); left untracked, not deleted.
+
+Stopped at: context hard-stop (87% used) before ai_todos 136, 135, 094, 146. Their files remain in .for_bepy/ai_todos/ with a triage verdict: 136 first (unblocks 135/139/138), then 094, then 146 (grep instance_token_stats for a source dimension first). Say "do the AI todos" or re-run /autopilot to continue.
+
+Parked (with reasons):
+- ai_todo 151 (dup-spawn guard): cargo-verifiable but touches the daemon spawn race that once caused a 2h crash loop; not shipping that unattended without live pipe-drop verification.
+- ai_todo 87: fix lives in the server_supervisor repo, not this one.
+- ai_todos 90/147: e2e specs ready but each run burns a real billable turn and needs the tray app closed.
+- hubbub + annoying_stopwatch weekend tasks also died in the same misfire and were NOT re-run (other repos, out of scope here). Their prompts are recoverable from the same transcript if wanted.
 [when-done] auto-approved permission for tool 'Bash' (id 6bcacc34-05ee-402d-890a-b40d6266045c)
