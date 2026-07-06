@@ -1,0 +1,277 @@
+/* PR Preview card + modal (the /create-pr skill preview). Split out of
+ * chat-tools.css. */
+
+/* ── PR Preview card + modal ─────────────────────────────────────────────── */
+
+.pr-preview-card {
+  margin: 8px 0 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface-alt);
+}
+
+.pr-card-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.pr-card-strip > .ph {
+  color: var(--color-primary);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.pr-card-label {
+  flex: 1;
+}
+
+.pr-preview-btn {
+  padding: 3px 12px;
+  border-radius: 100px;
+  border: 1px solid var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.pr-preview-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+/* ── PR modal overlay ──────────────────────────────────────────────────────── */
+
+.pr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(2px);
+}
+
+.pr-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 900px;
+  max-height: calc(100vh - 48px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.pr-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.pr-modal-header > .ph {
+  color: var(--color-primary);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.pr-modal-title {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.pr-modal-close:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+
+.pr-modal-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pr-modal-commits {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  min-width: 200px;
+  max-width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  background: var(--color-surface-alt);
+}
+
+.pr-commits-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.pr-commits-header > .ph {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.pr-commits-list {
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pr-commit-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.pr-commit-sha {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  background: none;
+  padding: 0;
+  border: none;
+}
+
+.pr-commit-msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.pr-commits-empty {
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.pr-modal-body-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: var(--color-text);
+}
+
+.pr-modal-body-content .pr-body-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.pr-img-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin: 10px 0;
+}
+
+.pr-img-placeholder > .ph {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.pr-mermaid-placeholder {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.pr-mermaid-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-alt));
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.pr-mermaid-header > .ph { font-size: 0.85rem; }
+
+.pr-mermaid-source {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-family: monospace;
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.pr-modal-body-content h2 { font-size: 1rem; margin: 16px 0 6px; }
+.pr-modal-body-content h3 { font-size: 0.9rem; margin: 12px 0 4px; }
+.pr-modal-body-content p { margin: 0 0 10px; }
+.pr-modal-body-content ul, .pr-modal-body-content ol { margin: 0 0 10px; padding-left: 20px; }
+.pr-modal-body-content li { margin-bottom: 3px; }
+.pr-modal-body-content code { font-size: 0.82rem; }
+.pr-modal-body-content pre { font-size: 0.78rem; }
