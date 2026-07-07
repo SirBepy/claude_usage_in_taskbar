@@ -1,0 +1,270 @@
+/* Add-account wizard modal.
+ * Visual spec: .for_bepy/multi-account-mockup.html (section 3, "ADD ACCOUNT").
+ * Class names below (wizard, wz-head, wz-steps, field, icon-pick, swatches,
+ * etc) mirror the mockup 1:1; "aaw-" prefixed classes are the bits the
+ * mockup didn't need (loading/error states, inputs). */
+
+.aaw-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aaw-overlay .wizard {
+  width: 470px;
+  max-width: 95vw;
+  background: var(--color-surface, #1c1c24);
+  color: var(--color-text, #e8e8ee);
+  border: 1px solid var(--color-border, #2a2a36);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+}
+
+.aaw-overlay .wz-head {
+  padding: 15px 18px 12px;
+  border-bottom: 1px solid var(--color-border, #2a2a36);
+}
+
+.aaw-overlay .wz-head .t {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.aaw-overlay .wz-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.aaw-overlay .wz-steps .st {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aaw-overlay .wz-steps .st .n {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border, #2a2a36);
+  font-size: 10px;
+  flex: none;
+}
+
+.aaw-overlay .wz-steps .st.done .n {
+  background: var(--color-success, #7af0c0);
+  color: #10241c;
+  border-color: var(--color-success, #7af0c0);
+}
+
+.aaw-overlay .wz-steps .st.cur { color: var(--color-text, #e8e8ee); }
+
+.aaw-overlay .wz-steps .st.cur .n {
+  background: var(--color-primary, #6e8fff);
+  color: var(--color-background, #0e0e14);
+  border-color: var(--color-primary, #6e8fff);
+}
+
+.aaw-overlay .wz-steps .line {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border, #2a2a36);
+  min-width: 8px;
+}
+
+.aaw-overlay .wz-body { padding: 18px; }
+
+.aaw-overlay .field { margin: 12px 0; }
+.aaw-overlay .field label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--color-text-muted, #8a8a96);
+  margin-bottom: 5px;
+}
+
+.aaw-overlay .aaw-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  background: var(--color-background, #0e0e14);
+  border: 1px solid var(--color-border, #2a2a36);
+  border-radius: 8px;
+  color: var(--color-text, #e8e8ee);
+  font-size: 13px;
+  font: inherit;
+}
+
+.aaw-overlay .aaw-input:disabled { opacity: 0.6; }
+
+.aaw-overlay .detected {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  background: var(--color-background, #0e0e14);
+  border: 1px solid color-mix(in srgb, var(--color-success, #7af0c0) 40%, var(--color-border, #2a2a36));
+  border-radius: 9px;
+  margin-bottom: 14px;
+}
+
+.aaw-overlay .detected .av {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-alt, #24242e);
+  color: var(--color-success, #7af0c0);
+  font-size: 18px;
+  flex: none;
+}
+
+.aaw-overlay .detected .info { flex: 1; min-width: 0; }
+.aaw-overlay .detected .info .nm { font-weight: 700; }
+.aaw-overlay .detected .info .em {
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 11.5px;
+}
+.aaw-overlay .detected .ok {
+  color: var(--color-success, #7af0c0);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.aaw-overlay .icon-pick {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.aaw-overlay .icon-current {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: var(--color-background, #0e0e14);
+  background: var(--acc, var(--color-primary, #6e8fff));
+  flex: none;
+}
+
+.aaw-overlay .swatches { display: flex; gap: 7px; }
+.aaw-overlay .swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.aaw-overlay .swatch.sel { border-color: var(--color-text, #e8e8ee); }
+
+.aaw-overlay .wz-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  gap: 8px;
+}
+
+.aaw-overlay .btn {
+  padding: 8px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 12.5px;
+  border: 1px solid var(--color-border, #2a2a36);
+  background: var(--color-surface-alt, #24242e);
+  color: var(--color-text, #e8e8ee);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.aaw-overlay .btn:hover { filter: brightness(1.08); }
+.aaw-overlay .btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+.aaw-overlay .btn.ghost { background: transparent; }
+.aaw-overlay .btn.primary {
+  background: var(--acc, var(--color-primary, #6e8fff));
+  color: var(--color-background, #0e0e14);
+  border-color: var(--acc, var(--color-primary, #6e8fff));
+}
+
+.aaw-overlay .muted { color: var(--color-text-muted, #8a8a96); }
+
+.aaw-overlay .aaw-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-danger, #ff6b6b);
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #ff6b6b) 35%, transparent);
+  margin: 10px 0;
+}
+
+.aaw-overlay .aaw-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted, #8a8a96);
+  background: var(--color-surface-alt, #24242e);
+  border: 1px dashed var(--color-border, #2a2a36);
+  margin: 0 0 12px;
+}
+
+.aaw-overlay .aaw-explain {
+  font-size: 12px;
+  color: var(--color-text-muted, #8a8a96);
+  line-height: 1.5;
+  margin: 0 0 4px;
+}
+
+.aaw-overlay .aaw-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 22px 10px;
+  font-size: 13px;
+}
+
+.aaw-overlay .aaw-waiting code {
+  background: var(--color-surface-alt, #24242e);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.aaw-overlay .aaw-spin {
+  display: inline-block;
+  animation: aaw-spin 1s linear infinite;
+  font-size: 20px;
+  color: var(--color-primary, #6e8fff);
+}
+
+@keyframes aaw-spin {
+  to { transform: rotate(360deg); }
+}

@@ -13,7 +13,13 @@ import type {
   DatasetInfo,
   DatasetId,
   RetentionPolicy,
+  Account,
+  AddAccountSession,
+  LoginCheckOutcome,
+  OauthAccountInfo,
 } from "../types/ipc.generated";
+
+export type { Account, AddAccountSession, LoginCheckOutcome, OauthAccountInfo };
 
 // ── Backend snapshot shape ────────────────────────────────────────────────
 
@@ -472,6 +478,37 @@ export const api = {
     listenEvent("skill-usage-changed", () => cb()),
   onDaemonStatus: (cb: (status: { connected: boolean }) => void): Unlisten =>
     listenEvent<{ connected: boolean }>("daemon-status-changed", cb),
+
+  // --- Accounts (multi-account milestone 01: add-account wizard) ---
+  addAccountCreate: (label: string, slug: string | null): Promise<AddAccountSession> =>
+    invoke("add_account_create", { label, slug }),
+  addAccountCheckLogin: (sessionId: string): Promise<LoginCheckOutcome> =>
+    invoke("add_account_check_login", { sessionId }),
+  addAccountCaptureCookie: (sessionId: string): Promise<void> =>
+    invoke("add_account_capture_cookie", { sessionId }),
+  addAccountCancel: (sessionId: string): Promise<void> =>
+    invoke("add_account_cancel", { sessionId }),
+  addAccountFinalize: (
+    sessionId: string,
+    label: string,
+    colour: string,
+    icon: string,
+  ): Promise<Account> =>
+    invoke("add_account_finalize", { sessionId, label, colour, icon }),
+  listAccounts: async (): Promise<Account[]> => {
+    try { return (await invoke<Account[]>("list_accounts")) || []; }
+    catch (e) { console.error("list_accounts failed", e); return []; }
+  },
+  removeAccount: (accountId: string): Promise<void> =>
+    invoke("remove_account", { accountId }),
+  logoutAccount: (accountId: string): Promise<void> =>
+    invoke("logout_account", { accountId }),
+  setDefaultAccount: (accountId: string | null): Promise<void> =>
+    invoke("set_default_account", { accountId }),
+  getTerminalIdentity: async (): Promise<OauthAccountInfo | null> => {
+    try { return (await invoke<OauthAccountInfo | null>("get_terminal_identity")) ?? null; }
+    catch (e) { console.error("get_terminal_identity failed", e); return null; }
+  },
 };
 
 export type Api = typeof api;

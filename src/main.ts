@@ -36,6 +36,7 @@ import { renderPermissionsView } from "./views/settings/subviews/permissions/per
 import { renderStatuslineView } from "./views/settings/subviews/statusline/statusline";
 import { renderAboutView } from "./views/settings/subviews/about/about";
 import { renderRemoteAccessView } from "./views/settings/subviews/remote-access/remote-access";
+import { renderAccountsSettingsView } from "./views/settings/subviews/accounts/accounts";
 import { initBoot } from "./shared/boot";
 import { ensureRemoteToken } from "./shared/remote-gate";
 import { isRemote } from "./shared/transport";
@@ -122,6 +123,7 @@ registerView("settings-permissions", renderPermissionsView);
 registerView("settings-statusline", renderStatuslineView);
 registerView("settings-about", renderAboutView);
 registerView("settings-remote-access", renderRemoteAccessView);
+registerView("settings-accounts", renderAccountsSettingsView);
 
 const app = document.getElementById("app");
 if (!app) {

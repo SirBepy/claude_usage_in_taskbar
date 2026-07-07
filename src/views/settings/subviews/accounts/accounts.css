@@ -1,0 +1,120 @@
+/* Settings > Accounts. Shared .kit-* / .btn-* rules live in the kit; only the
+ * view-specific bits live here. */
+
+.acc-explainer {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--color-text-muted, #8a8a96);
+}
+
+.acc-explainer code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.acc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.acc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: var(--color-surface-alt, #1a1d27);
+  border-radius: 8px;
+  border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
+}
+
+.acc-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--acc, var(--color-primary, #6e8fff)) 20%, transparent);
+  color: var(--acc, var(--color-primary, #6e8fff));
+  font-size: 15px;
+  flex: none;
+}
+
+.acc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.acc-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text, #e8e8ee);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acc-default-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--acc, var(--color-primary, #6e8fff));
+  background: color-mix(in srgb, var(--acc, var(--color-primary, #6e8fff)) 16%, transparent);
+}
+
+.acc-sub {
+  font-size: 0.76rem;
+  color: var(--color-text-muted, #8a8a96);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acc-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.acc-actions .btn-secondary {
+  padding: 5px 10px;
+  font-size: 0.78rem;
+}
+
+.acc-btn-default {
+  padding: 5px 8px !important;
+}
+
+.acc-btn-remove {
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  background: transparent;
+  color: var(--color-danger, #f87171);
+  border: 1px solid color-mix(in srgb, var(--color-danger, #f87171) 45%, transparent);
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+}
+.acc-btn-remove:hover { background: color-mix(in srgb, var(--color-danger, #f87171) 12%, transparent); }
+.acc-btn-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.acc-empty {
+  font-size: 0.82rem;
+  color: var(--color-text-muted, #8a8a96);
+  margin: 4px 0 10px;
+}
+
+.acc-terminal-identity {
+  font-size: 0.85rem;
+  color: var(--color-text, #e8e8ee);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

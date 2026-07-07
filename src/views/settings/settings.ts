@@ -182,6 +182,7 @@ export async function renderSettingsView(
   const navShortcuts = root.querySelector<HTMLElement>("#nav-shortcuts");
   const navStatusline = root.querySelector<HTMLElement>("#nav-statusline");
   const navRemoteAccess = root.querySelector<HTMLElement>("#nav-remote-access");
+  const navAccounts = root.querySelector<HTMLElement>("#nav-accounts");
   const navAbout = root.querySelector<HTMLElement>("#nav-about");
   if (navVisuals) navVisuals.onclick = () => g().navigateTo("settings-visuals");
   if (navThemes) navThemes.onclick = () => g().navigateTo("settings-themes");
@@ -193,6 +194,7 @@ export async function renderSettingsView(
   if (navShortcuts) navShortcuts.onclick = () => g().navigateTo("settings-shortcuts");
   if (navStatusline) navStatusline.onclick = () => g().navigateTo("settings-statusline");
   if (navRemoteAccess) navRemoteAccess.onclick = () => g().navigateTo("settings-remote-access");
+  if (navAccounts) navAccounts.onclick = () => g().navigateTo("settings-accounts");
   if (navAbout) navAbout.onclick = () => g().navigateTo("settings-about");
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
@@ -241,6 +243,14 @@ function template() {
           </div>
           <div class="kit-row kit-nav-row" id="nav-themes">
             <span class="kit-row-label">Themes</span>
+            <span class="kit-nav-arrow">›</span>
+          </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-title">Accounts</div>
+          <div class="kit-row kit-nav-row" id="nav-accounts">
+            <span class="kit-row-label">Claude accounts</span>
             <span class="kit-nav-arrow">›</span>
           </div>
         </div>
