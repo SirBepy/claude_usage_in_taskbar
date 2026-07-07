@@ -68,6 +68,7 @@ impl Registry {
             awaiting: None,
             autopilot: false,
             turn_gen: 0,
+            account_id: None,
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
@@ -121,6 +122,7 @@ impl Registry {
             awaiting: None,
             autopilot: false,
             turn_gen: 0,
+            account_id: None,
         };
         guard.insert(session_id.to_string(), instance);
         project_id
@@ -164,6 +166,7 @@ impl Registry {
             awaiting: None,
             autopilot: false,
             turn_gen: 0,
+            account_id: None,
         };
         guard.insert(session_id.to_string(), instance);
     }
@@ -243,6 +246,15 @@ impl Registry {
         let mut guard = self.inner.lock().unwrap();
         let Some(i) = guard.get_mut(session_id) else { return false };
         i.effort = effort.to_string();
+        true
+    }
+
+    /// Set the registry account this session was spawned under. Returns true
+    /// if the entry was found.
+    pub fn set_account(&self, session_id: &str, account_id: &str) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let Some(i) = guard.get_mut(session_id) else { return false };
+        i.account_id = Some(account_id.to_string());
         true
     }
 
@@ -613,5 +625,21 @@ mod tests {
         assert!(!registry.set_kind("ext-1", InstanceKind::Automated, true));
         // Kind must not have been downgraded.
         assert_eq!(registry.get("ext-1").unwrap().kind, InstanceKind::Automated);
+    }
+
+    #[test]
+    fn set_account_records_attribution() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s1", Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        assert_eq!(registry.get("s1").unwrap().account_id, None);
+        assert!(registry.set_account("s1", "acct-work"));
+        assert_eq!(registry.get("s1").unwrap().account_id.as_deref(), Some("acct-work"));
+    }
+
+    #[test]
+    fn set_account_unknown_session_is_noop() {
+        let registry = Registry::new();
+        assert!(!registry.set_account("ghost", "acct-work"));
     }
 }

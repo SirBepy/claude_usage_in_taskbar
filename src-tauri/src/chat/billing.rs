@@ -75,4 +75,33 @@ mod tests {
         let env = |k: &str| if k == "CLAUDE_CODE_OAUTH_TOKEN" { Some("oat-test".into()) } else { None };
         assert!(check_metered_billing(&env).is_ok());
     }
+
+    // Multi-account routing (docs/multi-account/02-chat-routing.md step 3):
+    // every real spawn evaluates this gate against `accounts::env::SpawnEnv`'s
+    // effective env, which already scrubs ANTHROPIC_API_KEY/AUTH_TOKEN/
+    // OAUTH_TOKEN. These lock the resulting contract: the gate can only still
+    // catch what SURVIVES the scrub (BEDROCK/VERTEX).
+
+    #[test]
+    fn metered_billing_passes_when_only_scrubbed_vars_are_set_in_ambient() {
+        let spawn_env = crate::accounts::env::SpawnEnv::for_account(std::path::Path::new("/home/.claude-work"));
+        let ambient = vec![
+            ("ANTHROPIC_API_KEY".to_string(), "sk-stray".to_string()),
+            ("ANTHROPIC_AUTH_TOKEN".to_string(), "proxy-token".to_string()),
+        ];
+        let effective = spawn_env.effective_env(ambient);
+        assert!(check_metered_billing(&|k| effective.get(k).cloned()).is_ok());
+    }
+
+    #[test]
+    fn metered_billing_still_catches_bedrock_surviving_the_scrub() {
+        let spawn_env = crate::accounts::env::SpawnEnv::for_account(std::path::Path::new("/home/.claude-work"));
+        let ambient = vec![
+            ("ANTHROPIC_API_KEY".to_string(), "sk-stray".to_string()),
+            ("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string()),
+        ];
+        let effective = spawn_env.effective_env(ambient);
+        let r = check_metered_billing(&|k| effective.get(k).cloned());
+        assert!(matches!(r, Err(BillingError::Metered(ref k)) if k == "CLAUDE_CODE_USE_BEDROCK"));
+    }
 }

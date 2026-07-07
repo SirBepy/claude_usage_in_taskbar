@@ -22,6 +22,11 @@ pub struct SpawnInput {
     pub cwd: PathBuf,
     pub session_name_prefix: String,
     pub continue_flag: bool,
+    /// Per-account env mutation applied to the spawned child
+    /// (`CLAUDE_CONFIG_DIR` override + credential-var scrub). Channels use
+    /// the default account for now - see
+    /// `docs/multi-account/02-chat-routing.md`.
+    pub spawn_env: crate::accounts::env::SpawnEnv,
 }
 
 pub struct SpawnOutput {
@@ -68,6 +73,10 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
 
     const CREATE_NEW_CONSOLE: u32 = 0x00000010;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+    // Required whenever `lpEnvironment` points at a UTF-16 block (ours does,
+    // via `accounts::env::windows_env_block`) - without it Windows reads the
+    // block as ANSI and mangles it.
+    const CREATE_UNICODE_ENVIRONMENT: u32 = 0x00000400;
 
     let cmdline = build_cmdline(&input);
     let mut cmdline_w = crate::util::process::to_wide(&cmdline);
@@ -84,7 +93,12 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
     si.wShowWindow = SW_HIDE.0 as u16;
     let mut pi = PROCESS_INFORMATION::default();
 
-    let flags = PROCESS_CREATION_FLAGS(CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP);
+    let flags = PROCESS_CREATION_FLAGS(
+        CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT,
+    );
+
+    let effective_env = input.spawn_env.effective_env(std::env::vars());
+    let env_block = crate::accounts::env::windows_env_block(&effective_env);
 
     let result = unsafe {
         CreateProcessW(
@@ -94,7 +108,7 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
             None,
             false,
             flags,
-            None,
+            Some(env_block.as_ptr() as *const std::ffi::c_void),
             PCWSTR(cwd_w.as_ptr()),
             &si,
             &mut pi,
@@ -132,6 +146,7 @@ pub fn spawn_child(input: SpawnInput) -> Result<SpawnOutput, SpawnError> {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    input.spawn_env.apply_std(&mut cmd);
 
     // Put the child in a new session + process group so killpg() can
     // tree-kill it plus every node subprocess it spawns.

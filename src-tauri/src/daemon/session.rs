@@ -22,6 +22,10 @@ pub struct Session {
     /// pump exit. None if write_mcp_config failed (degrades to no
     /// permission-prompt tool, which is OK for v1).
     pub mcp_config_path: Option<PathBuf>,
+    /// The registry account id this session was spawned under (resolved at
+    /// spawn time - see `daemon::lifecycle::spawn_session`). Always set: a
+    /// chat requires a registry account, there is no no-account spawn path.
+    pub account_id: String,
 }
 
 impl Session {
@@ -33,6 +37,7 @@ impl Session {
         pid: u32,
         stdin: ChildStdin,
         mcp_config_path: Option<PathBuf>,
+        account_id: String,
     ) -> Arc<Self> {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
         Arc::new(Self {
@@ -44,6 +49,7 @@ impl Session {
             stdin: Mutex::new(stdin),
             events: tx,
             mcp_config_path,
+            account_id,
         })
     }
 }

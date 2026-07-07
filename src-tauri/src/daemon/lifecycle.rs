@@ -40,6 +40,13 @@ pub struct StartSessionParams {
     /// caller omits it so non-chat spawn paths never register a bridge.
     #[serde(default)]
     pub remote: bool,
+    /// Registry account id to spawn under. `None` resolves to
+    /// `Settings.default_account_id` - the only account-selection surface
+    /// until milestone 04's picker lands. Explicit `Some` is unused by any
+    /// caller today but threaded through so the picker needs no
+    /// `StartSessionParams` shape change.
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -56,6 +63,12 @@ pub enum LifecycleError {
     Io(#[from] std::io::Error),
     #[error("cwd does not exist: {0}")]
     CwdMissing(PathBuf),
+    #[error("no accounts registered - add an account before starting a chat")]
+    NoAccounts,
+    #[error("account {0} not found in the registry")]
+    AccountNotFound(String),
+    #[error("account drift: {0}")]
+    AccountDrift(String),
 }
 
 pub async fn spawn_session(
@@ -71,7 +84,34 @@ pub async fn spawn_session(
     if !params.cwd.exists() {
         return Err(LifecycleError::CwdMissing(params.cwd));
     }
-    if let Err(e) = check_metered_billing(&|k| std::env::var(k).ok()) {
+
+    // Resolve the account this chat spawns under: explicit `account_id` if the
+    // caller gave one, else the daemon's cached `default_account_id`. No spawn
+    // path may fall back to `~/.claude` (00-overview.md locked decision).
+    let default_account_id = state.settings.snapshot().default_account_id;
+    let account = crate::accounts::resolve_account(
+        params.account_id.as_deref(),
+        default_account_id.as_deref(),
+    )
+    .map_err(|e| match e {
+        crate::accounts::AccountResolveError::NoAccounts => LifecycleError::NoAccounts,
+        crate::accounts::AccountResolveError::NotFound(id) => LifecycleError::AccountNotFound(id),
+    })?;
+    // Pre-spawn drift guard (step 3b): refuse if the profile dir's CLI
+    // identity no longer matches what the registry recorded at add-account
+    // time (someone ran `/login` inside it since onboarding).
+    crate::accounts::drift::check(&account)
+        .map_err(|e| LifecycleError::AccountDrift(e.to_string()))?;
+
+    let spawn_env = crate::accounts::env::SpawnEnv::for_account(&account.config_dir);
+    // Billing gate evaluates the CHILD's effective env (parent env + this
+    // spawn's overrides/removals), not the daemon's ambient env alone.
+    // `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN`
+    // are already guaranteed gone via `SCRUBBED_ENV_VARS` above, so what this
+    // gate can still catch is a forbidden var that SURVIVES the unsets -
+    // `CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX`.
+    let effective_env = spawn_env.effective_env(std::env::vars());
+    if let Err(e) = check_metered_billing(&|k| effective_env.get(k).cloned()) {
         return Err(LifecycleError::MeteredBilling(e.to_string()));
     }
 
@@ -112,6 +152,7 @@ pub async fn spawn_session(
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    spawn_env.apply_tokio(&mut cmd);
 
     #[cfg(windows)]
     {
@@ -134,6 +175,7 @@ pub async fn spawn_session(
         pid,
         stdin,
         mcp_config_path,
+        account.id.clone(),
     );
     map.insert(session_id.clone(), Arc::clone(&session));
     log::info!(
@@ -464,6 +506,7 @@ mod tests {
                 effort: "high".into(),
                 resume_id: None,
                 remote: false,
+                account_id: None,
             },
         )
         .await;
@@ -485,6 +528,7 @@ mod tests {
                 effort: "high".into(),
                 resume_id: None,
                 remote: false,
+                account_id: None,
             },
         )
         .await;
@@ -502,6 +546,7 @@ mod tests {
                 effort: "ultra".into(),
                 resume_id: None,
                 remote: false,
+                account_id: None,
             },
         )
         .await;
@@ -520,6 +565,7 @@ mod tests {
                 effort: "high".into(),
                 resume_id: None,
                 remote: false,
+                account_id: None,
             },
         )
         .await;

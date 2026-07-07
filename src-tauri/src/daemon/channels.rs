@@ -55,6 +55,13 @@ pub fn start_channel(state: Arc<DaemonState>, project_id: String) -> Result<(), 
 
     let (cwd, prefix, continue_flag) = resolve_project(&state, &project_id)?;
 
+    // Channels use the default account for now (per-channel binding is a
+    // later nice-to-have - see docs/multi-account/02-chat-routing.md step 1).
+    // No spawn path may fall back to `~/.claude`, so an unresolvable default
+    // refuses the spawn instead.
+    let account = crate::accounts::resolve_default_account().map_err(|e| e.to_string())?;
+    let spawn_env = crate::accounts::env::SpawnEnv::for_account(&account.config_dir);
+
     state.channels.put(ChannelSnapshot {
         project_id: project_id.clone(),
         pid: None,
@@ -69,6 +76,7 @@ pub fn start_channel(state: Arc<DaemonState>, project_id: String) -> Result<(), 
         cwd,
         session_name_prefix: prefix,
         continue_flag,
+        spawn_env,
     })
     .map_err(|e| e.to_string())?;
 

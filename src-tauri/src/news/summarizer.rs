@@ -52,7 +52,16 @@ pub async fn generate_summary_streaming<F: FnMut(&str)>(
     article_text: &str,
     mut on_delta: F,
 ) -> Result<String> {
-    check_metered_billing(&|k| std::env::var(k).ok()).map_err(|e| anyhow!("{e}"))?;
+    // News summarization uses the default account (registry empty = skip,
+    // per docs/multi-account/02-chat-routing.md step 1). No spawn path may
+    // fall back to `~/.claude`.
+    let account = crate::accounts::resolve_default_account().map_err(|e| {
+        log::info!("news summarizer: skipping - {e}");
+        anyhow!("no account configured for news summarization: {e}")
+    })?;
+    let spawn_env = crate::accounts::env::SpawnEnv::for_account(&account.config_dir);
+    let effective_env = spawn_env.effective_env(std::env::vars());
+    check_metered_billing(&|k| effective_env.get(k).cloned()).map_err(|e| anyhow!("{e}"))?;
 
     let cwd = paths::ensure_data_dir().context("resolve app-data dir")?;
     let prompt = build_prompt(title, article_text);
@@ -72,6 +81,7 @@ pub async fn generate_summary_streaming<F: FnMut(&str)>(
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    spawn_env.apply_tokio(&mut cmd);
     hide_console_tokio(&mut cmd);
 
     let mut child = cmd.spawn().context("spawn claude")?;

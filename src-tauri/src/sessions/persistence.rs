@@ -31,6 +31,10 @@ pub struct PersistedInteractive {
     pub model: String,
     pub effort: String,
     pub started_at: String,
+    /// The registry account this session was spawned under. `#[serde(default)]`
+    /// so snapshots written before milestone 02 still load (as `None`).
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 /// Best-effort write of every live Interactive entry to `path`. Failures
@@ -54,6 +58,7 @@ pub fn save_snapshot(registry: &Registry, path: &Path) {
             model: i.model,
             effort: i.effort,
             started_at: i.started_at,
+            account_id: i.account_id,
         })
         .collect();
     let json = match serde_json::to_string_pretty(&snapshot) {
@@ -117,6 +122,9 @@ pub fn populate_registry(registry: &Registry, sessions: Vec<PersistedInteractive
         if !s.model.is_empty() || !s.effort.is_empty() {
             registry.set_model_effort(&s.session_id, &s.model, &s.effort);
         }
+        if let Some(account_id) = &s.account_id {
+            registry.set_account(&s.session_id, account_id);
+        }
         // A /close rename written since the last save lives in the transcript,
         // so a fresh override beats everything; then the AI milestone title (so
         // a chat that re-titled itself keeps that name across a restart); then
@@ -173,10 +181,31 @@ mod tests {
             model: String::new(),
             effort: String::new(),
             started_at: "2026-05-13T00:00:00Z".into(),
+            account_id: None,
         }];
         let added = populate_registry(&registry, sessions);
         assert_eq!(added, 0);
         assert!(registry.get("ghost").is_none());
+    }
+
+    #[test]
+    fn account_id_persists_through_snapshot_roundtrip() {
+        let registry = Registry::new();
+        let tmp = TempDir::new().unwrap();
+        let cwd = tmp.path().to_path_buf();
+        let path = tmp.path().join("snap.json");
+
+        registry.upsert_interactive("sess-1", &cwd, "proj-x", "2026-07-07T00:00:00Z");
+        registry.set_account("sess-1", "acct-work");
+
+        save_snapshot(&registry, &path);
+        let loaded = load_snapshot(&path);
+        assert_eq!(loaded[0].account_id.as_deref(), Some("acct-work"));
+
+        // Replaying into a fresh registry must restore the attribution.
+        let registry2 = Registry::new();
+        populate_registry(&registry2, loaded);
+        assert_eq!(registry2.get("sess-1").unwrap().account_id.as_deref(), Some("acct-work"));
     }
 
     #[test]

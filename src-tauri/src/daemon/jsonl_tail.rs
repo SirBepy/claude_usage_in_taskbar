@@ -15,6 +15,9 @@ use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, BufReader, SeekFrom};
 
+// multi-account audit: stays valid - every profile dir junctions `projects/`
+// back to this shared `~/.claude/projects`, so a transcript written by an
+// app-spawned child (any account) still lands in the one pool this scans.
 pub fn jsonl_path_for(session_id: &str) -> Option<PathBuf> {
     // Claude stores transcripts at ~/.claude/projects/<encoded-cwd>/<session_id>.jsonl
     // Phase 2 scans by basename across all project dirs rather than

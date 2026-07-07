@@ -157,6 +157,9 @@ pub async fn project_last_activity_at(cwd: String) -> Result<i64, String> {
 /// `~/.claude/projects/<encoded-cwd>/`. 0 if dir absent, unreadable, or
 /// has no jsonl files. Errors are swallowed - this is best-effort sort
 /// metadata, not load-bearing.
+// multi-account audit: stays valid - `projects/` is junctioned into every
+// profile dir, so this sees the transcript mtimes regardless of which
+// account spawned them.
 pub fn latest_jsonl_mtime_in_projects_dir(cwd: &Path) -> i64 {
     let Some(home) = dirs::home_dir() else { return 0 };
     let encoded = crate::tokens::encode_cwd_as_project_dir(cwd);
@@ -298,6 +301,7 @@ mod build_groups_tests {
             awaiting: None,
             autopilot: false,
             turn_gen: 0,
+            account_id: None,
         };
         let groups = build_groups(&[], &[], &[inst], 1714389600000);
         assert_eq!(groups.len(), 1);
@@ -327,6 +331,7 @@ mod build_groups_tests {
             awaiting: None,
             autopilot: false,
             turn_gen: 0,
+            account_id: None,
         };
         let groups = build_groups(&[], &[], &[inst], 0);
         assert_eq!(groups.len(), 0, "ended instances must not appear");

@@ -111,6 +111,12 @@ pub struct Instance {
     #[serde(skip, default)]
     #[ts(skip)]
     pub turn_gen: u64,
+    /// The registry account this session was spawned under. `None` for
+    /// sessions that predate milestone 02, or for terminal-observed
+    /// (non-app-spawned) sessions, which are attributed to the terminal's
+    /// identity instead - see `docs/multi-account/02-chat-routing.md` step 5.
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a
@@ -225,6 +231,7 @@ mod tests {
             awaiting: None,
             autopilot: false,
             turn_gen: 0,
+            account_id: None,
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();

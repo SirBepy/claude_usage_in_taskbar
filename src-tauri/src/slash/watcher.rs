@@ -6,6 +6,9 @@ use tauri::{AppHandle, Emitter};
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
+// multi-account audit: stays valid - `commands/`/`skills/`/`plugins/` are
+// junctioned into every profile dir, so watching the shared `~/.claude` tree
+// still catches edits regardless of which account is active.
 pub fn spawn(app: AppHandle) {
     let Some(home_dir) = dirs::home_dir() else {
         log::warn!("[slash::watcher] no home dir; skipping");

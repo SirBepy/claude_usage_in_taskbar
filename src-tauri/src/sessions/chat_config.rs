@@ -27,6 +27,12 @@ pub struct ChatConfig {
     /// `list_auto_accept` on launch). Written only via `set_auto_accept`.
     #[serde(default)]
     pub auto_accept: bool,
+    /// The registry account this chat was spawned under. Mirrors model/effort:
+    /// recorded alongside them at spawn time so a CLOSED chat's history view
+    /// can still show which account ran it. Empty for chats that predate
+    /// milestone 02. Written only via `set_account`.
+    #[serde(default)]
+    pub account_id: String,
 }
 
 /// Serialize read-modify-write within a process. Cross-process integrity comes
@@ -116,6 +122,23 @@ fn set_auto_accept_at(path: &Path, session_id: &str, value: bool) {
     write_atomic(path, &map);
 }
 
+/// Record a chat's account attribution. Preserves any recorded model/effort
+/// on the same entry. Best-effort, never panics.
+pub fn set_account(session_id: &str, account_id: &str) {
+    let Some(path) = config_path() else { return };
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    set_account_at(&path, session_id, account_id);
+}
+
+fn set_account_at(path: &Path, session_id: &str, account_id: &str) {
+    if session_id.is_empty() {
+        return;
+    }
+    let mut map = load_map(path);
+    map.entry(session_id.to_string()).or_default().account_id = account_id.to_string();
+    write_atomic(path, &map);
+}
+
 fn list_auto_accept_at(path: &Path) -> Vec<String> {
     load_map(path)
         .into_iter()
@@ -172,6 +195,25 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("chat-config.json");
         set_auto_accept_at(&path, "", true);
+        assert!(!path.exists(), "no file written for empty session id");
+    }
+
+    #[test]
+    fn set_account_round_trips_and_preserves_model() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("chat-config.json");
+        record_at(&path, "sess-1", "opus", "high");
+        set_account_at(&path, "sess-1", "acct-work");
+        let got = get_at(&path, "sess-1").unwrap();
+        assert_eq!(got.account_id, "acct-work");
+        assert_eq!(got.model, "opus", "model preserved across account write");
+    }
+
+    #[test]
+    fn set_account_empty_session_id_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("chat-config.json");
+        set_account_at(&path, "", "acct-work");
         assert!(!path.exists(), "no file written for empty session id");
     }
 

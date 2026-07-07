@@ -11,6 +11,9 @@ pub fn scan_all(project_dir: Option<&Path>) -> Vec<SlashEntry> {
 
 /// Variant of `scan_all` that accepts multiple project dirs. Used by the
 /// global Skills view to merge project skills from every known project.
+// multi-account audit: stays valid - `commands/`/`skills/`/`plugins/` are
+// junctioned into every profile dir, so scanning the shared `~/.claude` tree
+// returns the same set regardless of which account is active.
 pub fn scan_all_multi(project_dirs: &[&Path]) -> Vec<SlashEntry> {
     let Some(home) = dirs::home_dir() else {
         return builtins::all();

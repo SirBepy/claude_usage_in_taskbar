@@ -2,6 +2,9 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use super::record::TokenTotals;
 
+// multi-account audit: stays valid - `projects/` is junctioned into every
+// profile dir, so token-history walking sees every account's transcripts in
+// this one shared tree.
 pub(crate) fn claude_projects_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("projects"))
 }

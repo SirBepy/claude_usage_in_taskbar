@@ -26,7 +26,9 @@ struct SessionIdOnly {
 pub(super) fn err_to_rpc(e: LifecycleError) -> RpcError {
     use LifecycleError::*;
     match e {
-        InvalidConfig(_, _) | CwdMissing(_) => RpcError::invalid_params(e.to_string()),
+        InvalidConfig(_, _) | CwdMissing(_) | NoAccounts | AccountNotFound(_) | AccountDrift(_) => {
+            RpcError::invalid_params(e.to_string())
+        }
         NotFound(_) => RpcError {
             code: -32004,
             message: e.to_string(),
@@ -55,6 +57,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let effort = p.effort.clone();
                 let session = lifecycle::spawn_session(&state, p).await.map_err(err_to_rpc)?;
                 let sid = session.session_id.clone();
+                let account_id = session.account_id.clone();
                 let now = chrono::Utc::now().to_rfc3339();
                 let (project_id, created_new) = {
                     let mut snap = state.settings.snapshot();
@@ -69,7 +72,9 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 }
                 state.registry.upsert_interactive(&sid, &cwd, &project_id, &now);
                 state.registry.set_model_effort(&sid, &model, &effort);
+                state.registry.set_account(&sid, &account_id);
                 crate::sessions::chat_config::record(&sid, &model, &effort);
+                crate::sessions::chat_config::set_account(&sid, &account_id);
                 state.registry.set_awaiting(&sid, None);
                 state.registry.set_busy(&sid, true);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));

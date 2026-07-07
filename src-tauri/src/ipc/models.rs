@@ -23,9 +23,22 @@ pub async fn fetch_available_models() -> Vec<String> {
     }
 }
 
+/// Resolves the credentials file to probe: the default registered account's
+/// `.credentials.json` if one is set, else the terminal's `~/.claude`
+/// credentials (pre-M02 behavior - kept as the fallback so this read-only
+/// probe still works before anyone completes the add-account wizard).
+/// multi-account audit: this is a display-only probe, not a chat spawn path,
+/// so it degrades gracefully instead of refusing when no account exists yet.
+fn credentials_path_for_default_account() -> Option<std::path::PathBuf> {
+    if let Ok(account) = crate::accounts::resolve_default_account() {
+        return Some(account.config_dir.join(".credentials.json"));
+    }
+    dirs::home_dir().map(|h| h.join(".claude").join(".credentials.json"))
+}
+
 async fn fetch_available_models_inner() -> anyhow::Result<Vec<String>> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("no home dir"))?;
-    let creds_path = home.join(".claude").join(".credentials.json");
+    let creds_path = credentials_path_for_default_account()
+        .ok_or_else(|| anyhow::anyhow!("no home dir"))?;
     let raw = std::fs::read_to_string(&creds_path)
         .map_err(|e| anyhow::anyhow!("read credentials: {e}"))?;
     let creds: serde_json::Value = serde_json::from_str(&raw)
@@ -61,10 +74,11 @@ async fn fetch_available_models_inner() -> anyhow::Result<Vec<String>> {
     Ok(ids)
 }
 
-/// Read the Claude OAuth access token from ~/.claude/.credentials.json.
+/// Read the Claude OAuth access token from the default account's (or, absent
+/// one, the terminal's) `.credentials.json`.
 fn read_claude_oauth_token() -> anyhow::Result<String> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("no home dir"))?;
-    let creds_path = home.join(".claude").join(".credentials.json");
+    let creds_path = credentials_path_for_default_account()
+        .ok_or_else(|| anyhow::anyhow!("no home dir"))?;
     let raw = std::fs::read_to_string(&creds_path)
         .map_err(|e| anyhow::anyhow!("read credentials: {e}"))?;
     let creds: serde_json::Value = serde_json::from_str(&raw)

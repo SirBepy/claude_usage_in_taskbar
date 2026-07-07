@@ -43,7 +43,10 @@ async fn start_session_daemon(
     let real_id = {
         let guard = state.daemon_client.lock().await;
         let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
-        client.start_session(&cwd, &model, &effort, None, remote).await.map_err(|e| e.to_string())?
+        // account_id: None resolves to Settings.default_account_id daemon-side
+        // (see docs/multi-account/02-chat-routing.md step 5 - the account
+        // picker itself is milestone 04).
+        client.start_session(&cwd, &model, &effort, None, remote, None).await.map_err(|e| e.to_string())?
     };
 
     // Bridge daemon chat_event -> chat:<real_id> BEFORE sending the prompt so
@@ -96,7 +99,7 @@ pub async fn send_message(
     app: AppHandle,
 ) -> Result<String, String> {
     let prompt = blocks_to_prompt_text(&blocks);
-    let (model, effort) = {
+    let (model, effort, account_id) = {
         let inst = state
             .cached_instances
             .lock()
@@ -105,12 +108,14 @@ pub async fn send_message(
             .find(|i| i.session_id == session_id)
             .cloned();
         match inst {
-            Some(i) if !i.model.is_empty() && !i.effort.is_empty() => (i.model.clone(), i.effort.clone()),
-            _ => ("opus".to_string(), "high".to_string()),
+            Some(i) if !i.model.is_empty() && !i.effort.is_empty() => {
+                (i.model.clone(), i.effort.clone(), i.account_id.clone())
+            }
+            _ => ("opus".to_string(), "high".to_string(), None),
         }
     };
 
-    send_message_daemon(&session_id, &cwd, &prompt, &model, &effort, &state, &app).await
+    send_message_daemon(&session_id, &cwd, &prompt, &model, &effort, account_id.as_deref(), &state, &app).await
 }
 
 /// Daemon-backed turn on an existing session. If the daemon no longer holds the
@@ -121,6 +126,7 @@ async fn send_message_daemon(
     prompt: &str,
     model: &str,
     effort: &str,
+    account_id: Option<&str>,
     state: &State<'_, AppState>,
     app: &AppHandle,
 ) -> Result<String, String> {
@@ -137,12 +143,14 @@ async fn send_message_daemon(
         Ok(()) => Ok(session_id.to_string()),
         Err(crate::daemon_client::ClientError::Rpc { code: -32004, .. }) => {
             // Session not live in the daemon: respawn with resume_id, re-attach, retry.
+            // Pass the session's ORIGINAL account_id (not the current default) so a
+            // resume never silently rebinds to a different account.
             {
                 let guard = state.daemon_client.lock().await;
                 let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
                 client
                     // Resume respawn: never request a fresh remote-control bridge.
-                    .start_session(cwd, model, effort, Some(session_id), false)
+                    .start_session(cwd, model, effort, Some(session_id), false, account_id)
                     .await
                     .map_err(|e| e.to_string())?;
             }

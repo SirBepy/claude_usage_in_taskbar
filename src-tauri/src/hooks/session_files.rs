@@ -44,6 +44,9 @@ pub fn read_bridge_session_id(path: &Path) -> Result<Option<String>> {
     }
 }
 
+// multi-account audit: stays valid - every profile dir junctions `sessions/`
+// back to this shared `~/.claude/sessions`, so a hook-reported pid file lands
+// here regardless of which account's CLAUDE_CONFIG_DIR spawned it.
 pub fn session_file_for_pid(pid: u32) -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("sessions").join(format!("{pid}.json")))
 }
@@ -98,6 +101,8 @@ pub async fn resolve_session_meta(session_id: &str) -> Option<ScannedSession> {
 
 /// Resolves the sessions directory. Returns `None` only if the user has
 /// no home directory, which would be a pathologically broken setup.
+// multi-account audit: stays valid - same shared junctioned dir as
+// `session_file_for_pid` above.
 pub fn sessions_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("sessions"))
 }

@@ -90,6 +90,9 @@ fn curl_command(port: u16, endpoint: &str) -> String {
     )
 }
 
+// multi-account audit: stays valid, and per-profile hook install is free -
+// every profile symlinks `settings.json` back to this one file, so installing
+// the SessionStart/SessionEnd hooks here covers every account's spawns too.
 pub fn global_settings_path() -> Result<PathBuf> {
     let home = dirs::home_dir().context("no home dir")?;
     Ok(home.join(".claude").join("settings.json"))
