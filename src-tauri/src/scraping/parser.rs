@@ -106,6 +106,34 @@ pub fn build_tooltip(
     }
 }
 
+/// Multi-account milestone 06: one tooltip block per registered account,
+/// each an account-label header line followed by the same rows/columns body
+/// `build_tooltip` already produces for a single snapshot — reused rather
+/// than reimplemented so a colour/layout change only has one function to
+/// touch. `entries` is `(account_label, snapshot)` in registry order; an
+/// account absent from `current_usage_by_account` (not polled yet this run)
+/// still gets its header with an "initializing" body. Empty `entries` (no
+/// registry — legacy single-account state) falls back to the plain
+/// single-account `build_tooltip`.
+pub fn build_tooltip_multi(
+    entries: &[(String, Option<UsageSnapshot>)],
+    s: &TooltipSettings,
+    icon_s: &IconSettings,
+    now: DateTime<Utc>,
+) -> String {
+    if entries.is_empty() {
+        return build_tooltip(None, s, icon_s, now);
+    }
+    entries
+        .iter()
+        .map(|(label, snap)| {
+            let body = build_tooltip(snap.as_ref(), s, icon_s, now);
+            format!("{label}\n{body}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 fn fmt_pct(pct: f32, safe: Option<f32>, apply_color: bool, icon_s: &IconSettings) -> String {
     let base = format!("{pct:.0}%");
     if !apply_color { return base; }
@@ -318,6 +346,47 @@ mod tests {
         // Red threshold -> red circle before session %, green before weekly %.
         assert!(tip.contains("85% 🔴"), "expected red emoji after 85%, got: {tip}");
         assert!(tip.contains("30% 🟢"), "expected green emoji after 30%, got: {tip}");
+    }
+
+    #[test]
+    fn build_tooltip_multi_empty_registry_falls_back_to_single() {
+        let s = TooltipSettings::default();
+        let icon = IconSettings::default();
+        let tip = build_tooltip_multi(&[], &s, &icon, Utc::now());
+        assert!(tip.to_lowercase().contains("init"));
+    }
+
+    #[test]
+    fn build_tooltip_multi_one_block_per_account_with_label_header() {
+        let now = Utc.with_ymd_and_hms(2026, 4, 20, 10, 0, 0).unwrap();
+        let s = TooltipSettings {
+            layout: TooltipLayout::Rows,
+            time_style: TimeStyle::Absolute,
+            show_safe_pace: false,
+            apply_color: false,
+        };
+        let icon = IconSettings::default();
+        let entries = vec![
+            ("Personal".to_string(), Some(snap(45.0, "2026-04-20T12:30:00Z", 12.0, "2026-04-23T10:00:00Z"))),
+            ("Work".to_string(), Some(snap(78.0, "2026-04-20T11:00:00Z", 55.0, "2026-04-23T10:00:00Z"))),
+        ];
+        let tip = build_tooltip_multi(&entries, &s, &icon, now);
+        let blocks: Vec<&str> = tip.split("\n\n").collect();
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks[0].starts_with("Personal"));
+        assert!(blocks[0].contains("45%"));
+        assert!(blocks[1].starts_with("Work"));
+        assert!(blocks[1].contains("78%"));
+    }
+
+    #[test]
+    fn build_tooltip_multi_unpolled_account_still_gets_a_header() {
+        let s = TooltipSettings::default();
+        let icon = IconSettings::default();
+        let entries = vec![("Fibo".to_string(), None)];
+        let tip = build_tooltip_multi(&entries, &s, &icon, Utc::now());
+        assert!(tip.starts_with("Fibo"));
+        assert!(tip.to_lowercase().contains("init"));
     }
 
     #[test]

@@ -1,7 +1,9 @@
 //! Display-cycle state for the tray. Pure logic — no Tauri deps.
 
 use crate::tray::icon_render::DisplayMode;
-use crate::tray::threshold::DefaultDisplay;
+use crate::tray::threshold::{DefaultDisplay, TrayContentMode, TrayNumberWindow};
+use crate::types::UsageSnapshot;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub const RESET_AFTER: Duration = Duration::from_secs(60);
@@ -72,6 +74,38 @@ pub fn effective_mode(default: DefaultDisplay, temp: Option<DisplayMode>) -> Dis
     })
 }
 
+/// Multi-account milestone 06: maps the tray content-mode settings to the
+/// icon renderer's `DisplayMode`. Pure so the mode-selection rule (glyph vs
+/// number-and-which-window vs plain) is unit-testable without a tray/AppState.
+pub fn resolve_tray_display_mode(mode: TrayContentMode, window: TrayNumberWindow) -> DisplayMode {
+    match mode {
+        TrayContentMode::Glyph => DisplayMode::Icon,
+        TrayContentMode::Number => match window {
+            TrayNumberWindow::FiveHour => DisplayMode::NumberSession,
+            TrayNumberWindow::SevenDay => DisplayMode::NumberWeekly,
+        },
+        TrayContentMode::Nothing => DisplayMode::Plain,
+    }
+}
+
+/// Multi-account milestone 06: picks which snapshot the tray face renders —
+/// the chosen tray account's own per-account snapshot if one has been
+/// polled, else the legacy single-account snapshot (pre-multi-account poll
+/// path, or a freshly-chosen account this run hasn't polled yet). Pure over
+/// borrowed data so it's testable without touching `AppState`.
+pub fn pick_tray_snapshot<'a>(
+    account_id: Option<&str>,
+    by_account: &'a HashMap<String, UsageSnapshot>,
+    legacy: Option<&'a UsageSnapshot>,
+) -> Option<&'a UsageSnapshot> {
+    if let Some(id) = account_id {
+        if let Some(snap) = by_account.get(id) {
+            return Some(snap);
+        }
+    }
+    legacy
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +155,74 @@ mod tests {
                    DisplayMode::NumberWeekly);
         assert_eq!(effective_mode(DefaultDisplay::Session, None),
                    DisplayMode::NumberSession);
+    }
+
+    #[test]
+    fn resolve_tray_display_mode_glyph_is_icon() {
+        assert_eq!(
+            resolve_tray_display_mode(TrayContentMode::Glyph, TrayNumberWindow::SevenDay),
+            DisplayMode::Icon,
+        );
+    }
+
+    #[test]
+    fn resolve_tray_display_mode_number_picks_window() {
+        assert_eq!(
+            resolve_tray_display_mode(TrayContentMode::Number, TrayNumberWindow::FiveHour),
+            DisplayMode::NumberSession,
+        );
+        assert_eq!(
+            resolve_tray_display_mode(TrayContentMode::Number, TrayNumberWindow::SevenDay),
+            DisplayMode::NumberWeekly,
+        );
+    }
+
+    #[test]
+    fn resolve_tray_display_mode_nothing_is_plain() {
+        assert_eq!(
+            resolve_tray_display_mode(TrayContentMode::Nothing, TrayNumberWindow::FiveHour),
+            DisplayMode::Plain,
+        );
+    }
+
+    fn snap(utilization: f64) -> UsageSnapshot {
+        UsageSnapshot {
+            captured_at: "2026-07-07T00:00:00Z".into(),
+            five_hour: crate::types::WindowUsage { utilization, resets_at: String::new() },
+            seven_day: crate::types::WindowUsage { utilization, resets_at: String::new() },
+            extra_usage: None,
+            account_id: None,
+        }
+    }
+
+    #[test]
+    fn pick_tray_snapshot_prefers_the_chosen_account() {
+        let mut by_account = HashMap::new();
+        by_account.insert("acct-work".to_string(), snap(78.0));
+        let legacy = snap(10.0);
+        let picked = pick_tray_snapshot(Some("acct-work"), &by_account, Some(&legacy));
+        assert_eq!(picked.map(|s| s.five_hour.utilization), Some(78.0));
+    }
+
+    #[test]
+    fn pick_tray_snapshot_falls_back_to_legacy_when_account_unpolled() {
+        let by_account: HashMap<String, UsageSnapshot> = HashMap::new();
+        let legacy = snap(10.0);
+        let picked = pick_tray_snapshot(Some("acct-work"), &by_account, Some(&legacy));
+        assert_eq!(picked.map(|s| s.five_hour.utilization), Some(10.0));
+    }
+
+    #[test]
+    fn pick_tray_snapshot_no_account_chosen_uses_legacy() {
+        let by_account: HashMap<String, UsageSnapshot> = HashMap::new();
+        let legacy = snap(42.0);
+        let picked = pick_tray_snapshot(None, &by_account, Some(&legacy));
+        assert_eq!(picked.map(|s| s.five_hour.utilization), Some(42.0));
+    }
+
+    #[test]
+    fn pick_tray_snapshot_nothing_available_is_none() {
+        let by_account: HashMap<String, UsageSnapshot> = HashMap::new();
+        assert!(pick_tray_snapshot(Some("acct-work"), &by_account, None).is_none());
     }
 }

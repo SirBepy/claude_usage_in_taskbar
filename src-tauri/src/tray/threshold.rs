@@ -15,6 +15,23 @@ impl Default for DefaultDisplay { fn default() -> Self { Self::Icon } }
 pub enum IconStyle { Rings, Bars, FourBars }
 impl Default for IconStyle { fn default() -> Self { Self::Rings } }
 
+/// Multi-account milestone 06: what the tray icon face shows. Evolves the
+/// legacy `defaultDisplay` (icon/session/weekly) into a 3-way content
+/// selector plus a chosen account (see `IconSettings.tray_account_id`).
+/// `Glyph` = the existing rings/bars render; `Number` = a single % badge for
+/// `tray_number_window`; `Nothing` = a plain neutral icon face (no data).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TrayContentMode { Glyph, Number, Nothing }
+impl Default for TrayContentMode { fn default() -> Self { Self::Glyph } }
+
+/// Which usage window `TrayContentMode::Number` renders. Default 5h per
+/// `docs/multi-account/00-overview.md`.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TrayNumberWindow { FiveHour, SevenDay }
+impl Default for TrayNumberWindow { fn default() -> Self { Self::FiveHour } }
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SafePaceColorMode {
     Default,           // soft blue (#6496dc)
@@ -87,6 +104,13 @@ pub struct IconSettings {
     pub apply_color_to: ColorApplyTo,
     pub safe_sess_color: SafePaceColorMode,
     pub safe_weekly_color: SafePaceColorMode,
+    /// Multi-account milestone 06 tray content settings (see
+    /// `TrayContentMode` doc comment). `tray_account_id` resolves to
+    /// `Settings.default_account_id` when `trayAccountId` isn't set in
+    /// `extra`, matching the locked "default = default account" decision.
+    pub tray_content_mode: TrayContentMode,
+    pub tray_account_id: Option<String>,
+    pub tray_number_window: TrayNumberWindow,
 }
 
 impl Default for IconSettings {
@@ -105,6 +129,9 @@ impl Default for IconSettings {
             apply_color_to: ColorApplyTo::default(),
             safe_sess_color: SafePaceColorMode::Default,
             safe_weekly_color: SafePaceColorMode::Default,
+            tray_content_mode: TrayContentMode::default(),
+            tray_account_id: None,
+            tray_number_window: TrayNumberWindow::default(),
         }
     }
 }
@@ -235,16 +262,36 @@ fn parse_apply_to(raw: Option<&Value>) -> ColorApplyTo {
     a
 }
 
+/// Migrates the legacy `defaultDisplay` (icon/session/weekly) forward into
+/// the new `(TrayContentMode, TrayNumberWindow)` pair, for settings.json
+/// files written before this milestone and users who haven't touched the
+/// (not-yet-built, milestone 07) tray-content-mode UI. Icon stays a glyph;
+/// Session/Weekly become a number badge on the matching window. Without
+/// this, every existing user who'd set defaultDisplay to Session/Weekly
+/// would silently revert to seeing rings on their next launch — the whole
+/// point of "evolve defaultDisplay into ..." (docs/multi-account/06) is that
+/// it carries the old choice forward, not that it's replaced by a new
+/// default nobody asked for.
+fn migrate_default_display(default_display: DefaultDisplay) -> (TrayContentMode, TrayNumberWindow) {
+    match default_display {
+        DefaultDisplay::Icon => (TrayContentMode::Glyph, TrayNumberWindow::FiveHour),
+        DefaultDisplay::Session => (TrayContentMode::Number, TrayNumberWindow::FiveHour),
+        DefaultDisplay::Weekly => (TrayContentMode::Number, TrayNumberWindow::SevenDay),
+    }
+}
+
 impl TryFrom<&Settings> for IconSettings {
     type Error = std::convert::Infallible;
     fn try_from(s: &Settings) -> Result<Self, Self::Error> {
         let e = &s.extra;
+        let default_display = parse_enum(e.get("defaultDisplay"), &[
+            ("icon", DefaultDisplay::Icon),
+            ("session", DefaultDisplay::Session),
+            ("weekly", DefaultDisplay::Weekly),
+        ]);
+        let (migrated_mode, migrated_window) = migrate_default_display(default_display);
         Ok(IconSettings {
-            default_display: parse_enum(e.get("defaultDisplay"), &[
-                ("icon", DefaultDisplay::Icon),
-                ("session", DefaultDisplay::Session),
-                ("weekly", DefaultDisplay::Weekly),
-            ]),
+            default_display,
             icon_style: parse_enum(e.get("iconStyle"), &[
                 ("rings", IconStyle::Rings),
                 ("bars", IconStyle::Bars),
@@ -260,6 +307,24 @@ impl TryFrom<&Settings> for IconSettings {
             apply_color_to: parse_apply_to(e.get("colorApplyTo")),
             safe_sess_color: parse_safe_color(e.get("fourBarsSessionSafeColor")),
             safe_weekly_color: parse_safe_color(e.get("fourBarsWeeklySafeColor")),
+            tray_content_mode: match e.get("trayContentMode") {
+                Some(_) => parse_enum(e.get("trayContentMode"), &[
+                    ("glyph", TrayContentMode::Glyph),
+                    ("number", TrayContentMode::Number),
+                    ("nothing", TrayContentMode::Nothing),
+                ]),
+                None => migrated_mode,
+            },
+            tray_account_id: val_str(e.get("trayAccountId"))
+                .map(String::from)
+                .or_else(|| s.default_account_id.clone()),
+            tray_number_window: match e.get("trayNumberWindow") {
+                Some(_) => parse_enum(e.get("trayNumberWindow"), &[
+                    ("5h", TrayNumberWindow::FiveHour),
+                    ("7d", TrayNumberWindow::SevenDay),
+                ]),
+                None => migrated_window,
+            },
         })
     }
 }
@@ -395,6 +460,43 @@ mod tests {
         let cfg = NotificationsConfig::try_from(&s).unwrap();
         assert_eq!(cfg.work_finished.sound_pack, "default");
         assert_eq!(cfg.work_finished.sound_file, "sound1.mp3");
+    }
+
+    #[test]
+    fn icon_settings_tray_content_defaults_to_glyph_and_default_account() {
+        let mut s = Settings::default();
+        s.default_account_id = Some("acct-work".into());
+        let icon = IconSettings::try_from(&s).unwrap();
+        assert_eq!(icon.tray_content_mode, TrayContentMode::Glyph);
+        assert_eq!(icon.tray_number_window, TrayNumberWindow::FiveHour);
+        assert_eq!(icon.tray_account_id.as_deref(), Some("acct-work"));
+    }
+
+    #[test]
+    fn icon_settings_tray_content_migrates_from_legacy_default_display() {
+        let session = settings_with(json!({ "defaultDisplay": "session" }));
+        let icon = IconSettings::try_from(&session).unwrap();
+        assert_eq!(icon.tray_content_mode, TrayContentMode::Number);
+        assert_eq!(icon.tray_number_window, TrayNumberWindow::FiveHour);
+
+        let weekly = settings_with(json!({ "defaultDisplay": "weekly" }));
+        let icon = IconSettings::try_from(&weekly).unwrap();
+        assert_eq!(icon.tray_content_mode, TrayContentMode::Number);
+        assert_eq!(icon.tray_number_window, TrayNumberWindow::SevenDay);
+    }
+
+    #[test]
+    fn icon_settings_tray_content_explicit_overrides_default_account() {
+        let mut s = settings_with(json!({
+            "trayContentMode": "number",
+            "trayAccountId": "acct-personal",
+            "trayNumberWindow": "7d",
+        }));
+        s.default_account_id = Some("acct-work".into());
+        let icon = IconSettings::try_from(&s).unwrap();
+        assert_eq!(icon.tray_content_mode, TrayContentMode::Number);
+        assert_eq!(icon.tray_number_window, TrayNumberWindow::SevenDay);
+        assert_eq!(icon.tray_account_id.as_deref(), Some("acct-personal"));
     }
 
     #[test]

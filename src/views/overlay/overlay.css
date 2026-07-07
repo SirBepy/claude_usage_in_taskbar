@@ -1,0 +1,96 @@
+/* Floating multi-account overlay (milestone 06). This is the ONLY view
+ * rendered in the `session-overlay` Tauri window (see main.ts's
+ * overlaywindow=1 bypass and src-tauri/src/ipc/window.rs), so these rules
+ * are unscoped rather than nested under a `.view-*` ancestor. The native
+ * window itself is fully transparent (`.transparent(true)` in Rust); the
+ * translucency the mockup shows comes from THIS panel's own background
+ * alpha, controlled by --overlay-opacity (set from the overlayOpacity
+ * setting in overlay.ts), going fully opaque on hover. */
+
+html.overlay-window-mode,
+body.overlay-window-mode {
+  background: transparent !important;
+  height: auto;
+  min-height: 0;
+}
+
+body.overlay-window-mode #app {
+  height: 100vh;
+  display: flex;
+}
+
+.oc-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
+  backdrop-filter: blur(11px);
+  -webkit-backdrop-filter: blur(11px);
+  border: 1px solid var(--color-border, #2e2e40);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  transition: background 0.16s;
+  font-size: 13px;
+  color: var(--color-text, #e8e8f0);
+}
+.oc-panel:hover {
+  background: var(--color-surface, #1f1f2c);
+}
+
+.oc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--color-border, #2e2e40);
+  font-weight: 700;
+  font-size: 12px;
+  flex: none;
+}
+.oc-head .grow { flex: 1; }
+
+.oc-rows { overflow-y: auto; flex: 1; }
+
+.oc-row {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--color-border, #2e2e40);
+  border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
+}
+.oc-row:first-child { border-top: 3px solid var(--acc, var(--color-primary, #6e8fff)); }
+.oc-row:last-child { border-bottom: 0; }
+
+.oc-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 12px; }
+.oc-top .grow { flex: 1; }
+.oc-nm { font-weight: 600; }
+.oc-rs { color: var(--color-text-muted, #8a8aa0); font-size: 10.5px; }
+
+.oc-metric {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  margin-top: 5px;
+}
+.oc-k { font-size: 9.5px; color: var(--color-text-muted, #8a8aa0); text-transform: uppercase; }
+.oc-bar { position: relative; height: 6px; border-radius: 4px; background: var(--color-surface-alt, #262637); }
+.oc-bar > span { display: block; height: 100%; background: var(--acc, var(--color-primary, #6e8fff)); border-radius: 4px; }
+.oc-bar > .oc-tick {
+  position: absolute;
+  top: -2px;
+  height: 10px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(226, 224, 240, 0.9);
+}
+.oc-nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; cursor: help; }
+.oc-nums .oc-cur { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 11px; }
+.oc-nums .oc-cur-dim { color: var(--color-text-muted, #8a8aa0); }
+.oc-nums .oc-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.5; font-size: 10px; }
+
+.oc-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--color-text-muted, #8a8aa0);
+  font-size: 12px;
+}

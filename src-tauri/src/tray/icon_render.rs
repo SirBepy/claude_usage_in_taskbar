@@ -29,6 +29,10 @@ pub enum DisplayMode {
     Icon,
     NumberSession,
     NumberWeekly,
+    /// Multi-account milestone 06: `TrayContentMode::Nothing` — a plain,
+    /// neutral icon face with no usage data drawn (reuses the existing
+    /// idle-gray double ring rather than a bespoke logo asset).
+    Plain,
 }
 
 pub struct IconCtx<'a> {
@@ -65,6 +69,10 @@ pub fn render(sess: Option<f32>, weekly: Option<f32>, ctx: &IconCtx) -> Vec<u8> 
     let idle = sess.is_none() && weekly.is_none();
 
     match ctx.display_mode {
+        DisplayMode::Plain => {
+            draw_ring_arc(&mut img, Some(100.0), OUTER_R_OUT, OUTER_R_IN, IDLE_GRAY);
+            draw_ring_arc(&mut img, Some(100.0), INNER_R_OUT, INNER_R_IN, IDLE_GRAY);
+        }
         DisplayMode::Icon => {
             if idle {
                 draw_ring_arc(&mut img, Some(100.0), OUTER_R_OUT, OUTER_R_IN, IDLE_GRAY);

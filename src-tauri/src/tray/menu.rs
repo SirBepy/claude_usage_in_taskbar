@@ -1,6 +1,6 @@
 //! Builds the tray icon and its context menu; owns the render funnel.
 
-use crate::tray::display_mode::effective_mode;
+use crate::tray::display_mode::{pick_tray_snapshot, resolve_tray_display_mode};
 use crate::tray::icon_render::{self as icon, DisplayMode, IconCtx};
 use crate::tray::threshold::{IconSettings, TooltipSettings};
 use crate::state::AppState;
@@ -94,9 +94,9 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
-                button_state: MouseButtonState::Up, ..
+                button_state: MouseButtonState::Up, rect, ..
             } = event {
-                on_left_click(tray.app_handle().clone());
+                on_left_click(tray.app_handle().clone(), rect);
             }
         })
         .build(app)?;
@@ -183,7 +183,11 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-fn on_left_click(app: AppHandle) {
+/// Left-click toggles the multi-account overlay (milestone 06 — this used to
+/// cycle the icon face through icon/session/weekly; the overlay now shows
+/// every account's full detail at once, making that cycle redundant). Right
+/// click keeps the unchanged context menu, which still has "Open Dashboard".
+fn on_left_click(app: AppHandle, icon_rect: tauri::Rect) {
     let logged_in = matches!(
         *app.state::<AppState>().auth_state.lock().unwrap(),
         AuthState::LoggedIn
@@ -195,29 +199,28 @@ fn on_left_click(app: AppHandle) {
         });
         return;
     }
-    let default = IconSettings::try_from(&*app.state::<AppState>().settings.lock().unwrap())
-        .unwrap_or_default().default_display;
-    {
-        let s = app.state::<AppState>();
-        s.display.lock().unwrap().cycle_next(default, Instant::now());
-    }
-    let h = app.clone();
-    let _ = app.run_on_main_thread(move || render_tray_now(&h));
+    crate::ipc::toggle_overlay_window(&app, icon_rect);
 }
 
 pub fn render_tray_now(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let snap: Option<UsageSnapshot> = state.current_usage.lock().unwrap().clone();
+    let legacy_snap = state.current_usage.lock().unwrap().clone();
     let settings_guard = state.settings.lock().unwrap();
     let icon_s: IconSettings = (&*settings_guard).try_into().unwrap_or_default();
     let tip_s: TooltipSettings = (&*settings_guard).try_into().unwrap_or_default();
     let pause_in_meeting = settings_guard.pause_notifications_in_meeting();
     drop(settings_guard);
 
-    let st = state.display.lock().unwrap();
-    let mode = effective_mode(icon_s.default_display, st.temp);
-    let spin = st.spin_frame;
-    drop(st);
+    // Multi-account milestone 06: the icon face renders the chosen tray
+    // account's snapshot (falling back to the legacy single-account one),
+    // and the mode (glyph/number/nothing) comes from the tray content
+    // settings rather than the old click-to-cycle default_display.
+    let by_account = state.current_usage_by_account.lock().unwrap().clone();
+    let snap: Option<UsageSnapshot> =
+        pick_tray_snapshot(icon_s.tray_account_id.as_deref(), &by_account, legacy_snap.as_ref()).cloned();
+    let mode = resolve_tray_display_mode(icon_s.tray_content_mode, icon_s.tray_number_window);
+
+    let spin = state.display.lock().unwrap().spin_frame;
 
     let sess = snap.as_ref().map(usage_parser::session_pct);
     let weekly = snap.as_ref().map(usage_parser::weekly_pct);
@@ -243,7 +246,20 @@ pub fn render_tray_now(app: &AppHandle) {
         #[cfg(target_os = "macos")]
         let _ = tray.set_icon_as_template(false);
     }
-    let mut tip = usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now);
+
+    // Tooltip goes multi-account (one block per registered account) once any
+    // account is registered; the plain single-account layout stays for the
+    // pre-multi-account / empty-registry state.
+    let accounts = crate::accounts::load_registry();
+    let entries: Vec<(String, Option<UsageSnapshot>)> = accounts
+        .iter()
+        .map(|a| (a.label.clone(), by_account.get(&a.id).cloned()))
+        .collect();
+    let mut tip = if entries.is_empty() {
+        usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)
+    } else {
+        usage_parser::build_tooltip_multi(&entries, &tip_s, &icon_s, now)
+    };
     if pause_in_meeting && state.meeting_active.load(std::sync::atomic::Ordering::Relaxed) {
         tip.push_str("\n\nIn a meeting - notifications paused");
     }
