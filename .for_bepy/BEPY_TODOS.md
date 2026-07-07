@@ -2,6 +2,8 @@
 
 ### Urgent
 
+- **MULTI-ACCOUNT HARD CLIFF (2026-07-07 autopilot, M02, commit 9e9aee36): after your next rebuild+relaunch, in-app chats / channels / news summarization will REFUSE to start until you add your first account via Settings > Accounts > Add account.** This is by design (no spawn may ever fall back to ~/.claude), but it means the wizard run is a prerequisite, not optional: it opens a terminal for /login (pick the right email on the consent screen!) then a browser login for usage scraping. Add both personal and fibo. Also: the live wizard + CDP cookie grab are the two flows Claude cannot test - if a step hangs or errors, screenshot it.
+
 - **RENAME (v0.2.0, this session): reinstall to get "Claude Conductor".** The app was renamed Claude Usage -> Claude Conductor with a NEW bundle id (`com.sirbepy.claudeconductor`) + NEW app-data dir (`%APPDATA%\claude-conductor`). The OLD "Claude Usage" app keeps running stale until you uninstall it and install the 0.2.0 build (it installs side-by-side as a separate app, not an auto-update). Prior settings/characters/history under `%APPDATA%\claude-usage-tauri` do NOT carry over. Every QA item below that references `%APPDATA%\claude-usage-tauri` now means `\claude-conductor`. Optional cleanup: delete the stray **v0.1.119** GitHub release (superseded by 0.2.0; 0.2.0 is "latest" for the updater).
 - Relaunch the Claude Conductor tray app if it's not running - usage tracking is off while it's down.
 - Get a dev port for claude_usage from server_supervisor's allocator, then tell me to apply it (ai_todo 78). Until then claude_usage still defaults to 1420.
