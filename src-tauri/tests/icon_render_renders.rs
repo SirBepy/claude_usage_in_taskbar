@@ -1,7 +1,7 @@
 use claude_conductor_lib::tray::icon_render::{render, render_spin, urgency_rgb, DisplayMode, IconCtx, SIZE};
 use claude_conductor_lib::tray::threshold::{
     ColorApplyTo, ColorMode, ColorStop, DefaultDisplay, IconSettings, IconStyle, PaceColors,
-    SafePaceColorMode,
+    SafePaceColorMode, TrayContentMode, TrayNumberWindow,
 };
 use image::GenericImageView;
 
@@ -20,6 +20,9 @@ fn test_settings() -> IconSettings {
         apply_color_to: ColorApplyTo::default(),
         safe_sess_color: SafePaceColorMode::Default,
         safe_weekly_color: SafePaceColorMode::Default,
+        tray_content_mode: TrayContentMode::Glyph,
+        tray_account_id: None,
+        tray_number_window: TrayNumberWindow::FiveHour,
     }
 }
 
