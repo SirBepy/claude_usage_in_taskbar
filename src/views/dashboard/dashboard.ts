@@ -7,6 +7,7 @@ import type { ResetDisplay } from "../../shared/formatters";
 import { getSettings, setSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
 import { api } from "../../shared/api";
 import type { UsageRecord, Account } from "../../shared/api";
+import { navigateTo } from "../../router";
 import { escapeHtml } from "../../shared/escape-html";
 import {
   buildAccountCardsHTML,
@@ -34,6 +35,9 @@ let dashboardWidgets: DashboardWidgetEntry[] = [];
 let editMode = false;
 let addWidgetMenuOpen = false;
 const widgetTeardowns = new Map<string, () => void>();
+// Multi-account milestone 08: one-time "set up your accounts" migration
+// prompt. Fetched once per mount (not on every refresh) - see renderDashboard.
+let showSetupBanner = false;
 
 async function tickAiPoll(): Promise<void> {
   try {
@@ -87,6 +91,13 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   render(template(), root);
   const content = root.querySelector<HTMLElement>("#stats-content");
   mountedContainer = content;
+
+  try {
+    const promptState = await api.getAccountsSetupPromptState();
+    showSetupBanner = promptState.shouldShow;
+  } catch (e) {
+    console.error("[dashboard] accounts setup prompt state fetch failed", e);
+  }
 
   if (!getHistory()) {
     try {
@@ -369,6 +380,7 @@ function renderShell(container: HTMLElement): void {
   const widgetsHtml = enabled.map((e, i) => widgetShellHtml(e, i, enabled.length)).join("");
 
   container.innerHTML = `
+    ${setupBannerHtml()}
     ${cardsHtml}
     <div class="dash-widgets">${widgetsHtml}</div>
     ${addWidgetAffordanceHtml()}
@@ -377,9 +389,45 @@ function renderShell(container: HTMLElement): void {
   if (accountsCache.length > 0) {
     wireAccountCardClicks(container, (id) => onSelectAccount(container, id));
   }
+  wireSetupBanner(container);
   wireEditControls(container);
   wireAddWidgetControls(container);
   mountWidgets(container);
+}
+
+// ── "Set up your accounts" migration prompt (multi-account milestone 08) ───
+
+function setupBannerHtml(): string {
+  // Defensive double-gate: an account may have been added (accountsCache
+  // populated) in the moment between the mount-time IPC fetch and this
+  // render - never show the prompt once there's a real account to select.
+  if (!showSetupBanner || accountsCache.length > 0) return "";
+  return `
+    <div class="dash-setup-banner" id="dashSetupBanner">
+      <i class="ph ph-user-circle-plus"></i>
+      <span class="dash-setup-banner-text">Set up your Claude accounts to track usage and chats per login.</span>
+      <button class="btn-primary dash-setup-banner-cta" id="dashSetupBannerGo">Set up</button>
+      <button class="icon-btn dash-setup-banner-dismiss" id="dashSetupBannerDismiss" title="Not now">
+        <i class="ph ph-x"></i>
+      </button>
+    </div>`;
+}
+
+function wireSetupBanner(container: HTMLElement): void {
+  const go = container.querySelector<HTMLButtonElement>("#dashSetupBannerGo");
+  if (go) {
+    go.onclick = () => { void navigateTo("settings-accounts"); };
+  }
+  const dismiss = container.querySelector<HTMLButtonElement>("#dashSetupBannerDismiss");
+  if (dismiss) {
+    dismiss.onclick = () => {
+      showSetupBanner = false;
+      renderShell(container);
+      void api.dismissAccountsSetupPrompt().catch((e) => {
+        console.error("[dashboard] dismissAccountsSetupPrompt failed", e);
+      });
+    };
+  }
 }
 
 function widgetBodyEl(container: HTMLElement, id: string): HTMLElement | null {

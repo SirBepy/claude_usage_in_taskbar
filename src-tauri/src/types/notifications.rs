@@ -90,6 +90,13 @@ pub struct Settings {
     /// this fallback (00-overview.md, locked decision).
     #[serde(default)]
     pub default_account_id: Option<String>,
+    /// User dismissed the one-time "set up your accounts" migration prompt
+    /// (milestone 08 - shown when a legacy `session.txt` exists and the
+    /// accounts registry is still empty). `false` until dismissed; the prompt
+    /// also stops showing on its own once an account is registered, since
+    /// `get_accounts_setup_prompt_state` requires BOTH conditions.
+    #[serde(default)]
+    pub accounts_setup_prompt_dismissed: bool,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -124,6 +131,7 @@ impl Default for Settings {
             retention: crate::storage::RetentionPolicies::default(),
             remote_access_enabled: false,
             default_account_id: None,
+            accounts_setup_prompt_dismissed: false,
             extra: serde_json::Map::new(),
         }
     }

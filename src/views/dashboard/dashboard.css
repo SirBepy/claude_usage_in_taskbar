@@ -56,6 +56,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── "Set up your accounts" migration prompt (multi-account milestone 08) ── */
+.view-dashboard .dash-setup-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-surface, #1f1f2c);
+  border: 1px solid var(--color-primary, #6e8fff);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 0.8rem;
+}
+.view-dashboard .dash-setup-banner > i.ph {
+  font-size: 1.2rem;
+  color: var(--color-primary, #6e8fff);
+  flex-shrink: 0;
+}
+.view-dashboard .dash-setup-banner-text { flex: 1; color: var(--color-text, #e8e8f0); }
+.view-dashboard .dash-setup-banner-cta { flex-shrink: 0; }
+.view-dashboard .dash-setup-banner-dismiss { width: 26px; height: 26px; flex-shrink: 0; }
+
 /* ── Account-selector cards (multi-account milestone 05) ─────────────────── */
 .view-dashboard .dash-sel-row {
   display: grid;

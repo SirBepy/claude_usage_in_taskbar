@@ -15,6 +15,7 @@ import type {
   RetentionPolicy,
   Account,
   AccountIdentity,
+  AccountsSetupPromptState,
   AddAccountSession,
   LoginCheckOutcome,
   OauthAccountInfo,
@@ -551,6 +552,14 @@ export const api = {
     invoke("reauth_account", { accountId }),
   recaptureAccountCookie: (accountId: string): Promise<void> =>
     invoke("recapture_account_cookie", { accountId }),
+
+  // --- Accounts (multi-account milestone 08: legacy migration prompt) ---
+  getAccountsSetupPromptState: async (): Promise<AccountsSetupPromptState> => {
+    try { return await invoke<AccountsSetupPromptState>("get_accounts_setup_prompt_state"); }
+    catch (e) { console.error("get_accounts_setup_prompt_state failed", e); return { shouldShow: false }; }
+  },
+  dismissAccountsSetupPrompt: (): Promise<void> =>
+    invoke("dismiss_accounts_setup_prompt"),
 };
 
 export type Api = typeof api;

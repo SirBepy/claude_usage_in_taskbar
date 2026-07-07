@@ -7,7 +7,9 @@
 
 use claude_conductor_lib::accounts::{Account, OauthAccountInfo};
 use claude_conductor_lib::context_status::ContextStatus;
-use claude_conductor_lib::ipc::accounts::{AccountIdentity, AddAccountSession, LoginCheckOutcome};
+use claude_conductor_lib::ipc::accounts::{
+    AccountIdentity, AccountsSetupPromptState, AddAccountSession, LoginCheckOutcome,
+};
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::git::GitInfo;
 use claude_conductor_lib::ipc::files::TextFileData;
@@ -81,6 +83,7 @@ fn emit_ipc_types() {
     out.push_str(&decl::<AddAccountSession>());
     out.push_str(&decl::<LoginCheckOutcome>());
     out.push_str(&decl::<AccountIdentity>());
+    out.push_str(&decl::<AccountsSetupPromptState>());
 
     // misc IPC
     out.push_str(&decl::<GitInfo>());

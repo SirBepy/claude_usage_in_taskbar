@@ -73,6 +73,15 @@ cargo tauri build
 
 On Windows produces an NSIS installer in `src-tauri/target/release/bundle/nsis/`; on macOS produces a DMG in `src-tauri/target/<triple>/release/bundle/dmg/`.
 
+## Multi-account
+
+The app can drive more than one Claude account (e.g. Personal, Work) side by side, each fully isolated for chats and usage tracking.
+
+- **Add an account** from Settings > Accounts. Each account needs two one-time logins: a terminal `/login` (the wizard opens a terminal for this - pick the account you want) and a browser usage login (the same Chrome-tab flow used for single-account usage tracking). The wizard confirms both logins belong to the same account before saving.
+- **Chats and usage are per-account.** Starting a new chat lets you pick which account it runs under (a project can remember its usual account); the dashboard, tray, and the floating usage overlay all show every account's own 5h/weekly usage side by side.
+- **Your terminal's `~/.claude` is never touched by app chats.** Every account the app manages gets its own private profile folder; whatever account you're logged into in a plain terminal stays completely separate and unaffected.
+- **Upgrading from a single-account install:** your existing usage history keeps working exactly as before until you add your first account. Once you add an account whose login matches the one usage was already tracking, its history carries over automatically - nothing is lost.
+
 ## Channel management
 
 Beyond tracking Claude Code usage, this app manages Claude Code channels per project:

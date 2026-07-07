@@ -13,6 +13,11 @@ pub enum NotifKind { WorkFinished, QuestionAsked, ThresholdCrossed }
 pub struct NotifContext {
     pub name: Option<String>,
     pub percent: Option<u32>,
+    /// Account label for `{account}` (multi-account milestone 08), e.g.
+    /// "Work" so a threshold alert reads "Work hit 80%". `None` on the legacy
+    /// single-cookie poll path (no account context) - the template's
+    /// `{account}` token renders as an empty string in that case.
+    pub account: Option<String>,
 }
 
 /// Sentinel used in `NotificationRule.sound_pack` to indicate that
@@ -135,7 +140,12 @@ pub fn fire(
 pub fn render_template(tpl: &str, ctx: &NotifContext) -> String {
     let name = sanitize(ctx.name.as_deref().unwrap_or(""));
     let pct = ctx.percent.map(|p| format!("{p}%")).unwrap_or_default();
-    sanitize(&tpl.replace("{name}", &name).replace("{percent}", &pct))
+    let account = sanitize(ctx.account.as_deref().unwrap_or(""));
+    sanitize(
+        &tpl.replace("{name}", &name)
+            .replace("{percent}", &pct)
+            .replace("{account}", &account),
+    )
 }
 
 fn sanitize(s: &str) -> String {
@@ -231,7 +241,7 @@ mod tests {
     #[test]
     fn template_substitutes_name() {
         let out = render_template("{name} is done", &NotifContext {
-            name: Some("my_project".into()), percent: None,
+            name: Some("my_project".into()), percent: None, account: None,
         });
         assert_eq!(out, "my project is done");
     }
@@ -239,9 +249,29 @@ mod tests {
     #[test]
     fn template_substitutes_percent() {
         let out = render_template("{percent} threshold", &NotifContext {
-            name: None, percent: Some(80),
+            name: None, percent: Some(80), account: None,
         });
         assert_eq!(out, "80% threshold");
+    }
+
+    /// Milestone 08: `{account}` lets a threshold template distinguish which
+    /// account crossed ("Work hit 80%").
+    #[test]
+    fn template_substitutes_account() {
+        let out = render_template("{account} hit {percent}", &NotifContext {
+            name: None, percent: Some(80), account: Some("Work".into()),
+        });
+        assert_eq!(out, "Work hit 80%");
+    }
+
+    /// Legacy single-cookie poll path has no account context - `{account}`
+    /// must render as empty rather than leaving the literal token behind.
+    #[test]
+    fn template_account_token_empty_on_legacy_path() {
+        let out = render_template("{account}{percent} threshold reached", &NotifContext {
+            name: None, percent: Some(50), account: None,
+        });
+        assert_eq!(out, "50% threshold reached");
     }
 
     #[test]

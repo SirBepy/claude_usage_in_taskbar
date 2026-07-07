@@ -331,6 +331,8 @@ pub fn run() {
             ipc::get_account_identity,
             ipc::reauth_account,
             ipc::recapture_account_cookie,
+            ipc::get_accounts_setup_prompt_state,
+            ipc::dismiss_accounts_setup_prompt,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,

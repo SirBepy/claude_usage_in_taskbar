@@ -25,7 +25,7 @@ export const NOTIF_TYPES: Array<{
 }> = [
   { key: "workFinished",     title: "Done (Work Finished)",     hint: "Supports {name}",    defaultSound: "sound1.mp3", defaultTemplate: "{name} is done" },
   { key: "questionAsked",    title: "Waiting (Question Asked)", hint: "Supports {name}",    defaultSound: "sound3.mp3", defaultTemplate: "{name} is waiting" },
-  { key: "thresholdCrossed", title: "Threshold Reached",        hint: "Supports {percent}", defaultSound: "sound6.mp3", defaultTemplate: "{percent} threshold reached" },
+  { key: "thresholdCrossed", title: "Threshold Reached",        hint: "Supports {percent}, {account}", defaultSound: "sound6.mp3", defaultTemplate: "{percent} threshold reached" },
 ];
 
 // Shared registry used by the notifications subview to publish card refs.

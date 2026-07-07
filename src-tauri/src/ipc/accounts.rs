@@ -208,14 +208,20 @@ pub fn add_account_cancel(session_id: String, state: State<AppState>) -> Result<
 
 /// Step 3: persist the account. Requires a `Ready` identity from
 /// `add_account_check_login`; the web cookie (if captured) is persisted
-/// alongside, keyed by the new account id.
+/// alongside, keyed by the new account id. Also runs the best-effort
+/// legacy-history migration (milestone 08): if a legacy `session.txt` is
+/// still live and its org list contains this account's `org_uuid`, its usage
+/// history + capacity re-key to it and the legacy cookie retires. Async
+/// (unlike the other wizard steps) purely so that network call can run
+/// in-line without blocking the caller on a spawned task; a migration
+/// failure never fails account creation.
 #[tauri::command]
-pub fn add_account_finalize(
+pub async fn add_account_finalize(
     session_id: String,
     label: String,
     colour: String,
     icon: String,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Account, String> {
     let session = state
         .account_wizard_sessions
@@ -249,6 +255,34 @@ pub fn add_account_finalize(
     let mut accounts = accounts_store::load(&accounts_path);
     accounts.push(account.clone());
     accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
+
+    // Best-effort legacy -> this-account migration (milestone 08). The
+    // network fetch (`legacy_org_uuids`) runs BEFORE the `state.db` lock is
+    // taken below, so the sync `MutexGuard` never has to live across an
+    // `.await` point.
+    if paths::session_file().map(|p| p.exists()).unwrap_or(false) {
+        let legacy_session = paths::session_file().map_err(|e| e.to_string())?;
+        match crate::accounts::migration::legacy_org_uuids(&legacy_session).await {
+            Ok(org_uuids) => {
+                let conn_guard = state.db.lock().unwrap();
+                match crate::accounts::migration::apply_migration_if_matching(
+                    &account,
+                    &org_uuids,
+                    conn_guard.conn(),
+                ) {
+                    Ok(crate::accounts::migration::MigrationOutcome::Migrated { rows_rekeyed, .. }) => {
+                        log::info!(
+                            "migration: re-keyed {rows_rekeyed} legacy usage row(s) to account {}",
+                            account.id
+                        );
+                    }
+                    Ok(crate::accounts::migration::MigrationOutcome::NoMatch) => {}
+                    Err(e) => log::warn!("migration: re-key failed for account {}: {e:#}", account.id),
+                }
+            }
+            Err(e) => log::warn!("migration: could not read legacy org list: {e:#}"),
+        }
+    }
 
     Ok(account)
 }
@@ -422,4 +456,52 @@ pub async fn recapture_account_cookie(account_id: String, app: AppHandle) -> Res
 
     let session_file = paths::account_session_file(&account_id).map_err(|e| e.to_string())?;
     crate::auth::session::save(&session_file, &session_key).map_err(|e| e.to_string())
+}
+
+// --- One-time "set up your accounts" migration prompt (milestone 08) ---
+
+#[derive(Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct AccountsSetupPromptState {
+    pub should_show: bool,
+}
+
+/// Whether the dashboard should surface the "set up your accounts" prompt:
+/// true only while the registry is still empty AND a legacy `session.txt`
+/// exists AND the user hasn't dismissed it. Adding an account (which empties
+/// the registry condition) or the migration retiring `session.txt` (which
+/// empties the legacy-file condition) both stop the prompt on their own, so
+/// there's no separate "seen" flag beyond the explicit dismiss.
+#[tauri::command]
+pub fn get_accounts_setup_prompt_state(state: State<AppState>) -> Result<AccountsSetupPromptState, String> {
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let registry_empty = accounts_store::load(&accounts_path).is_empty();
+    let legacy_session_exists = paths::session_file().map(|p| p.exists()).unwrap_or(false);
+    let dismissed = state.settings.lock().unwrap().accounts_setup_prompt_dismissed;
+    Ok(AccountsSetupPromptState {
+        should_show: crate::accounts::migration::should_show_setup_prompt(
+            registry_empty,
+            legacy_session_exists,
+            dismissed,
+        ),
+    })
+}
+
+/// Persists the user's "not now" / dismiss on the setup prompt. Reusing the
+/// prompt's conditions means re-showing it would require BOTH the registry
+/// being empty again (it won't) and this flag being unset - so this is
+/// effectively permanent for this install, matching `hook_registration_
+/// declined`'s pattern (`ipc::projects::skip_hook_registration`).
+#[tauri::command]
+pub fn dismiss_accounts_setup_prompt(state: State<AppState>, app: AppHandle) -> Result<(), String> {
+    let snapshot = {
+        let mut s = state.settings.lock().unwrap();
+        s.accounts_setup_prompt_dismissed = true;
+        s.clone()
+    };
+    let path = paths::settings_file().map_err(|e| e.to_string())?;
+    crate::settings::save(&path, &snapshot).map_err(|e| e.to_string())?;
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(())
 }
