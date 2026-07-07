@@ -255,3 +255,11 @@ pub fn account_session_file(account_id: &str) -> Result<PathBuf> {
 pub fn account_chrome_profile_dir(account_id: &str) -> Result<PathBuf> {
     Ok(data_dir()?.join("chrome-profiles").join(account_id))
 }
+
+/// Per-account persisted window-capacity estimate (see `tokens::capacity`),
+/// keyed by account id so each account's cost-weighted drain ruler is
+/// calibrated against its own utilization/window-reset numbers. Legacy
+/// single-account callers keep using `session_capacity_file()` unchanged.
+pub fn account_session_capacity_file(account_id: &str) -> Result<PathBuf> {
+    Ok(data_dir()?.join(format!("session-capacity-{account_id}.json")))
+}

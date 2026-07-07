@@ -169,6 +169,8 @@ pub fn run() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             ipc::get_current_usage,
+            ipc::get_usage_map,
+            ipc::get_auth_state_map,
             ipc::get_history,
             ipc::get_settings,
             ipc::save_settings,

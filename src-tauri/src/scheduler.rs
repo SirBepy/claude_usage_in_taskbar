@@ -1,7 +1,8 @@
 //! Background task that polls usage on an interval and broadcasts results.
 
+use crate::accounts::Account;
 use crate::auth;
-use crate::scraping::{fetch_usage, ScrapeError};
+use crate::scraping::{fetch_usage, fetch_usage_for_org, ScrapeError};
 use crate::state::AppState;
 use crate::types::{AuthState, UsageSnapshot};
 use crate::settings::paths;
@@ -180,9 +181,59 @@ pub async fn poll_once(app: &AppHandle, trigger: PollTrigger) -> Result<UsageSna
     result
 }
 
+/// Orchestrates one poll tick, either legacy (single `session.txt`) or
+/// per-account, then applies the effects shared by both paths exactly once:
+/// mirror the "representative" snapshot into the legacy state fields (tray,
+/// dashboard, and every other consumer not yet migrated to per-account reads
+/// - see `AppState::current_usage`'s doc comment), fire the threshold
+/// notification, and prune retention. Each branch owns its own SQLite
+/// insert(s) since the per-account branch may write more than one row.
 async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
-    let prev_snap = app.state::<crate::state::AppState>().current_usage.lock().unwrap().clone();
+    let prev_snap = app.state::<AppState>().current_usage.lock().unwrap().clone();
 
+    let accounts = crate::accounts::load_registry();
+    let with_cookies: Vec<Account> = accounts.into_iter().filter(account_has_cookie).collect();
+
+    let snap = if with_cookies.is_empty() {
+        do_poll_legacy(app).await?
+    } else {
+        do_poll_accounts(app, &with_cookies).await?
+    };
+
+    {
+        let state = app.state::<AppState>();
+        *state.current_usage.lock().unwrap() = Some(snap.clone());
+        *state.auth_state.lock().unwrap() = AuthState::LoggedIn;
+    }
+    maybe_notify_threshold_crossed(app, prev_snap.as_ref(), &snap);
+
+    {
+        let state = app.state::<AppState>();
+        let policies = state.settings.lock().unwrap().retention;
+        let mgr = state.db.lock().unwrap();
+        if let Err(e) = crate::storage::prune_all(mgr.conn(), &policies) {
+            log::warn!("storage: retention prune failed: {e:#}");
+        }
+    }
+
+    Ok(snap)
+}
+
+/// True if a registered account has a stored, non-empty web sessionKey
+/// cookie. Accounts without one stay on the legacy poll path until their
+/// cookie is captured (migration bridge - `03-per-account-usage.md`).
+fn account_has_cookie(account: &Account) -> bool {
+    paths::account_session_file(&account.id)
+        .ok()
+        .and_then(|p| session::load(&p))
+        .is_some()
+}
+
+/// The pre-multi-account poll: single `session.txt`, `orgs.first()` org
+/// selection, one SQLite row tagged `account_id: None`. Kept byte-for-byte
+/// behaviorally identical to the original single-account implementation so
+/// nothing regresses for anyone who hasn't added an account yet.
+async fn do_poll_legacy(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
     let session_path = paths::session_file()
         .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     let Some(session_key) = session::load(&session_path) else {
@@ -196,55 +247,132 @@ async fn do_poll(app: &AppHandle) -> Result<UsageSnapshot, PollErr> {
         Err(e) => return Err(PollErr::Other(format!("{e:#}"))),
     };
 
-    // Persist into in-memory + on-disk history
     {
         let state = app.state::<AppState>();
-        *state.current_usage.lock().unwrap() = Some(snap.clone());
-        *state.auth_state.lock().unwrap() = AuthState::LoggedIn;
+        let mgr = state.db.lock().unwrap();
+        crate::storage::usage_store::insert_snapshot(mgr.conn(), &snap)
+            .map_err(|e| PollErr::Other(format!("{e:#}")))?;
     }
 
-    // Check for threshold crossings and emit event if any occurred.
-    {
-        let new_snap = app.state::<crate::state::AppState>().current_usage.lock().unwrap().clone();
-        if let (Some(prev), Some(new)) = (prev_snap.as_ref(), new_snap.as_ref()) {
-            let icon_s = crate::tray::IconSettings::try_from(
-                &*app.state::<crate::state::AppState>().settings.lock().unwrap()
-            ).unwrap_or_default();
-            let prev_sess = Some(crate::scraping::session_pct(prev));
-            let new_sess = Some(crate::scraping::session_pct(new));
-            let prev_wk = Some(crate::scraping::weekly_pct(prev));
-            let new_wk = Some(crate::scraping::weekly_pct(new));
-            let crossed =
-                crate::scraping::threshold_crossed(prev_sess, new_sess, &icon_s.color_thresholds) ||
-                crate::scraping::threshold_crossed(prev_wk, new_wk, &icon_s.color_thresholds);
-            if crossed {
-                let pct = new_sess.unwrap_or(0.0).max(new_wk.unwrap_or(0.0)).round() as u32;
-                crate::notifications::fire(
-                    app,
-                    crate::notifications::NotifKind::ThresholdCrossed,
-                    crate::notifications::NotifContext { percent: Some(pct), name: None },
-                    None,
-                    None,
-                );
+    Ok(snap)
+}
+
+/// Polls every account that has a stored cookie, independently: one
+/// account's failure (expired cookie, network error, its `org_uuid` missing
+/// from the session's org list, ...) is recorded as that account's own
+/// `AuthState::NeedsLogin` and never drops the others. Persists a tagged
+/// snapshot per successful account, then returns the "default" account's
+/// snapshot (`Settings.default_account_id`, falling back to the first
+/// success) as the tick's representative result for the shared legacy-state
+/// mirror in `do_poll`.
+async fn do_poll_accounts(
+    app: &AppHandle,
+    accounts: &[Account],
+) -> Result<UsageSnapshot, PollErr> {
+    let outcomes = poll_accounts_isolated(accounts, |account| async move {
+        let session_path = paths::account_session_file(&account.id)
+            .map_err(|e| format!("{e:#}"))?;
+        let Some(session_key) = session::load(&session_path) else {
+            return Err("no session".to_string());
+        };
+        match fetch_usage_for_org(BASE_URL, &session_key, Some(&account.org_uuid)).await {
+            Ok(mut snap) => {
+                snap.account_id = Some(account.id.clone());
+                Ok(snap)
+            }
+            Err(e) => Err(format!("{e:#}")),
+        }
+    })
+    .await;
+
+    let state = app.state::<AppState>();
+    let default_account_id = state.settings.lock().unwrap().default_account_id.clone();
+
+    let mut default_snap: Option<UsageSnapshot> = None;
+    let mut any_ok = false;
+    for (account_id, outcome) in &outcomes {
+        match outcome {
+            Ok(snap) => {
+                any_ok = true;
+                state.current_usage_by_account.lock().unwrap().insert(account_id.clone(), snap.clone());
+                state.auth_state_by_account.lock().unwrap().insert(account_id.clone(), AuthState::LoggedIn);
+                {
+                    let mgr = state.db.lock().unwrap();
+                    if let Err(e) = crate::storage::usage_store::insert_snapshot(mgr.conn(), snap) {
+                        log::warn!("storage: insert per-account snapshot failed for {account_id}: {e:#}");
+                    }
+                }
+                let is_default = default_account_id.as_deref() == Some(account_id.as_str())
+                    || (default_account_id.is_none() && default_snap.is_none());
+                if is_default {
+                    default_snap = Some(snap.clone());
+                }
+            }
+            Err(e) => {
+                log::warn!("poll failed for account {account_id}: {e}");
+                state.auth_state_by_account.lock().unwrap().insert(account_id.clone(), AuthState::NeedsLogin);
             }
         }
     }
 
-    // Persist into the consolidated SQLite store. Insert the snapshot, then
-    // prune ALL THREE datasets per the user-configured retention policies read
-    // from settings (so a changed dropdown actually takes effect on the tick).
-    {
-        let state = app.state::<AppState>();
-        let policies = state.settings.lock().unwrap().retention;
-        let mgr = state.db.lock().unwrap();
-        crate::storage::usage_store::insert_snapshot(mgr.conn(), &snap)
-            .map_err(|e| PollErr::Other(format!("{e:#}")))?;
-        if let Err(e) = crate::storage::prune_all(mgr.conn(), &policies) {
-            log::warn!("storage: retention prune failed: {e:#}");
-        }
+    if !any_ok {
+        return Err(PollErr::Other("all accounts failed to poll".to_string()));
     }
 
-    Ok(snap)
+    Ok(default_snap
+        .or_else(|| outcomes.iter().find_map(|(_, r)| r.as_ref().ok().cloned()))
+        .expect("any_ok guarantees at least one successful outcome"))
+}
+
+/// Runs `fetch` for every account in turn, collecting `(account_id, outcome)`
+/// pairs regardless of individual failures - the loop never short-circuits,
+/// so a failing account can never prevent the ones after it from being
+/// attempted. Extracted as a standalone async fn (independent of `AppState`/
+/// `AppHandle`) so the isolation guarantee is unit-testable with a fake
+/// `fetch` instead of real HTTP (see `tests::poll_accounts_isolated_*`).
+pub(crate) async fn poll_accounts_isolated<F, Fut>(
+    accounts: &[Account],
+    mut fetch: F,
+) -> Vec<(String, Result<UsageSnapshot, String>)>
+where
+    F: FnMut(Account) -> Fut,
+    Fut: std::future::Future<Output = Result<UsageSnapshot, String>>,
+{
+    let mut out = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let outcome = fetch(account.clone()).await;
+        out.push((account.id.clone(), outcome));
+    }
+    out
+}
+
+/// Fires the `ThresholdCrossed` notification when either window's percent
+/// crosses a configured color threshold between `prev` and `new`. Extracted
+/// from `do_poll` so both the legacy and per-account paths share one
+/// implementation (applied to the tick's representative/default snapshot;
+/// per-account notification context is milestone 08's scope).
+fn maybe_notify_threshold_crossed(app: &AppHandle, prev: Option<&UsageSnapshot>, new: &UsageSnapshot) {
+    let Some(prev) = prev else { return };
+    let icon_s = crate::tray::IconSettings::try_from(
+        &*app.state::<AppState>().settings.lock().unwrap()
+    ).unwrap_or_default();
+    let prev_sess = Some(crate::scraping::session_pct(prev));
+    let new_sess = Some(crate::scraping::session_pct(new));
+    let prev_wk = Some(crate::scraping::weekly_pct(prev));
+    let new_wk = Some(crate::scraping::weekly_pct(new));
+    let crossed =
+        crate::scraping::threshold_crossed(prev_sess, new_sess, &icon_s.color_thresholds) ||
+        crate::scraping::threshold_crossed(prev_wk, new_wk, &icon_s.color_thresholds);
+    if crossed {
+        let pct = new_sess.unwrap_or(0.0).max(new_wk.unwrap_or(0.0)).round() as u32;
+        crate::notifications::fire(
+            app,
+            crate::notifications::NotifKind::ThresholdCrossed,
+            crate::notifications::NotifContext { percent: Some(pct), name: None },
+            None,
+            None,
+        );
+    }
 }
 
 fn start_spin(app: AppHandle) -> tauri::async_runtime::JoinHandle<()> {
@@ -264,7 +392,82 @@ fn start_spin(app: AppHandle) -> tauri::async_runtime::JoinHandle<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::next_target_ts;
+    use super::{next_target_ts, poll_accounts_isolated};
+    use crate::accounts::Account;
+    use crate::types::{UsageSnapshot, WindowUsage};
+
+    fn acct(id: &str) -> Account {
+        Account {
+            id: id.into(),
+            label: id.into(),
+            colour: "#fff".into(),
+            icon: "user".into(),
+            config_dir: std::path::PathBuf::from(format!("C:/home/.claude-{id}")),
+            chrome_profile_dir: std::path::PathBuf::from(format!("C:/appdata/chrome-profiles/{id}")),
+            email: format!("{id}@example.com"),
+            org_uuid: format!("org-{id}"),
+            subscription_tier: "claude_max".into(),
+            created_at: "2026-07-07T00:00:00Z".into(),
+        }
+    }
+
+    fn snap_for(account_id: &str) -> UsageSnapshot {
+        UsageSnapshot {
+            captured_at: "2026-07-07T10:00:00Z".into(),
+            five_hour: WindowUsage { utilization: 10.0, resets_at: "x".into() },
+            seven_day: WindowUsage { utilization: 5.0, resets_at: "y".into() },
+            extra_usage: None,
+            account_id: Some(account_id.to_string()),
+        }
+    }
+
+    /// The load-bearing milestone-03 acceptance criterion: one account
+    /// failing must not drop the accounts after it in the iteration order.
+    #[tokio::test]
+    async fn one_account_failure_does_not_poison_others() {
+        let accounts = vec![acct("a"), acct("b"), acct("c")];
+        let outcomes = poll_accounts_isolated(&accounts, |account| async move {
+            if account.id == "b" {
+                Err("simulated 401".to_string())
+            } else {
+                Ok(snap_for(&account.id))
+            }
+        })
+        .await;
+
+        assert_eq!(outcomes.len(), 3, "every account must be attempted");
+        assert_eq!(outcomes[0].0, "a");
+        assert!(outcomes[0].1.is_ok());
+        assert_eq!(outcomes[1].0, "b");
+        assert!(outcomes[1].1.is_err());
+        assert_eq!(outcomes[2].0, "c", "the account AFTER the failure must still be polled");
+        assert!(outcomes[2].1.is_ok());
+        assert_eq!(
+            outcomes[2].1.as_ref().unwrap().account_id.as_deref(),
+            Some("c"),
+            "each snapshot must carry its own account tag",
+        );
+    }
+
+    #[tokio::test]
+    async fn all_accounts_failing_yields_all_errors_not_a_panic() {
+        let accounts = vec![acct("a"), acct("b")];
+        let outcomes = poll_accounts_isolated(&accounts, |_| async move {
+            Err("down".to_string())
+        })
+        .await;
+        assert_eq!(outcomes.len(), 2);
+        assert!(outcomes.iter().all(|(_, r)| r.is_err()));
+    }
+
+    #[tokio::test]
+    async fn empty_account_list_yields_empty_outcomes() {
+        let outcomes = poll_accounts_isolated(&[], |account: Account| async move {
+            Ok(snap_for(&account.id))
+        })
+        .await;
+        assert!(outcomes.is_empty());
+    }
 
     #[test]
     fn aligns_to_10min_boundary_plus_55s() {

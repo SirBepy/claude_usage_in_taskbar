@@ -9,6 +9,13 @@ pub struct UsageSnapshot {
     pub seven_day: WindowUsage,
     #[serde(default)]
     pub extra_usage: Option<ExtraUsage>,
+    /// Which registered account this snapshot belongs to (multi-account
+    /// milestone 03). `None` means the legacy single-cookie poll: either
+    /// pre-multi-account history, or any tick where no registered account
+    /// has a stored web cookie yet (the migration bridge in
+    /// `docs/multi-account/03-per-account-usage.md`).
+    #[serde(default)]
+    pub account_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]

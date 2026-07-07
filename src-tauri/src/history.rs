@@ -80,6 +80,7 @@ mod tests {
             five_hour: WindowUsage { utilization: 1.0, resets_at: "x".into() },
             seven_day: WindowUsage { utilization: 2.0, resets_at: "y".into() },
             extra_usage: None,
+            account_id: None,
         }
     }
 

@@ -100,17 +100,34 @@ fn windows_from_state(state: &AppState) -> (WindowCtx, WindowCtx) {
     }
 }
 
+/// Resolves the capacity-estimate file for one account dimension:
+/// `Some(id)` = that account's own keyed file
+/// (`session-capacity-<id>.json`), `None` = the legacy/default file
+/// (`session-capacity.json`), preserving pre-multi-account behavior.
+fn capacity_file_for(account_id: Option<&str>) -> anyhow::Result<PathBuf> {
+    match account_id {
+        Some(id) => paths::account_session_capacity_file(id),
+        None => paths::session_capacity_file(),
+    }
+}
+
 /// Loads the persisted capacity estimate and, unless it was refreshed within the
 /// last minute, recalibrates each window from the visible chats' drain since that
 /// window's reset (only when utilization clears the floor). Returns the
 /// capacities to use as denominators: `None` when still unknown (no high-util
 /// sample seen yet), so the UI shows "—%" rather than a bogus number.
+///
+/// `account_id` selects which account's capacity file (and therefore whose
+/// window reset times the estimate is calibrated against) is used; `None` is
+/// the legacy/default dimension. Current chat-UI callers pass `None` until
+/// milestones 05/06 thread a real account selection through.
 fn compute_capacities(
     resolved: &[(String, PathBuf, PathBuf)],
     five: &WindowCtx,
     weekly: &WindowCtx,
+    account_id: Option<&str>,
 ) -> (Option<f64>, Option<f64>) {
-    let Ok(path) = paths::session_capacity_file() else {
+    let Ok(path) = capacity_file_for(account_id) else {
         return (None, None);
     };
     let mut est = capacity::load(&path);
@@ -223,7 +240,7 @@ pub async fn chat_drain(
 
     // Heavy file parsing off the async runtime.
     let result = tokio::task::spawn_blocking(move || {
-        let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly);
+        let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly, None);
         let lifetime = drain_engine::drain_units_for_session(&target_cwd, &target, None);
         let messages = drain_engine::message_drains(&main_transcript);
         build_chat_drain(
@@ -267,7 +284,7 @@ pub async fn chat_drains(
     let (five, weekly) = windows_from_state(&state);
 
     let board = tokio::task::spawn_blocking(move || {
-        let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly);
+        let (cap_5h, cap_weekly) = compute_capacities(&resolved, &five, &weekly, None);
         let mut chats = HashMap::new();
         for (id, cwd, transcript) in &resolved {
             let lifetime = drain_engine::drain_units_for_session(cwd, id, None);

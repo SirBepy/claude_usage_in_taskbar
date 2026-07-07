@@ -6,9 +6,25 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 
 pub struct AppState {
+    /// Legacy/default single-account snapshot. Milestone 03: this stays the
+    /// read path for existing single-account consumers (tray, dashboard IPC)
+    /// - it's populated either by the legacy single-cookie poll, or (once
+    /// accounts are registered) mirrors the default account's own entry in
+    /// `current_usage_by_account`. Real per-account reads should use
+    /// `current_usage_by_account` instead; this field is retired once every
+    /// consumer is migrated (milestones 05/06).
     pub current_usage: Mutex<Option<UsageSnapshot>>,
+    /// Per-account usage snapshots (multi-account milestone 03), keyed by
+    /// `Account.id`. Populated only once an account has a stored web cookie;
+    /// empty while every account is still on the legacy `session.txt` path.
+    pub current_usage_by_account: Mutex<std::collections::HashMap<String, UsageSnapshot>>,
     pub settings: Mutex<Settings>,
+    /// Legacy/default auth state - see `current_usage`'s doc comment for the
+    /// same single-vs-per-account split.
     pub auth_state: Mutex<AuthState>,
+    /// Per-account auth state (multi-account milestone 03), keyed by
+    /// `Account.id`.
+    pub auth_state_by_account: Mutex<std::collections::HashMap<String, AuthState>>,
     pub display: Mutex<TrayDisplayState>,
     pub audio_stream: crate::notifications::audio::AudioStreamCtrl,
     pub audio: crate::notifications::audio::AudioCtx,
@@ -82,8 +98,10 @@ impl AppState {
         let db = crate::storage::StorageManager::open(&db_path)?;
         Ok(Self {
             current_usage: Mutex::new(None),
+            current_usage_by_account: Mutex::new(std::collections::HashMap::new()),
             settings: Mutex::new(settings),
             auth_state: Mutex::new(auth_state),
+            auth_state_by_account: Mutex::new(std::collections::HashMap::new()),
             display: Mutex::new(TrayDisplayState::default()),
             audio_stream,
             audio,

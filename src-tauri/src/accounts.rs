@@ -30,7 +30,9 @@ pub enum AccountResolveError {
 
 /// Loads the on-disk accounts registry. Empty (never panics) if the path
 /// can't be resolved or the file is missing/corrupt - mirrors `store::load`.
-fn load_registry() -> Vec<model::Account> {
+/// `pub(crate)` so the poll loop (`scheduler`) can iterate every registered
+/// account without duplicating this fallback logic.
+pub(crate) fn load_registry() -> Vec<model::Account> {
     match crate::settings::paths::accounts_file() {
         Ok(p) => store::load(&p),
         Err(_) => Vec::new(),

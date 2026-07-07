@@ -208,6 +208,7 @@ mod tests {
             five_hour: crate::types::WindowUsage { utilization: five, resets_at: five_resets.into() },
             seven_day: crate::types::WindowUsage { utilization: weekly, resets_at: weekly_resets.into() },
             extra_usage: None,
+            account_id: None,
         }
     }
 
