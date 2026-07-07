@@ -6,6 +6,14 @@ build (see the `/next-ai-prompt` handoff produced at the end of planning).
 
 Visual spec: `.for_bepy/multi-account-mockup.html` (open it). Every screen below is mocked there.
 
+> **REVISED 2026-07-07.** The original plan's credential primitive (`claude setup-token` +
+> per-process `CLAUDE_CODE_OAUTH_TOKEN` injection) was proven broken by live testing: setup-token
+> tokens repeatedly bound to the wrong account regardless of which account authorized the OAuth
+> screen (verified via claude.ai/settings/usage on both accounts). The only mechanism that binds
+> correctly is interactive `/login` run inside an isolated `CLAUDE_CONFIG_DIR`. This revision
+> rebuilds the plan on config-dir profiles. See memory `multi-account-config-dirs` for the
+> empirical history.
+
 ## What we're building
 
 Let the app drive more than one Claude account (e.g. Personal, Work, Fibo). Each account is
@@ -18,15 +26,33 @@ which-account signal**. Adding the login is the easy part.
 
 ## Locked decisions (do not re-litigate)
 
-- **Credential primitive:** per-account `CLAUDE_CODE_OAUTH_TOKEN` (long-lived, from `claude
-  setup-token`), injected as an env var per spawned `claude` process. It overrides
-  `~/.claude/.credentials.json` and bills to that account's subscription (NOT metered). Env vars
-  are per-process, so concurrent sessions can each be a different account from ONE shared
-  `~/.claude`. No second config dir. Precedence: `ANTHROPIC_API_KEY` > `CLAUDE_CODE_OAUTH_TOKEN` >
-  `.credentials.json`.
-- **One shared `~/.claude`.** Because we keep a single config dir, the ~10 hardcoded
-  `dirs::home_dir().join(".claude")` readers mostly DO NOT change. Account attribution lives in
-  the app's own state (session->account), not the filesystem. This is what shrinks the refactor.
+- **Credential primitive: per-account `CLAUDE_CONFIG_DIR` profile dirs.** Every app account owns
+  an app-created dir `~/.claude-<slug>` holding its own `.credentials.json`, minted by an
+  interactive `/login` run inside that dir. Chat spawns set `CLAUDE_CONFIG_DIR` to the account's
+  dir. Claude Code's own token refresh keeps the credentials fresh in place.
+- **`claude setup-token` is banned.** Empirically binds tokens to the wrong account. Never use it,
+  never suggest it.
+- **Never copy or seed `.credentials.json` between dirs.** OAuth refresh tokens are single-use and
+  rotate; two dirs sharing one token silently invalidate each other's login (symptom: endless
+  re-login loop). Every profile gets its own fresh `/login`. The app reads credential files but
+  NEVER writes, copies, caches, or restores them.
+- **`~/.claude` is the terminal's dir - observed, never owned.** The app keeps reading it
+  (transcripts, hook install, slash commands, terminal-identity display) but never spawns a chat
+  against it, never treats it as an account, and never deletes it. Its logged-in identity is
+  volatile (every terminal `/login` flips it), which is exactly why app accounts don't live there.
+- **Profile dir contents: credentials only; everything else funnels to `~/.claude`.** App-created
+  dirs junction `projects/`, `todos/`, `sessions/`, `skills/`, `commands/`, `plugins/`, `refs/`,
+  `code-style/`, `snippets/` and symlink `CLAUDE.md`, `settings.json`, `settings.local.json` back
+  to `~/.claude`. One brain, one transcript pool, one hook config - so the daemon's existing
+  `~/.claude` readers keep working unchanged, and skills/memory edits apply to every account
+  instantly. Only `.credentials.json` + per-run caches are real per-profile files.
+- **Identity detection is built in.** After `/login`, `<config-dir>/.claude.json` ->
+  `oauthAccount` `{emailAddress, organizationUuid, organizationName, organizationType,
+  profileFetchedAt}`. The wizard reads it to display "logged in as X", dedups against existing
+  accounts (same `org_uuid`/email = reject), and cross-checks the web-plane email so a mismatched
+  cookie/CLI pairing is caught at onboarding, not on the billing dashboard weeks later. (Note: the
+  default `~/.claude` profile's state file is `~/.claude.json` in the HOME dir, not inside the
+  folder.)
 - **Colour / pace config stays global** (one preference applied to every account's numbers + the
   overlay). Not per-account.
 - **Tray icon content is user-chosen:** glyph (rings/bars usage), number (% badge), or nothing
@@ -51,32 +77,44 @@ which-account signal**. Adding the login is the easy part.
 
 An "account" here has TWO independent logins:
 
-1. **CLI token** - `CLAUDE_CODE_OAUTH_TOKEN` (subscription), what the chat daemon spawns `claude`
-   with. Minted via `claude setup-token`.
+1. **CLI credentials** - `.credentials.json` inside the account's `CLAUDE_CONFIG_DIR`, minted by
+   an interactive `/login` (the wizard spawns a terminal for it; there is no headless login).
+   This is what the chat daemon spawns `claude` with.
 2. **Web sessionKey cookie** - what the usage scraper sends to claude.ai's private API
    (`GET /api/organizations` then `/organizations/{id}/usage`). Captured via the existing
-   CDP browser login flow.
+   CDP browser login flow, one chrome profile dir per account.
 
-Usage CANNOT be fetched with the CLI token (different auth); it needs the cookie. So "add account"
-is two grants, ideally in one browser trip. Both are one-time per account.
+Usage CANNOT be fetched with the CLI credentials (different auth); it needs the cookie. So "add
+account" is two grants. Both are one-time per account, and the wizard verifies both grants belong
+to the SAME account (email/org cross-check) before saving.
 
 ## Account model
 
-`Account { id, label, colour, icon, subscription_tier, oauth_token_ref, session_key_ref,
-org_uuid, email, created_at }`. Tokens/cookies stored securely (OS credential store / encrypted
-app-data), never in plaintext settings, never committed. Colour + icon are the identity carried
-through every screen (the glanceable "which account").
+`Account { id, label, colour, icon, config_dir, chrome_profile_dir, email, org_uuid,
+subscription_tier, session_key_ref, created_at }`. No CLI-token field: CLI credentials live in
+the profile dir and are owned by Claude Code itself. The sessionKey stays out of plaintext
+settings (per-account keyed storage, never logged, never committed). Colour + icon are the
+identity carried through every screen (the glanceable "which account").
+
+There is no "default account is special" code path: `default_account_id` is just the fallback for
+unbound projects and the tray. Add and remove are uniform for every account (remove = drop record
++ delete its profile dir + its chrome profile + its cookie).
+
+The terminal (`~/.claude`) surfaces as an **observed identity**, not an account: the Sessions
+screen labels terminal sessions with whoever `~/.claude.json` says is logged in, and the accounts
+UI shows it read-only ("Terminal: currently tecnomon99@gmail.com"). It is not spawnable, not
+removable, not in the registry.
 
 ## Architecture by subsystem (where each phase lands)
 
 - **Identity/creds (01):** new accounts registry (typed Rust, in app-data). `auth::session` (single
-  sessionKey file) -> per-account store. Add-account orchestrates `setup-token` + the CDP cookie
-  grab, reads org name/email back (widen `scraping::client::OrgListEntry`, which today keeps only
-  `uuid`).
-- **Chat routing (02):** inject `.env("CLAUDE_CODE_OAUTH_TOKEN", token)` at the two spawn sites
-  (`daemon/lifecycle.rs:~111`, `channels/spawn.rs`). Thread `account_id` through
-  `StartSessionParams` + the session registry. Re-run `check_metered_billing` against the injected
-  env. Audit the ~10 `~/.claude` readers (expect: no change needed with one shared dir).
+  sessionKey file) -> per-account store. Add-account wizard orchestrates: create profile dir +
+  junctions -> spawned-terminal `/login` -> read `oauthAccount` -> CDP cookie grab -> cross-check
+  -> auto-fill (widen `scraping::client::OrgListEntry`, which today keeps only `uuid`).
+- **Chat routing (02):** inject `.env("CLAUDE_CODE_OAUTH_TOKEN", ...)` is DEAD; instead inject
+  `.env("CLAUDE_CONFIG_DIR", account.config_dir)` at the spawn sites (`daemon/lifecycle.rs`,
+  `channels/spawn.rs`, `news/summarizer.rs`). Thread `account_id` through `StartSessionParams` +
+  the session registry. Billing gate runs against the child's injected env.
 - **Usage (03):** poll loop iterates accounts (one sessionKey each). `UsageSnapshot` gains an
   account id; `AppState.current_usage` and `auth_state` become per-account maps; `usage_snapshots`
   table + capacity model gain an account column.
@@ -89,13 +127,13 @@ through every screen (the glanceable "which account").
 - **Tray + overlay (06):** evolve `defaultDisplay`/`iconStyle` into glyph/number/nothing + which-
   account; new floating overlay component (all accounts, 5h+7d, safe pace, opacity + hover);
   `render_tray_now` + `IconSettings`/`TooltipSettings` go per-account.
-- **Settings (07):** removals; extend `colorApplyTo` with `overlay`; account-management UI;
-  overlay opacity. NOTE the pace/colour logic exists TWICE and is hand-synced:
-  `src/shared/formatters.ts` (dashboard/webview) and `src-tauri/src/tray/threshold.rs` (tray). Any
-  colour/pace change touches both.
+- **Settings (07):** removals; extend `colorApplyTo` with `overlay`; account-management UI with the
+  per-account identity surface (logged in as / tier / token expiry / drift warning); overlay
+  opacity. NOTE the pace/colour logic exists TWICE and is hand-synced: `src/shared/formatters.ts`
+  (dashboard/webview) and `src-tauri/src/tray/threshold.rs` (tray). Any colour/pace change touches
+  both.
 - **Notifications + polish (08):** `notifications.thresholdCrossed` template gains an account
-  token; tests (daemon e2e + WebdriverIO); one-time migration of the existing single account into
-  the registry; README sync.
+  token; tests (daemon e2e + WebdriverIO); legacy single-login migration; README sync.
 
 ## Settings: remove / change / new (from the settings study)
 
@@ -115,26 +153,43 @@ through every screen (the glanceable "which account").
   touch is two edits. Consider a shared source later, do not silently drift.
 - Single -> per-account state (`current_usage`, `auth_state`, sessionKey file) is the load-bearing
   Rust change; everything downstream depends on it.
-- Migration: the existing single logged-in account must become account #1 in the registry with no
-  data loss (its usage history, sessionKey, default status).
+- The junction recipe is Windows-first (junctions need no admin; file symlinks need Dev Mode or
+  admin - the recipe must fall back to `cmd /c mklink` for files, which is what worked on Joe's
+  machine). macOS/Linux use plain symlinks. If a link step fails, abort account creation cleanly
+  (delete the half-made dir) rather than leaving a broken profile.
+- `/login` cannot be automated: the wizard spawns a visible terminal with `CLAUDE_CONFIG_DIR` set
+  and polls for `oauthAccount` to appear. Design the wizard step to survive the user dawdling or
+  abandoning (timeout -> cancel cleans up the dir).
+- An existing `~/.claude-fibo` (hand-built, same layout) exists on Joe's machine. Account creation
+  must handle "dir already exists": offer to adopt it as this account's dir if its `oauthAccount`
+  matches the freshly verified login, else require a different slug.
+- Migration: the current single scraping login (`session.txt`) keeps working until the first
+  account is added; usage history re-keys to a new account when its `org_uuid` matches the legacy
+  scrape target (03/08 own the details).
 - New pure-frontend settings can ride in `Settings.extra` (untyped passthrough); anything Rust
   consumes (accounts, per-account usage, auth) needs typed Rust + `export_types.rs` regen.
 
 ## Success criteria
 
-- Two accounts run concurrent chats from one `~/.claude`, no credential clobbering, each billed to
-  its own subscription.
+- Two accounts run concurrent chats, each spawned under its own `CLAUDE_CONFIG_DIR`, each billed to
+  its own subscription (verified on both claude.ai/settings/usage dashboards), with zero
+  credential-file interaction between profiles.
+- Plain-terminal `claude` work is completely unaffected by anything the app does.
 - New chat in a bound project auto-selects that account; changing it can be remembered.
+- The accounts UI shows, per account: logged in as (email), tier, token expiry, and a red drift
+  warning if the profile's `oauthAccount` no longer matches the registry record.
 - Dashboard shows every account; clicking a card re-scopes the account-tied widgets; safe pace
   shows for 5h + 7d in both the dashboard and the overlay.
 - Overlay lists all accounts (5h+7d, safe pace), translucent + opaque on hover.
 - Tray icon honours glyph/number/nothing + the chosen account, and still opens the overlay.
-- No metered billing possible (subscription-only gate holds per account).
+- No metered billing possible (subscription-only gate holds per account, checked against the
+  injected child env).
 - Statistics screen removed with no lost widgets (migrated to dashboard).
 
 ## References
 
 - Design mockup: `.for_bepy/multi-account-mockup.html`
+- Empirical history of the auth saga: project memory `multi-account-config-dirs`
+- Hand-built prototype of the profile layout: `~/.claude-fibo` (junction recipe reference)
 - Related todo: `.for_bepy/ai_todos/138-html-preview-window.md` (previews in a sidepane; brainstorm
   mockups should target it instead of an external browser).
-- Temporary manual bridge: `~/.claude/todos/multi-account-cli-wrappers.md` (per-account CLI wrappers).

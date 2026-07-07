@@ -19,8 +19,13 @@ account and the overlay, and add an account-management UI.
 2. Keep global: `colorMode`, `paceBand` (10), `paceColors`, `colorThresholds`. Extend `colorApplyTo`
    with an `overlay` target and ensure both twins apply the colour to the overlay + the per-account
    dashboard cards. Update BOTH `formatters.ts` and `threshold.rs` in lockstep.
-3. Account-management settings subview: list accounts (colour/icon/tier), add account (01 flow),
-   remove / re-auth one, set default (`defaultAccountId`). Replaces the single Log Out.
+3. Account-management settings subview: list accounts (colour/icon/tier), add account (01 wizard),
+   remove / log out / re-auth one, set default (`defaultAccountId`). Replaces the single Log Out.
+   Each row carries the identity surface: logged in as (email from `oauthAccount`), tier, token
+   expiry (from that profile's `.credentials.json`, read-only), and a red drift warning when the
+   profile's current `oauthAccount` no longer matches the registry record (email/org changed
+   behind the app's back). Below the accounts: a read-only "Terminal" row showing `~/.claude`'s
+   current identity (01's `terminal_identity()`), explicitly not an account.
 4. `overlayOpacity` slider (06) + tray content-mode UI (06) surfaced here.
 
 ## Files
