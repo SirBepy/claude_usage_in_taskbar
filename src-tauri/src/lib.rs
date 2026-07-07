@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod channels;
 pub mod characters;
 pub mod context_status;
@@ -315,6 +316,16 @@ pub fn run() {
             ipc::revoke_remote_device,
             ipc::set_remote_kill_switch,
             ipc::get_remote_kill_switch,
+            ipc::add_account_create,
+            ipc::add_account_check_login,
+            ipc::add_account_capture_cookie,
+            ipc::add_account_cancel,
+            ipc::add_account_finalize,
+            ipc::list_accounts,
+            ipc::remove_account,
+            ipc::logout_account,
+            ipc::set_default_account,
+            ipc::get_terminal_identity,
             when_done::arm_when_done,
             when_done::cancel_when_done,
             when_done::get_when_done_state,

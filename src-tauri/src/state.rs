@@ -66,6 +66,9 @@ pub struct AppState {
     /// wired in slice 2b). Behind a `Mutex` because `rusqlite::Connection` is
     /// `!Sync`; every store/retention call borrows the connection briefly.
     pub db: Mutex<crate::storage::StorageManager>,
+    /// In-progress add-account wizard runs, keyed by a random session id.
+    /// Never persisted (see `accounts::wizard::WizardSession`).
+    pub account_wizard_sessions: Mutex<std::collections::HashMap<String, crate::accounts::WizardSession>>,
 }
 
 impl AppState {
@@ -100,6 +103,7 @@ impl AppState {
             news_inflight: Arc::new(Mutex::new(std::collections::HashSet::new())),
             when_done: Arc::new(Mutex::new(crate::when_done::WhenDoneInner::default())),
             db: Mutex::new(db),
+            account_wizard_sessions: Mutex::new(std::collections::HashMap::new()),
         })
     }
 }

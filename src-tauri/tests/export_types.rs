@@ -5,7 +5,9 @@
 //! file. Instead, we drop `export` from the derives and write the file
 //! ourselves by composing each type's `decl()` into a single output.
 
+use claude_conductor_lib::accounts::{Account, OauthAccountInfo};
 use claude_conductor_lib::context_status::ContextStatus;
+use claude_conductor_lib::ipc::accounts::{AddAccountSession, LoginCheckOutcome};
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::git::GitInfo;
 use claude_conductor_lib::ipc::files::TextFileData;
@@ -73,6 +75,12 @@ fn emit_ipc_types() {
     out.push_str(&decl::<DisplayMode>());
     out.push_str(&decl::<AutoUpdateMode>());
     out.push_str(&decl::<Settings>());
+
+    // multi-account (milestone 01: identity, profile dirs, add-account wizard)
+    out.push_str(&decl::<OauthAccountInfo>());
+    out.push_str(&decl::<Account>());
+    out.push_str(&decl::<AddAccountSession>());
+    out.push_str(&decl::<LoginCheckOutcome>());
 
     // misc IPC
     out.push_str(&decl::<GitInfo>());

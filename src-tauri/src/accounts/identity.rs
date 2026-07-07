@@ -1,0 +1,124 @@
+//! Reads the `oauthAccount` identity block Claude Code writes after a
+//! successful `/login`. Two readers:
+//! - `read_oauth_account(config_dir)` - `<config_dir>/.claude.json` (an app
+//!   profile dir's own identity).
+//! - `terminal_identity(home_dir)` - `<home_dir>/.claude.json`, the terminal's
+//!   observed identity (NOT inside `~/.claude`; see 00-overview.md).
+
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct OauthAccountInfo {
+    pub email_address: String,
+    pub organization_uuid: String,
+    #[serde(default)]
+    pub organization_name: Option<String>,
+    #[serde(default)]
+    pub organization_type: Option<String>,
+    #[serde(default)]
+    pub profile_fetched_at: Option<String>,
+}
+
+fn read_from_state_file(path: &Path) -> Option<OauthAccountInfo> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let oauth = v.get("oauthAccount")?;
+    serde_json::from_value(oauth.clone()).ok()
+}
+
+/// Parses `<config_dir>/.claude.json` -> `oauthAccount`. `None` if the file is
+/// missing, unparsable, or has no `oauthAccount` block (never logged in yet,
+/// or an API-key-only session that never populates it).
+pub fn read_oauth_account(config_dir: &Path) -> Option<OauthAccountInfo> {
+    read_from_state_file(&config_dir.join(".claude.json"))
+}
+
+/// The terminal's observed identity: `<home_dir>/.claude.json` -> `oauthAccount`.
+/// This is NOT an app account (never spawnable, never removable, never in the
+/// registry) - purely for labeling terminal sessions and the read-only
+/// "Terminal: currently X" display. `home_dir` is a parameter (not
+/// `dirs::home_dir()`) so tests and callers can inject it.
+pub fn terminal_identity(home_dir: &Path) -> Option<OauthAccountInfo> {
+    read_from_state_file(&home_dir.join(".claude.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    const FIXTURE: &str = r#"{
+        "oauthAccount": {
+            "emailAddress": "joe@example.com",
+            "organizationUuid": "org-abc",
+            "organizationName": "Fibo Studio",
+            "organizationType": "claude_max",
+            "profileFetchedAt": "2026-07-07T10:00:00Z"
+        }
+    }"#;
+
+    #[test]
+    fn read_oauth_account_parses_fixture() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".claude.json"), FIXTURE).unwrap();
+        let identity = read_oauth_account(dir.path()).expect("expected identity");
+        assert_eq!(identity.email_address, "joe@example.com");
+        assert_eq!(identity.organization_uuid, "org-abc");
+        assert_eq!(identity.organization_name.as_deref(), Some("Fibo Studio"));
+        assert_eq!(identity.organization_type.as_deref(), Some("claude_max"));
+        assert_eq!(identity.profile_fetched_at.as_deref(), Some("2026-07-07T10:00:00Z"));
+    }
+
+    #[test]
+    fn read_oauth_account_none_when_file_missing() {
+        let dir = tempdir().unwrap();
+        assert!(read_oauth_account(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_oauth_account_none_when_no_oauth_block() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".claude.json"), r#"{"other": true}"#).unwrap();
+        assert!(read_oauth_account(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_oauth_account_none_when_unparsable() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".claude.json"), "{ not valid").unwrap();
+        assert!(read_oauth_account(dir.path()).is_none());
+    }
+
+    #[test]
+    fn read_oauth_account_missing_optional_fields_default_to_none() {
+        let dir = tempdir().unwrap();
+        let raw = r#"{
+            "oauthAccount": {
+                "emailAddress": "a@x.com",
+                "organizationUuid": "org-1"
+            }
+        }"#;
+        std::fs::write(dir.path().join(".claude.json"), raw).unwrap();
+        let identity = read_oauth_account(dir.path()).unwrap();
+        assert_eq!(identity.organization_name, None);
+        assert_eq!(identity.organization_type, None);
+        assert_eq!(identity.profile_fetched_at, None);
+    }
+
+    #[test]
+    fn terminal_identity_reads_home_dir_file_not_dot_claude_subdir() {
+        let dir = tempdir().unwrap();
+        // Deliberately put a DIFFERENT identity inside .claude/ to prove the
+        // terminal reader looks at home_dir directly, not home_dir/.claude.
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        std::fs::write(dir.path().join(".claude").join(".claude.json"), r#"{
+            "oauthAccount": { "emailAddress": "wrong@x.com", "organizationUuid": "org-wrong" }
+        }"#).unwrap();
+        std::fs::write(dir.path().join(".claude.json"), FIXTURE).unwrap();
+        let identity = terminal_identity(dir.path()).expect("expected identity");
+        assert_eq!(identity.email_address, "joe@example.com");
+    }
+}

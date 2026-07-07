@@ -1,4 +1,5 @@
 pub mod usage;
+pub mod accounts;
 pub mod settings;
 pub mod projects;
 pub mod project_groups;
@@ -25,6 +26,7 @@ pub mod storage;
 pub mod remote_access;
 
 pub use usage::*;
+pub use accounts::*;
 pub use settings::*;
 pub use projects::*;
 pub use project_groups::*;

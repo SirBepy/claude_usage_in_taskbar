@@ -96,6 +96,12 @@ pub struct Settings {
     /// access off until the user opts in from Settings.
     #[serde(default)]
     pub remote_access_enabled: bool,
+    /// Fallback account for unbound projects and the tray. `None` until the
+    /// first account is added (milestone 01) or when the last account is
+    /// removed. There is no "default account is special" code path beyond
+    /// this fallback (00-overview.md, locked decision).
+    #[serde(default)]
+    pub default_account_id: Option<String>,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -132,6 +138,7 @@ impl Default for Settings {
             session_characters: std::collections::HashMap::new(),
             retention: crate::storage::RetentionPolicies::default(),
             remote_access_enabled: false,
+            default_account_id: None,
             extra: serde_json::Map::new(),
         }
     }

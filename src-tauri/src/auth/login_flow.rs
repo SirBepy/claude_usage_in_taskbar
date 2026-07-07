@@ -148,7 +148,32 @@ fn kill_browser(child: &mut Child) {
     { let _ = child.kill(); }
 }
 
+/// Legacy single-account login: uses the shared `chrome-login-profile` dir
+/// and saves to the single `session.txt` (`paths::session_file`). Kept
+/// working as-is until the multi-account migration (milestone 08).
 pub async fn run(app: AppHandle) -> Result<()> {
+    let profile = crate::settings::paths::data_dir()
+        .context("data dir")?
+        .join("chrome-login-profile");
+    let session_key = run_with_profile(&app, &profile).await?;
+    let session_path = paths::session_file()?;
+    session::save(&session_path, &session_key)?;
+    Ok(())
+}
+
+/// Per-account login: same CDP browser flow, but against `chrome_profile_dir`
+/// (one per account, avoids cookie collisions - 01-account-identity.md step
+/// 5). Returns the raw `sessionKey`; the caller decides where to persist it
+/// (the add-account wizard keys it by account id via
+/// `paths::account_session_file`, never the legacy single-session path).
+pub async fn run_for_account(app: AppHandle, chrome_profile_dir: PathBuf) -> Result<String> {
+    run_with_profile(&app, &chrome_profile_dir).await
+}
+
+/// Shared CDP browser flow: spawn Chrome/Edge against `profile_dir`, wait for
+/// the user to log into claude.ai, extract the `sessionKey` cookie, kill the
+/// browser. Emits the same `auth-progress` events either caller relies on.
+async fn run_with_profile(app: &AppHandle, profile_dir: &Path) -> Result<String> {
     let _ = app.emit("auth-progress", json!({"stage": "waiting-for-browser"}));
 
     let bin = find_browser()
@@ -157,25 +182,20 @@ pub async fn run(app: AppHandle) -> Result<()> {
         ))?;
     log::info!("launching browser: {}", bin.display());
 
-    let profile = crate::settings::paths::data_dir()
-        .context("data dir")?
-        .join("chrome-login-profile");
-    std::fs::create_dir_all(&profile).context("create profile dir")?;
+    std::fs::create_dir_all(profile_dir).context("create profile dir")?;
 
-    let mut child = spawn_browser(&bin, &profile, CDP_PORT)
+    let mut child = spawn_browser(&bin, profile_dir, CDP_PORT)
         .context("spawn browser")?;
 
-    let result = run_inner(&app, &mut child).await;
+    let result = run_inner(app, &mut child).await;
     kill_browser(&mut child);
     // NOTE: do NOT delete the profile dir, we want Google/SSO cookies to persist
     // across re-logins so the user only types their password once.
 
     match result {
         Ok(session_key) => {
-            let session_path = paths::session_file()?;
-            session::save(&session_path, &session_key)?;
             let _ = app.emit("auth-progress", json!({"stage": "done"}));
-            Ok(())
+            Ok(session_key)
         }
         Err(e) => {
             let _ = app.emit(

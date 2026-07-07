@@ -56,7 +56,7 @@ pub fn migrate_legacy_data_dir() {
 /// file that already exists in `dst`. Returns the number of files copied. Skips
 /// ephemeral runtime artifacts (locks, port files, logs) that the new instance
 /// owns and regenerates.
-fn copy_missing_recursive(src: &std::path::Path, dst: &std::path::Path) -> usize {
+pub(crate) fn copy_missing_recursive(src: &std::path::Path, dst: &std::path::Path) -> usize {
     let mut copied = 0;
     let entries = match std::fs::read_dir(src) {
         Ok(e) => e,
@@ -235,4 +235,23 @@ pub fn skill_usage_dir() -> anyhow::Result<std::path::PathBuf> {
     let p = d.join("skill-usage");
     std::fs::create_dir_all(&p)?;
     Ok(p)
+}
+
+/// Persisted multi-account registry (`Vec<Account>`). See `crate::accounts`.
+pub fn accounts_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("accounts.json"))
+}
+
+/// Per-account sessionKey cookie file, keyed by account id. Legacy
+/// single-account `session_file()` keeps working until migration (milestone
+/// 08); this is the per-account successor used by the add-account wizard.
+pub fn account_session_file(account_id: &str) -> Result<PathBuf> {
+    Ok(data_dir()?.join(format!("session-{account_id}.txt")))
+}
+
+/// Per-account chrome profile dir for the web-cookie login flow (avoids
+/// cookie collisions between accounts). Keyed by account id, mirroring
+/// `account_session_file`.
+pub fn account_chrome_profile_dir(account_id: &str) -> Result<PathBuf> {
+    Ok(data_dir()?.join("chrome-profiles").join(account_id))
 }

@@ -8,8 +8,16 @@ const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-#[derive(Deserialize)]
-struct OrgListEntry { uuid: String }
+/// One entry from `GET /api/organizations`. Widened (multi-account milestone
+/// 01) beyond the bare `uuid` so the add-account wizard's cross-check can
+/// report a human-readable org name; `name` is best-effort (`None` if the API
+/// shape ever changes) and never blocks the uuid-based cross-check itself.
+#[derive(Deserialize, Clone, Debug)]
+pub struct OrgListEntry {
+    pub uuid: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
 
 /// Errors that callers may want to react to distinctly.
 #[derive(thiserror::Error, Debug)]
@@ -24,20 +32,23 @@ pub enum ScrapeError {
     Other(#[from] anyhow::Error),
 }
 
-/// Fetches current usage. `base_url` is injected for tests; production passes
-/// `"https://claude.ai"`.
-pub async fn fetch_usage(base_url: &str, session_key: &str)
-    -> Result<UsageSnapshot, ScrapeError>
-{
-    let client = reqwest::Client::builder()
+fn http_client() -> Result<reqwest::Client, ScrapeError> {
+    reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .build()
         .context("building http client")
-        .map_err(ScrapeError::Other)?;
+        .map_err(ScrapeError::Other)
+}
 
+/// `GET /api/organizations` for the session behind `session_key`. Used both
+/// by `fetch_usage` (org id needed for the usage call) and the add-account
+/// wizard's cross-check (does the web cookie's org list contain the CLI
+/// login's `organizationUuid`?).
+pub async fn fetch_org_list(base_url: &str, session_key: &str)
+    -> Result<Vec<OrgListEntry>, ScrapeError>
+{
+    let client = http_client()?;
     let cookie_header = format!("sessionKey={session_key}");
-
-    // 1. Get organizations
     let orgs_url = format!("{base_url}/api/organizations");
     let orgs_resp = client.get(&orgs_url)
         .header("cookie", &cookie_header)
@@ -57,8 +68,18 @@ pub async fn fetch_usage(base_url: &str, session_key: &str)
         )));
     }
 
-    let orgs: Vec<OrgListEntry> = orgs_resp.json().await
-        .context("parsing org list").map_err(ScrapeError::Other)?;
+    orgs_resp.json().await.context("parsing org list").map_err(ScrapeError::Other)
+}
+
+/// Fetches current usage. `base_url` is injected for tests; production passes
+/// `"https://claude.ai"`.
+pub async fn fetch_usage(base_url: &str, session_key: &str)
+    -> Result<UsageSnapshot, ScrapeError>
+{
+    let client = http_client()?;
+    let cookie_header = format!("sessionKey={session_key}");
+
+    let orgs = fetch_org_list(base_url, session_key).await?;
     let org_id = orgs.first().ok_or(ScrapeError::NoOrgs)?.uuid.clone();
 
     // 2. Get usage
@@ -133,6 +154,32 @@ mod tests {
             .with_status(401).create_async().await;
         let err = fetch_usage(&server.url(), "sk-bad").await.unwrap_err();
         assert!(matches!(err, ScrapeError::Unauthorized));
+    }
+
+    #[tokio::test]
+    async fn fetch_org_list_captures_name_when_present() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server.mock("GET", "/api/organizations")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"uuid":"ORG-1","name":"Fibo Studio"}]"#)
+            .create_async().await;
+        let orgs = fetch_org_list(&server.url(), "sk-abc").await.unwrap();
+        assert_eq!(orgs.len(), 1);
+        assert_eq!(orgs[0].uuid, "ORG-1");
+        assert_eq!(orgs[0].name.as_deref(), Some("Fibo Studio"));
+    }
+
+    #[tokio::test]
+    async fn fetch_org_list_name_defaults_to_none_when_absent() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server.mock("GET", "/api/organizations")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"uuid":"ORG-1"}]"#)
+            .create_async().await;
+        let orgs = fetch_org_list(&server.url(), "sk-abc").await.unwrap();
+        assert_eq!(orgs[0].name, None);
     }
 
     #[tokio::test]

@@ -1,0 +1,332 @@
+//! Add-account wizard IPC + account registry management (multi-account
+//! milestone 01, backend only - see `docs/multi-account/01-account-identity.md`).
+//!
+//! Wizard flow: `add_account_create` (profile dir + spawn `/login` terminal)
+//! -> poll `add_account_check_login` until `Ready` -> optionally
+//! `add_account_capture_cookie` (web sessionKey + cross-check) ->
+//! `add_account_finalize` (persist). `add_account_cancel` at any point cleans
+//! up a dir THIS wizard run created (never an adopted pre-existing dir).
+
+use crate::accounts::model::{slugify, Account};
+use crate::accounts::{identity, login_step, profile, store as accounts_store, OauthAccountInfo, WizardSession};
+use crate::settings::paths;
+use crate::state::AppState;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
+
+fn home_claude_dir() -> Result<std::path::PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "could not resolve home dir".to_string())?;
+    Ok(home.join(".claude"))
+}
+
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub struct AddAccountSession {
+    pub session_id: String,
+    pub config_dir: std::path::PathBuf,
+    /// True if `config_dir` already existed (adoption path) - the frontend
+    /// should tell the user to log into the SAME account that dir already
+    /// used, since a mismatch will be rejected at the check-login step.
+    pub adopted_existing: bool,
+    pub existing_identity: Option<OauthAccountInfo>,
+}
+
+#[derive(Serialize, ts_rs::TS)]
+#[serde(tag = "status")]
+#[ts(export_to = "../../src/types/ipc.generated.ts")]
+pub enum LoginCheckOutcome {
+    /// No fresh `oauthAccount` observed yet; keep polling.
+    Pending,
+    /// A fresh, non-duplicate identity was observed - ready to capture the
+    /// cookie and/or finalize.
+    Ready { identity: OauthAccountInfo },
+    /// The dir being adopted already belonged to a different account than
+    /// the one that just logged in.
+    Mismatch { existing_email: String, new_email: String },
+    /// This org/email is already registered under another account.
+    Duplicate { existing_label: String },
+}
+
+/// Step 1: create (or adopt) the profile dir and spawn the visible `/login`
+/// terminal. `slug` defaults to a slugified `label` when omitted.
+#[tauri::command]
+pub fn add_account_create(
+    label: String,
+    slug: Option<String>,
+    state: State<AppState>,
+) -> Result<AddAccountSession, String> {
+    let slug = slug.unwrap_or_else(|| slugify(&label));
+    if slug.trim().is_empty() {
+        return Err("slug must not be empty".to_string());
+    }
+    let home_claude = home_claude_dir()?;
+    let outcome = profile::create_or_adopt_profile_dir(&home_claude, &slug)
+        .map_err(|e| e.to_string())?;
+
+    // A collision with an already-REGISTERED account's dir is a slug clash,
+    // not a fresh add or a legitimate hand-built-dir adoption. Since that
+    // dir already existed, create_or_adopt_profile_dir only filled in
+    // (harmless, idempotent) missing links - nothing to clean up here.
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let registered = accounts_store::load(&accounts_path);
+    if registered.iter().any(|a| a.config_dir == outcome.config_dir) {
+        return Err(format!("\"{slug}\" is already a registered account"));
+    }
+
+    let existing_identity = identity::read_oauth_account(&outcome.config_dir);
+    let baseline_fetched_at = existing_identity
+        .as_ref()
+        .and_then(|i| i.profile_fetched_at.clone());
+
+    login_step::spawn_login_terminal(&outcome.config_dir).map_err(|e| e.to_string())?;
+
+    let account_id = uuid::Uuid::new_v4().to_string();
+    let chrome_profile_dir =
+        paths::account_chrome_profile_dir(&account_id).map_err(|e| e.to_string())?;
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    let result = AddAccountSession {
+        session_id: session_id.clone(),
+        config_dir: outcome.config_dir.clone(),
+        adopted_existing: !outcome.created_new,
+        existing_identity: existing_identity.clone(),
+    };
+    let session = WizardSession {
+        account_id,
+        slug,
+        config_dir: outcome.config_dir,
+        chrome_profile_dir,
+        created_new_dir: outcome.created_new,
+        pre_existing_identity: existing_identity,
+        baseline_fetched_at,
+        verified_identity: None,
+        session_key: None,
+    };
+    state.account_wizard_sessions.lock().unwrap().insert(session_id, session);
+    Ok(result)
+}
+
+/// Step 2: poll for a fresh `oauthAccount`. Call repeatedly until it stops
+/// returning `Pending` (or the user cancels / a frontend-owned timeout
+/// fires `add_account_cancel`).
+#[tauri::command]
+pub fn add_account_check_login(
+    session_id: String,
+    state: State<AppState>,
+) -> Result<LoginCheckOutcome, String> {
+    let mut sessions = state.account_wizard_sessions.lock().unwrap();
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| "wizard session not found or already finished".to_string())?;
+
+    let identity = match login_step::poll_login(&session.config_dir, session.baseline_fetched_at.as_deref()) {
+        login_step::LoginPollResult::Pending => return Ok(LoginCheckOutcome::Pending),
+        login_step::LoginPollResult::Ready(identity) => identity,
+    };
+
+    if let Some(pre) = &session.pre_existing_identity {
+        let mismatch = pre.organization_uuid != identity.organization_uuid
+            || !pre.email_address.eq_ignore_ascii_case(&identity.email_address);
+        if mismatch {
+            return Ok(LoginCheckOutcome::Mismatch {
+                existing_email: pre.email_address.clone(),
+                new_email: identity.email_address.clone(),
+            });
+        }
+    }
+
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let registered = accounts_store::load(&accounts_path);
+    if let Some(dup) = accounts_store::find_duplicate(
+        &registered,
+        &identity.organization_uuid,
+        &identity.email_address,
+        Some(session.config_dir.as_path()),
+    ) {
+        return Ok(LoginCheckOutcome::Duplicate { existing_label: dup.label.clone() });
+    }
+
+    session.verified_identity = Some(identity.clone());
+    Ok(LoginCheckOutcome::Ready { identity })
+}
+
+/// Optional step: grab the web `sessionKey` cookie via the existing CDP
+/// browser flow (own chrome profile dir per account) and cross-check its org
+/// list against the CLI identity's `organizationUuid`. Requires
+/// `add_account_check_login` to have returned `Ready` first.
+#[tauri::command]
+pub async fn add_account_capture_cookie(
+    session_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (chrome_profile_dir, org_uuid) = {
+        let sessions = state.account_wizard_sessions.lock().unwrap();
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| "wizard session not found or already finished".to_string())?;
+        let identity = session
+            .verified_identity
+            .clone()
+            .ok_or_else(|| "call add_account_check_login until Ready before capturing the cookie".to_string())?;
+        (session.chrome_profile_dir.clone(), identity.organization_uuid)
+    };
+
+    let session_key = crate::auth::login_flow::run_for_account(app, chrome_profile_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let orgs = crate::scraping::client::fetch_org_list("https://claude.ai", &session_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !orgs.iter().any(|o| o.uuid == org_uuid) {
+        return Err(
+            "the browser login belongs to a different account than the CLI login - log both into the same account"
+                .to_string(),
+        );
+    }
+
+    let mut sessions = state.account_wizard_sessions.lock().unwrap();
+    if let Some(session) = sessions.get_mut(&session_id) {
+        session.session_key = Some(session_key);
+    }
+    Ok(())
+}
+
+/// Cancel an in-progress wizard run. Deletes the profile dir ONLY if this
+/// wizard run created it fresh (never an adopted pre-existing dir).
+#[tauri::command]
+pub fn add_account_cancel(session_id: String, state: State<AppState>) -> Result<(), String> {
+    let session = state.account_wizard_sessions.lock().unwrap().remove(&session_id);
+    if let Some(session) = session {
+        if session.created_new_dir {
+            profile::delete_profile_dir(&session.config_dir).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Step 3: persist the account. Requires a `Ready` identity from
+/// `add_account_check_login`; the web cookie (if captured) is persisted
+/// alongside, keyed by the new account id.
+#[tauri::command]
+pub fn add_account_finalize(
+    session_id: String,
+    label: String,
+    colour: String,
+    icon: String,
+    state: State<AppState>,
+) -> Result<Account, String> {
+    let session = state
+        .account_wizard_sessions
+        .lock()
+        .unwrap()
+        .remove(&session_id)
+        .ok_or_else(|| "wizard session not found or already finished".to_string())?;
+    let identity = session
+        .verified_identity
+        .ok_or_else(|| "call add_account_check_login until Ready before finalizing".to_string())?;
+
+    let account = Account {
+        id: session.account_id,
+        label,
+        colour,
+        icon,
+        config_dir: session.config_dir,
+        chrome_profile_dir: session.chrome_profile_dir,
+        email: identity.email_address,
+        org_uuid: identity.organization_uuid,
+        subscription_tier: identity.organization_type.unwrap_or_default(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    if let Some(session_key) = session.session_key {
+        let session_file = paths::account_session_file(&account.id).map_err(|e| e.to_string())?;
+        crate::auth::session::save(&session_file, &session_key).map_err(|e| e.to_string())?;
+    }
+
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let mut accounts = accounts_store::load(&accounts_path);
+    accounts.push(account.clone());
+    accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
+
+    Ok(account)
+}
+
+#[tauri::command]
+pub fn list_accounts() -> Result<Vec<Account>, String> {
+    let path = paths::accounts_file().map_err(|e| e.to_string())?;
+    Ok(accounts_store::load(&path))
+}
+
+/// Full teardown: drop the record, delete its profile dir (junctions only -
+/// never recurses into `~/.claude` targets, see `accounts::profile`), its
+/// chrome profile dir, and its stored cookie. Clears `default_account_id` if
+/// it pointed at the removed account.
+#[tauri::command]
+pub fn remove_account(account_id: String, state: State<AppState>) -> Result<(), String> {
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let mut accounts = accounts_store::load(&accounts_path);
+    let idx = accounts
+        .iter()
+        .position(|a| a.id == account_id)
+        .ok_or_else(|| format!("no account with id {account_id}"))?;
+    let removed = accounts.remove(idx);
+    accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
+
+    profile::delete_profile_dir(&removed.config_dir).map_err(|e| e.to_string())?;
+    if removed.chrome_profile_dir.exists() {
+        let _ = std::fs::remove_dir_all(&removed.chrome_profile_dir);
+    }
+    let session_file = paths::account_session_file(&removed.id).map_err(|e| e.to_string())?;
+    let _ = crate::auth::session::clear(&session_file);
+
+    let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+    let mut settings = state.settings.lock().unwrap();
+    if settings.default_account_id.as_deref() == Some(account_id.as_str()) {
+        settings.default_account_id = None;
+        let _ = crate::settings::save(&settings_path, &settings);
+    }
+    Ok(())
+}
+
+/// Per-account "log out": delete the stored cookie only. Keeps the record and
+/// profile dir intact (CLI credentials untouched); chats simply stop
+/// spawning for it until the cookie is recaptured. Never touches app data.
+#[tauri::command]
+pub fn logout_account(account_id: String) -> Result<(), String> {
+    let session_file = paths::account_session_file(&account_id).map_err(|e| e.to_string())?;
+    crate::auth::session::clear(&session_file).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_default_account(
+    account_id: Option<String>,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    if let Some(id) = &account_id {
+        let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+        let accounts = accounts_store::load(&accounts_path);
+        if !accounts.iter().any(|a| &a.id == id) {
+            return Err(format!("no account with id {id}"));
+        }
+    }
+    let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
+    let snapshot = {
+        let mut settings = state.settings.lock().unwrap();
+        settings.default_account_id = account_id;
+        settings.clone()
+    };
+    crate::settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(())
+}
+
+/// The terminal's observed identity (`~/.claude.json`, HOME dir, not inside
+/// `~/.claude`). Read-only - the terminal is never an app account.
+#[tauri::command]
+pub fn get_terminal_identity() -> Option<OauthAccountInfo> {
+    let home = dirs::home_dir()?;
+    crate::accounts::terminal_identity(&home)
+}
