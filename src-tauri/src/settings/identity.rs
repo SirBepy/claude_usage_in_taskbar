@@ -95,6 +95,9 @@ pub(crate) fn dedupe_projects_by_path_key(projects: &mut Vec<crate::types::Proje
                 if keep.automation.is_none() && p.automation.is_some() {
                     keep.automation = p.automation.clone();
                 }
+                if keep.preferred_account_id.is_none() && p.preferred_account_id.is_some() {
+                    keep.preferred_account_id = p.preferred_account_id.clone();
+                }
             }
         }
     }
@@ -105,6 +108,58 @@ pub(crate) fn dedupe_projects_by_path_key(projects: &mut Vec<crate::types::Proje
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn sample_project(path: std::path::PathBuf, preferred_account_id: Option<&str>) -> crate::types::ProjectConfig {
+        crate::types::ProjectConfig {
+            id: "id-1".into(),
+            path,
+            name: "proj".into(),
+            avatar: crate::types::Avatar::None,
+            automation: None,
+            created_at: "2026-04-21T00:00:00Z".into(),
+            last_active_at: None,
+            whitelist: crate::types::CharacterWhitelist::default(),
+            preferred_account_id: preferred_account_id.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn dedupe_carries_forward_preferred_account_id_from_a_duplicate() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        // Two entries for the same path (e.g. survived a casing/separator
+        // split); only the second carries a binding.
+        let mut projects = vec![
+            sample_project(repo.clone(), None),
+            sample_project(repo.clone(), Some("acct-work")),
+        ];
+        dedupe_projects_by_path_key(&mut projects);
+
+        assert_eq!(projects.len(), 1, "duplicates must collapse to one entry");
+        assert_eq!(projects[0].preferred_account_id.as_deref(), Some("acct-work"));
+    }
+
+    #[test]
+    fn dedupe_keeps_the_survivors_own_binding_when_it_already_has_one() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo2");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let mut projects = vec![
+            sample_project(repo.clone(), Some("acct-personal")),
+            sample_project(repo.clone(), Some("acct-work")),
+        ];
+        dedupe_projects_by_path_key(&mut projects);
+
+        assert_eq!(projects.len(), 1);
+        // First-seen survivor keeps its own binding; a later duplicate never
+        // overwrites an existing one (mirrors the avatar/automation rule).
+        assert_eq!(projects[0].preferred_account_id.as_deref(), Some("acct-personal"));
+    }
 
     #[test]
     fn find_repo_root_returns_dir_with_git_subdir() {

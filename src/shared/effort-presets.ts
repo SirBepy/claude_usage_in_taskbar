@@ -19,6 +19,10 @@ export interface SessionConfig {
   characterId?: string | null;
   /** When set, the pending pane auto-sends this text as the first message on mount. */
   initialMessage?: string;
+  /** Registry account the modal resolved/picked (multi-account milestone 04).
+   * `null`/undefined means no accounts are registered yet or the resolver
+   * found none - the spawn falls back to daemon-side default resolution. */
+  accountId?: string | null;
 }
 
 export const MODELS = ["haiku", "sonnet", "opus", "fable"] as const;

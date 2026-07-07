@@ -123,6 +123,7 @@ export class HttpTransport implements Transport {
           effort: args.effort,
           remote: args.remote,
           placeholder_id: args.placeholderId ?? args.placeholder_id,
+          account_id: args.accountId ?? args.account_id ?? null,
         });
         const sid = spawnResult.session_id;
         const promptText = typeof args.prompt === "string" ? args.prompt.trim() : "";

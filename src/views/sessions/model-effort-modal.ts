@@ -1,8 +1,11 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { api } from "../../shared/api";
-import type { Character } from "../../shared/api";
+import type { Character, Account } from "../../shared/api";
 import { openChangeCharacterModal } from "../../shared/change-character-modal";
+import { accountChipHtml } from "../../shared/account-chip";
+import "../../shared/account-chip.css";
+import { resolveInitialAccountId, shouldOfferRemember } from "./account-picker-logic";
 import {
   EFFORTS,
   DEFAULT_PRESETS,
@@ -20,6 +23,13 @@ import { characterForSession } from "./session-characters";
 
 export type { SessionConfig };
 export type { EffortPreset };
+
+interface LegacyGlobals {
+  navigateTo?: (name: string) => Promise<void>;
+}
+function windowGlobals(): LegacyGlobals {
+  return window as unknown as LegacyGlobals;
+}
 
 // ── Sound debounce ────────────────────────────────────────────────────────────
 // Module-level so multiple rapid picks don't stack timers.
@@ -53,14 +63,31 @@ export async function openModelEffortModal(
     presets.find((p) => p.name === "Normal") ?? presets[1] ?? DEFAULT_PRESETS[1]!;
   const initial = readLastChoice(settings, projectPath) ?? { model: normalPreset.model, effort: normalPreset.effort };
 
-  // Resolve projectId for whitelist + live-taken dedup
+  // Resolve projectId for whitelist + live-taken dedup, and the project's
+  // bound account (if any) for the account picker below.
   let projectId: string | null = null;
+  let preferredAccountId: string | null = null;
   try {
     const projects = await api.listProjects();
-    projectId = projects.find((p) => String(p.path) === projectPath)?.id ?? null;
+    const proj = projects.find((p) => String(p.path) === projectPath) as
+      | { id: string; preferred_account_id?: string | null }
+      | undefined;
+    projectId = proj?.id ?? null;
+    preferredAccountId = proj?.preferred_account_id ?? null;
   } catch {
     // stay null
   }
+
+  // Account picker (multi-account milestone 04): resolve project binding ->
+  // default -> sole-account fallback -> null (ambiguous/empty registry).
+  let accounts: Account[] = [];
+  try {
+    accounts = await api.listAccounts();
+  } catch {
+    accounts = [];
+  }
+  const defaultAccountId = (settings["default_account_id"] as string | null | undefined) ?? null;
+  const resolvedAccountId = resolveInitialAccountId(preferredAccountId, defaultAccountId, accounts);
 
   return new Promise<SessionConfig | null>((resolve) => {
     const overlay = document.createElement("div");
@@ -77,6 +104,22 @@ export async function openModelEffortModal(
     // resolves; absent/true => model is selectable. A disabled model (e.g. Fable
     // 5 when Anthropic has it off) stays clickable but blocks "Start session".
     const availability: Record<string, boolean> = {};
+
+    // ── Account picker state (multi-account milestone 04) ──────────────────────
+    // null only when the registry is empty or ambiguous (see
+    // resolveInitialAccountId) - both cases start in "editing" so the user
+    // must make an explicit pick before Start session is enabled.
+    let accountId: string | null = resolvedAccountId;
+    let editingAccount = accounts.length > 0 && resolvedAccountId === null;
+    let remember = false;
+
+    /** True while there is no usable account to spawn under: an empty
+     * registry (the "add an account first" state), or an ambiguous one
+     * (multiple accounts, no binding/default) the user hasn't resolved yet
+     * by picking a chip. Gates "Start session" in both cases. */
+    function accountPickIncomplete(): boolean {
+      return accounts.length === 0 || accountId === null;
+    }
 
     // ── Character pane state ──────────────────────────────────────────────────
     let character: Character | null = null;
@@ -219,6 +262,61 @@ export async function openModelEffortModal(
     function effortIdx(): number { return Math.max(0, EFFORTS.indexOf(effort as typeof EFFORTS[number])); }
     function modelDisabled(): boolean { return availability[model] === false; }
 
+    /** "&middot; suggested/bound/your pick" suffix next to the "Account" label. */
+    function accountHintHtml(): string {
+      if (accountId === null) return "";
+      if (preferredAccountId !== null && accountId === preferredAccountId) {
+        return ` <span class="hint">&middot; bound to this project</span>`;
+      }
+      if (accountId === resolvedAccountId) {
+        return ` <span class="hint">&middot; suggested for this folder</span>`;
+      }
+      return ` <span class="hint">&middot; your pick</span>`;
+    }
+
+    function renderAccountFieldHtml(): string {
+      if (accounts.length === 0) {
+        return `
+          <div class="me-acc-field me-acc-empty">
+            <label class="me-label">Account</label>
+            <div class="me-acc-empty-msg">
+              <i class="ph ph-warning-circle"></i> No Claude accounts yet.
+              <button type="button" class="me-acc-add-link">Add one in Settings</button>
+            </div>
+          </div>
+        `;
+      }
+
+      if (editingAccount || accountId === null) {
+        return `
+          <div class="me-acc-field">
+            <label class="me-label">Account</label>
+            <div class="me-acc-edit">
+              ${accounts.map((a) => accountChipHtml(a, a.id === accountId, `data-acc-id="${escapeHtml(a.id)}"`)).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      const chosen = accounts.find((a) => a.id === accountId)!;
+      const showRemember = shouldOfferRemember(accountId, resolvedAccountId);
+      return `
+        <div class="me-acc-field">
+          <label class="me-label">Account${accountHintHtml()}</label>
+          <div class="me-acc-collapsed">
+            ${accountChipHtml(chosen, true)}
+            <button type="button" class="me-change"><i class="ph ph-pencil-simple"></i> change</button>
+          </div>
+          ${showRemember ? `
+            <label class="me-remember">
+              <input type="checkbox" class="me-remember-input"${remember ? " checked" : ""}>
+              Remember <b>${escapeHtml(chosen.label)}</b> for <span class="path">${escapeHtml(projectName)}</span>
+            </label>
+          ` : ""}
+        </div>
+      `;
+    }
+
     function renderBody() {
       const presetButtons = presets.map((p, i) => `
         <button type="button" class="preset-btn${i === activePresetIndex ? " active" : ""}" data-idx="${i}">
@@ -238,6 +336,7 @@ export async function openModelEffortModal(
           <div class="me-columns">
             <div class="me-left-col">
               <h3 class="me-title">New session in ${escapeHtml(projectName)}</h3>
+              ${renderAccountFieldHtml()}
               <div class="me-presets">${presetButtons}</div>
 
               <div class="me-field">
@@ -268,7 +367,7 @@ export async function openModelEffortModal(
 
               <div class="me-actions">
                 <button type="button" class="me-cancel">Cancel</button>
-                <button type="button" class="me-confirm"${modelDisabled() ? " disabled" : ""}>Start session</button>
+                <button type="button" class="me-confirm"${(modelDisabled() || accountPickIncomplete()) ? " disabled" : ""}>Start session</button>
               </div>
             </div>
             <div class="me-char-pane"></div>
@@ -316,10 +415,31 @@ export async function openModelEffortModal(
         remote = (e.target as HTMLInputElement).checked;
       });
 
+      // ── Account picker (multi-account milestone 04) ──────────────────────────
+      const openAccountEdit = () => { editingAccount = true; renderBody(); };
+      overlay.querySelector<HTMLButtonElement>(".me-change")?.addEventListener("click", openAccountEdit);
+      overlay.querySelector<HTMLElement>(".me-acc-collapsed .account-chip")?.addEventListener("click", openAccountEdit);
+      overlay.querySelectorAll<HTMLElement>(".me-acc-edit .account-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          const id = chip.dataset.accId;
+          if (!id) return;
+          accountId = id;
+          editingAccount = false;
+          remember = false; // reset every time the pick changes
+          renderBody();
+        });
+      });
+      overlay.querySelector<HTMLInputElement>(".me-remember-input")?.addEventListener("change", (e) => {
+        remember = (e.target as HTMLInputElement).checked;
+      });
+      overlay.querySelector<HTMLButtonElement>(".me-acc-add-link")?.addEventListener("click", () => {
+        close(null);
+        void windowGlobals().navigateTo?.("settings-accounts");
+      });
+
       overlay.querySelector<HTMLButtonElement>(".me-cancel")?.addEventListener("click", () => close(null));
       overlay.querySelector<HTMLButtonElement>(".me-confirm")?.addEventListener("click", () => {
-        if (modelDisabled()) return;
-        void persistChoice().then(() => close({ model, effort, autoAccept, remote, characterId: character?.id ?? null }));
+        void startWithCurrentConfig();
       });
     }
 
@@ -336,6 +456,31 @@ export async function openModelEffortModal(
       }
     }
 
+    /** Writes the "remember this account for the project" binding, if the
+     * checkbox is ticked. Registers the project first if it isn't tracked
+     * yet (mirrors the automation "Automate channel" CTA's ensureProject
+     * call). Best-effort: a failure here never blocks starting the chat. */
+    async function persistAccountBindingIfRequested(): Promise<void> {
+      if (!remember || accountId === null) return;
+      try {
+        let id = projectId;
+        if (!id) {
+          const ensured = await api.ensureProject(projectPath);
+          id = ensured.id;
+        }
+        await api.updateProject(id, { preferred_account_id: accountId });
+      } catch (e) {
+        console.error("[model-effort-modal] persisting account binding failed", e);
+      }
+    }
+
+    async function startWithCurrentConfig(): Promise<void> {
+      if (modelDisabled() || accountPickIncomplete()) return;
+      await persistChoice();
+      await persistAccountBindingIfRequested();
+      close({ model, effort, autoAccept, remote, characterId: character?.id ?? null, accountId });
+    }
+
     function close(result: SessionConfig | null) {
       if (_selectTimer !== null) { clearTimeout(_selectTimer); _selectTimer = null; }
       overlay.remove();
@@ -349,8 +494,7 @@ export async function openModelEffortModal(
         close(null);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        if (modelDisabled()) return;
-        void persistChoice().then(() => close({ model, effort, autoAccept, remote, characterId: character?.id ?? null }));
+        void startWithCurrentConfig();
       }
     }
 

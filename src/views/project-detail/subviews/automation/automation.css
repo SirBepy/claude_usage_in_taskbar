@@ -25,3 +25,23 @@
   font-size: 0.78rem;
   width: 160px;
 }
+
+/* Claude account row (multi-account milestone 04). */
+.acc-row-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.acc-row-control .inline-select {
+  background: var(--color-background, #16151f);
+  border: 1px solid var(--color-border, #2a2a3a);
+  color: var(--color-text, #e4e4ee);
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+}
+.acc-row-empty-hint {
+  color: var(--color-text-muted, #8a8a96);
+  font-size: 0.78rem;
+}

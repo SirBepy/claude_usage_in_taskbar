@@ -128,6 +128,82 @@
   font-size: 1rem;
 }
 
+/* ── Account picker (multi-account milestone 04) ─────────────────────────── */
+
+.model-effort-modal-card .me-acc-field {
+  margin-bottom: 15px;
+}
+
+.model-effort-modal-card .me-label .hint {
+  color: var(--color-primary, #6e8fff);
+  font-weight: 600;
+}
+
+.model-effort-modal-card .me-acc-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-effort-modal-card .me-change {
+  background: none;
+  border: 0;
+  color: var(--color-text-muted, #8a8a96);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.model-effort-modal-card .me-change:hover { color: var(--color-text, #e8e8ee); }
+
+.model-effort-modal-card .me-acc-edit {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.model-effort-modal-card .me-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: var(--color-text, #e8e8ee);
+}
+.model-effort-modal-card .me-remember input { accent-color: var(--color-primary, #6e8fff); }
+.model-effort-modal-card .me-remember .path {
+  color: var(--color-text-muted, #8a8a96);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.model-effort-modal-card .me-acc-empty-msg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #8a8a96);
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-primary, #6e8fff) 8%, transparent);
+  border: 1px dashed var(--color-border, #2a2a36);
+}
+
+.model-effort-modal-card .me-acc-add-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-primary, #6e8fff);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .model-effort-modal-card .me-presets {
   display: flex;
   gap: 8px;

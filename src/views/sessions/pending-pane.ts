@@ -210,6 +210,7 @@ export async function renderPendingPane(
               effort: config.effort,
               remote: config.remote !== false,
               placeholderId,
+              accountId: config.accountId ?? null,
             });
             if (state.mountId !== myMount) return;
             if (sessionId) {

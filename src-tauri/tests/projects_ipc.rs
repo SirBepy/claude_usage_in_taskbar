@@ -17,6 +17,7 @@ fn sample_project(id: &str, path: &str) -> ProjectConfig {
         automation: None,
         created_at: "2026-04-21T00:00:00Z".into(),
         last_active_at: None,
+        preferred_account_id: None,
     }
 }
 

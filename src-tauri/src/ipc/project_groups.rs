@@ -254,6 +254,7 @@ mod build_groups_tests {
             created_at: "2026-04-01T00:00:00Z".into(),
             last_active_at: Some("2026-04-28T00:00:00Z".into()),
             whitelist: crate::types::CharacterWhitelist::default(),
+            preferred_account_id: None,
         }];
         let groups = build_groups(&projects, &history, &[], 0);
         assert_eq!(groups.len(), 1);

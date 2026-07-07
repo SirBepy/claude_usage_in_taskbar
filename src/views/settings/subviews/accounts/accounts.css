@@ -20,6 +20,11 @@
   margin-bottom: 10px;
 }
 
+.acc-row-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
 .acc-row {
   display: flex;
   align-items: center;
@@ -30,16 +35,13 @@
   border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
 }
 
-.acc-icon {
+/* Size override for the shared icon badge (src/shared/account-chip.css) in
+ * the account row context - default badge is smaller (used in compact chips
+ * elsewhere). */
+.acc-row .account-icon-badge {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--acc, var(--color-primary, #6e8fff)) 20%, transparent);
-  color: var(--acc, var(--color-primary, #6e8fff));
   font-size: 15px;
-  flex: none;
 }
 
 .acc-info {
@@ -117,4 +119,48 @@
   font-size: 0.85rem;
   color: var(--color-text, #e8e8ee);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Reverse "projects using this account" panel (multi-account milestone 04). */
+.acc-btn-expand {
+  width: 26px;
+  height: 26px;
+}
+
+.acc-projects {
+  padding: 4px 10px 10px 46px;
+}
+
+.acc-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.acc-project-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.acc-project-item:hover { background: var(--color-surface-alt, #1a1d27); }
+.acc-project-item .f { color: var(--color-text-muted, #8a8a96); }
+.acc-project-item .p {
+  flex: 1;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-project-item .x { color: var(--color-text-muted, #8a8a96); cursor: pointer; }
+.acc-project-item .x:hover { color: var(--color-danger, #f87171); }
+
+.acc-project-add { margin-top: 4px; }
+.acc-project-add .btn-secondary {
+  width: 100%;
+  justify-content: center;
+  font-size: 0.78rem;
 }

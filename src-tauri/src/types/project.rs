@@ -58,6 +58,11 @@ pub struct ProjectConfig {
     pub last_active_at: Option<String>,
     #[serde(default)]
     pub whitelist: CharacterWhitelist,
+    /// Registry account new chats in this project spawn under. `None` falls
+    /// back to `Settings.default_account_id` (multi-account milestone 04) -
+    /// see `docs/multi-account/04-project-binding.md`.
+    #[serde(default)]
+    pub preferred_account_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, ts_rs::TS)]
@@ -156,6 +161,7 @@ mod tests {
             created_at: "2026-04-21T00:00:00Z".into(),
             last_active_at: None,
             whitelist: CharacterWhitelist::default(),
+            preferred_account_id: None,
         };
         let raw = serde_json::to_string(&p).unwrap();
         let back: ProjectConfig = serde_json::from_str(&raw).unwrap();
