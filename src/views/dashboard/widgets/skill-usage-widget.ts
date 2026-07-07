@@ -1,9 +1,15 @@
+// Global dashboard widget: skill usage (last 7 days), pie + sortable table.
+// Moved verbatim from the deleted Statistics view (multi-account milestone
+// 05) - this widget was unconditionally visible there, so it rides onto the
+// dashboard enabled by default (see dashboard-widget-logic.ts). Global scope:
+// ignores the selected account entirely.
+
 import { html, render, type TemplateResult } from "lit-html";
-import { api } from "../../shared/api";
-import type { SkillUsageEntry, SkillUsageWeek } from "../../types/ipc.generated";
-import { showView } from "../../shared/navigation";
-import { tokensAllIn, formatTokens } from "../../shared/tokens";
-import { buildPieSvg } from "../../shared/pie";
+import { api } from "../../../shared/api";
+import type { SkillUsageEntry, SkillUsageWeek } from "../../../types/ipc.generated";
+import { showView } from "../../../shared/navigation";
+import { tokensAllIn, formatTokens } from "../../../shared/tokens";
+import { buildPieSvg } from "../../../shared/pie";
 import "./skill-usage-widget.css";
 
 const PIE_COLORS = ["#5b8def", "#8c5bef", "#ef5b8c", "#efbf5b", "#5befbf", "#888"];
@@ -34,7 +40,6 @@ export function renderSkillUsageWidget(container: HTMLElement): () => void {
     if (!state || state.entries.length === 0) {
       render(html`
         <div class="skill-usage-widget">
-          <h3>Skills (last 7 days)</h3>
           <div class="empty">No skill usage tracked yet. The Stop hook installs automatically on the next Claude Code session.</div>
         </div>
       `, container);
@@ -63,7 +68,6 @@ export function renderSkillUsageWidget(container: HTMLElement): () => void {
 
     render(html`
       <div class="skill-usage-widget">
-        <h3>Skills (last 7 days)</h3>
         <div class="skill-usage-body">
           ${renderPie(pieRows)}
           ${renderTable(sorted, state.total_sessions)}

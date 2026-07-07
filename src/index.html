@@ -48,9 +48,6 @@
   <div class="sidemenu-nav-item" data-view="sessions" id="sm-chats">
     <i class="ph ph-chats-circle"></i><span>Chats</span>
   </div>
-  <div class="sidemenu-nav-item" data-view="statistics" id="sm-statistics">
-    <i class="ph ph-chart-line"></i><span>Statistics</span>
-  </div>
   <div class="sidemenu-nav-item" data-view="skills" id="sm-skills">
     <i class="ph ph-lightning"></i><span>Skills</span>
   </div>
@@ -69,10 +66,9 @@
 </aside>
 
     <!-- Dashboard (Home) view migrated to src/views/dashboard; rendered by
-         router into the #app container below. -->
-
-    <!-- Statistics view migrated to src/views/statistics; rendered by router
-         into the #app container below. -->
+         router into the #app container below. Statistics was absorbed into
+         the dashboard's widget registry (multi-account milestone 05) and
+         deleted - see src/views/dashboard/widget-registry.ts. -->
 
     <!-- Settings + Visuals + Themes + Notifications migrated to
          src/views/settings/; rendered by router into the #app container. -->

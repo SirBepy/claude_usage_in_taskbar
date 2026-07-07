@@ -34,7 +34,7 @@ function formatTime(ts: string): string {
 export async function renderSkillDetailView(root: HTMLElement): Promise<() => void> {
   const skill = targetSkill();
   if (!skill) {
-    render(html`<div class="skill-detail empty">No skill selected. <a href="#" @click=${(e: Event) => { e.preventDefault(); showView("statistics"); }}>Back to Statistics</a></div>`, root);
+    render(html`<div class="skill-detail empty">No skill selected. <a href="#" @click=${(e: Event) => { e.preventDefault(); showView("dashboard"); }}>Back to Dashboard</a></div>`, root);
     return () => { /* noop */ };
   }
 
@@ -71,7 +71,7 @@ function buildView(d: SkillDetail): TemplateResult {
       </div>
       <div class="view-body">
         <div class="skill-detail-back">
-          <a href="#" @click=${(e: Event) => { e.preventDefault(); showView("statistics"); }}>&larr; Statistics</a>
+          <a href="#" @click=${(e: Event) => { e.preventDefault(); showView("dashboard"); }}>&larr; Dashboard</a>
         </div>
         <div class="counters">
           ${counter("Total", d.invocations.total)}

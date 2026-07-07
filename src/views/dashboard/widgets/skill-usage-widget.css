@@ -1,4 +1,4 @@
-.skill-usage-widget { margin-top: 32px; }
+.skill-usage-widget { margin-top: 0; }
 .skill-usage-widget h3 { margin: 0 0 12px 0; font-size: 14px; opacity: 0.85; }
 .skill-usage-widget .empty {
   opacity: 0.6;

@@ -1,24 +1,39 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
 import "./dashboard.css";
+import "../../shared/account-chip.css";
 import { fmtPct, fmtResetDisplay, valueColor } from "../../shared/formatters";
 import type { ResetDisplay } from "../../shared/formatters";
-import { getSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
+import { getSettings, setSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
 import { api } from "../../shared/api";
-import type { UsageRecord } from "../../shared/api";
+import type { UsageRecord, Account } from "../../shared/api";
+import { escapeHtml } from "../../shared/escape-html";
 import {
-  buildPinnedCardsHTML,
-  setupPaginationButtons,
-  setupLegendToggles,
-  applyLineVisibility,
-  wireBarsMore,
-  wirePinButtons,
-  wireProjectListClicks,
-} from "../statistics/statistics";
+  buildAccountCardsHTML,
+  wireAccountCardClicks,
+} from "./account-selector";
+import { reconcileSelectedAccountId } from "./account-selector-logic";
+import {
+  getWidget,
+  resolveDashboardWidgets,
+  setWidgetEnabled,
+  moveWidget,
+  widgetsNeedingAccountRerender,
+} from "./widget-registry";
+import type { DashboardWidgetEntry, WidgetContext } from "./widget-registry";
 
 let refreshBusy = false;
 let lastAutoPollMs = 0;
 let aiPollTimer: number | null = null;
+
+// ── Module state (per-mount; reset on each renderDashboard call) ───────────
+let selectedAccountId: string | null = null;
+let accountsCache: Account[] = [];
+let usageMapCache: Record<string, UsageRecord> = {};
+let dashboardWidgets: DashboardWidgetEntry[] = [];
+let editMode = false;
+let addWidgetMenuOpen = false;
+const widgetTeardowns = new Map<string, () => void>();
 
 async function tickAiPoll(): Promise<void> {
   try {
@@ -66,29 +81,31 @@ async function maybeAutoPoll(reason: "crossover" | "focus"): Promise<void> {
   }
 }
 
+let mountedContainer: HTMLElement | null = null;
+
 export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   render(template(), root);
   const content = root.querySelector<HTMLElement>("#stats-content");
-  if (content) drawInto(content);
+  mountedContainer = content;
 
   if (!getHistory()) {
     try {
       setUsageHistory(await api.getUsageHistory());
-      if (content) drawInto(content);
     } catch (e) {
       console.error("[dashboard] initial history fetch failed", e);
     }
   }
+  if (content) await fullRefresh(content);
 
   const unlisten = api.onHistoryUpdated((h) => {
     setUsageHistory(h);
     const el = root.querySelector<HTMLElement>("#stats-content");
-    if (el) drawInto(el);
+    if (el) void fullRefresh(el);
   });
 
   const onRefreshEvent = () => {
     const el = root.querySelector<HTMLElement>("#stats-content");
-    if (el) drawInto(el);
+    if (el) void fullRefresh(el);
   };
   window.addEventListener("refresh-dashboard-home", onRefreshEvent);
 
@@ -114,7 +131,17 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
     document.removeEventListener("visibilitychange", onVisibility);
     window.clearInterval(crossoverTimer);
     if (aiPollTimer !== null) { window.clearInterval(aiPollTimer); aiPollTimer = null; }
+    teardownAllWidgets();
+    mountedContainer = null;
   };
+}
+
+/** Re-renders the mounted dashboard content, if any - the replacement for the
+ * deleted statistics.ts's `refreshDashboard()` global (boot.ts calls this on
+ * every history/token-history update). No-op when the dashboard isn't the
+ * currently-mounted view. */
+export function refreshDashboardView(): void {
+  if (mountedContainer) void fullRefresh(mountedContainer);
 }
 
 function template() {
@@ -130,6 +157,14 @@ function template() {
           <i class="ph ph-list"></i>
         </button>
         <h2>Claude Conductor</h2>
+        <button
+          class="icon-btn"
+          id="editDashboardBtn"
+          title="Edit dashboard"
+          @click=${onToggleEditMode}
+        >
+          <i class="ph ph-sliders-horizontal"></i>
+        </button>
         <button
           class="icon-btn"
           id="refreshNowBtn"
@@ -148,6 +183,12 @@ function template() {
   `;
 }
 
+function onToggleEditMode(): void {
+  editMode = !editMode;
+  addWidgetMenuOpen = false;
+  if (mountedContainer) renderShell(mountedContainer);
+}
+
 async function onRefreshClick(e: Event) {
   if (refreshBusy) return;
   refreshBusy = true;
@@ -163,13 +204,23 @@ async function onRefreshClick(e: Event) {
   }
 }
 
-function drawInto(container: HTMLElement): void {
-  const history = getHistory();
-  if (!history || history.length === 0) {
-    container.innerHTML = `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
-    return;
-  }
+// ── Settings persistence for the widget layout ──────────────────────────────
 
+function persistDashboardWidgets(): void {
+  const s = getSettings();
+  s.dashboardWidgets = dashboardWidgets;
+  setSettings(s);
+  void api.saveSettings(s);
+}
+
+// ── Legacy (pre-onboarding, empty registry) two-card fallback ──────────────
+// Unchanged from the pre-milestone dashboard - the account-selector cards
+// replace this once at least one account is registered.
+
+function legacyStatCardsHtml(history: UsageRecord[]): string {
+  if (!history.length) {
+    return `<div class="no-data">No history recorded yet.<br><small style="font-size:0.8rem">Data appears after the first successful refresh.</small></div>`;
+  }
   const latest = history[history.length - 1]!;
   const settings = getSettings();
   const sessionReset = fmtResetDisplay(latest.session_resets_at);
@@ -221,7 +272,7 @@ function drawInto(container: HTMLElement): void {
     ),
   );
 
-  container.innerHTML = `
+  return `
     <div class="stat-cards">
       <div class="stat-card home-card">
         <div class="stat-label label">Session (5h)</div>
@@ -256,13 +307,204 @@ function drawInto(container: HTMLElement): void {
         ${renderReset(weeklyReset, WEEKLY_WINDOW_MS)}
       </div>
     </div>
-    ${buildPinnedCardsHTML(history)}
+  `;
+}
+
+// ── Widget shell + registry wiring ──────────────────────────────────────────
+
+function currentCtx(): WidgetContext {
+  return { accountId: selectedAccountId, hasAccounts: accountsCache.length > 0 };
+}
+
+function selectedAccountLabel(): string {
+  return accountsCache.find((a) => a.id === selectedAccountId)?.label ?? "";
+}
+
+function widgetShellHtml(entry: DashboardWidgetEntry, index: number, total: number): string {
+  const widget = getWidget(entry.id);
+  if (!widget) return "";
+  const tag = widget.scope === "global"
+    ? `<span class="dash-tag dash-tag-global">Global</span>`
+    : `<span class="dash-tag dash-tag-scoped" style="--acc:${escapeHtml(accountsCache.find((a) => a.id === selectedAccountId)?.colour ?? "")}">${escapeHtml(selectedAccountLabel())}</span>`;
+  const editButtons = editMode
+    ? `<button class="icon-btn dash-widget-up" data-widget-id="${escapeHtml(entry.id)}" title="Move up" ${index === 0 ? "disabled" : ""}><i class="ph ph-caret-up"></i></button>
+       <button class="icon-btn dash-widget-down" data-widget-id="${escapeHtml(entry.id)}" title="Move down" ${index === total - 1 ? "disabled" : ""}><i class="ph ph-caret-down"></i></button>
+       <button class="icon-btn dash-widget-remove" data-widget-id="${escapeHtml(entry.id)}" title="Remove"><i class="ph ph-x"></i></button>`
+    : "";
+  return `<div class="dash-widget" data-widget-id="${escapeHtml(entry.id)}">
+    <div class="dash-widget-header">
+      <span class="dash-widget-title">${escapeHtml(widget.title)}</span>
+      ${tag}
+      <span class="grow"></span>
+      ${editButtons}
+    </div>
+    <div class="dash-widget-body"></div>
+  </div>`;
+}
+
+function addWidgetAffordanceHtml(): string {
+  const disabled = dashboardWidgets.filter((e) => !e.enabled);
+  const disabledWithMeta = disabled
+    .map((e) => ({ id: e.id, widget: getWidget(e.id) }))
+    .filter((e): e is { id: string; widget: NonNullable<ReturnType<typeof getWidget>> } => !!e.widget);
+  if (disabledWithMeta.length === 0) return "";
+  const menu = addWidgetMenuOpen
+    ? `<div class="dash-add-widget-menu">${disabledWithMeta
+        .map((e) => `<button data-add-widget-id="${escapeHtml(e.id)}">${escapeHtml(e.widget.title)}</button>`)
+        .join("")}</div>`
+    : "";
+  return `<div class="dash-add-widget"><button id="dashAddWidgetToggle"><i class="ph ph-plus"></i> add widget</button>${menu}</div>`;
+}
+
+/** Renders account cards + widget shells (headers + empty bodies) from
+ * cached data - synchronous, no IPC. Callers mount widget content
+ * separately via `mountWidgets`/`remountWidget`. */
+function renderShell(container: HTMLElement): void {
+  const history = getHistory() || [];
+  const cardsHtml = accountsCache.length > 0
+    ? buildAccountCardsHTML(accountsCache, usageMapCache, selectedAccountId, getSettings())
+    : legacyStatCardsHtml(history);
+
+  const enabled = dashboardWidgets.filter((e) => e.enabled && getWidget(e.id));
+  const widgetsHtml = enabled.map((e, i) => widgetShellHtml(e, i, enabled.length)).join("");
+
+  container.innerHTML = `
+    ${cardsHtml}
+    <div class="dash-widgets">${widgetsHtml}</div>
+    ${addWidgetAffordanceHtml()}
   `;
 
-  setupPaginationButtons();
-  setupLegendToggles();
-  applyLineVisibility();
-  wireBarsMore(container);
-  wirePinButtons(container, { onHomeUnpin: true });
-  wireProjectListClicks(container, () => drawInto(container));
+  if (accountsCache.length > 0) {
+    wireAccountCardClicks(container, (id) => onSelectAccount(container, id));
+  }
+  wireEditControls(container);
+  wireAddWidgetControls(container);
+  mountWidgets(container);
+}
+
+function widgetBodyEl(container: HTMLElement, id: string): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`.dash-widget[data-widget-id="${CSS.escape(id)}"] .dash-widget-body`);
+}
+
+function mountWidgets(container: HTMLElement): void {
+  for (const entry of dashboardWidgets) {
+    if (!entry.enabled) continue;
+    const widget = getWidget(entry.id);
+    if (!widget) continue;
+    const body = widgetBodyEl(container, entry.id);
+    if (!body) continue;
+    const teardown = widget.render(body, currentCtx());
+    if (typeof teardown === "function") widgetTeardowns.set(entry.id, teardown);
+  }
+}
+
+function remountWidget(container: HTMLElement, id: string): void {
+  const widget = getWidget(id);
+  const body = widgetBodyEl(container, id);
+  if (!widget || !body) return;
+  widgetTeardowns.get(id)?.();
+  widgetTeardowns.delete(id);
+  body.innerHTML = "";
+  const teardown = widget.render(body, currentCtx());
+  if (typeof teardown === "function") widgetTeardowns.set(id, teardown);
+}
+
+function teardownAllWidgets(): void {
+  for (const teardown of widgetTeardowns.values()) {
+    try { teardown(); } catch { /* ignore */ }
+  }
+  widgetTeardowns.clear();
+}
+
+function onSelectAccount(container: HTMLElement, newId: string): void {
+  if (newId === selectedAccountId) return;
+  const prev = selectedAccountId;
+  selectedAccountId = newId;
+  container.querySelectorAll<HTMLElement>(".dash-acard").forEach((card) => {
+    card.classList.toggle("active", card.dataset["accId"] === newId);
+  });
+  // The scoped tag on each account-scoped widget shows the account label -
+  // refresh those in place along with the widget content itself.
+  container.querySelectorAll<HTMLElement>(".dash-tag-scoped").forEach((tag) => {
+    tag.textContent = selectedAccountLabel();
+    const colour = accountsCache.find((a) => a.id === newId)?.colour;
+    if (colour) tag.style.setProperty("--acc", colour);
+  });
+  for (const id of widgetsNeedingAccountRerender(dashboardWidgets, prev, newId)) {
+    remountWidget(container, id);
+  }
+}
+
+function wireEditControls(container: HTMLElement): void {
+  container.querySelectorAll<HTMLButtonElement>(".dash-widget-up").forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset["widgetId"];
+      if (!id) return;
+      dashboardWidgets = moveWidget(dashboardWidgets, id, -1);
+      persistDashboardWidgets();
+      renderShell(container);
+    };
+  });
+  container.querySelectorAll<HTMLButtonElement>(".dash-widget-down").forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset["widgetId"];
+      if (!id) return;
+      dashboardWidgets = moveWidget(dashboardWidgets, id, 1);
+      persistDashboardWidgets();
+      renderShell(container);
+    };
+  });
+  container.querySelectorAll<HTMLButtonElement>(".dash-widget-remove").forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset["widgetId"];
+      if (!id) return;
+      dashboardWidgets = setWidgetEnabled(dashboardWidgets, id, false);
+      persistDashboardWidgets();
+      renderShell(container);
+    };
+  });
+}
+
+function wireAddWidgetControls(container: HTMLElement): void {
+  const toggle = container.querySelector<HTMLButtonElement>("#dashAddWidgetToggle");
+  if (toggle) {
+    toggle.onclick = () => {
+      addWidgetMenuOpen = !addWidgetMenuOpen;
+      renderShell(container);
+    };
+  }
+  container.querySelectorAll<HTMLButtonElement>("[data-add-widget-id]").forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset["addWidgetId"];
+      if (!id) return;
+      dashboardWidgets = setWidgetEnabled(dashboardWidgets, id, true);
+      addWidgetMenuOpen = false;
+      persistDashboardWidgets();
+      renderShell(container);
+    };
+  });
+}
+
+// ── Full refresh: re-fetch accounts/usage/history, then render ─────────────
+
+async function fullRefresh(container: HTMLElement): Promise<void> {
+  teardownAllWidgets();
+
+  const settings = getSettings();
+  const hadPersistedLayout = Array.isArray(settings.dashboardWidgets);
+  dashboardWidgets = resolveDashboardWidgets(settings);
+  if (!hadPersistedLayout) persistDashboardWidgets();
+
+  try {
+    const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
+    accountsCache = accounts;
+    usageMapCache = usageMap;
+  } catch (e) {
+    console.error("[dashboard] account/usage fetch failed", e);
+  }
+
+  const defaultAccountId = (getSettings()["default_account_id"] as string | null | undefined) ?? null;
+  selectedAccountId = reconcileSelectedAccountId(selectedAccountId, defaultAccountId, accountsCache);
+
+  renderShell(container);
 }

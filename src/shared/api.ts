@@ -17,9 +17,10 @@ import type {
   AddAccountSession,
   LoginCheckOutcome,
   OauthAccountInfo,
+  AuthState,
 } from "../types/ipc.generated";
 
-export type { Account, AddAccountSession, LoginCheckOutcome, OauthAccountInfo };
+export type { Account, AddAccountSession, LoginCheckOutcome, OauthAccountInfo, AuthState };
 
 // ── Backend snapshot shape ────────────────────────────────────────────────
 
@@ -75,7 +76,18 @@ function toUsageRecord(snap: UsageSnapshot | null | undefined): UsageRecord | nu
 }
 
 async function fetchHistoryLegacy(): Promise<UsageRecord[]> {
-  const raw = await invoke<UsageSnapshot[]>("get_history", { limit: null });
+  const raw = await invoke<UsageSnapshot[]>("get_history", { limit: null, accountId: null });
+  return (raw || []).map(toUsageRecord).filter((r): r is UsageRecord => r !== null);
+}
+
+/** Per-account history fetch (multi-account milestone 05). `accountId: null`
+ * (or omitted) mirrors the legacy aggregate query - every account's rows,
+ * used before any account is registered. */
+async function fetchHistoryForAccount(opts: { limit?: number; accountId?: string | null }): Promise<UsageRecord[]> {
+  const raw = await invoke<UsageSnapshot[]>("get_history", {
+    limit: opts.limit ?? null,
+    accountId: opts.accountId ?? null,
+  });
   return (raw || []).map(toUsageRecord).filter((r): r is UsageRecord => r !== null);
 }
 
@@ -182,7 +194,26 @@ export interface RemoteDevice {
 export const api = {
   // --- Usage + history ---
   getUsageHistory: (): Promise<UsageRecord[]> => fetchHistoryLegacy(),
+  getHistory: (opts: { limit?: number; accountId?: string | null } = {}): Promise<UsageRecord[]> =>
+    fetchHistoryForAccount(opts),
   pollNow: (): Promise<unknown> => invoke("poll_now"),
+
+  // --- Per-account usage (multi-account milestone 03/05) ---
+  getUsageMap: async (): Promise<Record<string, UsageRecord>> => {
+    try {
+      const raw = (await invoke<Record<string, UsageSnapshot>>("get_usage_map")) || {};
+      const out: Record<string, UsageRecord> = {};
+      for (const [accountId, snap] of Object.entries(raw)) {
+        const rec = toUsageRecord(snap);
+        if (rec) out[accountId] = rec;
+      }
+      return out;
+    } catch (e) { console.error("get_usage_map failed", e); return {}; }
+  },
+  getAuthStateMap: async (): Promise<Record<string, AuthState>> => {
+    try { return (await invoke<Record<string, AuthState>>("get_auth_state_map")) || {}; }
+    catch (e) { console.error("get_auth_state_map failed", e); return {}; }
+  },
 
   // --- Settings ---
   getSettings: (): Promise<SettingsShape | null> => invoke("get_settings"),

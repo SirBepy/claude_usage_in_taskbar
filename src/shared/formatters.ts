@@ -147,6 +147,24 @@ export interface ValueColorSettings extends PaceColorSettings {
   colorThresholds?: ColorThreshold[];
 }
 
+/**
+ * Safe-pace percent for a usage window: how far through the window "now" is,
+ * i.e. the even-burn line a usage percent is compared against. `null` when
+ * there's no reset timestamp to anchor the window (matches the pre-existing
+ * inline calc this replaces in dashboard.ts, now shared with the account
+ * cards - milestone 05).
+ */
+export function computeSafePacePct(
+  resetIso: string | null | undefined,
+  windowMs: number,
+  now: number = Date.now(),
+): number | null {
+  if (!resetIso) return null;
+  const resetMs = new Date(resetIso).getTime();
+  if (isNaN(resetMs)) return null;
+  return Math.max(0, Math.min(100, Math.round(((windowMs - (resetMs - now)) / windowMs) * 100)));
+}
+
 export function valueColor(
   pct: number,
   safePace: number | null | undefined,

@@ -117,7 +117,15 @@ export function saveSettings(): void {
       if (typeof p === "string" && (p === "never" || p === "onStartup" || p === "immediate")) return p;
       return "immediate";
     })(),
-    pinnedCards: Array.isArray(prev.pinnedCards) ? prev.pinnedCards : [],
+    // Dashboard widget layout (multi-account milestone 05, replaces the old
+    // pinnedCards enum) - the dashboard view owns writing/migrating it. Only
+    // carry it through if it already exists: unlike pinnedCards, "absent" is
+    // a meaningful state here (resolveDashboardWidgets' one-time pinnedCards
+    // migration trigger) - defaulting a never-visited dashboard to `[]` would
+    // permanently skip that migration. `undefined` is dropped by JSON
+    // serialization, so this omits the key entirely when there's nothing to
+    // preserve yet.
+    dashboardWidgets: Array.isArray(prev.dashboardWidgets) ? prev.dashboardWidgets : undefined,
     colorApplyTo: {
       icon: chkOr("colorApplyIcon", prevColorApply.icon !== false),
       number: chkOr("colorApplyNumber", prevColorApply.number !== false),

@@ -28,6 +28,15 @@ export interface SettingsShape {
   paceBand?: number;
   paceColors?: { under?: string; nearSafe?: string; nearOver?: string; over?: string };
   audioOutputDevice?: string | null;
+  /** Dashboard widget layout (multi-account milestone 05) - ordered
+   * `{id, enabled}` entries. Untyped passthrough (see dashboard-widget-logic.ts
+   * for the shape); absence is the trigger for the one-time `pinnedCards`
+   * migration, so don't default this to `[]` when reading raw settings. */
+  dashboardWidgets?: unknown;
+  /** Legacy closed-enum home-card pin list, replaced by `dashboardWidgets`.
+   * Kept typed here only so `resolveDashboardWidgets` can read it off a
+   * `SettingsShape` for the one-time migration. */
+  pinnedCards?: unknown;
   [k: string]: unknown;
 }
 

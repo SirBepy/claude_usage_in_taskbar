@@ -11,7 +11,6 @@ import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
 import { renderSessionsView, renderDetachedSession, queueSessionSelect, queueNewChat } from "./views/sessions/sessions";
 import { renderHistoryView, queueHistorySelect } from "./views/history/history";
-import { renderStatisticsView } from "./views/statistics/statistics";
 import { renderProjectsView } from "./views/projects/projects";
 import { renderCharactersView } from "./views/characters/characters";
 import { renderCharacterDetailView } from "./views/characters/character-detail";
@@ -98,7 +97,6 @@ if (import.meta.env.DEV) {
 registerView("dashboard", renderDashboard);
 registerView("sessions", renderSessionsView);
 registerView("history", renderHistoryView);
-registerView("statistics", renderStatisticsView);
 registerView("projects", renderProjectsView);
 registerView("characters", renderCharactersView);
 registerView("character-detail", renderCharacterDetailView);

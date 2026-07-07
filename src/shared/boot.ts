@@ -3,7 +3,7 @@
  *
  * Owns:
  *  - initial data fetch (usage history, token history with live merge, settings)
- *  - refreshDashboard + dead-path check once all three land
+ *  - refreshDashboardView + dead-path check once all three land
  *  - live subscriptions (onHistoryUpdated, onTokenHistoryUpdated, onInstancesChanged)
  *  - hook-registration consent modal wiring
  *  - legacy obsidian_claude_remote import banner wiring
@@ -25,7 +25,7 @@ import { doMerge } from "./merges";
 import { showToast } from "./toast";
 import { api } from "./api";
 import { curateLatestPerFamily, setApiModels } from "./effort-presets";
-import { refreshDashboard } from "../views/statistics/statistics";
+import { refreshDashboardView } from "../views/dashboard/dashboard";
 import { renderProjectsList } from "../views/projects/projects";
 import { renderProjectDetailContent } from "../views/project-detail/project-detail";
 import * as shortcuts from "./shortcuts";
@@ -103,7 +103,7 @@ async function runDeadPathCheck(): Promise<void> {
   }
   if (anyMerged) {
     void renderProjectsList();
-    refreshDashboard();
+    refreshDashboardView();
   } else if (deadPaths.size) {
     void renderProjectsList();
   }
@@ -217,7 +217,6 @@ function coerceSettings(s: SettingsShape): SettingsShape {
     dashboard: colorApplyTo.dashboard !== false,
     tooltip: colorApplyTo.tooltip !== false,
   };
-  if (!Array.isArray(s.pinnedCards)) s.pinnedCards = [];
   return s;
 }
 
@@ -239,7 +238,7 @@ export function initBoot(): void {
       }
     },
     onReady: () => {
-      refreshDashboard();
+      refreshDashboardView();
       void runDeadPathCheck();
     },
   });
@@ -247,7 +246,7 @@ export function initBoot(): void {
   // Live subscriptions.
   api.onHistoryUpdated((h) => {
     setUsageHistory(h);
-    refreshDashboard();
+    refreshDashboardView();
     if (activeViewName() === "projects") void renderProjectsList();
   });
   api.onTokenHistoryUpdated(async (th) => {
@@ -259,7 +258,7 @@ export function initBoot(): void {
     }
     const merged = active.length ? [...(th || []), ...active] : th || [];
     setTokenHistory(merged);
-    refreshDashboard();
+    refreshDashboardView();
     const view = activeViewName();
     if (view === "projects") void renderProjectsList();
     if (view === "project-detail") renderProjectDetailContent();

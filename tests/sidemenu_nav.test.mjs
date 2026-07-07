@@ -21,7 +21,10 @@ describe("sidemenu markup", () => {
   });
 
   it("has all four top-level nav items with data-view attributes", () => {
-    for (const view of ["dashboard", "statistics", "projects", "settings"]) {
+    // Statistics was absorbed into the dashboard's widget registry and its
+    // nav entry deleted (multi-account milestone 05) - see
+    // src/views/dashboard/widget-registry.ts.
+    for (const view of ["dashboard", "skills", "projects", "settings"]) {
       expect(html).toMatch(new RegExp(`data-view="${view}"`));
     }
   });
