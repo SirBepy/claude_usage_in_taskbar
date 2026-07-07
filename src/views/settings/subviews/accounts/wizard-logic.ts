@@ -3,7 +3,7 @@
 // (see tests/add-account-wizard-logic.test.mjs). The modal itself
 // (add-account-wizard.ts) is the only caller.
 
-import type { LoginCheckOutcome, OauthAccountInfo } from "../../../../types/ipc.generated";
+import type { Account, AccountIdentity, LoginCheckOutcome, OauthAccountInfo } from "../../../../types/ipc.generated";
 
 // Bare Phosphor icon names (no "ph-" prefix) - the wizard renders
 // `ph ph-${icon}`. Kept local to this feature; nothing else in the app picks
@@ -147,4 +147,60 @@ export function describeLoginOutcome(outcome: LoginCheckOutcome): LoginOutcomeVi
         message: `Already added as "${outcome.existing_label}".`,
       };
   }
+}
+
+// ── Settings > Accounts identity surface (multi-account milestone 07) ──────
+// `get_account_identity` reads live disk state (profile dir oauthAccount,
+// credentials.json expiry, whether a cookie is saved) and a drift comparison
+// against the registry record. These helpers turn that + the registry
+// `Account` into a view-ready shape, kept pure/DOM-free like the rest of this
+// file so the mapping is unit-testable (see tests/wizard-logic.test.mjs).
+
+/** `tokenExpiresAt` arrives typed `bigint` by ts-rs (Rust `i64`) but Tauri's
+ * IPC transport actually carries a plain JSON number - `Number(..)` is a
+ * no-op either way (matches the `Number(bigint)` convention already used for
+ * `DatasetInfo` fields in settings.ts). */
+export function formatTokenExpiry(
+  expiresAt: bigint | number | null | undefined,
+  now: number = Date.now(),
+): string {
+  if (expiresAt == null) return "Token expiry unknown";
+  const diffMs = Number(expiresAt) - now;
+  if (diffMs <= 0) return "Token expired";
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days >= 1) return `Token expires in ${days}d`;
+  const hours = Math.floor(diffMs / 3_600_000);
+  if (hours >= 1) return `Token expires in ${hours}h`;
+  const minutes = Math.max(1, Math.floor(diffMs / 60_000));
+  return `Token expires in ${minutes}m`;
+}
+
+export interface IdentitySurfaceView {
+  /** Live `oauthAccount.emailAddress` from the profile dir, or `null` when
+   * the account has never completed a `/login` there. */
+  loggedInAsEmail: string | null;
+  tierLabel: string;
+  tokenExpiryLabel: string;
+  hasCookie: boolean;
+  /** Non-null (drift or "not logged in yet") = show the red warning row. */
+  warningMessage: string | null;
+}
+
+/** Maps a registry `Account` + its live `AccountIdentity` (or `null` before
+ * the fetch resolves / on error) to the identity-surface row content. Falls
+ * back to the registry's own `email`/`subscription_tier` when the live read
+ * hasn't come back yet, so the row never shows blank fields while loading. */
+export function buildIdentitySurface(
+  account: Pick<Account, "email" | "subscription_tier">,
+  identity: AccountIdentity | null,
+  now: number = Date.now(),
+): IdentitySurfaceView {
+  const oauth = identity?.oauthAccount ?? null;
+  return {
+    loggedInAsEmail: oauth?.emailAddress ?? null,
+    tierLabel: tierLabel(oauth?.organizationType ?? account.subscription_tier),
+    tokenExpiryLabel: formatTokenExpiry(identity?.tokenExpiresAt ?? null, now),
+    hasCookie: identity?.hasCookie ?? false,
+    warningMessage: identity?.drift ? (identity.driftMessage ?? "Identity mismatch - re-verify this account.") : null,
+  };
 }

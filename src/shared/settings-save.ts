@@ -80,7 +80,6 @@ export function saveSettings(): void {
 
   const prevColorApply = (prev.colorApplyTo as Record<string, boolean | undefined>) || {};
   const prevPace = (prev.paceColors as Record<string, string | undefined>) || {};
-  const prevSync = (prev.sync as Record<string, unknown>) || { enabled: false, serverUrl: "", apiKey: "", deviceName: "" };
   // Per-slot character-sound toggles. Default ON (absent key or unmounted Sound
   // subview both resolve to true) so existing users keep hearing every slot.
   const prevSlots = (prev.characterSoundSlots as Record<string, boolean | undefined>) || {};
@@ -131,7 +130,24 @@ export function saveSettings(): void {
       number: chkOr("colorApplyNumber", prevColorApply.number !== false),
       dashboard: chkOr("colorApplyDashboard", prevColorApply.dashboard !== false),
       tooltip: chkOr("colorApplyTooltip", prevColorApply.tooltip !== false),
+      overlay: chkOr("colorApplyOverlay", prevColorApply.overlay !== false),
     },
+    // Tray content mode + account + number window, overlay opacity
+    // (multi-account milestone 06 backend / 07 settings UI).
+    trayContentMode: valOr("trayContentMode", (prev.trayContentMode as string) || "glyph"),
+    trayAccountId: (() => {
+      const el = byId<HTMLSelectElement>("trayAccountId");
+      if (!el) return (prev.trayAccountId as string | null | undefined) ?? null;
+      return el.value || null;
+    })(),
+    trayNumberWindow: valOr("trayNumberWindow", (prev.trayNumberWindow as string) || "5h"),
+    overlayOpacity: (() => {
+      const el = byId<HTMLInputElement>("overlayOpacity");
+      const prevOpacity = typeof prev.overlayOpacity === "number" ? prev.overlayOpacity : 0.72;
+      if (!el) return prevOpacity;
+      const pct = parseFloat(el.value);
+      return Number.isFinite(pct) ? pct / 100 : prevOpacity;
+    })(),
     colorMode: valOr("colorMode", (prev.colorMode as string) || "pace") as "threshold" | "pace",
     paceBand: parseInt(valOr("paceBand", String(prev.paceBand ?? 10)), 10) || 10,
     paceColors: {
@@ -161,7 +177,6 @@ export function saveSettings(): void {
     notifications: gatherNotifSettings(prev),
     projectAliases: prev.projectAliases || {},
     projectBlacklist: prev.projectBlacklist || [],
-    sync: prevSync,
     // Preserve unknown extras
     projects: prev.projects,
   };

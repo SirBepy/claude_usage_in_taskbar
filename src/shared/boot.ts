@@ -216,6 +216,7 @@ function coerceSettings(s: SettingsShape): SettingsShape {
     number: colorApplyTo.number !== false,
     dashboard: colorApplyTo.dashboard !== false,
     tooltip: colorApplyTo.tooltip !== false,
+    overlay: colorApplyTo.overlay !== false,
   };
   return s;
 }

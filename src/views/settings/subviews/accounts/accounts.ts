@@ -6,12 +6,12 @@
 import { html, render } from "lit-html";
 import { escapeHtml } from "../../../../shared/escape-html";
 import { api } from "../../../../shared/api";
-import type { Account, OauthAccountInfo } from "../../../../shared/api";
+import type { Account, AccountIdentity, OauthAccountInfo } from "../../../../shared/api";
 import type { ProjectConfig } from "../../../../types/ipc.generated";
 import { accountIconBadgeHtml } from "../../../../shared/account-chip";
 import { pickProject } from "../../../sessions/project-picker";
 import { openAddAccountWizard } from "./add-account-wizard";
-import { tierLabel } from "./wizard-logic";
+import { buildIdentitySurface } from "./wizard-logic";
 import "../../../../shared/account-chip.css";
 import "./accounts.css";
 
@@ -26,19 +26,27 @@ function g(): LegacyGlobals {
 // expanded. Module-scoped so it survives a refreshList() re-render.
 const expandedAccounts = new Set<string>();
 
-function accountRowHtml(account: Account, defaultAccountId: string | null): string {
+function accountRowHtml(account: Account, defaultAccountId: string | null, identity: AccountIdentity | null): string {
   const isDefault = account.id === defaultAccountId;
   const expanded = expandedAccounts.has(account.id);
+  const surface = buildIdentitySurface(account, identity);
+  const loggedInLine = surface.loggedInAsEmail
+    ? `Logged in as ${surface.loggedInAsEmail} &middot; ${escapeHtml(surface.tierLabel)}`
+    : `Registered as ${escapeHtml(account.email)} &middot; ${escapeHtml(surface.tierLabel)}`;
   return `
     <div class="acc-row-wrap">
       <div class="acc-row" data-id="${escapeHtml(account.id)}" style="--acc:${escapeHtml(account.colour)}">
         ${accountIconBadgeHtml(account)}
         <span class="acc-info">
           <span class="acc-label">${escapeHtml(account.label)}${isDefault ? `<span class="acc-default-badge">default</span>` : ""}</span>
-          <span class="acc-sub">${escapeHtml(account.email)} &middot; ${escapeHtml(tierLabel(account.subscription_tier))}</span>
+          <span class="acc-sub">${loggedInLine}</span>
+          <span class="acc-sub acc-sub-expiry">${escapeHtml(surface.tokenExpiryLabel)}</span>
+          ${surface.warningMessage ? `<span class="acc-drift-warning"><i class="ph ph-warning"></i> ${escapeHtml(surface.warningMessage)}</span>` : ""}
         </span>
         <span class="acc-actions">
           ${!isDefault ? `<button class="btn-secondary acc-btn-default" data-id="${escapeHtml(account.id)}" title="Set as default account"><i class="ph ph-star"></i></button>` : ""}
+          <button class="icon-btn acc-btn-reauth" data-id="${escapeHtml(account.id)}" title="Re-auth: run /login again for this account"><i class="ph ph-arrow-clockwise"></i></button>
+          ${!surface.hasCookie ? `<button class="btn-secondary acc-btn-add-cookie" data-id="${escapeHtml(account.id)}" title="Connect usage tracking (browser login)"><i class="ph ph-link"></i> Connect usage</button>` : ""}
           <button class="btn-secondary acc-btn-logout" data-id="${escapeHtml(account.id)}" title="Log out (keeps the profile, stops the cookie)">Log out</button>
           <button class="acc-btn-remove" data-id="${escapeHtml(account.id)}" title="Remove account">Remove</button>
           <button class="icon-btn acc-btn-expand" data-id="${escapeHtml(account.id)}" title="Projects using this account">
@@ -115,16 +123,19 @@ async function refreshList(root: HTMLElement): Promise<void> {
 
   let accounts: Account[] = [];
   let defaultAccountId: string | null = null;
+  let identities: Record<string, AccountIdentity | null> = {};
   try {
     accounts = await api.listAccounts();
     const settings = await api.getSettings();
     defaultAccountId = (settings?.["default_account_id"] as string | null | undefined) ?? null;
+    const fetched = await Promise.all(accounts.map((a) => api.getAccountIdentity(a.id)));
+    identities = Object.fromEntries(accounts.map((a, i) => [a.id, fetched[i] ?? null]));
   } catch (e) {
     console.error("[settings-accounts] refreshList failed", e);
   }
 
   if (empty) empty.style.display = accounts.length === 0 ? "" : "none";
-  list.innerHTML = accounts.map((a) => accountRowHtml(a, defaultAccountId)).join("");
+  list.innerHTML = accounts.map((a) => accountRowHtml(a, defaultAccountId, identities[a.id] ?? null)).join("");
 
   list.querySelectorAll<HTMLButtonElement>(".acc-btn-default").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -146,6 +157,41 @@ async function refreshList(root: HTMLElement): Promise<void> {
         btn.disabled = true;
         try { await api.logoutAccount(id); await refreshList(root); }
         catch (e) { console.error("[settings-accounts] logoutAccount failed", e); btn.disabled = false; }
+      })();
+    });
+  });
+
+  list.querySelectorAll<HTMLButtonElement>(".acc-btn-reauth").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      if (!id) return;
+      void (async () => {
+        btn.disabled = true;
+        try {
+          await api.reauthAccount(id);
+          alert("A terminal opened for /login. Run it, then reopen this screen to see the refreshed identity.");
+        } catch (e) {
+          console.error("[settings-accounts] reauthAccount failed", e);
+        } finally {
+          btn.disabled = false;
+        }
+      })();
+    });
+  });
+
+  list.querySelectorAll<HTMLButtonElement>(".acc-btn-add-cookie").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      if (!id) return;
+      void (async () => {
+        btn.disabled = true;
+        try { await api.recaptureAccountCookie(id); await refreshList(root); }
+        catch (e) {
+          console.error("[settings-accounts] recaptureAccountCookie failed", e);
+          alert(e instanceof Error ? e.message : "Connecting usage tracking failed - see the console.");
+        } finally {
+          btn.disabled = false;
+        }
       })();
     });
   });

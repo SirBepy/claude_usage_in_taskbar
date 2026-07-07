@@ -10,6 +10,8 @@ import {
   formatElapsed,
   isLoginTimedOut,
   describeLoginOutcome,
+  formatTokenExpiry,
+  buildIdentitySurface,
 } from "../src/views/settings/subviews/accounts/wizard-logic.ts";
 
 describe("pickAvailableIcon", () => {
@@ -165,5 +167,87 @@ describe("pool sanity", () => {
     expect(new Set(ICON_POOL).size).toBe(ICON_POOL.length);
     expect(COLOUR_POOL.length).toBeGreaterThan(0);
     expect(new Set(COLOUR_POOL).size).toBe(COLOUR_POOL.length);
+  });
+});
+
+// Multi-account milestone 07: Settings > Accounts identity surface.
+describe("formatTokenExpiry", () => {
+  const now = new Date("2026-07-07T00:00:00Z").getTime();
+
+  it("reports unknown expiry when absent", () => {
+    expect(formatTokenExpiry(null, now)).toBe("Token expiry unknown");
+    expect(formatTokenExpiry(undefined, now)).toBe("Token expiry unknown");
+  });
+
+  it("reports expired when in the past", () => {
+    expect(formatTokenExpiry(now - 1000, now)).toBe("Token expired");
+  });
+
+  it("reports days remaining", () => {
+    expect(formatTokenExpiry(now + 3 * 86_400_000, now)).toBe("Token expires in 3d");
+  });
+
+  it("reports hours remaining under a day", () => {
+    expect(formatTokenExpiry(now + 5 * 3_600_000, now)).toBe("Token expires in 5h");
+  });
+
+  it("reports minutes remaining under an hour", () => {
+    expect(formatTokenExpiry(now + 30 * 60_000, now)).toBe("Token expires in 30m");
+  });
+
+  it("accepts a bigint (ts-rs's mapping for the Rust i64 field)", () => {
+    expect(formatTokenExpiry(BigInt(now + 3 * 86_400_000), now)).toBe("Token expires in 3d");
+  });
+});
+
+describe("buildIdentitySurface", () => {
+  const account = { email: "registered@x.com", subscription_tier: "claude_pro" };
+
+  it("falls back to the registry email/tier when identity is null (still loading)", () => {
+    const view = buildIdentitySurface(account, null);
+    expect(view.loggedInAsEmail).toBeNull();
+    expect(view.tierLabel).toBe("Pro");
+    expect(view.tokenExpiryLabel).toBe("Token expiry unknown");
+    expect(view.hasCookie).toBe(false);
+    expect(view.warningMessage).toBeNull();
+  });
+
+  it("prefers the live oauthAccount email/tier over the registry record", () => {
+    const identity = {
+      oauthAccount: { emailAddress: "live@x.com", organizationUuid: "org-1", organizationType: "claude_max" },
+      tokenExpiresAt: null,
+      hasCookie: true,
+      drift: false,
+      driftMessage: null,
+    };
+    const view = buildIdentitySurface(account, identity);
+    expect(view.loggedInAsEmail).toBe("live@x.com");
+    expect(view.tierLabel).toBe("Max");
+    expect(view.hasCookie).toBe(true);
+    expect(view.warningMessage).toBeNull();
+  });
+
+  it("surfaces the drift message as a warning when drift is true", () => {
+    const identity = {
+      oauthAccount: { emailAddress: "wrong@x.com", organizationUuid: "org-2" },
+      tokenExpiresAt: null,
+      hasCookie: false,
+      drift: true,
+      driftMessage: "now logged in as wrong@x.com",
+    };
+    const view = buildIdentitySurface(account, identity);
+    expect(view.warningMessage).toBe("now logged in as wrong@x.com");
+  });
+
+  it("falls back to a generic warning when drift is true but no message came through", () => {
+    const identity = {
+      oauthAccount: null,
+      tokenExpiresAt: null,
+      hasCookie: false,
+      drift: true,
+      driftMessage: null,
+    };
+    const view = buildIdentitySurface(account, identity);
+    expect(view.warningMessage).toBe("Identity mismatch - re-verify this account.");
   });
 });

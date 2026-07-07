@@ -2,7 +2,7 @@
 // Rewired from the deleted src/modules/formatters.js — vitest imports TS directly.
 
 import { describe, it, expect } from "vitest";
-import { pctColor, getThresholdColor, getPaceColor, fmtPct } from "../src/shared/formatters.ts";
+import { pctColor, getThresholdColor, getPaceColor, fmtPct, valueColor } from "../src/shared/formatters.ts";
 import { hourToMs } from "../src/shared/time.ts";
 
 describe("pctColor", () => {
@@ -72,6 +72,29 @@ describe("getPaceColor", () => {
   it("defaults band to 10 and colors to built-ins when unset", () => {
     const c = getPaceColor(30, 50, {});
     expect(c).toBe("#27ae60");
+  });
+});
+
+// Multi-account milestone 07: colorApplyTo gained an "overlay" target,
+// consumed by src/views/overlay/overlay.ts. Lockstep partner to the Rust
+// `ColorApplyTo.overlay` field in src-tauri/src/tray/threshold.rs.
+describe("valueColor overlay target", () => {
+  const settings = { colorMode: "pace", paceBand: 10 };
+  it("colors the overlay by pace when colorApplyTo.overlay is unset (default on)", () => {
+    const c = valueColor(30, 50, settings, "overlay");
+    expect(c).not.toBe("var(--text)");
+  });
+  it("colors the overlay by pace when colorApplyTo.overlay is explicitly true", () => {
+    const c = valueColor(30, 50, { ...settings, colorApplyTo: { overlay: true } }, "overlay");
+    expect(c).not.toBe("var(--text)");
+  });
+  it("falls back to neutral text when colorApplyTo.overlay is false", () => {
+    const c = valueColor(30, 50, { ...settings, colorApplyTo: { overlay: false } }, "overlay");
+    expect(c).toBe("var(--text)");
+  });
+  it("disabling overlay does not affect the dashboard target", () => {
+    const c = valueColor(30, 50, { ...settings, colorApplyTo: { overlay: false } }, "dashboard");
+    expect(c).not.toBe("var(--text)");
   });
 });
 

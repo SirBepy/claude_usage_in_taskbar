@@ -162,7 +162,7 @@ pub fn save(path: &Path, settings: &Settings) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{DisplayMode, Settings};
+    use crate::types::Settings;
     use tempfile::tempdir;
 
     #[test]
@@ -216,8 +216,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("sub").join("settings.json");
         let mut s = Settings::default();
-        s.threshold_warn = 42.0;
-        s.display_mode = DisplayMode::Bars;
+        s.poll_interval_secs = 42;
         save(&path, &s).unwrap();
         let back = load(&path);
         assert_eq!(s, back);

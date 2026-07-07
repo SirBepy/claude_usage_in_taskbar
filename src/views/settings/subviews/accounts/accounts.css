@@ -80,6 +80,26 @@
   white-space: nowrap;
 }
 
+.acc-sub-expiry {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.acc-drift-warning {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-danger, #f87171);
+  white-space: normal;
+}
+
+.acc-btn-reauth {
+  width: 26px;
+  height: 26px;
+}
+
 .acc-actions {
   display: flex;
   align-items: center;

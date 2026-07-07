@@ -1,15 +1,6 @@
 use serde::{Deserialize, Serialize};
 use super::project::{CharacterWhitelist, ProjectConfig, ProjectsSortBy};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]
-#[serde(rename_all = "lowercase")]
-#[ts(export_to = "../../src/types/ipc.generated.ts")]
-pub enum DisplayMode {
-    Rings,
-    Bars,
-    Digits,
-}
-
 /// How the app reacts to new releases.
 ///
 /// Custom `Deserialize` accepts the new string form
@@ -63,9 +54,6 @@ impl<'de> Deserialize<'de> for AutoUpdateMode {
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub struct Settings {
     pub poll_interval_secs: u64,
-    pub display_mode: DisplayMode,
-    pub threshold_warn: f64,
-    pub threshold_crit: f64,
     pub autostart: bool,
     #[serde(rename = "autoUpdate")]
     pub auto_update: AutoUpdateMode,
@@ -121,9 +109,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             poll_interval_secs: 600,
-            display_mode: DisplayMode::Rings,
-            threshold_warn: 50.0,
-            threshold_crit: 80.0,
             autostart: true,
             auto_update: AutoUpdateMode::default(),
             hook_port: None,
@@ -192,9 +177,6 @@ mod tests {
     fn settings_round_trip_preserves_extra_fields_from_dashboard() {
         let raw = r#"{
             "poll_interval_secs": 600,
-            "display_mode": "rings",
-            "threshold_warn": 50.0,
-            "threshold_crit": 80.0,
             "autostart": true,
             "theme": "void",
             "projectAliases": { "C:/a": { "name": "Alpha" } },
@@ -208,6 +190,39 @@ mod tests {
         assert_eq!(out["projectAliases"]["C:/a"]["name"], "Alpha");
         assert_eq!(out["projectBlacklist"][0], "C:/dead");
         assert_eq!(out["notifications"]["workFinished"]["enabled"], true);
+    }
+
+    /// Multi-account milestone 07: `display_mode`, `threshold_warn`, and
+    /// `threshold_crit` were dropped as typed fields (dead - never read by
+    /// any behavior, see docs/multi-account/07-settings.md). Existing
+    /// settings.json files written by older builds still carry these keys;
+    /// they must fall through to `extra` (the flattened passthrough) rather
+    /// than breaking deserialization, and a fresh `Settings::default()` must
+    /// no longer expose them at all.
+    #[test]
+    fn removed_legacy_fields_land_in_extra_and_do_not_break_old_settings_files() {
+        let raw = r#"{
+            "poll_interval_secs": 600,
+            "display_mode": "rings",
+            "threshold_warn": 50.0,
+            "threshold_crit": 80.0,
+            "autostart": true
+        }"#;
+        let parsed: Settings = serde_json::from_str(raw).expect("legacy settings.json must still load");
+        assert_eq!(parsed.extra.get("display_mode"), Some(&serde_json::json!("rings")));
+        assert_eq!(parsed.extra.get("threshold_warn"), Some(&serde_json::json!(50.0)));
+        assert_eq!(parsed.extra.get("threshold_crit"), Some(&serde_json::json!(80.0)));
+        assert!(parsed.autostart);
+    }
+
+    #[test]
+    fn settings_default_has_no_legacy_removed_fields() {
+        let s = Settings::default();
+        let out = serde_json::to_value(&s).unwrap();
+        assert!(out.get("display_mode").is_none());
+        assert!(out.get("threshold_warn").is_none());
+        assert!(out.get("threshold_crit").is_none());
+        assert!(out.get("sync").is_none());
     }
 
     #[test]

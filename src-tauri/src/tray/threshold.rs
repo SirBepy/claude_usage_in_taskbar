@@ -86,10 +86,17 @@ pub struct ColorApplyTo {
     pub number: bool,
     pub dashboard: bool,
     pub tooltip: bool,
+    /// Multi-account milestone 07: colours the floating overlay window's
+    /// usage numbers (`src/views/overlay/overlay.ts`, `valueColor(..,
+    /// "overlay")`). The overlay itself is TS-rendered, so this field isn't
+    /// consumed by any Rust render path today - it exists so the Rust and
+    /// `formatters.ts` twins stay in lockstep (same convention as
+    /// `dashboard`, which is also TS-only).
+    pub overlay: bool,
 }
 impl Default for ColorApplyTo {
     fn default() -> Self {
-        Self { icon: true, number: true, dashboard: true, tooltip: true }
+        Self { icon: true, number: true, dashboard: true, tooltip: true, overlay: true }
     }
 }
 
@@ -258,6 +265,7 @@ fn parse_apply_to(raw: Option<&Value>) -> ColorApplyTo {
         if let Some(v) = m.get("number").and_then(|v| v.as_bool())    { a.number = v; }
         if let Some(v) = m.get("dashboard").and_then(|v| v.as_bool()) { a.dashboard = v; }
         if let Some(v) = m.get("tooltip").and_then(|v| v.as_bool())   { a.tooltip = v; }
+        if let Some(v) = m.get("overlay").and_then(|v| v.as_bool())   { a.overlay = v; }
     }
     a
 }
@@ -408,6 +416,7 @@ mod tests {
         assert!(icon.apply_color_to.number);
         assert!(icon.apply_color_to.tooltip);
         assert!(icon.apply_color_to.dashboard);
+        assert!(icon.apply_color_to.overlay);
     }
 
     #[test]
@@ -419,7 +428,7 @@ mod tests {
             "paceBand": 15,
             "paceColors": {"under": "#11ff00", "nearSafe": "#ffff00",
                            "nearOver": "#ff9900", "over": "#ff0000"},
-            "colorApplyTo": {"icon": false, "number": true, "tooltip": false, "dashboard": true},
+            "colorApplyTo": {"icon": false, "number": true, "tooltip": false, "dashboard": true, "overlay": false},
             "colorThresholds": [
                 {"min": 0, "color": "#27ae60"},
                 {"min": 80, "color": "#e74c3c"},
@@ -434,6 +443,7 @@ mod tests {
         assert_eq!(icon.pace_colors.under, "#11ff00");
         assert!(!icon.apply_color_to.icon);
         assert!(icon.apply_color_to.number);
+        assert!(!icon.apply_color_to.overlay);
         // thresholds sorted asc by min
         let mins: Vec<u32> = icon.color_thresholds.iter().map(|t| t.min).collect();
         assert_eq!(mins, vec![0, 50, 80]);

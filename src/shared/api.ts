@@ -14,13 +14,14 @@ import type {
   DatasetId,
   RetentionPolicy,
   Account,
+  AccountIdentity,
   AddAccountSession,
   LoginCheckOutcome,
   OauthAccountInfo,
   AuthState,
 } from "../types/ipc.generated";
 
-export type { Account, AddAccountSession, LoginCheckOutcome, OauthAccountInfo, AuthState };
+export type { Account, AccountIdentity, AddAccountSession, LoginCheckOutcome, OauthAccountInfo, AuthState };
 
 // ── Backend snapshot shape ────────────────────────────────────────────────
 
@@ -540,6 +541,16 @@ export const api = {
     try { return (await invoke<OauthAccountInfo | null>("get_terminal_identity")) ?? null; }
     catch (e) { console.error("get_terminal_identity failed", e); return null; }
   },
+
+  // --- Accounts (multi-account milestone 07: settings identity surface) ---
+  getAccountIdentity: async (accountId: string): Promise<AccountIdentity | null> => {
+    try { return await invoke<AccountIdentity>("get_account_identity", { accountId }); }
+    catch (e) { console.error("get_account_identity failed", e); return null; }
+  },
+  reauthAccount: (accountId: string): Promise<void> =>
+    invoke("reauth_account", { accountId }),
+  recaptureAccountCookie: (accountId: string): Promise<void> =>
+    invoke("recapture_account_cookie", { accountId }),
 };
 
 export type Api = typeof api;

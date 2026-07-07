@@ -45,6 +45,18 @@ pub fn terminal_identity(home_dir: &Path) -> Option<OauthAccountInfo> {
     read_from_state_file(&home_dir.join(".claude.json"))
 }
 
+/// Reads `<config_dir>/.credentials.json` -> `claudeAiOauth.expiresAt`
+/// (unix-ms epoch), for the read-only "token expiry" line on the Settings >
+/// Accounts identity surface (multi-account milestone 07). The app never
+/// writes this file (locked decision, 00-overview.md) - display-only. `None`
+/// when the file is missing, unparsable, or has no `claudeAiOauth.expiresAt`
+/// (never logged in yet, or a shape Claude Code hasn't written this key for).
+pub fn read_token_expiry(config_dir: &Path) -> Option<i64> {
+    let raw = std::fs::read_to_string(config_dir.join(".credentials.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("claudeAiOauth")?.get("expiresAt")?.as_i64()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +118,36 @@ mod tests {
         assert_eq!(identity.organization_name, None);
         assert_eq!(identity.organization_type, None);
         assert_eq!(identity.profile_fetched_at, None);
+    }
+
+    #[test]
+    fn read_token_expiry_parses_fixture() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-x","refreshToken":"sk-ant-ort01-x","expiresAt":1783437706982,"scopes":[]}}"#,
+        ).unwrap();
+        assert_eq!(read_token_expiry(dir.path()), Some(1783437706982));
+    }
+
+    #[test]
+    fn read_token_expiry_none_when_file_missing() {
+        let dir = tempdir().unwrap();
+        assert_eq!(read_token_expiry(dir.path()), None);
+    }
+
+    #[test]
+    fn read_token_expiry_none_when_no_claude_ai_oauth_block() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".credentials.json"), r#"{"other": true}"#).unwrap();
+        assert_eq!(read_token_expiry(dir.path()), None);
+    }
+
+    #[test]
+    fn read_token_expiry_none_when_unparsable() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".credentials.json"), "{ not valid").unwrap();
+        assert_eq!(read_token_expiry(dir.path()), None);
     }
 
     #[test]

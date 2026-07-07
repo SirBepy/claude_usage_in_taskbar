@@ -1,6 +1,8 @@
 import { html, render } from "lit-html";
 import { saveSettings } from "../../../../shared/settings-save";
 import { getSettings } from "../../../../shared/state";
+import { api } from "../../../../shared/api";
+import { escapeHtml } from "../../../../shared/escape-html";
 import { LS_ANIM } from "../../../sessions/sidebar-anim";
 import "./visuals.css";
 
@@ -41,6 +43,31 @@ function updateFourBarsColorsVisibility(): void {
   if (section) section.style.display = iconStyleEl?.value === "fourbars" ? "block" : "none";
 }
 
+// Tray content mode + account + number window (multi-account milestone 07 -
+// the settings UI for milestone 06's backend `IconSettings.tray_*` fields).
+// Account <select> options are built as an innerHTML string (never a
+// repeated lit-html template) - production lit-html silently drops
+// repeated/nested templates containing a <select>, see project memory.
+function updateTraySectionVisibility(): void {
+  const mode = ($("trayContentMode") as HTMLSelectElement | null)?.value || "glyph";
+  const accountRow = $("trayAccountRow");
+  const windowRow = $("trayNumberWindowRow");
+  if (accountRow) accountRow.style.display = mode === "nothing" ? "none" : "flex";
+  if (windowRow) windowRow.style.display = mode === "number" ? "flex" : "none";
+}
+
+async function populateTrayAccountSelect(selected: string | null): Promise<void> {
+  const select = $("trayAccountId") as HTMLSelectElement | null;
+  if (!select) return;
+  let accounts: Array<{ id: string; label: string }> = [];
+  try { accounts = await api.listAccounts(); }
+  catch (e) { console.error("[visuals] listAccounts failed", e); }
+  const options = [`<option value="">Default account</option>`]
+    .concat(accounts.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.label)}</option>`));
+  select.innerHTML = options.join("");
+  select.value = selected && accounts.some((a) => a.id === selected) ? selected : "";
+}
+
 function updateColorModeVisibility(): void {
   const colorMode = $("colorMode") as HTMLSelectElement | null;
   const thresholdSection = $("thresholdSection");
@@ -73,7 +100,7 @@ function wireInfoTooltips(root: HTMLElement | Document): void {
   }
 }
 
-function hydrateVisuals(): void {
+async function hydrateVisuals(): Promise<void> {
   const s = getSettings();
   const defaultDisplay = $("defaultDisplay") as HTMLSelectElement | null;
   const iconStyle = $("iconStyle") as HTMLSelectElement | null;
@@ -84,6 +111,7 @@ function hydrateVisuals(): void {
   const colorApplyNumber = $("colorApplyNumber") as HTMLInputElement | null;
   const colorApplyDashboard = $("colorApplyDashboard") as HTMLInputElement | null;
   const colorApplyTooltip = $("colorApplyTooltip") as HTMLInputElement | null;
+  const colorApplyOverlay = $("colorApplyOverlay") as HTMLInputElement | null;
   const colorContainer = $("colorContainer");
   const colorMode = $("colorMode") as HTMLSelectElement | null;
   const paceBand = $("paceBand") as HTMLInputElement | null;
@@ -94,7 +122,7 @@ function hydrateVisuals(): void {
   const addColorBtn = $("addColorBtn") as HTMLButtonElement | null;
   const iconStyleSection = $("iconStyleSection");
   if (!defaultDisplay || !iconStyle || !timeStyle || !tooltipLayout || !tooltipShowSafePace) return;
-  if (!colorApplyIcon || !colorApplyNumber || !colorApplyDashboard || !colorApplyTooltip) return;
+  if (!colorApplyIcon || !colorApplyNumber || !colorApplyDashboard || !colorApplyTooltip || !colorApplyOverlay) return;
   if (!colorContainer || !colorMode || !paceBand || !addColorBtn) return;
   if (!paceColorUnder || !paceColorNearSafe || !paceColorNearOver || !paceColorOver) return;
 
@@ -108,6 +136,7 @@ function hydrateVisuals(): void {
   colorApplyNumber.checked = cat.number !== false;
   colorApplyDashboard.checked = cat.dashboard !== false;
   colorApplyTooltip.checked = cat.tooltip !== false;
+  colorApplyOverlay.checked = cat.overlay !== false;
   colorMode.value = (s.colorMode as string) || "pace";
   paceBand.value = String(s.paceBand ?? 10);
   const pc = (s.paceColors as Record<string, string | undefined>) || {};
@@ -131,7 +160,7 @@ function hydrateVisuals(): void {
   timeStyle.addEventListener("change", saveSettings);
   tooltipLayout.addEventListener("change", saveSettings);
   iconStyle.addEventListener("change", () => { updateFourBarsColorsVisibility(); saveSettings(); });
-  for (const el of [tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip]) {
+  for (const el of [tooltipShowSafePace, colorApplyIcon, colorApplyNumber, colorApplyDashboard, colorApplyTooltip, colorApplyOverlay]) {
     el.addEventListener("change", saveSettings);
   }
   defaultDisplay.addEventListener("change", saveSettings);
@@ -199,6 +228,33 @@ function hydrateVisuals(): void {
     hideInMeetingSwitch.checked = !!s.hideInMeeting;
     hideInMeetingSwitch.addEventListener("change", saveSettings);
   }
+
+  // Tray content mode + account + number window (multi-account milestone 07).
+  const trayContentMode = $("trayContentMode") as HTMLSelectElement | null;
+  const trayNumberWindow = $("trayNumberWindow") as HTMLSelectElement | null;
+  const overlayOpacity = $("overlayOpacity") as HTMLInputElement | null;
+  const overlayOpacityValue = $("overlayOpacityValue");
+  if (trayContentMode) {
+    trayContentMode.value = (s.trayContentMode as string) || "glyph";
+    trayContentMode.addEventListener("change", () => { updateTraySectionVisibility(); saveSettings(); });
+    await populateTrayAccountSelect((s.trayAccountId as string | null | undefined) ?? null);
+    const trayAccountId = $("trayAccountId") as HTMLSelectElement | null;
+    if (trayAccountId) trayAccountId.addEventListener("change", saveSettings);
+    updateTraySectionVisibility();
+  }
+  if (trayNumberWindow) {
+    trayNumberWindow.value = (s.trayNumberWindow as string) || "5h";
+    trayNumberWindow.addEventListener("change", saveSettings);
+  }
+  if (overlayOpacity) {
+    const pct = Math.round(Math.max(0, Math.min(1, (s.overlayOpacity as number) ?? 0.72)) * 100);
+    overlayOpacity.value = String(pct);
+    if (overlayOpacityValue) overlayOpacityValue.textContent = `${pct}%`;
+    overlayOpacity.addEventListener("input", () => {
+      if (overlayOpacityValue) overlayOpacityValue.textContent = `${overlayOpacity.value}%`;
+    });
+    overlayOpacity.addEventListener("change", saveSettings);
+  }
 }
 
 // Back-compat window binding (legacy boot code calls this by name).
@@ -212,7 +268,7 @@ export async function renderVisualsView(
   const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
   if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
 
-  try { hydrateVisuals(); }
+  try { await hydrateVisuals(); }
   catch (e) { console.error("[visuals] render failed", e); }
 
   return () => { /* no teardown */ };
@@ -245,6 +301,36 @@ function template() {
               <option value="bars">Bars</option>
               <option value="fourbars">4 Bars</option>
             </select>
+          </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-title">TRAY & OVERLAY</div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Tray Content<span class="info-icon">?</span><span class="info-tooltip">Glyph shows the usage rings/bars icon, Number shows a plain % badge, Nothing shows a plain logo. Clicking the icon always toggles the overlay</span></span></span>
+            <select id="trayContentMode">
+              <option value="glyph">Glyph</option>
+              <option value="number">Number</option>
+              <option value="nothing">Nothing</option>
+            </select>
+          </div>
+          <div class="kit-row" id="trayAccountRow">
+            <span class="kit-row-label">Tray Account</span>
+            <select id="trayAccountId"></select>
+          </div>
+          <div class="kit-row" id="trayNumberWindowRow" style="display:none">
+            <span class="kit-row-label">Number Window</span>
+            <select id="trayNumberWindow">
+              <option value="5h">5 hour</option>
+              <option value="7d">7 day</option>
+            </select>
+          </div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Overlay Opacity<span class="info-icon">?</span><span class="info-tooltip">How see-through the floating multi-account overlay is when not hovered - it always goes fully opaque on hover</span></span></span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px">
+              <input type="range" id="overlayOpacity" min="0" max="100" step="5" style="flex:1">
+              <span id="overlayOpacityValue" style="font-size:0.78rem;color:var(--text-dim);width:36px;text-align:right">72%</span>
+            </div>
           </div>
         </div>
 
@@ -320,6 +406,13 @@ function template() {
             <span class="kit-row-label"><span class="info-wrap">Tooltip<span class="info-icon">?</span><span class="info-tooltip">Colors the icon shown in the system tray tooltip</span></span></span>
             <label class="kit-toggle">
               <input type="checkbox" id="colorApplyTooltip" checked>
+              <span class="kit-toggle-track"></span>
+            </label>
+          </div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Overlay<span class="info-icon">?</span><span class="info-tooltip">Colors the usage numbers shown in the floating multi-account overlay window</span></span></span>
+            <label class="kit-toggle">
+              <input type="checkbox" id="colorApplyOverlay" checked>
               <span class="kit-toggle-track"></span>
             </label>
           </div>

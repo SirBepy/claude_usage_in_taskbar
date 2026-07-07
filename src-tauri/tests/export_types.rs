@@ -7,7 +7,7 @@
 
 use claude_conductor_lib::accounts::{Account, OauthAccountInfo};
 use claude_conductor_lib::context_status::ContextStatus;
-use claude_conductor_lib::ipc::accounts::{AddAccountSession, LoginCheckOutcome};
+use claude_conductor_lib::ipc::accounts::{AccountIdentity, AddAccountSession, LoginCheckOutcome};
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::git::GitInfo;
 use claude_conductor_lib::ipc::files::TextFileData;
@@ -72,7 +72,6 @@ fn emit_ipc_types() {
     out.push_str(&decl::<DatasetInfo>());
 
     // notifications (settings module)
-    out.push_str(&decl::<DisplayMode>());
     out.push_str(&decl::<AutoUpdateMode>());
     out.push_str(&decl::<Settings>());
 
@@ -81,6 +80,7 @@ fn emit_ipc_types() {
     out.push_str(&decl::<Account>());
     out.push_str(&decl::<AddAccountSession>());
     out.push_str(&decl::<LoginCheckOutcome>());
+    out.push_str(&decl::<AccountIdentity>());
 
     // misc IPC
     out.push_str(&decl::<GitInfo>());

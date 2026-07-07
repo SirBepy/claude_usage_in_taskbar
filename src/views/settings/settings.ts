@@ -197,9 +197,6 @@ export async function renderSettingsView(
   if (navAccounts) navAccounts.onclick = () => g().navigateTo("settings-accounts");
   if (navAbout) navAbout.onclick = () => g().navigateTo("settings-about");
 
-  const logoutBtn = root.querySelector<HTMLButtonElement>("#logoutBtn");
-  if (logoutBtn) logoutBtn.onclick = () => { void api.logout(); };
-
   try { await hydrateSettingsRoot(); }
   catch (e) { console.error("[settings root] render failed", e); }
 
@@ -325,11 +322,6 @@ function template() {
                containing a <select>. See project memory. -->
           <div id="dataCards" class="data-cards"></div>
           <div id="dataTotal" class="data-total"></div>
-        </div>
-
-        <div class="kit-section" style="border-color: rgba(224,82,82,0.3);">
-          <div class="kit-section-title" style="color: var(--danger);">Account</div>
-          <button class="btn-danger" id="logoutBtn">Log Out</button>
         </div>
 
       </div>
