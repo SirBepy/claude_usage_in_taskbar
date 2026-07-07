@@ -40,11 +40,11 @@ pub struct StartSessionParams {
     /// caller omits it so non-chat spawn paths never register a bridge.
     #[serde(default)]
     pub remote: bool,
-    /// Registry account id to spawn under. `None` resolves to
-    /// `Settings.default_account_id` - the only account-selection surface
-    /// until milestone 04's picker lands. Explicit `Some` is unused by any
-    /// caller today but threaded through so the picker needs no
-    /// `StartSessionParams` shape change.
+    /// Registry account id to spawn under. `Some(id)` is a caller-picked
+    /// account - the new-chat account picker (milestone 04) supplies this
+    /// explicitly. `None` resolves to the daemon's cached
+    /// `Settings.default_account_id`, which every other spawn path (and the
+    /// picker itself when "default" is selected) relies on.
     #[serde(default)]
     pub account_id: Option<String>,
 }

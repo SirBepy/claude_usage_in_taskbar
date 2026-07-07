@@ -13,7 +13,7 @@ import "./overlay.css";
 import { valueColor } from "../../shared/formatters";
 import type { ValueColorSettings } from "../../shared/formatters";
 import { api } from "../../shared/api";
-import { getSettings } from "../../shared/state";
+import { getSettings, setSettings } from "../../shared/state";
 import type { SettingsShape } from "../../shared/state";
 import { buildOverlayRows } from "./overlay-logic";
 import type { OverlayMetric, OverlayRow } from "./overlay-logic";
@@ -73,10 +73,28 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
 
   await refresh();
   const unlistenHistory = api.onHistoryUpdated(() => void refresh());
+  // The overlay window skips initBoot(), so it has no other subscription to
+  // settings changes made elsewhere (e.g. Settings > Visuals color rules) -
+  // without this, the panel would keep rendering with whatever settings were
+  // in effect at window-open time until the window is recreated.
+  let unlistenSettings: (() => void) | null = null;
+  const ev = window.__TAURI__?.event;
+  if (ev?.listen) {
+    unlistenSettings = await ev.listen("settings-changed", async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings) setSettings(settings);
+      } catch (e) {
+        console.error("overlay: settings refresh failed", e);
+      }
+      void refresh();
+    });
+  }
   const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
 
   return () => {
     try { unlistenHistory(); } catch { /* ignore */ }
+    if (unlistenSettings) { try { unlistenSettings(); } catch { /* ignore */ } }
     window.clearInterval(timer);
   };
 }

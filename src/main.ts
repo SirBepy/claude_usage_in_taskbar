@@ -193,6 +193,19 @@ if (!await ensureRemoteToken()) {
 } else if (isOverlayWindow) {
   document.body.classList.add("overlay-window-mode");
   document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
+  // This window skips initBoot(), which is the only other place settings get
+  // hydrated into window.currentSettings - without this, overlay.ts's
+  // valueColor(...,"overlay") call would never see colorMode/paceColors/
+  // colorThresholds/colorApplyTo and readOverlayOpacity would always fall
+  // back to its default (ai_todo: multi-account overlay settings bug).
+  const { api } = await import("./shared/api");
+  const { setSettings } = await import("./shared/state");
+  try {
+    const settings = await api.getSettings();
+    if (settings) setSettings(settings);
+  } catch (e) {
+    console.error("overlay: initial settings fetch failed", e);
+  }
   const { renderOverlay } = await import("./views/overlay/overlay");
   void renderOverlay(app);
   // Skip mountRouter + sidemenu wiring; this window is single-purpose.

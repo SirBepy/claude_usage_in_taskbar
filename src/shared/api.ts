@@ -231,11 +231,6 @@ export const api = {
     catch (e) { console.error("list_audio_output_devices failed", e); return []; }
   },
 
-  // --- Auth ---
-  logout: (): Promise<unknown> => invoke("logout"),
-  startLogin: (): Promise<unknown> => invoke("start_login"),
-  authStatus: (): Promise<AuthStatus> => invoke("auth_status"),
-
   // --- Update state ---
   getUpdateState: (): Promise<UpdateState> => invoke("get_update_state"),
   downloadUpdate: (): void => { /* no-op stub for legacy callers */ },

@@ -142,6 +142,25 @@ fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
     });
 }
 
+/// Best-effort push of a fresh settings snapshot to the daemon's in-memory
+/// cache (`daemon::settings_cache`), outside the handshake-time push in
+/// `run_app_subscription` above. Without this, daemon-side reads (e.g.
+/// `default_account_id` resolution in `daemon::lifecycle::spawn_session`) can
+/// see a stale snapshot for the lifetime of an already-connected session,
+/// despite `settings_cache`'s doc comment claiming "on every change". Call
+/// this from every app-side chokepoint that persists a settings mutation the
+/// daemon cares about (currently: `save_settings`, `set_default_account`).
+/// No-op (logged) if the daemon isn't connected yet - the next successful
+/// handshake will push the latest snapshot anyway.
+pub async fn push_settings_to_daemon(state: &crate::state::AppState, settings: &crate::types::Settings) {
+    let guard = state.daemon_client.lock().await;
+    if let Some(client) = guard.as_ref() {
+        if let Err(e) = client.push_settings(settings).await {
+            log::warn!("push_settings (post-save) failed: {e}");
+        }
+    }
+}
+
 /// Overwrites `cached_instances` with `instances`. Single place for this assignment.
 pub(crate) fn store_cached_instances(state: &crate::state::AppState, instances: Vec<crate::types::Instance>) {
     *state.cached_instances.lock().unwrap() = instances;

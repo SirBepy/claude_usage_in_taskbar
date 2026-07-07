@@ -222,6 +222,7 @@ pub async fn add_account_finalize(
     colour: String,
     icon: String,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<Account, String> {
     let session = state
         .account_wizard_sessions
@@ -255,6 +256,14 @@ pub async fn add_account_finalize(
     let mut accounts = accounts_store::load(&accounts_path);
     accounts.push(account.clone());
     accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
+
+    // Tray only re-renders on "settings-changed"/"usage-updated" - without
+    // this, a freshly-added account is invisible in the tray tooltip/menu
+    // until the next scheduled poll (up to 600s).
+    {
+        let snapshot = state.settings.lock().unwrap().clone();
+        let _ = app.emit("settings-changed", &snapshot);
+    }
 
     // Best-effort legacy -> this-account migration (milestone 08). The
     // network fetch (`legacy_org_uuids`) runs BEFORE the `state.db` lock is
@@ -298,7 +307,7 @@ pub fn list_accounts() -> Result<Vec<Account>, String> {
 /// chrome profile dir, and its stored cookie. Clears `default_account_id` if
 /// it pointed at the removed account.
 #[tauri::command]
-pub fn remove_account(account_id: String, state: State<AppState>) -> Result<(), String> {
+pub fn remove_account(account_id: String, state: State<AppState>, app: AppHandle) -> Result<(), String> {
     let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
     let mut accounts = accounts_store::load(&accounts_path);
     let idx = accounts
@@ -316,11 +325,19 @@ pub fn remove_account(account_id: String, state: State<AppState>) -> Result<(), 
     let _ = crate::auth::session::clear(&session_file);
 
     let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
-    let mut settings = state.settings.lock().unwrap();
-    if settings.default_account_id.as_deref() == Some(account_id.as_str()) {
-        settings.default_account_id = None;
-        let _ = crate::settings::save(&settings_path, &settings);
-    }
+    let snapshot = {
+        let mut settings = state.settings.lock().unwrap();
+        if settings.default_account_id.as_deref() == Some(account_id.as_str()) {
+            settings.default_account_id = None;
+            let _ = crate::settings::save(&settings_path, &settings);
+        }
+        settings.clone()
+    };
+    // Tray only re-renders on "settings-changed"/"usage-updated" - without
+    // this, a removed account would stay visible in the tray tooltip/menu
+    // until the next scheduled poll (up to 600s), even though the account
+    // list itself changed regardless of whether default_account_id did.
+    let _ = app.emit("settings-changed", &snapshot);
     Ok(())
 }
 
@@ -328,15 +345,23 @@ pub fn remove_account(account_id: String, state: State<AppState>) -> Result<(), 
 /// profile dir intact (CLI credentials untouched); chats simply stop
 /// spawning for it until the cookie is recaptured. Never touches app data.
 #[tauri::command]
-pub fn logout_account(account_id: String) -> Result<(), String> {
+pub fn logout_account(account_id: String, state: State<AppState>, app: AppHandle) -> Result<(), String> {
     let session_file = paths::account_session_file(&account_id).map_err(|e| e.to_string())?;
-    crate::auth::session::clear(&session_file).map_err(|e| e.to_string())
+    crate::auth::session::clear(&session_file).map_err(|e| e.to_string())?;
+    // Tray only re-renders on "settings-changed"/"usage-updated" - without
+    // this, the account's now-missing cookie (chats stop spawning for it)
+    // would be invisible in the tray until the next scheduled poll (up to
+    // 600s). No settings actually changed; re-emitting the current snapshot
+    // is just how the tray's existing listener is wired to trigger a rebuild.
+    let snapshot = state.settings.lock().unwrap().clone();
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn set_default_account(
+pub async fn set_default_account(
     account_id: Option<String>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
     if let Some(id) = &account_id {
@@ -353,6 +378,9 @@ pub fn set_default_account(
         settings.clone()
     };
     crate::settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
+    // Keep the daemon's cached default_account_id from going stale for the
+    // lifetime of an already-connected session - see push_settings_to_daemon.
+    crate::daemon_link::push_settings_to_daemon(&state, &snapshot).await;
     let _ = app.emit("settings-changed", &snapshot);
     Ok(())
 }

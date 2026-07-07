@@ -9,7 +9,7 @@ pub fn get_settings(state: State<AppState>) -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(updated: Settings, state: State<AppState>, app: AppHandle)
+pub async fn save_settings(updated: Settings, state: State<'_, AppState>, app: AppHandle)
     -> Result<(), String>
 {
     let path = paths::settings_file().map_err(|e| e.to_string())?;
@@ -23,6 +23,10 @@ pub fn save_settings(updated: Settings, state: State<AppState>, app: AppHandle)
     if old_device != updated.audio_output_device {
         state.audio_stream.reinit(updated.audio_output_device.as_deref());
     }
+    // Keep the daemon's in-memory settings cache (used e.g. for
+    // default_account_id resolution on session spawn) from going stale for
+    // the lifetime of an already-connected session - see push_settings_to_daemon.
+    crate::daemon_link::push_settings_to_daemon(&state, &updated).await;
     let _ = app.emit("settings-changed", updated.clone());
     // Sync screen-capture exclusion immediately so toggling the setting
     // mid-meeting takes effect without waiting for the next meeting edge.
