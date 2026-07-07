@@ -305,7 +305,7 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
     let (ix, iy, iw, ih) = rect_physical(&icon_rect);
     let (x, y) = overlay_position(ix, iy, iw, ih, OVERLAY_WIDTH, OVERLAY_HEIGHT);
     let shown = Arc::new(AtomicBool::new(false));
-    let window = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         app,
         OVERLAY_LABEL,
         tauri::WebviewUrl::App("index.html?overlaywindow=1".into()),
@@ -317,8 +317,12 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
-    .shadow(false)
-    .transparent(true)
+    .shadow(false);
+    // `transparent` needs the macos-private-api feature on macOS; degrade to an
+    // opaque overlay there rather than pulling in the private API.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.transparent(true);
+    let window = builder
     .visible(false)
     .on_page_load(move |w, payload| {
         if payload.event() == PageLoadEvent::Finished && !shown.swap(true, Ordering::SeqCst) {
