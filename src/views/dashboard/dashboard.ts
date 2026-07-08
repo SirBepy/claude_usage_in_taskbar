@@ -22,6 +22,8 @@ import {
   widgetsNeedingAccountRerender,
 } from "./widget-registry";
 import type { DashboardWidgetEntry, WidgetContext } from "./widget-registry";
+import { positionDropdown } from "../sessions/position-dropdown";
+import { registerMenuCloser, closeAllMenus } from "../sessions/menu-registry";
 
 let refreshBusy = false;
 let lastAutoPollMs = 0;
@@ -33,8 +35,12 @@ let accountsCache: Account[] = [];
 let usageMapCache: Record<string, UsageRecord> = {};
 let dashboardWidgets: DashboardWidgetEntry[] = [];
 let editMode = false;
-let addWidgetMenuOpen = false;
 const widgetTeardowns = new Map<string, () => void>();
+
+// ── "More options" header menu (kebab) ─────────────────────────────────────
+let dashMenu: HTMLElement | null = null;
+let dashSubmenu: HTMLElement | null = null;
+let dashMenuCleanup: (() => void) | null = null;
 // Multi-account milestone 08: one-time "set up your accounts" migration
 // prompt. Fetched once per mount (not on every refresh) - see renderDashboard.
 let showSetupBanner = false;
@@ -142,10 +148,13 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
     document.removeEventListener("visibilitychange", onVisibility);
     window.clearInterval(crossoverTimer);
     if (aiPollTimer !== null) { window.clearInterval(aiPollTimer); aiPollTimer = null; }
+    closeDashMenu();
     teardownAllWidgets();
     mountedContainer = null;
   };
 }
+
+registerMenuCloser(closeDashMenu);
 
 /** Re-renders the mounted dashboard content, if any - the replacement for the
  * deleted statistics.ts's `refreshDashboard()` global (boot.ts calls this on
@@ -170,19 +179,11 @@ function template() {
         <h2>Claude Conductor</h2>
         <button
           class="icon-btn"
-          id="editDashboardBtn"
-          title="Edit dashboard"
-          @click=${onToggleEditMode}
+          id="dashMoreBtn"
+          title="More options"
+          @click=${onDashMoreClick}
         >
-          <i class="ph ph-sliders-horizontal"></i>
-        </button>
-        <button
-          class="icon-btn"
-          id="refreshNowBtn"
-          title="Refresh now"
-          @click=${onRefreshClick}
-        >
-          <i class="ph ph-arrows-clockwise"></i>
+          <i class="ph ph-dots-three-vertical"></i>
         </button>
       </div>
       <div class="view-body">
@@ -196,14 +197,13 @@ function template() {
 
 function onToggleEditMode(): void {
   editMode = !editMode;
-  addWidgetMenuOpen = false;
   if (mountedContainer) renderShell(mountedContainer);
 }
 
-async function onRefreshClick(e: Event) {
+async function triggerRefresh(): Promise<void> {
   if (refreshBusy) return;
   refreshBusy = true;
-  const btn = e.currentTarget as HTMLElement | null;
+  const btn = document.getElementById("dashMoreBtn");
   btn?.classList.add("spinning");
   try {
     await api.pollNow();
@@ -213,6 +213,110 @@ async function onRefreshClick(e: Event) {
     btn?.classList.remove("spinning");
     refreshBusy = false;
   }
+}
+
+// ── "More options" kebab menu (reuses the sessions .session-more-menu look) ──
+
+function closeDashMenu(): void {
+  dashSubmenu?.remove();
+  dashSubmenu = null;
+  dashMenu?.remove();
+  dashMenu = null;
+  if (dashMenuCleanup) { dashMenuCleanup(); dashMenuCleanup = null; }
+}
+
+function onDashMoreClick(e: Event): void {
+  const btn = e.currentTarget as HTMLButtonElement;
+  if (dashMenu) closeDashMenu();
+  else openDashMenu(btn);
+}
+
+function openDashMenu(btn: HTMLButtonElement): void {
+  closeAllMenus();
+  const menu = document.createElement("div");
+  menu.className = "session-more-menu";
+  document.body.appendChild(menu);
+  dashMenu = menu;
+
+  const editItem = document.createElement("button");
+  editItem.className = "smore-item" + (editMode ? " is-on" : "");
+  editItem.innerHTML =
+    `<i class="ph ph-sliders-horizontal"></i>` +
+    `<span>${editMode ? "Done editing" : "Edit dashboard"}</span>` +
+    (editMode ? `<span class="smore-check-dot"></span>` : "");
+  editItem.onclick = () => { closeDashMenu(); onToggleEditMode(); };
+  menu.appendChild(editItem);
+
+  const refreshItem = document.createElement("button");
+  refreshItem.className = "smore-item";
+  refreshItem.innerHTML = `<i class="ph ph-arrows-clockwise"></i><span>Refresh now</span>`;
+  refreshItem.onclick = () => { closeDashMenu(); void triggerRefresh(); };
+  menu.appendChild(refreshItem);
+
+  const sep = document.createElement("div");
+  sep.className = "smore-sep";
+  menu.appendChild(sep);
+
+  const addParent = document.createElement("button");
+  addParent.className = "smore-item smore-has-sub";
+  addParent.innerHTML =
+    `<i class="ph ph-plus"></i><span>Add widget</span>` +
+    `<i class="ph ph-caret-right smore-sub-caret"></i>`;
+  addParent.onclick = (ev) => {
+    ev.stopPropagation();
+    if (dashSubmenu) { dashSubmenu.remove(); dashSubmenu = null; return; }
+    openAddWidgetSubmenu(addParent);
+  };
+  menu.appendChild(addParent);
+
+  positionDropdown(menu, btn);
+
+  const onOutside = (ev: MouseEvent) => {
+    const t = ev.target as Node;
+    if (!menu.contains(t) && t !== btn && !dashSubmenu?.contains(t)) closeDashMenu();
+  };
+  setTimeout(() => document.addEventListener("click", onOutside), 0);
+  dashMenuCleanup = () => document.removeEventListener("click", onOutside);
+}
+
+/** Add-widget submenu: every registry widget is listed; already-added ones are
+ * greyed out (not clickable), the rest enable on click. */
+function openAddWidgetSubmenu(parent: HTMLElement): void {
+  const sub = document.createElement("div");
+  sub.className = "session-more-menu";
+  for (const entry of dashboardWidgets) {
+    const widget = getWidget(entry.id);
+    if (!widget) continue;
+    const item = document.createElement("button");
+    item.className = "smore-item" + (entry.enabled ? " is-disabled" : "");
+    item.innerHTML =
+      `<i class="ph ph-squares-four"></i>` +
+      `<span>${escapeHtml(widget.title)}</span>` +
+      (entry.enabled ? `<i class="ph ph-check" style="margin-left:auto;opacity:0.6"></i>` : "");
+    if (entry.enabled) {
+      item.title = "Already added";
+    } else {
+      item.onclick = () => {
+        dashboardWidgets = setWidgetEnabled(dashboardWidgets, entry.id, true);
+        persistDashboardWidgets();
+        closeDashMenu();
+        if (mountedContainer) renderShell(mountedContainer);
+      };
+    }
+    sub.appendChild(item);
+  }
+  document.body.appendChild(sub);
+  dashSubmenu = sub;
+
+  const itemRect = parent.getBoundingClientRect();
+  const subRect = sub.getBoundingClientRect();
+  let left = itemRect.right + 4;
+  if (left + subRect.width > window.innerWidth - 4) left = itemRect.left - subRect.width - 4;
+  let top = itemRect.top;
+  if (top + subRect.height > window.innerHeight - 4) top = window.innerHeight - subRect.height - 4;
+  if (top < 4) top = 4;
+  sub.style.left = `${left}px`;
+  sub.style.top = `${top}px`;
 }
 
 // ── Settings persistence for the widget layout ──────────────────────────────
@@ -353,20 +457,6 @@ function widgetShellHtml(entry: DashboardWidgetEntry, index: number, total: numb
   </div>`;
 }
 
-function addWidgetAffordanceHtml(): string {
-  const disabled = dashboardWidgets.filter((e) => !e.enabled);
-  const disabledWithMeta = disabled
-    .map((e) => ({ id: e.id, widget: getWidget(e.id) }))
-    .filter((e): e is { id: string; widget: NonNullable<ReturnType<typeof getWidget>> } => !!e.widget);
-  if (disabledWithMeta.length === 0) return "";
-  const menu = addWidgetMenuOpen
-    ? `<div class="dash-add-widget-menu">${disabledWithMeta
-        .map((e) => `<button data-add-widget-id="${escapeHtml(e.id)}">${escapeHtml(e.widget.title)}</button>`)
-        .join("")}</div>`
-    : "";
-  return `<div class="dash-add-widget"><button id="dashAddWidgetToggle"><i class="ph ph-plus"></i> add widget</button>${menu}</div>`;
-}
-
 /** Renders account cards + widget shells (headers + empty bodies) from
  * cached data - synchronous, no IPC. Callers mount widget content
  * separately via `mountWidgets`/`remountWidget`. */
@@ -383,7 +473,6 @@ function renderShell(container: HTMLElement): void {
     ${setupBannerHtml()}
     ${cardsHtml}
     <div class="dash-widgets">${widgetsHtml}</div>
-    ${addWidgetAffordanceHtml()}
   `;
 
   if (accountsCache.length > 0) {
@@ -391,7 +480,6 @@ function renderShell(container: HTMLElement): void {
   }
   wireSetupBanner(container);
   wireEditControls(container);
-  wireAddWidgetControls(container);
   mountWidgets(container);
 }
 
@@ -507,26 +595,6 @@ function wireEditControls(container: HTMLElement): void {
       const id = btn.dataset["widgetId"];
       if (!id) return;
       dashboardWidgets = setWidgetEnabled(dashboardWidgets, id, false);
-      persistDashboardWidgets();
-      renderShell(container);
-    };
-  });
-}
-
-function wireAddWidgetControls(container: HTMLElement): void {
-  const toggle = container.querySelector<HTMLButtonElement>("#dashAddWidgetToggle");
-  if (toggle) {
-    toggle.onclick = () => {
-      addWidgetMenuOpen = !addWidgetMenuOpen;
-      renderShell(container);
-    };
-  }
-  container.querySelectorAll<HTMLButtonElement>("[data-add-widget-id]").forEach((btn) => {
-    btn.onclick = () => {
-      const id = btn.dataset["addWidgetId"];
-      if (!id) return;
-      dashboardWidgets = setWidgetEnabled(dashboardWidgets, id, true);
-      addWidgetMenuOpen = false;
       persistDashboardWidgets();
       renderShell(container);
     };
