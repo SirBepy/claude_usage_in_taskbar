@@ -161,8 +161,11 @@ mod imp {
     pub fn spawn(config_dir: &Path, display_name: &str) -> std::io::Result<()> {
         let dir_str = config_dir.to_string_lossy().to_string();
         let title = super::login_terminal_title(display_name);
+        // No double quotes anywhere in this string: Rust's arg quoting would
+        // backslash-escape them, and cmd.exe does not understand \" (it also
+        // changes cmd's outer-quote-stripping behavior for the /K payload).
         let inner = format!(
-            "title {title}&&set CLAUDE_CONFIG_DIR={dir_str}&&echo(&&echo   Log in for the \"{display_name}\" account HERE (run /login).&&echo(&&claude"
+            "title {title}&&set CLAUDE_CONFIG_DIR={dir_str}&&echo(&&echo   Log in for the {display_name} account HERE (run /login).&&echo(&&claude"
         );
         // Prefer Windows Terminal. `-w new` forces a NEW window: a tab
         // appended to an existing window is exactly how the user ends up
@@ -378,6 +381,32 @@ mod tests {
         f.set_modified(newer).unwrap();
 
         assert!(detect_misdirected_login(&watch).is_some());
+    }
+
+    #[test]
+    fn misdirected_then_correct_login_replays_the_wrong_terminal_incident() {
+        // Regression for the 2026-07-08 incident: /login typed into a stale
+        // terminal landed in ~/.claude while the wizard polled the fresh
+        // ~/.claude-personal forever. The watch must flag the sideways login,
+        // and a subsequent correct login must still complete the step.
+        let home = tempdir().unwrap();
+        let target = home.path().join(".claude-personal");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+
+        let watch = capture_login_watch(home.path(), &target);
+        assert_eq!(poll_login(&target), LoginPollResult::Pending);
+        assert_eq!(detect_misdirected_login(&watch), None);
+
+        // Login lands in the WRONG profile: still pending, but now flagged.
+        touch_creds(&home.path().join(".claude"));
+        assert_eq!(poll_login(&target), LoginPollResult::Pending);
+        assert!(detect_misdirected_login(&watch).is_some());
+
+        // User retries in the right terminal: step completes.
+        write_identity(&target);
+        write_credentials(&target);
+        assert!(matches!(poll_login(&target), LoginPollResult::Ready(_)));
     }
 
     #[test]
