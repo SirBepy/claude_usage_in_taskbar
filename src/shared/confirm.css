@@ -1,0 +1,56 @@
+/* In-app confirm dialog (shared/confirm.ts). Sits above every other overlay
+ * (wizard is z-index 1000). */
+
+.app-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-confirm {
+  width: 360px;
+  max-width: 90vw;
+  background: var(--color-surface, #1c1c24);
+  color: var(--color-text, #e8e8ee);
+  border: 1px solid var(--color-border, #2a2a36);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+}
+
+.app-confirm-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.app-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.app-confirm .btn {
+  padding: 8px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 12.5px;
+  border: 1px solid var(--color-border, #2a2a36);
+  background: var(--color-surface-alt, #24242e);
+  color: var(--color-text, #e8e8ee);
+}
+
+.app-confirm .btn:hover { filter: brightness(1.08); }
+
+.app-confirm .btn.danger {
+  background: color-mix(in srgb, var(--color-danger, #ff6b6b) 18%, transparent);
+  border-color: color-mix(in srgb, var(--color-danger, #ff6b6b) 45%, transparent);
+  color: var(--color-danger, #ff6b6b);
+}

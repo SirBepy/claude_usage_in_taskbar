@@ -204,7 +204,7 @@ async function refreshList(root: HTMLElement): Promise<void> {
       const row = accounts.find((a) => a.id === id);
       const label = row?.label ?? "this account";
       void (async () => {
-        if (!(await askConfirm(`Remove ${label}? This deletes its profile folder (and its browser/cookie login) - it never touches ~/.claude.`))) return;
+        if (!(await askConfirm(`Remove ${label}? This deletes its profile folder (and its browser/cookie login) - it never touches ~/.claude.`, { confirmLabel: "Remove" }))) return;
         btn.disabled = true;
         try { await api.removeAccount(id); await refreshList(root); }
         catch (e) {
