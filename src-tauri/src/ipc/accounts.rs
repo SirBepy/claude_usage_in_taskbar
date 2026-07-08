@@ -579,7 +579,7 @@ pub fn get_account_identity(account_id: String) -> Result<AccountIdentity, Strin
 
     let oauth_account = identity::read_oauth_account(&account.config_dir);
     let token_expires_at = identity::read_token_expiry(&account.config_dir);
-    let (is_drift, drift_message) = match drift::compare(account, oauth_account.as_ref()) {
+    let (is_drift, drift_message) = match drift::compare(account, oauth_account.as_ref(), token_expires_at.is_some()) {
         Ok(()) => (false, None),
         Err(e) => (true, Some(e.to_string())),
     };
