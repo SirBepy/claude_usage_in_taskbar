@@ -21,13 +21,14 @@ pub enum LoginPollResult {
     /// `oauthAccount`, or missing/parseless `.credentials.json`).
     Pending,
     /// `.credentials.json` holds a valid (parseable, unexpired-or-refreshable)
-    /// token, but `.claude.json` has no `oauthAccount` block yet. Happens with
-    /// a profile dir that was `/login`-ed at some point but never ran an
-    /// interactive turn afterward (the CLI only writes `oauthAccount` once it
-    /// fetches the org/profile info) - distinct from `Pending` so the caller
-    /// can tell the user "you're not stuck waiting on /login, the CLI just
-    /// hasn't confirmed the account yet" instead of a generic not-detected
-    /// message.
+    /// token, but `.claude.json` has no `oauthAccount` block. The CLI only
+    /// writes `oauthAccount` during the live `/login` handshake itself -
+    /// ordinary startups against already-valid credentials never backfill it
+    /// (confirmed on a real profile with 19 sessions and still no block,
+    /// ai_todo 167), so waiting or "running a command" does NOT resolve this
+    /// state. Distinct from `Pending` so the wizard can offer the
+    /// browser-cookie identity fallback (`add_account_capture_cookie`)
+    /// instead of polling forever.
     CredentialsNoProfile,
     /// The dir holds an identity AND credentials - login is complete.
     Ready(OauthAccountInfo),

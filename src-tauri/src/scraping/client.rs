@@ -19,6 +19,58 @@ pub struct OrgListEntry {
     pub name: Option<String>,
 }
 
+/// Identity of the account behind a sessionKey cookie, from
+/// `GET /api/account` (validated live 2026-07-08, ai_todo 167): unlike
+/// `/api/organizations` this DOES return the email, plus every org the
+/// account is a member of. Used by the add-account wizard's browser-cookie
+/// identity fallback when the CLI never writes `oauthAccount`.
+#[derive(Deserialize, Clone, Debug)]
+pub struct WebAccountIdentity {
+    pub email_address: String,
+    #[serde(default)]
+    pub memberships: Vec<WebAccountMembership>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct WebAccountMembership {
+    pub organization: WebAccountOrg,
+}
+
+/// One org from a membership. `capabilities` matters: a single account can
+/// belong to several orgs (observed live: a `["claude_max","chat"]`
+/// subscription org AND an `["api","api_individual"]` Console org) - only a
+/// chat-capable org is the claude.ai subscription identity we want.
+#[derive(Deserialize, Clone, Debug)]
+pub struct WebAccountOrg {
+    pub uuid: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+impl WebAccountIdentity {
+    /// The claude.ai subscription org: first membership whose capabilities
+    /// include "chat", falling back to the first membership at all (better a
+    /// slightly-off org than a dead-end for a shape we haven't seen).
+    pub fn chat_org(&self) -> Option<&WebAccountOrg> {
+        self.memberships
+            .iter()
+            .find(|m| m.organization.capabilities.iter().any(|c| c == "chat"))
+            .or_else(|| self.memberships.first())
+            .map(|m| &m.organization)
+    }
+}
+
+impl WebAccountOrg {
+    /// Subscription tier in the same vocabulary the CLI's `oauthAccount`
+    /// uses for `organizationType` ("claude_max", "claude_pro", ...): the
+    /// first `claude_*` capability. `None` when the org doesn't state one.
+    pub fn subscription_tier(&self) -> Option<String> {
+        self.capabilities.iter().find(|c| c.starts_with("claude_")).cloned()
+    }
+}
+
 /// Errors that callers may want to react to distinctly.
 #[derive(thiserror::Error, Debug)]
 pub enum ScrapeError {
@@ -75,6 +127,33 @@ pub async fn fetch_org_list(base_url: &str, session_key: &str)
     }
 
     orgs_resp.json().await.context("parsing org list").map_err(ScrapeError::Other)
+}
+
+/// `GET /api/account` for the session behind `session_key`: the account's
+/// email + org memberships. The add-account wizard's cookie-identity fallback
+/// (ai_todo 167) uses this when the profile dir has valid credentials but the
+/// CLI never wrote `oauthAccount`.
+pub async fn fetch_web_account(base_url: &str, session_key: &str)
+    -> Result<WebAccountIdentity, ScrapeError>
+{
+    let client = http_client()?;
+    let url = format!("{base_url}/api/account");
+    let resp = client.get(&url)
+        .header("cookie", format!("sessionKey={session_key}"))
+        .header("accept", "application/json")
+        .header("referer", format!("{base_url}/settings/usage"))
+        .send().await
+        .context("GET /api/account")
+        .map_err(ScrapeError::Other)?;
+
+    let status = resp.status();
+    if status.as_u16() == 401 { return Err(ScrapeError::Unauthorized); }
+    if status.as_u16() == 403 { return Err(ScrapeError::Forbidden); }
+    if !status.is_success() {
+        return Err(ScrapeError::Other(anyhow!("account HTTP {}", status.as_u16())));
+    }
+
+    resp.json().await.context("parsing account identity").map_err(ScrapeError::Other)
 }
 
 /// Fetches current usage, always scraping the FIRST org in the session's org
@@ -209,6 +288,63 @@ mod tests {
             .create_async().await;
         let orgs = fetch_org_list(&server.url(), "sk-abc").await.unwrap();
         assert_eq!(orgs[0].name, None);
+    }
+
+    // Trimmed live /api/account shape (2026-07-08): a Max subscription org
+    // plus an API-only Console org on the same email.
+    const ACCOUNT_BODY: &str = r#"{
+        "uuid": "acct-uuid",
+        "email_address": "joe@example.com",
+        "display_name": "Joe",
+        "memberships": [
+            {"organization": {"uuid": "ORG-API", "name": "Individual Org", "capabilities": ["api", "api_individual"]}},
+            {"organization": {"uuid": "ORG-CHAT", "name": "Joe's Organization", "capabilities": ["claude_max", "chat"]}}
+        ]
+    }"#;
+
+    #[tokio::test]
+    async fn fetch_web_account_parses_email_and_picks_chat_org() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server.mock("GET", "/api/account")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(ACCOUNT_BODY)
+            .create_async().await;
+        let account = fetch_web_account(&server.url(), "sk-abc").await.unwrap();
+        assert_eq!(account.email_address, "joe@example.com");
+        let org = account.chat_org().expect("expected a chat org");
+        assert_eq!(org.uuid, "ORG-CHAT", "must pick the chat-capable org, not the first");
+        assert_eq!(org.name.as_deref(), Some("Joe's Organization"));
+        assert_eq!(org.subscription_tier().as_deref(), Some("claude_max"));
+    }
+
+    #[tokio::test]
+    async fn fetch_web_account_unauthorized_on_401() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server.mock("GET", "/api/account")
+            .with_status(401).create_async().await;
+        let err = fetch_web_account(&server.url(), "sk-bad").await.unwrap_err();
+        assert!(matches!(err, ScrapeError::Unauthorized));
+    }
+
+    #[test]
+    fn chat_org_falls_back_to_first_membership_when_none_chat_capable() {
+        let account: WebAccountIdentity = serde_json::from_str(r#"{
+            "email_address": "a@x.com",
+            "memberships": [
+                {"organization": {"uuid": "ORG-1", "capabilities": ["api"]}},
+                {"organization": {"uuid": "ORG-2"}}
+            ]
+        }"#).unwrap();
+        assert_eq!(account.chat_org().unwrap().uuid, "ORG-1");
+        assert_eq!(account.chat_org().unwrap().subscription_tier(), None);
+    }
+
+    #[test]
+    fn chat_org_none_when_no_memberships() {
+        let account: WebAccountIdentity =
+            serde_json::from_str(r#"{"email_address": "a@x.com"}"#).unwrap();
+        assert!(account.chat_org().is_none());
     }
 
     #[tokio::test]

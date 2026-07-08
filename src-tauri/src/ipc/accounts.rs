@@ -191,46 +191,106 @@ pub fn add_account_check_login(
 }
 
 /// Optional step: grab the web `sessionKey` cookie via the existing CDP
-/// browser flow (own chrome profile dir per account) and cross-check its org
-/// list against the CLI identity's `organizationUuid`. Requires
-/// `add_account_check_login` to have returned `Ready` first.
+/// browser flow (own chrome profile dir per account).
+///
+/// Two modes (ai_todo 167):
+/// - CLI identity already `Ready`: cross-check the cookie's org list against
+///   the CLI identity's `organizationUuid` (unchanged behavior). Returns
+///   `None`.
+/// - No CLI identity but the profile dir sits in `CredentialsNoProfile`
+///   (valid `.credentials.json`, the CLI never wrote `oauthAccount` - it only
+///   does so during the live `/login` handshake): derive the identity from
+///   the cookie itself via `GET /api/account` (email + chat-capable org),
+///   run the same dedup check `add_account_check_login` would, and return
+///   the derived identity so the wizard can finish without the CLI's block.
 #[tauri::command]
 pub async fn add_account_capture_cookie(
     session_id: String,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<(), String> {
-    let (chrome_profile_dir, org_uuid) = {
+) -> Result<Option<OauthAccountInfo>, String> {
+    let (chrome_profile_dir, cli_org_uuid) = {
         let sessions = state.account_wizard_sessions.lock().unwrap();
         let session = sessions
             .get(&session_id)
             .ok_or_else(|| "wizard session not found or already finished".to_string())?;
-        let identity = session
-            .verified_identity
-            .clone()
-            .ok_or_else(|| "call add_account_check_login until Ready before capturing the cookie".to_string())?;
-        (session.chrome_profile_dir.clone(), identity.organization_uuid)
+        let cli_org_uuid = match &session.verified_identity {
+            Some(identity) => Some(identity.organization_uuid.clone()),
+            // The cookie-identity fallback is only for the credentials-
+            // without-profile state; a dir with no valid credentials at all
+            // still has to finish /login first.
+            None => match login_step::poll_login(&session.config_dir) {
+                login_step::LoginPollResult::CredentialsNoProfile => None,
+                _ => return Err(
+                    "call add_account_check_login until Ready before capturing the cookie"
+                        .to_string(),
+                ),
+            },
+        };
+        (session.chrome_profile_dir.clone(), cli_org_uuid)
     };
 
     let session_key = crate::auth::login_flow::run_for_account(app, chrome_profile_dir)
         .await
         .map_err(|e| e.to_string())?;
 
-    let orgs = crate::scraping::client::fetch_org_list("https://claude.ai", &session_key)
-        .await
-        .map_err(|e| e.to_string())?;
-    if !orgs.iter().any(|o| o.uuid == org_uuid) {
-        return Err(
-            "the browser login belongs to a different account than the CLI login - log both into the same account"
-                .to_string(),
-        );
-    }
+    let derived_identity = match cli_org_uuid {
+        // Cross-check mode: the CLI identity stays authoritative.
+        Some(org_uuid) => {
+            let orgs = crate::scraping::client::fetch_org_list("https://claude.ai", &session_key)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !orgs.iter().any(|o| o.uuid == org_uuid) {
+                return Err(
+                    "the browser login belongs to a different account than the CLI login - log both into the same account"
+                        .to_string(),
+                );
+            }
+            None
+        }
+        // Fallback mode: the cookie IS the identity source.
+        None => {
+            let account =
+                crate::scraping::client::fetch_web_account("https://claude.ai", &session_key)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            let org = account
+                .chat_org()
+                .ok_or_else(|| "the browser account has no claude.ai organization".to_string())?;
+            let identity = OauthAccountInfo {
+                email_address: account.email_address.clone(),
+                organization_uuid: org.uuid.clone(),
+                organization_name: org.name.clone(),
+                organization_type: org.subscription_tier(),
+                profile_fetched_at: None,
+            };
+
+            let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+            let registered = accounts_store::load(&accounts_path);
+            let exclude = {
+                let sessions = state.account_wizard_sessions.lock().unwrap();
+                sessions.get(&session_id).map(|s| s.config_dir.clone())
+            };
+            if let Some(dup) = accounts_store::find_duplicate(
+                &registered,
+                &identity.organization_uuid,
+                &identity.email_address,
+                exclude.as_deref(),
+            ) {
+                return Err(format!("already added as \"{}\"", dup.label));
+            }
+            Some(identity)
+        }
+    };
 
     let mut sessions = state.account_wizard_sessions.lock().unwrap();
     if let Some(session) = sessions.get_mut(&session_id) {
         session.session_key = Some(session_key);
+        if let Some(identity) = &derived_identity {
+            session.verified_identity = Some(identity.clone());
+        }
     }
-    Ok(())
+    Ok(derived_identity)
 }
 
 /// Cancel an in-progress wizard run. Deletes the profile dir ONLY if this

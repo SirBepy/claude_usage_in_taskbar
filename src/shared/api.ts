@@ -512,7 +512,9 @@ export const api = {
     invoke("add_account_create", { label, slug }),
   addAccountCheckLogin: (sessionId: string): Promise<LoginCheckOutcome> =>
     invoke("add_account_check_login", { sessionId }),
-  addAccountCaptureCookie: (sessionId: string): Promise<void> =>
+  /** Resolves with the cookie-derived identity when the CLI never produced
+   * one (CredentialsNoProfile fallback, ai_todo 167), else `null`. */
+  addAccountCaptureCookie: (sessionId: string): Promise<OauthAccountInfo | null> =>
     invoke("add_account_capture_cookie", { sessionId }),
   addAccountCancel: (sessionId: string): Promise<void> =>
     invoke("add_account_cancel", { sessionId }),

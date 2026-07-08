@@ -189,7 +189,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>A login just landed in ${escapeHtml(misdirected)}, not in this account's profile. You probably used a different terminal - type /login in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</span></div>`
         : "";
       const credentialsNoProfileNote = credentialsNoProfile
-        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>This profile already has valid stored credentials, but Claude Code hasn't confirmed the account email yet. You probably don't need to run /login again - just run any command in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}" (even just sending a message), then check again.</span></div>`
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>This profile already has valid stored credentials, but Claude Code never recorded which account they belong to - and it only does that during /login itself, so waiting won't help. Use the browser login below to confirm the account instead (or run /login in the terminal if you'd rather).</span></div>`
         : "";
       const notDetectedNote = manualCheckPending && !credentialsNoProfile
         ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>No login detected yet in <code>${escapeHtml(configDir)}</code>. Make sure /login finished in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</span></div>`
@@ -206,14 +206,20 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         </div>
         <div class="wz-actions">
           <button class="btn" id="aaw-cancel-btn">Cancel</button>
-          <button class="btn" id="aaw-checknow-btn">I've logged in - check now</button>
+          <span style="display:flex;gap:8px">
+            ${credentialsNoProfile ? `<button class="btn primary" id="aaw-browser-fallback-btn">Use browser login instead</button>` : ""}
+            <button class="btn" id="aaw-checknow-btn">I've logged in - check now</button>
+          </span>
         </div>
       `;
     }
 
     function renderCookieStep(): string {
-      const identity = verifiedIdentity!;
-      return `
+      const identity = verifiedIdentity;
+      // Cookie-identity fallback (ai_todo 167): no CLI identity yet - the
+      // browser login IS the identity source, so it can't be skipped.
+      const header = identity
+        ? `
         <div class="detected">
           <span class="av"><i class="ph ph-check-circle"></i></span>
           <span class="info">
@@ -221,17 +227,22 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
             <div class="em">${escapeHtml(tierLabel(identity.organizationType))}</div>
           </span>
           <span class="ok"><i class="ph ph-check-circle"></i> CLI verified</span>
-        </div>
-        <p class="aaw-explain">
-          Usage tracking needs a separate browser login (claude.ai session cookie) for this
-          account. This opens a browser window - log in as the SAME account.
-        </p>
+        </div>`
+        : `<div class="aaw-note"><i class="ph ph-info"></i> Claude Code never confirmed which account this profile belongs to - the browser login below will confirm it instead.</div>`;
+      const explain = identity
+        ? `Usage tracking needs a separate browser login (claude.ai session cookie) for this
+          account. This opens a browser window - log in as the SAME account.`
+        : `This opens a browser window - log into claude.ai as the account this profile
+          belongs to. That login identifies the account AND enables usage tracking.`;
+      return `
+        ${header}
+        <p class="aaw-explain">${explain}</p>
         ${cookieError ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(cookieError)}</div>` : ""}
-        ${cookieCaptured ? `<div class="aaw-note"><i class="ph ph-check-circle"></i> Browser login verified - matches the CLI account.</div>` : ""}
+        ${cookieCaptured ? `<div class="aaw-note"><i class="ph ph-check-circle"></i> Browser login verified${identity ? " - matches the CLI account" : ""}.</div>` : ""}
         <div class="wz-actions">
           <button class="btn" id="aaw-cancel-btn" ${busy ? "disabled" : ""}>Cancel</button>
           <span style="display:flex;gap:8px">
-            ${!cookieCaptured ? `<button class="btn" id="aaw-skip-btn" ${busy ? "disabled" : ""}>Skip for now</button>` : ""}
+            ${!cookieCaptured && identity ? `<button class="btn" id="aaw-skip-btn" ${busy ? "disabled" : ""}>Skip for now</button>` : ""}
             <button class="btn primary" id="aaw-capture-btn" ${busy ? "disabled" : ""}>
               ${busy ? `<i class="ph ph-spinner aaw-spin"></i> Waiting on browser...` : cookieCaptured ? "Continue" : "Connect browser"}
             </button>
@@ -315,6 +326,11 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
           manualCheckPending = true;
           void pollLogin();
         });
+        overlay.querySelector<HTMLButtonElement>("#aaw-browser-fallback-btn")?.addEventListener("click", () => {
+          stopPolling();
+          step = "cookie";
+          render();
+        });
       } else if (step === "cookie") {
         overlay.querySelector<HTMLButtonElement>("#aaw-capture-btn")?.addEventListener("click", () => {
           if (cookieCaptured) { step = "finalize"; render(); return; }
@@ -381,7 +397,10 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     async function pollLogin(): Promise<void> {
       if (!sessionId) return;
       elapsedMs = Date.now() - loginStartedAt;
-      if (isLoginTimedOut(elapsedMs)) {
+      // No timeout while the browser-login fallback is on offer
+      // (credentialsNoProfile): timing out would replace the user's only
+      // escape hatch with a dead-end failure card.
+      if (!credentialsNoProfile && isLoginTimedOut(elapsedMs)) {
         stopPolling();
         loginFailure = { kind: "timeout", message: "Timed out waiting for /login (5 min). Cancel and try again." };
         render();
@@ -417,7 +436,8 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       cookieError = null;
       render();
       try {
-        await api.addAccountCaptureCookie(sessionId);
+        const derivedIdentity = await api.addAccountCaptureCookie(sessionId);
+        if (derivedIdentity) verifiedIdentity = derivedIdentity;
         cookieCaptured = true;
         busy = false;
         step = "finalize";

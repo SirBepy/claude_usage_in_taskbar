@@ -54,6 +54,15 @@ interactive `/login` -> identity read -> cookie grab -> cross-check -> auto-fill
    organizationName, organizationType}`. If `org_uuid` or email matches an existing account:
    reject with "already added as <label>" and clean up. Show "Logged in as <email> (<tier>)" for
    the user to confirm before continuing.
+   **Cookie-identity fallback (ai_todo 167):** the CLI only writes `oauthAccount` during the live
+   `/login` handshake - ordinary startups against already-valid credentials never backfill it, so
+   a dir can sit in "valid `.credentials.json`, no `oauthAccount`" forever
+   (`LoginPollResult::CredentialsNoProfile`). In that state the wizard offers "Use browser login
+   instead": `add_account_capture_cookie` derives the identity from the cookie via
+   `GET /api/account` (validated live: returns `email_address` + org memberships with
+   `uuid`/`name`/`capabilities`; pick the chat-capable org, since one account can also hold an
+   API-only Console org), runs the same dedup, and the wizard finalizes on that identity. The
+   CLI-identity path stays preferred whenever `oauthAccount` is present.
 5. **Web cookie capture, per-account.** Reuse `login_flow.rs` but give each account its OWN chrome
    profile dir (avoid cookie collision) and store the `sessionKey` per account (keyed file
    `session-<id>.txt` or credential store - keep the existing storage pattern, just keyed).
