@@ -54,15 +54,19 @@ interactive `/login` -> identity read -> cookie grab -> cross-check -> auto-fill
    organizationName, organizationType}`. If `org_uuid` or email matches an existing account:
    reject with "already added as <label>" and clean up. Show "Logged in as <email> (<tier>)" for
    the user to confirm before continuing.
-   **Cookie-identity fallback (ai_todo 167):** the CLI only writes `oauthAccount` during the live
-   `/login` handshake - ordinary startups against already-valid credentials never backfill it, so
-   a dir can sit in "valid `.credentials.json`, no `oauthAccount`" forever
-   (`LoginPollResult::CredentialsNoProfile`). In that state the wizard offers "Use browser login
-   instead": `add_account_capture_cookie` derives the identity from the cookie via
-   `GET /api/account` (validated live: returns `email_address` + org memberships with
-   `uuid`/`name`/`capabilities`; pick the chat-capable org, since one account can also hold an
-   API-only Console org), runs the same dedup, and the wizard finalizes on that identity. The
-   CLI-identity path stays preferred whenever `oauthAccount` is present.
+   **Browser-first reorder (2026-07-08):** the wizard now runs the BROWSER login before the CLI
+   step, because the cookie alone yields the full identity via `GET /api/account` (validated
+   live: returns `email_address` + org memberships with `uuid`/`name`/`capabilities`; pick the
+   chat-capable org, since one account can also hold an API-only Console org). Flow:
+   `add_account_create` (dir only, no terminal) -> `add_account_capture_cookie` (cookie +
+   identity + dedup) -> if the dir already has a valid `.credentials.json`, skip straight to
+   finalize; otherwise `add_account_start_cli_login` spawns the `/login` terminal and
+   `add_account_check_login` polls, cross-checking the CLI's `oauthAccount` against the browser
+   identity. Background: the CLI only writes `oauthAccount` during the live `/login` handshake -
+   ordinary startups against already-valid credentials never backfill it, so a dir can sit in
+   "valid credentials, no `oauthAccount`" forever (`LoginPollResult::CredentialsNoProfile`); the
+   browser identity resolves that state. The browser step is skippable; the flow then degrades
+   to the original CLI-identity path.
 5. **Web cookie capture, per-account.** Reuse `login_flow.rs` but give each account its OWN chrome
    profile dir (avoid cookie collision) and store the `sessionKey` per account (keyed file
    `session-<id>.txt` or credential store - keep the existing storage pattern, just keyed).

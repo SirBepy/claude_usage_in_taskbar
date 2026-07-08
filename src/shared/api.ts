@@ -510,11 +510,16 @@ export const api = {
   // --- Accounts (multi-account milestone 01: add-account wizard) ---
   addAccountCreate: (label: string, slug: string | null): Promise<AddAccountSession> =>
     invoke("add_account_create", { label, slug }),
+  /** Spawns the /login terminal for the wizard session; resolves with the
+   * terminal window title. Browser-first flow: only called when the profile
+   * dir has no credentials yet (or the user skipped the browser step). */
+  addAccountStartCliLogin: (sessionId: string): Promise<string> =>
+    invoke("add_account_start_cli_login", { sessionId }),
   addAccountCheckLogin: (sessionId: string): Promise<LoginCheckOutcome> =>
     invoke("add_account_check_login", { sessionId }),
-  /** Resolves with the cookie-derived identity when the CLI never produced
-   * one (CredentialsNoProfile fallback, ai_todo 167), else `null`. */
-  addAccountCaptureCookie: (sessionId: string): Promise<OauthAccountInfo | null> =>
+  /** Browser-login step: captures the cookie AND derives the account identity
+   * from it (GET /api/account). Resolves with that identity. */
+  addAccountCaptureCookie: (sessionId: string): Promise<OauthAccountInfo> =>
     invoke("add_account_capture_cookie", { sessionId }),
   addAccountCancel: (sessionId: string): Promise<void> =>
     invoke("add_account_cancel", { sessionId }),

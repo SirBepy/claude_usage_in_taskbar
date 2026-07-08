@@ -1,11 +1,15 @@
 //! Add-account wizard IPC + account registry management (multi-account
 //! milestone 01, backend only - see `docs/multi-account/01-account-identity.md`).
 //!
-//! Wizard flow: `add_account_create` (profile dir + spawn `/login` terminal)
-//! -> poll `add_account_check_login` until `Ready` -> optionally
-//! `add_account_capture_cookie` (web sessionKey + cross-check) ->
-//! `add_account_finalize` (persist). `add_account_cancel` at any point cleans
-//! up a dir THIS wizard run created (never an adopted pre-existing dir).
+//! Wizard flow (browser-first since 2026-07-08): `add_account_create`
+//! (profile dir only, no terminal) -> `add_account_capture_cookie` (web
+//! sessionKey + identity from `GET /api/account`) -> when the dir has no
+//! valid credentials, `add_account_start_cli_login` (spawn the `/login`
+//! terminal) + poll `add_account_check_login` until `Ready` ->
+//! `add_account_finalize` (persist). The browser step is skippable; the flow
+//! then degrades to the original CLI-identity path. `add_account_cancel` at
+//! any point cleans up a dir THIS wizard run created (never an adopted
+//! pre-existing dir).
 
 use crate::accounts::model::{slugify, Account};
 use crate::accounts::{drift, identity, login_step, profile, store as accounts_store, OauthAccountInfo, WizardSession};
@@ -31,17 +35,13 @@ pub struct AddAccountSession {
     /// fresh add.
     pub adopted_existing: bool,
     pub existing_identity: Option<OauthAccountInfo>,
-    /// True when the adopted dir already held a complete login (identity +
-    /// credentials): no terminal was spawned, and the first
-    /// `add_account_check_login` will come back `Ready` immediately.
-    pub login_skipped: bool,
-    /// The window title the spawned `/login` terminal was given (present iff
-    /// a terminal was actually spawned), so the waiting UI can tell the user
-    /// exactly which window to type into.
-    pub terminal_title: Option<String>,
+    /// True when the dir already holds a valid (parseable) `.credentials.json`
+    /// - the CLI `/login` step is unnecessary and the wizard can go straight
+    /// from the browser step to finalize (browser-first flow, 2026-07-08).
+    pub has_credentials: bool,
 }
 
-#[derive(Serialize, ts_rs::TS)]
+#[derive(Serialize, Debug, ts_rs::TS)]
 #[serde(tag = "status")]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum LoginCheckOutcome {
@@ -64,8 +64,10 @@ pub enum LoginCheckOutcome {
     Duplicate { existing_label: String },
 }
 
-/// Step 1: create (or adopt) the profile dir and spawn the visible `/login`
-/// terminal. `slug` defaults to a slugified `label` when omitted.
+/// Step 1: create (or adopt) the profile dir. No terminal is spawned here -
+/// the browser step comes first; the `/login` terminal only spawns on demand
+/// via `add_account_start_cli_login` when the dir has no credentials yet.
+/// `slug` defaults to a slugified `label` when omitted.
 #[tauri::command]
 pub fn add_account_create(
     label: String,
@@ -91,21 +93,7 @@ pub fn add_account_create(
     }
 
     let existing_identity = identity::read_oauth_account(&outcome.config_dir);
-
-    // Adoption fast-path: a dir that already holds a complete login (identity
-    // + credentials) needs NO /login - an expired access token still counts,
-    // the CLI self-refreshes. Skip the terminal; the first check_login call
-    // returns Ready with the existing identity for the user to confirm.
-    let login_skipped = login_step::has_complete_login(&outcome.config_dir);
-    let (login_watch, terminal_title) = if login_skipped {
-        (login_step::LoginWatch::default(), None)
-    } else {
-        let watch = dirs::home_dir()
-            .map(|home| login_step::capture_login_watch(&home, &outcome.config_dir))
-            .unwrap_or_default();
-        login_step::spawn_login_terminal(&outcome.config_dir, &slug).map_err(|e| e.to_string())?;
-        (watch, Some(login_step::login_terminal_title(&slug)))
-    };
+    let has_credentials = identity::read_token_expiry(&outcome.config_dir).is_some();
 
     let account_id = uuid::Uuid::new_v4().to_string();
     let chrome_profile_dir =
@@ -117,8 +105,7 @@ pub fn add_account_create(
         config_dir: outcome.config_dir.clone(),
         adopted_existing: !outcome.created_new,
         existing_identity: existing_identity.clone(),
-        login_skipped,
-        terminal_title,
+        has_credentials,
     };
     let session = WizardSession {
         account_id,
@@ -127,7 +114,7 @@ pub fn add_account_create(
         chrome_profile_dir,
         created_new_dir: outcome.created_new,
         pre_existing_identity: existing_identity,
-        login_watch,
+        login_watch: login_step::LoginWatch::default(),
         verified_identity: None,
         session_key: None,
     };
@@ -135,43 +122,185 @@ pub fn add_account_create(
     Ok(result)
 }
 
-/// Step 2: poll for a fresh `oauthAccount`. Call repeatedly until it stops
-/// returning `Pending` (or the user cancels / a frontend-owned timeout
-/// fires `add_account_cancel`).
+/// Spawns the visible `/login` terminal for an in-progress wizard session and
+/// arms the misdirected-login watch. Called when the flow actually needs a
+/// CLI login (fresh dir, or the user skipped the browser step). Returns the
+/// terminal window title so the UI can say exactly which window to type into.
+/// Idempotent-ish: calling again just spawns another terminal (matches the
+/// reauth behavior); the watch baseline resets each call.
+#[tauri::command]
+pub fn add_account_start_cli_login(
+    session_id: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let (config_dir, slug) = {
+        let sessions = state.account_wizard_sessions.lock().unwrap();
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| "wizard session not found or already finished".to_string())?;
+        (session.config_dir.clone(), session.slug.clone())
+    };
+
+    let watch = dirs::home_dir()
+        .map(|home| login_step::capture_login_watch(&home, &config_dir))
+        .unwrap_or_default();
+    login_step::spawn_login_terminal(&config_dir, &slug).map_err(|e| e.to_string())?;
+
+    let mut sessions = state.account_wizard_sessions.lock().unwrap();
+    if let Some(session) = sessions.get_mut(&session_id) {
+        session.login_watch = watch;
+    }
+    Ok(login_step::login_terminal_title(&slug))
+}
+
+/// Pure decision core of `add_account_check_login`, split out for unit tests.
+/// `web_identity` is the browser-derived identity when the cookie step
+/// already ran (browser-first flow): it upgrades `CredentialsNoProfile` to
+/// `Ready` (the credentials exist and the account is known) and mismatch-
+/// checks a CLI login against what the browser said.
+fn resolve_login_outcome(
+    poll: login_step::LoginPollResult,
+    web_identity: Option<&OauthAccountInfo>,
+    pre_existing_identity: Option<&OauthAccountInfo>,
+    registered: &[Account],
+    config_dir: &std::path::Path,
+    misdirected: Option<String>,
+) -> LoginCheckOutcome {
+    let identity = match poll {
+        login_step::LoginPollResult::Pending => {
+            return LoginCheckOutcome::Pending { misdirected, credentials_no_profile: false }
+        }
+        login_step::LoginPollResult::CredentialsNoProfile => {
+            // Valid credentials + a browser-confirmed identity = complete;
+            // the CLI just never writes `oauthAccount` outside /login itself.
+            match web_identity {
+                Some(web) => return LoginCheckOutcome::Ready { identity: web.clone() },
+                None => {
+                    return LoginCheckOutcome::Pending { misdirected, credentials_no_profile: true }
+                }
+            }
+        }
+        login_step::LoginPollResult::Ready(identity) => identity,
+    };
+
+    let mismatch_against = |other: &OauthAccountInfo| {
+        other.organization_uuid != identity.organization_uuid
+            || !other.email_address.eq_ignore_ascii_case(&identity.email_address)
+    };
+    if let Some(pre) = pre_existing_identity {
+        if mismatch_against(pre) {
+            return LoginCheckOutcome::Mismatch {
+                existing_email: pre.email_address.clone(),
+                new_email: identity.email_address.clone(),
+            };
+        }
+    }
+    if let Some(web) = web_identity {
+        if mismatch_against(web) {
+            return LoginCheckOutcome::Mismatch {
+                existing_email: web.email_address.clone(),
+                new_email: identity.email_address.clone(),
+            };
+        }
+    }
+
+    if let Some(dup) = accounts_store::find_duplicate(
+        registered,
+        &identity.organization_uuid,
+        &identity.email_address,
+        Some(config_dir),
+    ) {
+        return LoginCheckOutcome::Duplicate { existing_label: dup.label.clone() };
+    }
+
+    LoginCheckOutcome::Ready { identity }
+}
+
+/// CLI-login step: poll for a fresh `oauthAccount` (or, browser-first, for
+/// credentials landing in a dir whose identity the cookie already confirmed).
+/// Call repeatedly until it stops returning `Pending` (or the user cancels /
+/// a frontend-owned timeout fires `add_account_cancel`).
 #[tauri::command]
 pub fn add_account_check_login(
     session_id: String,
     state: State<AppState>,
 ) -> Result<LoginCheckOutcome, String> {
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let registered = accounts_store::load(&accounts_path);
+
     let mut sessions = state.account_wizard_sessions.lock().unwrap();
     let session = sessions
         .get_mut(&session_id)
         .ok_or_else(|| "wizard session not found or already finished".to_string())?;
 
-    let identity = match login_step::poll_login(&session.config_dir) {
-        login_step::LoginPollResult::Pending => {
-            return Ok(LoginCheckOutcome::Pending {
-                misdirected: login_step::detect_misdirected_login(&session.login_watch),
-                credentials_no_profile: false,
-            })
-        }
-        login_step::LoginPollResult::CredentialsNoProfile => {
-            return Ok(LoginCheckOutcome::Pending {
-                misdirected: login_step::detect_misdirected_login(&session.login_watch),
-                credentials_no_profile: true,
-            })
-        }
-        login_step::LoginPollResult::Ready(identity) => identity,
+    let outcome = resolve_login_outcome(
+        login_step::poll_login(&session.config_dir),
+        session.verified_identity.as_ref(),
+        session.pre_existing_identity.as_ref(),
+        &registered,
+        &session.config_dir,
+        login_step::detect_misdirected_login(&session.login_watch),
+    );
+    if let LoginCheckOutcome::Ready { identity } = &outcome {
+        session.verified_identity = Some(identity.clone());
+    }
+    Ok(outcome)
+}
+
+/// Browser-login step (step 2 in the browser-first flow): grab the web
+/// `sessionKey` cookie via the existing CDP browser flow (own chrome profile
+/// dir per account) and derive the account identity from `GET /api/account`
+/// (email + chat-capable org - one login can also hold an API-only Console
+/// org, see `WebAccountIdentity::chat_org`). Runs the same dedup check the
+/// CLI path uses, and cross-checks against any identity already known (CLI
+/// `Ready` when the user did /login first, or an adopted dir's pre-existing
+/// `oauthAccount`). Returns the derived identity for the wizard to display.
+#[tauri::command]
+pub async fn add_account_capture_cookie(
+    session_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<OauthAccountInfo, String> {
+    let (chrome_profile_dir, config_dir, known_identity) = {
+        let sessions = state.account_wizard_sessions.lock().unwrap();
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| "wizard session not found or already finished".to_string())?;
+        let known = session
+            .verified_identity
+            .clone()
+            .or_else(|| session.pre_existing_identity.clone());
+        (session.chrome_profile_dir.clone(), session.config_dir.clone(), known)
     };
 
-    if let Some(pre) = &session.pre_existing_identity {
-        let mismatch = pre.organization_uuid != identity.organization_uuid
-            || !pre.email_address.eq_ignore_ascii_case(&identity.email_address);
-        if mismatch {
-            return Ok(LoginCheckOutcome::Mismatch {
-                existing_email: pre.email_address.clone(),
-                new_email: identity.email_address.clone(),
-            });
+    let session_key = crate::auth::login_flow::run_for_account(app, chrome_profile_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let account = crate::scraping::client::fetch_web_account("https://claude.ai", &session_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    let org = account
+        .chat_org()
+        .ok_or_else(|| "the browser account has no claude.ai organization".to_string())?;
+    let identity = OauthAccountInfo {
+        email_address: account.email_address.clone(),
+        organization_uuid: org.uuid.clone(),
+        organization_name: org.name.clone(),
+        organization_type: org.subscription_tier(),
+        profile_fetched_at: None,
+    };
+
+    // Cross-check: when this profile dir already has a known identity (CLI
+    // login ran first, or an adopted dir's oauthAccount), the browser login
+    // must belong to the same account. Membership in the same org is the
+    // comparison (org uuid), matching the old org-list cross-check.
+    if let Some(known) = &known_identity {
+        if known.organization_uuid != identity.organization_uuid {
+            return Err(format!(
+                "the browser login ({}) belongs to a different account than this profile ({}) - log into the same account",
+                identity.email_address, known.email_address
+            ));
         }
     }
 
@@ -181,116 +310,22 @@ pub fn add_account_check_login(
         &registered,
         &identity.organization_uuid,
         &identity.email_address,
-        Some(session.config_dir.as_path()),
+        Some(config_dir.as_path()),
     ) {
-        return Ok(LoginCheckOutcome::Duplicate { existing_label: dup.label.clone() });
+        return Err(format!("already added as \"{}\"", dup.label));
     }
-
-    session.verified_identity = Some(identity.clone());
-    Ok(LoginCheckOutcome::Ready { identity })
-}
-
-/// Optional step: grab the web `sessionKey` cookie via the existing CDP
-/// browser flow (own chrome profile dir per account).
-///
-/// Two modes (ai_todo 167):
-/// - CLI identity already `Ready`: cross-check the cookie's org list against
-///   the CLI identity's `organizationUuid` (unchanged behavior). Returns
-///   `None`.
-/// - No CLI identity but the profile dir sits in `CredentialsNoProfile`
-///   (valid `.credentials.json`, the CLI never wrote `oauthAccount` - it only
-///   does so during the live `/login` handshake): derive the identity from
-///   the cookie itself via `GET /api/account` (email + chat-capable org),
-///   run the same dedup check `add_account_check_login` would, and return
-///   the derived identity so the wizard can finish without the CLI's block.
-#[tauri::command]
-pub async fn add_account_capture_cookie(
-    session_id: String,
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Option<OauthAccountInfo>, String> {
-    let (chrome_profile_dir, cli_org_uuid) = {
-        let sessions = state.account_wizard_sessions.lock().unwrap();
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| "wizard session not found or already finished".to_string())?;
-        let cli_org_uuid = match &session.verified_identity {
-            Some(identity) => Some(identity.organization_uuid.clone()),
-            // The cookie-identity fallback is only for the credentials-
-            // without-profile state; a dir with no valid credentials at all
-            // still has to finish /login first.
-            None => match login_step::poll_login(&session.config_dir) {
-                login_step::LoginPollResult::CredentialsNoProfile => None,
-                _ => return Err(
-                    "call add_account_check_login until Ready before capturing the cookie"
-                        .to_string(),
-                ),
-            },
-        };
-        (session.chrome_profile_dir.clone(), cli_org_uuid)
-    };
-
-    let session_key = crate::auth::login_flow::run_for_account(app, chrome_profile_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let derived_identity = match cli_org_uuid {
-        // Cross-check mode: the CLI identity stays authoritative.
-        Some(org_uuid) => {
-            let orgs = crate::scraping::client::fetch_org_list("https://claude.ai", &session_key)
-                .await
-                .map_err(|e| e.to_string())?;
-            if !orgs.iter().any(|o| o.uuid == org_uuid) {
-                return Err(
-                    "the browser login belongs to a different account than the CLI login - log both into the same account"
-                        .to_string(),
-                );
-            }
-            None
-        }
-        // Fallback mode: the cookie IS the identity source.
-        None => {
-            let account =
-                crate::scraping::client::fetch_web_account("https://claude.ai", &session_key)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            let org = account
-                .chat_org()
-                .ok_or_else(|| "the browser account has no claude.ai organization".to_string())?;
-            let identity = OauthAccountInfo {
-                email_address: account.email_address.clone(),
-                organization_uuid: org.uuid.clone(),
-                organization_name: org.name.clone(),
-                organization_type: org.subscription_tier(),
-                profile_fetched_at: None,
-            };
-
-            let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
-            let registered = accounts_store::load(&accounts_path);
-            let exclude = {
-                let sessions = state.account_wizard_sessions.lock().unwrap();
-                sessions.get(&session_id).map(|s| s.config_dir.clone())
-            };
-            if let Some(dup) = accounts_store::find_duplicate(
-                &registered,
-                &identity.organization_uuid,
-                &identity.email_address,
-                exclude.as_deref(),
-            ) {
-                return Err(format!("already added as \"{}\"", dup.label));
-            }
-            Some(identity)
-        }
-    };
 
     let mut sessions = state.account_wizard_sessions.lock().unwrap();
     if let Some(session) = sessions.get_mut(&session_id) {
         session.session_key = Some(session_key);
-        if let Some(identity) = &derived_identity {
+        // A CLI-verified identity (organizationType straight from the CLI)
+        // stays authoritative; only fill in when the browser is the first
+        // identity source.
+        if session.verified_identity.is_none() {
             session.verified_identity = Some(identity.clone());
         }
     }
-    Ok(derived_identity)
+    Ok(identity)
 }
 
 /// Cancel an in-progress wizard run. Deletes the profile dir ONLY if this
@@ -324,15 +359,28 @@ pub async fn add_account_finalize(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Account, String> {
-    let session = state
-        .account_wizard_sessions
-        .lock()
-        .unwrap()
-        .remove(&session_id)
-        .ok_or_else(|| "wizard session not found or already finished".to_string())?;
-    let identity = session
-        .verified_identity
-        .ok_or_else(|| "call add_account_check_login until Ready before finalizing".to_string())?;
+    // Validate BEFORE removing the session from the map - a failed guard must
+    // leave the wizard resumable, not orphan it.
+    let session = {
+        let mut sessions = state.account_wizard_sessions.lock().unwrap();
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| "wizard session not found or already finished".to_string())?;
+        if session.verified_identity.is_none() {
+            return Err("complete the browser or CLI login before finalizing".to_string());
+        }
+        // Browser-first flow: an identity can exist without credentials
+        // (fresh dir + cookie captured, CLI step never run). Such an account
+        // could never spawn a chat - refuse to persist it.
+        if identity::read_token_expiry(&session.config_dir).is_none() {
+            return Err(
+                "this profile has no CLI credentials yet - complete the /login step before finalizing"
+                    .to_string(),
+            );
+        }
+        sessions.remove(&session_id).expect("session existed under the same lock")
+    };
+    let identity = session.verified_identity.expect("checked above");
 
     let account = Account {
         id: session.account_id,
@@ -643,4 +691,185 @@ pub fn dismiss_accounts_setup_prompt(state: State<AppState>, app: AppHandle) -> 
     crate::settings::save(&path, &snapshot).map_err(|e| e.to_string())?;
     let _ = app.emit("settings-changed", &snapshot);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::accounts::login_step::LoginPollResult;
+    use std::path::Path;
+
+    fn ident(email: &str, org: &str) -> OauthAccountInfo {
+        OauthAccountInfo {
+            email_address: email.to_string(),
+            organization_uuid: org.to_string(),
+            organization_name: None,
+            organization_type: None,
+            profile_fetched_at: None,
+        }
+    }
+
+    fn acct(id: &str, org: &str, email: &str, dir: &str) -> Account {
+        Account {
+            id: id.into(),
+            label: format!("label-{id}"),
+            colour: "#fff".into(),
+            icon: "user".into(),
+            config_dir: dir.into(),
+            chrome_profile_dir: format!("{dir}-chrome").into(),
+            email: email.into(),
+            org_uuid: org.into(),
+            subscription_tier: "claude_max".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
+    const DIR: &str = "C:/wizard-dir";
+
+    #[test]
+    fn pending_stays_pending_even_with_web_identity() {
+        let web = ident("a@x.com", "org-1");
+        let out = resolve_login_outcome(
+            LoginPollResult::Pending,
+            Some(&web),
+            None,
+            &[],
+            Path::new(DIR),
+            None,
+        );
+        assert!(matches!(out, LoginCheckOutcome::Pending { credentials_no_profile: false, .. }));
+    }
+
+    #[test]
+    fn credentials_no_profile_without_web_identity_reports_flag() {
+        let out = resolve_login_outcome(
+            LoginPollResult::CredentialsNoProfile,
+            None,
+            None,
+            &[],
+            Path::new(DIR),
+            None,
+        );
+        assert!(matches!(out, LoginCheckOutcome::Pending { credentials_no_profile: true, .. }));
+    }
+
+    #[test]
+    fn credentials_no_profile_with_web_identity_is_ready() {
+        // Browser-first flow: valid credentials + cookie-confirmed identity
+        // completes the step even though the CLI never wrote oauthAccount.
+        let web = ident("a@x.com", "org-1");
+        let out = resolve_login_outcome(
+            LoginPollResult::CredentialsNoProfile,
+            Some(&web),
+            None,
+            &[],
+            Path::new(DIR),
+            None,
+        );
+        match out {
+            LoginCheckOutcome::Ready { identity } => assert_eq!(identity.email_address, "a@x.com"),
+            other => panic!("expected Ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_ready_mismatching_web_identity_is_mismatch() {
+        let web = ident("web@x.com", "org-web");
+        let out = resolve_login_outcome(
+            LoginPollResult::Ready(ident("cli@x.com", "org-cli")),
+            Some(&web),
+            None,
+            &[],
+            Path::new(DIR),
+            None,
+        );
+        match out {
+            LoginCheckOutcome::Mismatch { existing_email, new_email } => {
+                assert_eq!(existing_email, "web@x.com");
+                assert_eq!(new_email, "cli@x.com");
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_ready_matching_web_identity_prefers_cli_identity() {
+        let web = ident("a@x.com", "org-1");
+        let out = resolve_login_outcome(
+            LoginPollResult::Ready(ident("A@X.COM", "org-1")),
+            Some(&web),
+            None,
+            &[],
+            Path::new(DIR),
+            None,
+        );
+        match out {
+            LoginCheckOutcome::Ready { identity } => assert_eq!(identity.email_address, "A@X.COM"),
+            other => panic!("expected Ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_ready_mismatching_pre_existing_identity_is_mismatch() {
+        let pre = ident("old@x.com", "org-old");
+        let out = resolve_login_outcome(
+            LoginPollResult::Ready(ident("new@x.com", "org-new")),
+            None,
+            Some(&pre),
+            &[],
+            Path::new(DIR),
+            None,
+        );
+        assert!(matches!(out, LoginCheckOutcome::Mismatch { .. }));
+    }
+
+    #[test]
+    fn cli_ready_duplicate_org_is_duplicate() {
+        let registered = vec![acct("a1", "org-1", "other@x.com", "C:/other-dir")];
+        let out = resolve_login_outcome(
+            LoginPollResult::Ready(ident("a@x.com", "org-1")),
+            None,
+            None,
+            &registered,
+            Path::new(DIR),
+            None,
+        );
+        match out {
+            LoginCheckOutcome::Duplicate { existing_label } => assert_eq!(existing_label, "label-a1"),
+            other => panic!("expected Duplicate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_ready_own_dir_is_not_duplicate() {
+        // Adopting a dir back into its own registered account is fine.
+        let registered = vec![acct("a1", "org-1", "a@x.com", DIR)];
+        let out = resolve_login_outcome(
+            LoginPollResult::Ready(ident("a@x.com", "org-1")),
+            None,
+            None,
+            &registered,
+            Path::new(DIR),
+            None,
+        );
+        assert!(matches!(out, LoginCheckOutcome::Ready { .. }));
+    }
+
+    #[test]
+    fn misdirected_hint_passes_through_pending() {
+        let out = resolve_login_outcome(
+            LoginPollResult::Pending,
+            None,
+            None,
+            &[],
+            Path::new(DIR),
+            Some("~/.claude".to_string()),
+        );
+        match out {
+            LoginCheckOutcome::Pending { misdirected, .. } => {
+                assert_eq!(misdirected.as_deref(), Some("~/.claude"));
+            }
+            other => panic!("expected Pending, got {other:?}"),
+        }
+    }
 }

@@ -1,12 +1,16 @@
 // Add-account wizard modal (multi-account milestone 01 frontend).
-// Drives the backend IPC in src-tauri/src/ipc/accounts.rs:
-//   add_account_create -> poll add_account_check_login -> optional
-//   add_account_capture_cookie -> add_account_finalize, with add_account_cancel
-//   on any bail-out. See docs/multi-account/01-account-identity.md.
+// Browser-first flow (2026-07-08): Create -> Browser login (cookie +
+// identity via GET /api/account) -> CLI login only when the profile dir has
+// no credentials yet (spawned on demand) -> Finalize. Drives the backend IPC
+// in src-tauri/src/ipc/accounts.rs: add_account_create ->
+// add_account_capture_cookie -> optional add_account_start_cli_login + poll
+// add_account_check_login -> add_account_finalize, with add_account_cancel on
+// any bail-out. See docs/multi-account/01-account-identity.md.
 
 import { escapeHtml } from "../../../../shared/escape-html";
 import { api } from "../../../../shared/api";
 import type { Account, OauthAccountInfo } from "../../../../shared/api";
+import { askConfirm } from "../../../../shared/confirm";
 import "./add-account-wizard.css";
 import {
   ICON_POOL,
@@ -20,11 +24,11 @@ import {
   describeLoginOutcome,
 } from "./wizard-logic";
 
-type Step = "create" | "login" | "cookie" | "finalize";
+type Step = "create" | "cookie" | "login" | "finalize";
 
 /**
  * Opens the add-account wizard. `existingAccounts` is used only to steer the
- * icon reroll away from icons already in use; resolves with the newly
+ * icon auto-pick away from icons already in use; resolves with the newly
  * created `Account` on success, or `null` if the user cancels/closes.
  */
 export function openAddAccountWizard(existingAccounts: Account[]): Promise<Account | null> {
@@ -41,13 +45,21 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     // create step
     let nameInput = "";
 
-    // login step
+    // session
     let sessionId: string | null = null;
     let adoptedExisting = false;
     let existingIdentity: OauthAccountInfo | null = null;
-    let loginSkipped = false;
-    let terminalTitle: string | null = null;
+    let hasCredentials = false;
     let configDir = "";
+
+    // cookie (browser login) step
+    let verifiedIdentity: OauthAccountInfo | null = null;
+    let cookieCaptured = false;
+    let cookieError: string | null = null;
+    let browserSkipped = false;
+
+    // CLI login step
+    let terminalTitle: string | null = null;
     let misdirected: string | null = null;
     let credentialsNoProfile = false;
     let manualCheckPending = false;
@@ -55,11 +67,6 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     let loginStartedAt = 0;
     let elapsedMs = 0;
     let loginFailure: { kind: "mismatch" | "duplicate" | "timeout"; message: string } | null = null;
-
-    // cookie step
-    let verifiedIdentity: OauthAccountInfo | null = null;
-    let cookieCaptured = false;
-    let cookieError: string | null = null;
 
     // finalize step
     let label = "";
@@ -86,38 +93,51 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       resolve(result);
     }
 
-    function onCancelClick(): void {
-      stopPolling();
-      void cancelSession().then(() => close(null));
+    /** Close via X / Escape. Past step 1 there is real progress (a profile
+     * dir, possibly a login) - confirm before discarding it. */
+    function requestClose(): void {
+      void (async () => {
+        if (step !== "create") {
+          const ok = await askConfirm(
+            "Discard this account setup?\nProgress so far (logins included) will be thrown away.",
+            { confirmLabel: "Discard", cancelLabel: "Keep going" },
+          );
+          if (!ok) return;
+        }
+        stopPolling();
+        void cancelSession().then(() => close(null));
+      })();
     }
 
     function onKey(e: KeyboardEvent): void {
       if (e.key === "Escape") {
         e.preventDefault();
-        onCancelClick();
+        requestClose();
       }
     }
 
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) onCancelClick();
-    });
+    // Deliberately NO overlay-click dismiss: a stray click must never nuke a
+    // half-done account setup. The X (and Escape) is the only way out, and it
+    // confirms first past step 1.
     document.addEventListener("keydown", onKey);
 
     function stepNumber(s: Step): number {
-      return { create: 1, login: 2, cookie: 3, finalize: 4 }[s];
+      return { create: 1, cookie: 2, login: 3, finalize: 4 }[s];
     }
 
     function stepsHtml(): string {
       const order: { key: Step; label: string }[] = [
         { key: "create", label: "Create" },
-        { key: "login", label: "CLI login" },
         { key: "cookie", label: "Browser login" },
+        { key: "login", label: "CLI login" },
         { key: "finalize", label: "Finalize" },
       ];
       const curNum = stepNumber(step);
       return order
         .map((o, i) => {
           const n = stepNumber(o.key);
+          // The CLI step gets skipped entirely when credentials already
+          // exist - render it as done once we're past it either way.
           const cls = n < curNum ? "done" : n === curNum ? "cur" : "";
           const inner = n < curNum ? `<i class="ph ph-check"></i>` : String(n);
           const line = i < order.length - 1 ? `<span class="line"></span>` : "";
@@ -134,124 +154,99 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         </div>
         ${error ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(error)}</div>` : ""}
         <div class="wz-actions">
-          <span class="muted" style="font-size:11px">Spawns a terminal for /login</span>
+          <span class="muted" style="font-size:11px">Next: log into claude.ai in a browser window</span>
           <button class="btn primary" id="aaw-create-btn" ${busy || !nameInput.trim() ? "disabled" : ""}>
-            ${busy ? `<i class="ph ph-spinner aaw-spin"></i> Creating...` : "Create & log in"}
+            ${busy ? `<i class="ph ph-spinner aaw-spin"></i> Creating...` : "Create"}
+          </button>
+        </div>
+      `;
+    }
+
+    function renderCookieStep(): string {
+      const adoptHint = adoptedExisting && existingIdentity
+        ? `<div class="aaw-note"><i class="ph ph-info"></i> This profile folder already existed (logged in as ${escapeHtml(existingIdentity.emailAddress)}) - log into the SAME account in the browser.</div>`
+        : "";
+      const identityBlock = verifiedIdentity
+        ? `
+        <div class="detected">
+          <span class="av"><i class="ph ph-check-circle"></i></span>
+          <span class="info">
+            <div class="nm">${escapeHtml(verifiedIdentity.emailAddress)}</div>
+            <div class="em">${escapeHtml(verifiedIdentity.organizationName ?? "")}${verifiedIdentity.organizationName ? " &middot; " : ""}${escapeHtml(tierLabel(verifiedIdentity.organizationType))}</div>
+          </span>
+          <span class="ok"><i class="ph ph-check-circle"></i> verified</span>
+        </div>`
+        : "";
+      return `
+        ${adoptHint}
+        ${identityBlock}
+        <p class="aaw-explain">
+          Log into claude.ai as this account in the browser window. That single login
+          identifies the account AND connects usage tracking.
+        </p>
+        ${cookieError ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(cookieError)}</div>` : ""}
+        ${cookieCaptured ? `<div class="aaw-note"><i class="ph ph-check-circle"></i> Browser login verified.</div>` : ""}
+        <div class="wz-actions">
+          <button class="btn" id="aaw-skip-browser-btn" ${busy ? "disabled" : ""}>Use terminal /login instead</button>
+          <button class="btn primary" id="aaw-capture-btn" ${busy ? "disabled" : ""}>
+            ${busy ? `<i class="ph ph-spinner aaw-spin"></i> Waiting on browser...` : cookieCaptured ? "Continue" : "Open browser login"}
           </button>
         </div>
       `;
     }
 
     function renderLoginStep(): string {
-      // Only meaningful when the adopted dir actually held an identity - a
-      // cancelled wizard run can leave an empty husk dir behind, and telling
-      // the user to "log into the SAME account" about an empty folder is
-      // pure confusion.
-      const adoptHint = adoptedExisting && existingIdentity && !loginSkipped
-        ? `<div class="aaw-note"><i class="ph ph-info"></i> This profile dir already existed (logged in as ${escapeHtml(existingIdentity.emailAddress)}) - log into the SAME account in the terminal.</div>`
-        : "";
-
       if (loginFailure) {
         return `
-          ${adoptHint}
           <div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(loginFailure.message)}</div>
-          <div class="wz-actions">
-            <span></span>
-            <button class="btn" id="aaw-cancel-btn">Cancel</button>
-          </div>
+          <div class="wz-actions"><span></span><span></span></div>
         `;
       }
 
-      if (verifiedIdentity) {
-        const skippedNote = loginSkipped
-          ? `<div class="aaw-note"><i class="ph ph-check-circle"></i> This folder already had a valid login - no /login needed.</div>`
-          : "";
-        return `
-          ${skippedNote}
-          <div class="detected">
-            <span class="av"><i class="ph ph-check-circle"></i></span>
-            <span class="info">
-              <div class="nm">${escapeHtml(verifiedIdentity.emailAddress)}</div>
-              <div class="em">${escapeHtml(verifiedIdentity.organizationName ?? "")}${verifiedIdentity.organizationName ? " &middot; " : ""}${escapeHtml(tierLabel(verifiedIdentity.organizationType))}</div>
-            </span>
-            <span class="ok"><i class="ph ph-check-circle"></i> logged in</span>
-          </div>
-          <div class="wz-actions">
-            <button class="btn" id="aaw-cancel-btn">Cancel</button>
-            <button class="btn primary" id="aaw-continue-btn">Continue</button>
-          </div>
-        `;
-      }
-
+      const targetLine = verifiedIdentity
+        ? `Log into <b>${escapeHtml(verifiedIdentity.emailAddress)}</b> - the same account as the browser step.`
+        : `Pick the right account when the browser opens.`;
       const misdirectedNote = misdirected
         ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>A login just landed in ${escapeHtml(misdirected)}, not in this account's profile. You probably used a different terminal - type /login in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</span></div>`
         : "";
-      const credentialsNoProfileNote = credentialsNoProfile
-        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>This profile already has valid stored credentials, but Claude Code never recorded which account they belong to - and it only does that during /login itself, so waiting won't help. Use the browser login below to confirm the account instead (or run /login in the terminal if you'd rather).</span></div>`
+      const credentialsNoProfileNote = credentialsNoProfile && !verifiedIdentity
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>This profile already has valid stored credentials, but Claude Code never recorded which account they belong to - and it only does that during /login itself, so waiting won't help. Go back to the browser login to confirm the account instead.</span></div>`
         : "";
       const notDetectedNote = manualCheckPending && !credentialsNoProfile
         ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>No login detected yet in <code>${escapeHtml(configDir)}</code>. Make sure /login finished in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</span></div>`
         : "";
       return `
-        ${adoptHint}
         ${misdirectedNote}
         ${credentialsNoProfileNote}
         ${notDetectedNote}
         <div class="aaw-waiting">
           <i class="ph ph-spinner aaw-spin"></i>
-          <div>Run <code>/login</code> in the terminal that just opened${terminalTitle ? ` (window titled "${escapeHtml(terminalTitle)}")` : ""}, and pick the right account.</div>
-          <div class="muted">Waiting... ${formatElapsed(elapsedMs)}</div>
+          <div>Run <code>/login</code> in the terminal that just opened${terminalTitle ? ` (window titled "${escapeHtml(terminalTitle)}")` : ""}.</div>
+          <div>${targetLine}</div>
+          <div class="muted">This finishes on its own once the login lands. Waiting... ${formatElapsed(elapsedMs)}</div>
         </div>
         <div class="wz-actions">
-          <button class="btn" id="aaw-cancel-btn">Cancel</button>
-          <span style="display:flex;gap:8px">
-            ${credentialsNoProfile ? `<button class="btn primary" id="aaw-browser-fallback-btn">Use browser login instead</button>` : ""}
-            <button class="btn" id="aaw-checknow-btn">I've logged in - check now</button>
-          </span>
-        </div>
-      `;
-    }
-
-    function renderCookieStep(): string {
-      const identity = verifiedIdentity;
-      // Cookie-identity fallback (ai_todo 167): no CLI identity yet - the
-      // browser login IS the identity source, so it can't be skipped.
-      const header = identity
-        ? `
-        <div class="detected">
-          <span class="av"><i class="ph ph-check-circle"></i></span>
-          <span class="info">
-            <div class="nm">${escapeHtml(identity.emailAddress)}</div>
-            <div class="em">${escapeHtml(tierLabel(identity.organizationType))}</div>
-          </span>
-          <span class="ok"><i class="ph ph-check-circle"></i> CLI verified</span>
-        </div>`
-        : `<div class="aaw-note"><i class="ph ph-info"></i> Claude Code never confirmed which account this profile belongs to - the browser login below will confirm it instead.</div>`;
-      const explain = identity
-        ? `Usage tracking needs a separate browser login (claude.ai session cookie) for this
-          account. This opens a browser window - log in as the SAME account.`
-        : `This opens a browser window - log into claude.ai as the account this profile
-          belongs to. That login identifies the account AND enables usage tracking.`;
-      return `
-        ${header}
-        <p class="aaw-explain">${explain}</p>
-        ${cookieError ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(cookieError)}</div>` : ""}
-        ${cookieCaptured ? `<div class="aaw-note"><i class="ph ph-check-circle"></i> Browser login verified${identity ? " - matches the CLI account" : ""}.</div>` : ""}
-        <div class="wz-actions">
-          <button class="btn" id="aaw-cancel-btn" ${busy ? "disabled" : ""}>Cancel</button>
-          <span style="display:flex;gap:8px">
-            ${!cookieCaptured && identity ? `<button class="btn" id="aaw-skip-btn" ${busy ? "disabled" : ""}>Skip for now</button>` : ""}
-            <button class="btn primary" id="aaw-capture-btn" ${busy ? "disabled" : ""}>
-              ${busy ? `<i class="ph ph-spinner aaw-spin"></i> Waiting on browser...` : cookieCaptured ? "Continue" : "Connect browser"}
-            </button>
-          </span>
+          <button class="btn" id="aaw-back-to-browser-btn">${browserSkipped ? "Use browser login instead" : "Back to browser login"}</button>
+          <button class="btn" id="aaw-checknow-btn">I've logged in - check now</button>
         </div>
       `;
     }
 
     function renderFinalizeStep(): string {
       const customColour = !COLOUR_POOL.includes(colour);
+      const identitySummary = verifiedIdentity
+        ? `
+        <div class="detected">
+          <span class="av"><i class="ph ph-check-circle"></i></span>
+          <span class="info">
+            <div class="nm">${escapeHtml(verifiedIdentity.emailAddress)}</div>
+            <div class="em">${escapeHtml(tierLabel(verifiedIdentity.organizationType))}</div>
+          </span>
+          <span class="ok"><i class="ph ph-check-circle"></i> logged in</span>
+        </div>`
+        : "";
       return `
+        ${identitySummary}
         <div class="field" id="aaw-icon-field" style="--acc:${escapeHtml(colour)}">
           <label>Icon</label>
           <div class="icon-grid">
@@ -270,7 +265,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         </div>
         ${error ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(error)}</div>` : ""}
         <div class="wz-actions">
-          <button class="btn" id="aaw-cancel-btn" ${busy ? "disabled" : ""}>Cancel</button>
+          <span></span>
           <button class="btn primary" id="aaw-finalize-btn" ${busy || !label.trim() ? "disabled" : ""}>
             ${busy ? `<i class="ph ph-spinner aaw-spin"></i> Adding...` : `Add ${escapeHtml(label.trim() || "account")}`}
           </button>
@@ -281,8 +276,8 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     function bodyHtml(): string {
       switch (step) {
         case "create": return renderCreateStep();
-        case "login": return renderLoginStep();
         case "cookie": return renderCookieStep();
+        case "login": return renderLoginStep();
         case "finalize": return renderFinalizeStep();
       }
     }
@@ -291,7 +286,10 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       overlay.innerHTML = `
         <div class="wizard" role="dialog" aria-modal="true" aria-label="Add a Claude account">
           <div class="wz-head">
-            <div class="t">Add a Claude account</div>
+            <div class="wz-head-row">
+              <div class="t">Add a Claude account</div>
+              <button class="wz-close" id="aaw-close-btn" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+            </div>
             <div class="wz-steps">${stepsHtml()}</div>
           </div>
           <div class="wz-body">${bodyHtml()}</div>
@@ -301,7 +299,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     }
 
     function attach(): void {
-      overlay.querySelector<HTMLButtonElement>("#aaw-cancel-btn")?.addEventListener("click", onCancelClick);
+      overlay.querySelector<HTMLButtonElement>("#aaw-close-btn")?.addEventListener("click", requestClose);
 
       if (step === "create") {
         const nameEl = overlay.querySelector<HTMLInputElement>("#aaw-name");
@@ -315,28 +313,24 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         nameEl?.addEventListener("keydown", (e) => {
           if (e.key === "Enter" && !busy && nameInput.trim()) void doCreate();
         });
-      } else if (step === "login") {
-        overlay.querySelector<HTMLButtonElement>("#aaw-continue-btn")?.addEventListener("click", () => {
-          step = "cookie";
-          render();
+      } else if (step === "cookie") {
+        overlay.querySelector<HTMLButtonElement>("#aaw-capture-btn")?.addEventListener("click", () => {
+          if (cookieCaptured) { advanceAfterIdentity(); return; }
+          void doCaptureCookie();
         });
+        overlay.querySelector<HTMLButtonElement>("#aaw-skip-browser-btn")?.addEventListener("click", () => {
+          browserSkipped = true;
+          void gotoCliLogin();
+        });
+      } else if (step === "login") {
         overlay.querySelector<HTMLButtonElement>("#aaw-checknow-btn")?.addEventListener("click", () => {
           manualCheckPending = true;
           void pollLogin();
         });
-        overlay.querySelector<HTMLButtonElement>("#aaw-browser-fallback-btn")?.addEventListener("click", () => {
+        overlay.querySelector<HTMLButtonElement>("#aaw-back-to-browser-btn")?.addEventListener("click", () => {
           stopPolling();
+          loginFailure = null;
           step = "cookie";
-          render();
-        });
-      } else if (step === "cookie") {
-        overlay.querySelector<HTMLButtonElement>("#aaw-capture-btn")?.addEventListener("click", () => {
-          if (cookieCaptured) { step = "finalize"; render(); return; }
-          void doCaptureCookie();
-        });
-        overlay.querySelector<HTMLButtonElement>("#aaw-skip-btn")?.addEventListener("click", () => {
-          step = "finalize";
-          seedFinalizeDefaults();
           render();
         });
       } else if (step === "finalize") {
@@ -383,17 +377,59 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         sessionId = session.session_id;
         adoptedExisting = session.adopted_existing;
         existingIdentity = session.existing_identity;
-        loginSkipped = session.login_skipped;
-        terminalTitle = session.terminal_title;
+        hasCredentials = session.has_credentials;
         configDir = String(session.config_dir);
         busy = false;
-        step = "login";
-        startPolling();
+        step = "cookie";
+        render();
       } catch (e) {
         busy = false;
         error = e instanceof Error ? e.message : String(e);
         render();
       }
+    }
+
+    async function doCaptureCookie(): Promise<void> {
+      if (!sessionId) return;
+      busy = true;
+      cookieError = null;
+      render();
+      try {
+        verifiedIdentity = await api.addAccountCaptureCookie(sessionId);
+        cookieCaptured = true;
+        busy = false;
+        advanceAfterIdentity();
+      } catch (e) {
+        busy = false;
+        cookieError = e instanceof Error ? e.message : String(e);
+        render();
+      }
+    }
+
+    /** After the browser step establishes the identity: skip the CLI step
+     * entirely when the profile dir already holds credentials. */
+    function advanceAfterIdentity(): void {
+      if (hasCredentials) {
+        step = "finalize";
+        seedFinalizeDefaults();
+        render();
+      } else {
+        void gotoCliLogin();
+      }
+    }
+
+    async function gotoCliLogin(): Promise<void> {
+      if (!sessionId) return;
+      step = "login";
+      loginFailure = null;
+      try {
+        terminalTitle = await api.addAccountStartCliLogin(sessionId);
+      } catch (e) {
+        loginFailure = { kind: "timeout", message: e instanceof Error ? e.message : String(e) };
+        render();
+        return;
+      }
+      startPolling();
     }
 
     function startPolling(): void {
@@ -408,12 +444,12 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     async function pollLogin(): Promise<void> {
       if (!sessionId) return;
       elapsedMs = Date.now() - loginStartedAt;
-      // No timeout while the browser-login fallback is on offer
-      // (credentialsNoProfile): timing out would replace the user's only
-      // escape hatch with a dead-end failure card.
+      // No timeout while a route back to the browser login is on offer
+      // (credentialsNoProfile) - timing out would replace the escape hatch
+      // with a dead-end failure card.
       if (!credentialsNoProfile && isLoginTimedOut(elapsedMs)) {
         stopPolling();
-        loginFailure = { kind: "timeout", message: "Timed out waiting for /login (5 min). Cancel and try again." };
+        loginFailure = { kind: "timeout", message: "Timed out waiting for /login (5 min). Close and try again." };
         render();
         return;
       }
@@ -429,6 +465,8 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         stopPolling();
         if (view.kind === "ready") {
           verifiedIdentity = view.identity;
+          step = "finalize";
+          seedFinalizeDefaults();
           render();
         } else {
           loginFailure = { kind: view.kind, message: view.message };
@@ -437,26 +475,6 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       } catch (e) {
         stopPolling();
         loginFailure = { kind: "timeout", message: e instanceof Error ? e.message : String(e) };
-        render();
-      }
-    }
-
-    async function doCaptureCookie(): Promise<void> {
-      if (!sessionId) return;
-      busy = true;
-      cookieError = null;
-      render();
-      try {
-        const derivedIdentity = await api.addAccountCaptureCookie(sessionId);
-        if (derivedIdentity) verifiedIdentity = derivedIdentity;
-        cookieCaptured = true;
-        busy = false;
-        step = "finalize";
-        seedFinalizeDefaults();
-        render();
-      } catch (e) {
-        busy = false;
-        cookieError = e instanceof Error ? e.message : String(e);
         render();
       }
     }

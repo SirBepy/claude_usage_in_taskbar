@@ -320,6 +320,7 @@ pub fn run() {
             ipc::set_remote_kill_switch,
             ipc::get_remote_kill_switch,
             ipc::add_account_create,
+            ipc::add_account_start_cli_login,
             ipc::add_account_check_login,
             ipc::add_account_capture_cookie,
             ipc::add_account_cancel,

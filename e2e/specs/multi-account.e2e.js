@@ -39,18 +39,23 @@
 //     `open_overlay_window_for_test` command - out of this milestone's scope.
 
 describe("Dashboard account selector (multi-account milestone 05)", () => {
-  it("renders the legacy stat cards, not the account-selector row, with an empty registry", async () => {
+  it("renders selector cards with a populated registry, legacy stat cards with an empty one", async () => {
     await browser.execute(() => window.showView("dashboard"));
 
     const content = await $("#stats-content");
     await content.waitForExist({ timeout: 15000 });
 
-    // No accounts registered in this harness -> `accountsCache.length === 0`
-    // -> `renderShell` falls back to `legacyStatCardsHtml`, never the
-    // `.dash-sel-row` / `.dash-acard` selector cards (dashboard.ts:
-    // `renderShell`'s `cardsHtml` ternary).
+    // Registry-aware (the harness drives the REAL app-data dir, which may or
+    // may not have accounts registered): `renderShell`'s `cardsHtml` ternary
+    // picks `.dash-sel-row` account cards when `accountsCache.length > 0`,
+    // else the legacy stat cards (dashboard.ts).
+    const accounts = await browser.execute(() => window.__TAURI__.core.invoke("list_accounts"));
     const selectorRow = await $(".dash-sel-row");
-    await expect(selectorRow).not.toExist();
+    if (accounts.length > 0) {
+      await selectorRow.waitForExist({ timeout: 15000 });
+    } else {
+      await expect(selectorRow).not.toExist();
+    }
   });
 
   it("surfaces the one-time 'set up your accounts' banner only when a legacy session exists", async () => {
@@ -69,7 +74,7 @@ describe("Dashboard account selector (multi-account milestone 05)", () => {
 });
 
 describe("New-chat account picker (multi-account milestone 04)", () => {
-  it("shows the 'no accounts yet' state in the model/effort modal with an empty registry", async () => {
+  it("shows account chips with a populated registry, the 'no accounts yet' state with an empty one", async () => {
     await browser.execute(() => window.showView("sessions"));
     const newSessionBtn = await $("#newSessionBtn");
     await newSessionBtn.waitForExist({ timeout: 15000 });
@@ -88,11 +93,102 @@ describe("New-chat account picker (multi-account milestone 04)", () => {
 
     const accField = await $(".me-acc-field");
     await accField.waitForExist({ timeout: 15000 });
-    // Empty-registry state (model-effort-modal.ts `renderAccountFieldHtml`):
-    // a warning message + "Add one in Settings" link, never the chip picker.
-    await expect($(".me-acc-empty")).toExist();
-    await expect($(".me-acc-add-link")).toExist();
-    await expect($("[data-acc-id]")).not.toExist();
+    // Registry-aware (model-effort-modal.ts `renderAccountFieldHtml`): chip
+    // picker with accounts, warning + "Add one in Settings" link without.
+    const accounts = await browser.execute(() => window.__TAURI__.core.invoke("list_accounts"));
+    if (accounts.length > 0) {
+      await expect($("[data-acc-id]")).toExist();
+    } else {
+      await expect($(".me-acc-empty")).toExist();
+      await expect($(".me-acc-add-link")).toExist();
+      await expect($("[data-acc-id]")).not.toExist();
+    }
+  });
+});
+
+describe("Add-account wizard (browser-first flow, 2026-07-08)", () => {
+  // Drives the real wizard up to - but never across - the side-effect
+  // boundaries: "Open browser login" (launches a real Chrome) and "Use
+  // terminal /login instead" (spawns a real terminal) are asserted to exist
+  // but never clicked. Create DOES hit the real backend: it makes a
+  // ~/.claude-<slug> profile dir, which the final Discard deletes again
+  // (add_account_cancel removes dirs the wizard created fresh).
+  const SLUG = "wdio-wizard-e2e";
+
+  it("opens from Settings > Accounts and shows the 4-step browser-first header", async () => {
+    await browser.execute(() => window.showView("settings-accounts"));
+    const addBtn = await $("#acc-add-btn");
+    await addBtn.waitForClickable({ timeout: 15000 });
+    await addBtn.click();
+
+    const wizard = await $(".aaw-overlay .wizard");
+    await wizard.waitForExist({ timeout: 5000 });
+
+    const steps = await $$(".aaw-overlay .wz-steps .st");
+    const labels = await Promise.all(steps.map((s) => s.getText()));
+    expect(labels.join(" | ")).toContain("Create");
+    expect(labels.join(" | ")).toContain("Browser login");
+    expect(labels.join(" | ")).toContain("CLI login");
+    expect(labels.join(" | ")).toContain("Finalize");
+    // Browser login must come BEFORE CLI login.
+    expect(labels.findIndex((l) => l.includes("Browser login"))).toBeLessThan(
+      labels.findIndex((l) => l.includes("CLI login")),
+    );
+  });
+
+  it("does not dismiss on overlay (backdrop) click", async () => {
+    // Click the backdrop, not the dialog: coordinates near the top-left
+    // corner of the overlay are outside the centered wizard box.
+    const overlay = await $(".aaw-overlay");
+    await overlay.click({ x: -600, y: -300 });
+    await expect($(".aaw-overlay .wizard")).toExist();
+  });
+
+  it("closes without confirmation from step 1 via the X", async () => {
+    const closeBtn = await $("#aaw-close-btn");
+    await closeBtn.click();
+    // No progress yet -> no confirm dialog, closes immediately.
+    await expect($(".app-confirm-overlay")).not.toExist();
+    await browser.waitUntil(async () => !(await $(".aaw-overlay").isExisting()), { timeout: 5000 });
+  });
+
+  it("advances to the browser-login step on Create and offers both routes", async () => {
+    const addBtn = await $("#acc-add-btn");
+    await addBtn.waitForClickable({ timeout: 15000 });
+    await addBtn.click();
+
+    const nameEl = await $("#aaw-name");
+    await nameEl.waitForExist({ timeout: 5000 });
+    await nameEl.setValue(SLUG);
+    await (await $("#aaw-create-btn")).click();
+
+    // Step 2 (Browser login): both the browser CTA and the CLI escape hatch
+    // exist; neither is clicked (real side effects).
+    const captureBtn = await $("#aaw-capture-btn");
+    await captureBtn.waitForExist({ timeout: 15000 });
+    await expect($("#aaw-skip-browser-btn")).toExist();
+    const cur = await $(".aaw-overlay .wz-steps .st.cur");
+    expect(await cur.getText()).toContain("Browser login");
+  });
+
+  it("X past step 1 asks for confirmation; 'Keep going' stays open", async () => {
+    await (await $("#aaw-close-btn")).click();
+    const confirmBox = await $(".app-confirm");
+    await confirmBox.waitForExist({ timeout: 5000 });
+    await (await $(".app-confirm-cancel")).click();
+    await expect($(".aaw-overlay .wizard")).toExist();
+    await expect($(".app-confirm-overlay")).not.toExist();
+  });
+
+  it("'Discard' closes the wizard and cancels the backend session", async () => {
+    await (await $("#aaw-close-btn")).click();
+    const confirmBox = await $(".app-confirm");
+    await confirmBox.waitForExist({ timeout: 5000 });
+    await (await $(".app-confirm-ok")).click();
+    await browser.waitUntil(async () => !(await $(".aaw-overlay").isExisting()), { timeout: 10000 });
+    // The registry must be untouched (nothing was finalized).
+    const accounts = await browser.execute(() => window.__TAURI__.core.invoke("list_accounts"));
+    expect(accounts.every((a) => !String(a.config_dir).includes("wdio-wizard-e2e"))).toBe(true);
   });
 });
 
