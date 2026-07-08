@@ -1,6 +1,5 @@
 //! Runtime app state shared across Tauri commands and background tasks.
 
-use crate::tray::TrayDisplayState;
 use crate::types::{AuthState, Settings, UsageSnapshot};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
@@ -25,7 +24,6 @@ pub struct AppState {
     /// Per-account auth state (multi-account milestone 03), keyed by
     /// `Account.id`.
     pub auth_state_by_account: Mutex<std::collections::HashMap<String, AuthState>>,
-    pub display: Mutex<TrayDisplayState>,
     pub audio_stream: crate::notifications::audio::AudioStreamCtrl,
     pub audio: crate::notifications::audio::AudioCtx,
     pub preview: crate::notifications::audio::PreviewCtx,
@@ -102,7 +100,6 @@ impl AppState {
             settings: Mutex::new(settings),
             auth_state: Mutex::new(auth_state),
             auth_state_by_account: Mutex::new(std::collections::HashMap::new()),
-            display: Mutex::new(TrayDisplayState::default()),
             audio_stream,
             audio,
             preview,

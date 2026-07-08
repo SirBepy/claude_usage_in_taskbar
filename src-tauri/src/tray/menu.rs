@@ -1,14 +1,10 @@
 //! Builds the tray icon and its context menu; owns the render funnel.
 
-use crate::tray::display_mode::{pick_tray_snapshot, resolve_tray_display_mode};
-use crate::tray::icon_render::{self as icon, DisplayMode, IconCtx};
-use crate::tray::threshold::{IconSettings, TooltipSettings};
+use crate::tray::icon_render::{self as icon, IconCtx};
 use crate::state::AppState;
-use crate::types::{AuthState, UsageSnapshot};
-use crate::scraping::{self as usage_parser, FIVE_HOUR_MS, SEVEN_DAY_MS};
+use crate::types::AuthState;
 use anyhow::Result;
-use chrono::Utc;
-use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
@@ -21,14 +17,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     let initial_update = app.state::<AppState>().update_state.lock().unwrap().clone();
     let menu = build_menu(app, initial_mute, &initial_update)?;
 
-    let idle_bytes = {
-        let s = IconSettings::default();
-        icon::render(None, None, &IconCtx {
-            settings: &s, display_mode: DisplayMode::Icon,
-            session_safe: None, weekly_safe: None,
-            updating: false,
-        })
-    };
+    let idle_bytes = icon::render(&IconCtx { updating: false, in_meeting: false });
     let idle_icon = Image::from_bytes(&idle_bytes)?;
 
     TrayIconBuilder::with_id(TRAY_ID)
@@ -101,16 +90,12 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         })
         .build(app)?;
 
-    // Listener: settings-changed -> invalidate cycle + rebuild menu + re-render.
+    // Listener: settings-changed -> rebuild menu + re-render.
     {
         let h = app.clone();
         app.listen("settings-changed", move |_| {
             let h2 = h.clone();
             let _ = h.run_on_main_thread(move || {
-                {
-                    let st = h2.state::<AppState>();
-                    st.display.lock().unwrap().invalidate_cycle();
-                }
                 let mute = h2.state::<AppState>().settings.lock().unwrap().mute_all();
                 let update = h2.state::<AppState>().update_state.lock().unwrap().clone();
                 if let Ok(new_menu) = build_menu(&h2, mute, &update) {
@@ -132,8 +117,8 @@ pub fn setup(app: &AppHandle) -> Result<()> {
         });
     }
 
-    // Listener: meeting state changed -> re-render so the tooltip's
-    // "notifications paused" line appears/clears within a poll interval.
+    // Listener: meeting state changed -> re-render so the meeting dot
+    // appears/clears as soon as the watcher flips.
     {
         let h = app.clone();
         app.listen("meeting://changed", move |_| {
@@ -163,23 +148,6 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     // Initial render from cached snapshot.
     render_tray_now(app);
 
-    // Background reset ticker (1s granularity).
-    let reset_handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            let changed = {
-                let s = reset_handle.state::<AppState>();
-                let result = s.display.lock().unwrap().tick(Instant::now());
-                result
-            };
-            if changed {
-                let h = reset_handle.clone();
-                let _ = reset_handle.run_on_main_thread(move || render_tray_now(&h));
-            }
-        }
-    });
-
     Ok(())
 }
 
@@ -204,66 +172,20 @@ fn on_left_click(app: AppHandle, icon_rect: tauri::Rect) {
 
 pub fn render_tray_now(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let legacy_snap = state.current_usage.lock().unwrap().clone();
-    let settings_guard = state.settings.lock().unwrap();
-    let icon_s: IconSettings = (&*settings_guard).try_into().unwrap_or_default();
-    let tip_s: TooltipSettings = (&*settings_guard).try_into().unwrap_or_default();
-    let pause_in_meeting = settings_guard.pause_notifications_in_meeting();
-    drop(settings_guard);
-
-    // Multi-account milestone 06: the icon face renders the chosen tray
-    // account's snapshot (falling back to the legacy single-account one),
-    // and the mode (glyph/number/nothing) comes from the tray content
-    // settings rather than the old click-to-cycle default_display.
-    let by_account = state.current_usage_by_account.lock().unwrap().clone();
-    let snap: Option<UsageSnapshot> =
-        pick_tray_snapshot(icon_s.tray_account_id.as_deref(), &by_account, legacy_snap.as_ref()).cloned();
-    let mode = resolve_tray_display_mode(icon_s.tray_content_mode, icon_s.tray_number_window);
-
-    let spin = state.display.lock().unwrap().spin_frame;
-
-    let sess = snap.as_ref().map(usage_parser::session_pct);
-    let weekly = snap.as_ref().map(usage_parser::weekly_pct);
-    let now = Utc::now();
-    let sess_safe = snap.as_ref().and_then(|s|
-        usage_parser::calc_safe_pct(&s.five_hour.resets_at, FIVE_HOUR_MS, now));
-    let weekly_safe = snap.as_ref().and_then(|s|
-        usage_parser::calc_safe_pct(&s.seven_day.resets_at, SEVEN_DAY_MS, now));
-
     let updating = {
         let s = state.update_state.lock().unwrap();
         matches!(s.get("state").and_then(|v| v.as_str()), Some("downloading") | Some("downloaded"))
     };
-    let ctx = IconCtx { settings: &icon_s, display_mode: mode, session_safe: sess_safe, weekly_safe, updating };
+    let in_meeting = state.meeting_active.load(Ordering::Relaxed);
+    let ctx = IconCtx { updating, in_meeting };
 
-    let bytes = match spin {
-        Some(f) => icon::render_spin(f, weekly, &ctx),
-        None => icon::render(sess, weekly, &ctx),
-    };
+    let bytes = icon::render(&ctx);
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return; };
     if let Ok(img) = Image::from_bytes(&bytes) {
         let _ = tray.set_icon(Some(img));
         #[cfg(target_os = "macos")]
         let _ = tray.set_icon_as_template(false);
     }
-
-    // Tooltip goes multi-account (one block per registered account) once any
-    // account is registered; the plain single-account layout stays for the
-    // pre-multi-account / empty-registry state.
-    let accounts = crate::accounts::load_registry();
-    let entries: Vec<(String, Option<UsageSnapshot>)> = accounts
-        .iter()
-        .map(|a| (a.label.clone(), by_account.get(&a.id).cloned()))
-        .collect();
-    let mut tip = if entries.is_empty() {
-        usage_parser::build_tooltip(snap.as_ref(), &tip_s, &icon_s, now)
-    } else {
-        usage_parser::build_tooltip_multi(&entries, &tip_s, &icon_s, now)
-    };
-    if pause_in_meeting && state.meeting_active.load(std::sync::atomic::Ordering::Relaxed) {
-        tip.push_str("\n\nIn a meeting - notifications paused");
-    }
-    let _ = tray.set_tooltip(Some(tip));
 }
 
 fn build_menu(app: &AppHandle, mute_all: bool, update: &serde_json::Value) -> Result<Menu<tauri::Wry>> {

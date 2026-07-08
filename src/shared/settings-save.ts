@@ -101,11 +101,6 @@ export function saveSettings(): void {
       if (!palette) return (prev.theme as string) || "void";
       return el.dataset.mode === "light" ? `${palette}-light` : palette;
     })(),
-    defaultDisplay: valOr("defaultDisplay", (prev.defaultDisplay as string) || "icon"),
-    iconStyle: valOr("iconStyle", (prev.iconStyle as string) || "rings"),
-    timeStyle: valOr("timeStyle", (prev.timeStyle as string) || "absolute"),
-    tooltipLayout: valOr("tooltipLayout", (prev.tooltipLayout as string) || "rows"),
-    tooltipShowSafePace: chkOr("tooltipShowSafePace", prev.tooltipShowSafePace !== false),
     launchAtLogin: chkOr("launchAtLogin", !!prev.launchAtLogin),
     autoUpdate: (() => {
       const el = byId<HTMLSelectElement>("autoUpdate");
@@ -126,21 +121,9 @@ export function saveSettings(): void {
     // preserve yet.
     dashboardWidgets: Array.isArray(prev.dashboardWidgets) ? prev.dashboardWidgets : undefined,
     colorApplyTo: {
-      icon: chkOr("colorApplyIcon", prevColorApply.icon !== false),
-      number: chkOr("colorApplyNumber", prevColorApply.number !== false),
       dashboard: chkOr("colorApplyDashboard", prevColorApply.dashboard !== false),
-      tooltip: chkOr("colorApplyTooltip", prevColorApply.tooltip !== false),
       overlay: chkOr("colorApplyOverlay", prevColorApply.overlay !== false),
     },
-    // Tray content mode + account + number window, overlay opacity
-    // (multi-account milestone 06 backend / 07 settings UI).
-    trayContentMode: valOr("trayContentMode", (prev.trayContentMode as string) || "glyph"),
-    trayAccountId: (() => {
-      const el = byId<HTMLSelectElement>("trayAccountId");
-      if (!el) return (prev.trayAccountId as string | null | undefined) ?? null;
-      return el.value || null;
-    })(),
-    trayNumberWindow: valOr("trayNumberWindow", (prev.trayNumberWindow as string) || "5h"),
     overlayOpacity: (() => {
       const el = byId<HTMLInputElement>("overlayOpacity");
       const prevOpacity = typeof prev.overlayOpacity === "number" ? prev.overlayOpacity : 0.72;
@@ -157,8 +140,6 @@ export function saveSettings(): void {
       over: valOr("paceColorOver", prevPace.over || "#e74c3c"),
     },
     colorThresholds: thresholds,
-    fourBarsSessionSafeColor: valOr("fourBarsSessionSafeColor", (prev.fourBarsSessionSafeColor as string) || ""),
-    fourBarsWeeklySafeColor: valOr("fourBarsWeeklySafeColor", (prev.fourBarsWeeklySafeColor as string) || ""),
     audioOutputDevice: (() => {
       const el = byId<HTMLSelectElement>("audioOutputDevice");
       if (!el) return prev.audioOutputDevice ?? null;
