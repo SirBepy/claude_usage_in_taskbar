@@ -329,6 +329,7 @@ pub fn run() {
             ipc::list_accounts,
             ipc::remove_account,
             ipc::logout_account,
+            ipc::update_account,
             ipc::set_default_account,
             ipc::get_terminal_identity,
             ipc::get_account_identity,

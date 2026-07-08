@@ -544,6 +544,19 @@ export const api = {
     invoke("logout_account", { accountId }),
   setDefaultAccount: (accountId: string | null): Promise<void> =>
     invoke("set_default_account", { accountId }),
+  /** Rename/recolour/re-icon an existing account. Omitted fields are left
+   * untouched (all three are optional so the edit panel can send only what
+   * changed). */
+  updateAccount: (
+    accountId: string,
+    updates: { label?: string; colour?: string; icon?: string },
+  ): Promise<Account> =>
+    invoke("update_account", {
+      accountId,
+      label: updates.label ?? null,
+      colour: updates.colour ?? null,
+      icon: updates.icon ?? null,
+    }),
   getTerminalIdentity: async (): Promise<OauthAccountInfo | null> => {
     try { return (await invoke<OauthAccountInfo | null>("get_terminal_identity")) ?? null; }
     catch (e) { console.error("get_terminal_identity failed", e); return null; }

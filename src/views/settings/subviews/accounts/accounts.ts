@@ -7,10 +7,9 @@ import { html, render } from "lit-html";
 import { escapeHtml } from "../../../../shared/escape-html";
 import { api } from "../../../../shared/api";
 import type { Account, AccountIdentity, OauthAccountInfo } from "../../../../shared/api";
-import type { ProjectConfig } from "../../../../types/ipc.generated";
 import { accountIconBadgeHtml } from "../../../../shared/account-chip";
-import { pickProject } from "../../../sessions/project-picker";
 import { openAddAccountWizard } from "./add-account-wizard";
+import { openEditAccountModal } from "./edit-account-modal";
 import { askConfirm } from "../../../../shared/confirm";
 import { buildIdentitySurface } from "./wizard-logic";
 import "../../../../shared/account-chip.css";
@@ -23,98 +22,38 @@ function g(): LegacyGlobals {
   return window as unknown as LegacyGlobals;
 }
 
-// Accounts whose reverse "projects using this account" panel is currently
-// expanded. Module-scoped so it survives a refreshList() re-render.
-const expandedAccounts = new Set<string>();
-
 function accountRowHtml(account: Account, defaultAccountId: string | null, identity: AccountIdentity | null): string {
   const isDefault = account.id === defaultAccountId;
-  const expanded = expandedAccounts.has(account.id);
   const surface = buildIdentitySurface(account, identity);
   const loggedInLine = surface.loggedInAsEmail
     ? `Logged in as ${surface.loggedInAsEmail} &middot; ${escapeHtml(surface.tierLabel)}`
     : `Registered as ${escapeHtml(account.email)} &middot; ${escapeHtml(surface.tierLabel)}`;
+  const id = escapeHtml(account.id);
   return `
-    <div class="acc-row-wrap">
-      <div class="acc-row" data-id="${escapeHtml(account.id)}" style="--acc:${escapeHtml(account.colour)}">
-        ${accountIconBadgeHtml(account)}
-        <span class="acc-info">
-          <span class="acc-label">${escapeHtml(account.label)}${isDefault ? `<span class="acc-default-badge">default</span>` : ""}</span>
-          <span class="acc-sub">${loggedInLine}</span>
-          <span class="acc-sub acc-sub-expiry">${escapeHtml(surface.tokenExpiryLabel)}</span>
-          ${surface.warningMessage ? `<span class="acc-drift-warning"><i class="ph ph-warning"></i> ${escapeHtml(surface.warningMessage)}</span>` : ""}
-        </span>
-        <span class="acc-actions">
-          ${!isDefault ? `<button class="btn-secondary acc-btn-default" data-id="${escapeHtml(account.id)}" title="Set as default account"><i class="ph ph-star"></i></button>` : ""}
-          <button class="icon-btn acc-btn-reauth" data-id="${escapeHtml(account.id)}" title="Re-auth: run /login again for this account"><i class="ph ph-arrow-clockwise"></i></button>
-          ${!surface.hasCookie ? `<button class="btn-secondary acc-btn-add-cookie" data-id="${escapeHtml(account.id)}" title="Connect usage tracking (browser login)"><i class="ph ph-link"></i> Connect usage</button>` : ""}
-          <button class="btn-secondary acc-btn-logout" data-id="${escapeHtml(account.id)}" title="Log out (keeps the profile, stops the cookie)">Log out</button>
-          <button class="acc-btn-remove" data-id="${escapeHtml(account.id)}" title="Remove account">Remove</button>
-          <button class="icon-btn acc-btn-expand" data-id="${escapeHtml(account.id)}" title="Projects using this account">
-            <i class="ph ph-caret-${expanded ? "up" : "down"}"></i>
-          </button>
-        </span>
-      </div>
-      <div class="acc-projects" data-id="${escapeHtml(account.id)}"${expanded ? "" : " hidden"}></div>
+    <div class="acc-row" data-id="${id}" style="--acc:${escapeHtml(account.colour)}">
+      ${accountIconBadgeHtml(account)}
+      <span class="acc-info">
+        <span class="acc-label">${escapeHtml(account.label)}${isDefault ? `<span class="acc-default-badge">default</span>` : ""}</span>
+        <span class="acc-sub">${loggedInLine}</span>
+        <span class="acc-sub acc-sub-expiry">${escapeHtml(surface.tokenExpiryLabel)}</span>
+        ${surface.warningMessage ? `<span class="acc-drift-warning"><i class="ph ph-warning"></i> ${escapeHtml(surface.warningMessage)}</span>` : ""}
+      </span>
+      <span class="acc-actions">
+        <div class="menu-anchor">
+          <button class="icon-btn acc-btn-kebab" data-id="${id}" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
+          <div class="menu-popover" data-id="${id}" hidden>
+            <button class="menu-item acc-menu-edit" data-id="${id}"><i class="ph ph-pencil-simple"></i> Edit</button>
+            ${!isDefault ? `<button class="menu-item acc-menu-default" data-id="${id}"><i class="ph ph-star"></i> Set as default</button>` : ""}
+            <button class="menu-item acc-menu-reauth" data-id="${id}"><i class="ph ph-arrow-clockwise"></i> Reauth</button>
+            <div class="menu-sep"></div>
+            ${!surface.hasCookie ? `<button class="menu-item acc-menu-add-cookie" data-id="${id}"><i class="ph ph-link"></i> Connect usage</button>` : ""}
+            <button class="menu-item acc-menu-logout" data-id="${id}"><i class="ph ph-sign-out"></i> Log out</button>
+            <button class="menu-item danger acc-menu-remove" data-id="${id}"><i class="ph ph-trash"></i> Remove</button>
+          </div>
+        </div>
+      </span>
     </div>
   `;
-}
-
-function projectRowHtml(p: ProjectConfig): string {
-  return `
-    <div class="acc-project-item" data-id="${escapeHtml(p.id)}">
-      <i class="ph ph-folder f"></i>
-      <span class="p">${escapeHtml(p.path)}</span>
-      <i class="ph ph-x x" data-id="${escapeHtml(p.id)}" title="Stop using this account for this project"></i>
-    </div>
-  `;
-}
-
-/** Populates one account's reverse "projects using this account" panel. */
-async function refreshAccountProjects(root: HTMLElement, accountId: string): Promise<void> {
-  const panel = root.querySelector<HTMLElement>(`.acc-projects[data-id="${CSS.escape(accountId)}"]`);
-  if (!panel) return;
-  let projects: ProjectConfig[] = [];
-  try {
-    projects = (await api.listProjects()) as unknown as ProjectConfig[];
-  } catch (e) {
-    console.error("[settings-accounts] listProjects failed", e);
-  }
-  const bound = projects.filter((p) => p.preferred_account_id === accountId);
-  panel.innerHTML = `
-    <div class="acc-project-list">
-      ${bound.length === 0 ? `<p class="acc-empty">No projects bound to this account yet.</p>` : bound.map(projectRowHtml).join("")}
-    </div>
-    <div class="acc-project-add">
-      <button class="btn-secondary acc-btn-add-project" data-id="${escapeHtml(accountId)}"><i class="ph ph-plus"></i> Add a project</button>
-    </div>
-  `;
-  panel.querySelectorAll<HTMLElement>(".acc-project-item .x").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const projectId = btn.dataset.id;
-      if (!projectId) return;
-      void (async () => {
-        try {
-          await api.updateProject(projectId, { preferred_account_id: null });
-          await refreshAccountProjects(root, accountId);
-        } catch (e) { console.error("[settings-accounts] remove binding failed", e); }
-      })();
-    });
-  });
-  const addBtn = panel.querySelector<HTMLButtonElement>(".acc-btn-add-project");
-  if (addBtn) {
-    addBtn.onclick = () => {
-      void (async () => {
-        const picked = await pickProject();
-        if (!picked) return;
-        try {
-          const proj = await api.ensureProject(picked.path);
-          await api.updateProject(proj.id, { preferred_account_id: accountId });
-          await refreshAccountProjects(root, accountId);
-        } catch (e) { console.error("[settings-accounts] bind project failed", e); }
-      })();
-    };
-  }
 }
 
 async function refreshList(root: HTMLElement): Promise<void> {
@@ -138,66 +77,73 @@ async function refreshList(root: HTMLElement): Promise<void> {
   if (empty) empty.style.display = accounts.length === 0 ? "" : "none";
   list.innerHTML = accounts.map((a) => accountRowHtml(a, defaultAccountId, identities[a.id] ?? null)).join("");
 
-  list.querySelectorAll<HTMLButtonElement>(".acc-btn-default").forEach((btn) => {
+  // Kebab menu: one popover open at a time, closed by the document-level
+  // listener registered once in renderAccountsSettingsView (outside click) or
+  // right here after any menu action runs.
+  list.querySelectorAll<HTMLButtonElement>(".acc-btn-kebab").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const popover = list.querySelector<HTMLElement>(`.menu-popover[data-id="${CSS.escape(id ?? "")}"]`);
+      if (!popover) return;
+      const wasHidden = popover.hidden;
+      list.querySelectorAll<HTMLElement>(".menu-popover").forEach((p) => { p.hidden = true; });
+      popover.hidden = !wasHidden;
+    });
+  });
+
+  list.querySelectorAll<HTMLButtonElement>(".acc-menu-default").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       if (!id) return;
       void (async () => {
-        btn.disabled = true;
         try { await api.setDefaultAccount(id); await refreshList(root); }
-        catch (e) { console.error("[settings-accounts] setDefaultAccount failed", e); btn.disabled = false; }
+        catch (e) { console.error("[settings-accounts] setDefaultAccount failed", e); }
       })();
     });
   });
 
-  list.querySelectorAll<HTMLButtonElement>(".acc-btn-logout").forEach((btn) => {
+  list.querySelectorAll<HTMLButtonElement>(".acc-menu-logout").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       if (!id) return;
       void (async () => {
-        btn.disabled = true;
         try { await api.logoutAccount(id); await refreshList(root); }
-        catch (e) { console.error("[settings-accounts] logoutAccount failed", e); btn.disabled = false; }
+        catch (e) { console.error("[settings-accounts] logoutAccount failed", e); }
       })();
     });
   });
 
-  list.querySelectorAll<HTMLButtonElement>(".acc-btn-reauth").forEach((btn) => {
+  list.querySelectorAll<HTMLButtonElement>(".acc-menu-reauth").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       if (!id) return;
       void (async () => {
-        btn.disabled = true;
         try {
           await api.reauthAccount(id);
           alert("A terminal opened for /login. Run it, then reopen this screen to see the refreshed identity.");
         } catch (e) {
           console.error("[settings-accounts] reauthAccount failed", e);
-        } finally {
-          btn.disabled = false;
         }
       })();
     });
   });
 
-  list.querySelectorAll<HTMLButtonElement>(".acc-btn-add-cookie").forEach((btn) => {
+  list.querySelectorAll<HTMLButtonElement>(".acc-menu-add-cookie").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       if (!id) return;
       void (async () => {
-        btn.disabled = true;
         try { await api.recaptureAccountCookie(id); await refreshList(root); }
         catch (e) {
           console.error("[settings-accounts] recaptureAccountCookie failed", e);
           alert(e instanceof Error ? e.message : "Connecting usage tracking failed - see the console.");
-        } finally {
-          btn.disabled = false;
         }
       })();
     });
   });
 
-  list.querySelectorAll<HTMLButtonElement>(".acc-btn-remove").forEach((btn) => {
+  list.querySelectorAll<HTMLButtonElement>(".acc-menu-remove").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       if (!id) return;
@@ -205,31 +151,28 @@ async function refreshList(root: HTMLElement): Promise<void> {
       const label = row?.label ?? "this account";
       void (async () => {
         if (!(await askConfirm(`Remove ${label}? This deletes its profile folder (and its browser/cookie login) - it never touches ~/.claude.`, { confirmLabel: "Remove" }))) return;
-        btn.disabled = true;
         try { await api.removeAccount(id); await refreshList(root); }
         catch (e) {
           console.error("[settings-accounts] removeAccount failed", e);
           alert(e instanceof Error ? e.message : "Removing the account failed - see the console.");
-          btn.disabled = false;
         }
       })();
     });
   });
 
-  list.querySelectorAll<HTMLButtonElement>(".acc-btn-expand").forEach((btn) => {
+  // Edit: opened from the kebab's Edit item as a real modal (rename/icon/
+  // colour + the projects-bound-to-this-account list, both tabs of one
+  // modal - see edit-account-modal.ts).
+  list.querySelectorAll<HTMLButtonElement>(".acc-menu-edit").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       if (!id) return;
-      if (expandedAccounts.has(id)) expandedAccounts.delete(id);
-      else expandedAccounts.add(id);
-      void refreshList(root);
+      list.querySelectorAll<HTMLElement>(".menu-popover").forEach((p) => { p.hidden = true; });
+      const account = accounts.find((a) => a.id === id);
+      if (!account) return;
+      void openEditAccountModal(account).then((updated) => { if (updated) void refreshList(root); });
     });
   });
-
-  // Re-populate any panels the user already had open before this refresh.
-  for (const id of expandedAccounts) {
-    if (accounts.some((a) => a.id === id)) void refreshAccountProjects(root, id);
-  }
 }
 
 async function refreshTerminalIdentity(root: HTMLElement): Promise<void> {
@@ -265,12 +208,27 @@ export async function renderAccountsSettingsView(root: HTMLElement): Promise<() 
     };
   }
 
+  // Close any open kebab popover on an outside click. Registered once for the
+  // view's lifetime (refreshList re-renders the list body on every action, so
+  // this can't live inside it without leaking a listener per refresh).
+  const onDocClick = (e: MouseEvent) => {
+    const list = root.querySelector<HTMLElement>("#acc-list");
+    if (!list) return;
+    const target = e.target as Node;
+    list.querySelectorAll<HTMLElement>(".menu-popover:not([hidden])").forEach((popover) => {
+      if (!popover.contains(target) && !popover.previousElementSibling?.contains(target)) {
+        popover.hidden = true;
+      }
+    });
+  };
+  document.addEventListener("click", onDocClick);
+
   try { await refreshList(root); }
   catch (e) { console.error("[settings-accounts] initial render failed", e); }
   try { await refreshTerminalIdentity(root); }
   catch (e) { console.error("[settings-accounts] terminal identity failed", e); }
 
-  return () => { /* nothing to tear down */ };
+  return () => { document.removeEventListener("click", onDocClick); };
 }
 
 function template() {

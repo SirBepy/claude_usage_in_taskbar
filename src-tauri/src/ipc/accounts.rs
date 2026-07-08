@@ -517,6 +517,46 @@ pub fn logout_account(account_id: String, state: State<AppState>, app: AppHandle
     Ok(())
 }
 
+/// Renames/recolours/re-icons an existing account (Settings > Accounts edit
+/// panel). Any field left `None` is left untouched. Never touches identity,
+/// credentials, or the cookie - purely cosmetic registry fields.
+#[tauri::command]
+pub fn update_account(
+    account_id: String,
+    label: Option<String>,
+    colour: Option<String>,
+    icon: Option<String>,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<Account, String> {
+    let accounts_path = paths::accounts_file().map_err(|e| e.to_string())?;
+    let mut accounts = accounts_store::load(&accounts_path);
+    let account = accounts
+        .iter_mut()
+        .find(|a| a.id == account_id)
+        .ok_or_else(|| format!("no account with id {account_id}"))?;
+    if let Some(label) = label {
+        if label.trim().is_empty() {
+            return Err("label must not be empty".to_string());
+        }
+        account.label = label;
+    }
+    if let Some(colour) = colour {
+        account.colour = colour;
+    }
+    if let Some(icon) = icon {
+        account.icon = icon;
+    }
+    let updated = account.clone();
+    accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
+
+    // Tray reads label/colour/icon for its per-account rows - without this
+    // it would show the stale values until the next scheduled poll.
+    let snapshot = state.settings.lock().unwrap().clone();
+    let _ = app.emit("settings-changed", &snapshot);
+    Ok(updated)
+}
+
 #[tauri::command]
 pub async fn set_default_account(
     account_id: Option<String>,
