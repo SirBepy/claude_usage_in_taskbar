@@ -13,7 +13,6 @@ import {
   COLOUR_POOL,
   LOGIN_POLL_INTERVAL_MS,
   pickAvailableIcon,
-  nextRerollIndex,
   prefillLabel,
   tierLabel,
   formatElapsed,
@@ -65,7 +64,6 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     // finalize step
     let label = "";
     let icon = "";
-    let iconIndex = 0;
     let colour = COLOUR_POOL[0]!;
 
     function stopPolling(): void {
@@ -252,22 +250,22 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     }
 
     function renderFinalizeStep(): string {
+      const customColour = !COLOUR_POOL.includes(colour);
       return `
         <div class="field" id="aaw-icon-field" style="--acc:${escapeHtml(colour)}">
-          <label>Icon <span class="muted">(auto-picked, reroll if you care)</span></label>
-          <div class="icon-pick">
-            <div class="icon-current"><i class="ph ph-${escapeHtml(icon)}"></i></div>
-            <button class="btn ghost" id="aaw-reroll-btn" type="button"><i class="ph ph-dice-five"></i> Reroll</button>
+          <label>Icon</label>
+          <div class="icon-grid">
+            ${ICON_POOL.map((i) => `<button type="button" class="icon-tile${i === icon ? " sel" : ""}" data-icon="${escapeHtml(i)}"><i class="ph ph-${escapeHtml(i)}"></i></button>`).join("")}
           </div>
-        </div>
-        <div class="field">
-          <label>Account name</label>
-          <input type="text" class="aaw-input" id="aaw-label" value="${escapeHtml(label)}" ${busy ? "disabled" : ""}>
         </div>
         <div class="field">
           <label>Colour</label>
           <div class="swatches">
             ${COLOUR_POOL.map((c) => `<span class="swatch${c === colour ? " sel" : ""}" data-colour="${escapeHtml(c)}" style="background:${escapeHtml(c)}"></span>`).join("")}
+            <label class="swatch custom${customColour ? " sel" : ""}" title="Custom colour" ${customColour ? `style="background:${escapeHtml(colour)}"` : ""}>
+              <i class="ph ph-eyedropper"></i>
+              <input type="color" id="aaw-custom-colour" value="${escapeHtml(customColour ? colour : "#8888ff")}">
+            </label>
           </div>
         </div>
         ${error ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(error)}</div>` : ""}
@@ -342,22 +340,35 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
           render();
         });
       } else if (step === "finalize") {
-        const labelEl = overlay.querySelector<HTMLInputElement>("#aaw-label");
-        labelEl?.addEventListener("input", () => {
-          label = labelEl.value;
-          const btn = overlay.querySelector<HTMLButtonElement>("#aaw-finalize-btn");
-          if (btn) { btn.disabled = busy || !label.trim(); btn.innerHTML = `Add ${escapeHtml(label.trim() || "account")}`; }
+        overlay.querySelectorAll<HTMLButtonElement>(".icon-tile").forEach((tile) => {
+          tile.addEventListener("click", () => {
+            icon = tile.dataset.icon ?? icon;
+            render();
+          });
         });
-        overlay.querySelector<HTMLButtonElement>("#aaw-reroll-btn")?.addEventListener("click", () => {
-          iconIndex = nextRerollIndex(ICON_POOL, iconIndex);
-          icon = pickAvailableIcon(ICON_POOL, usedIcons, iconIndex);
-          render();
-        });
-        overlay.querySelectorAll<HTMLElement>(".swatch").forEach((sw) => {
+        overlay.querySelectorAll<HTMLElement>(".swatch[data-colour]").forEach((sw) => {
           sw.addEventListener("click", () => {
             colour = sw.dataset.colour ?? colour;
             render();
           });
+        });
+        const customEl = overlay.querySelector<HTMLInputElement>("#aaw-custom-colour");
+        // "input" fires live while the native picker is open - a full render()
+        // would destroy the input and close the picker, so live-preview in
+        // place and only re-render on "change" (picker confirmed/closed).
+        customEl?.addEventListener("input", () => {
+          colour = customEl.value;
+          overlay.querySelector<HTMLElement>("#aaw-icon-field")?.style.setProperty("--acc", colour);
+          overlay.querySelectorAll<HTMLElement>(".swatch").forEach((sw) => sw.classList.remove("sel"));
+          const custom = customEl.closest<HTMLElement>(".swatch.custom");
+          if (custom) {
+            custom.classList.add("sel");
+            custom.style.background = colour;
+          }
+        });
+        customEl?.addEventListener("change", () => {
+          colour = customEl.value;
+          render();
         });
         overlay.querySelector<HTMLButtonElement>("#aaw-finalize-btn")?.addEventListener("click", () => void doFinalize());
       }
@@ -451,10 +462,11 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     }
 
     function seedFinalizeDefaults(): void {
-      const identity = verifiedIdentity;
-      if (!identity) return;
-      if (!label) label = prefillLabel(identity);
-      if (!icon) icon = pickAvailableIcon(ICON_POOL, usedIcons, iconIndex);
+      // The account name was already given on step 1 - no second name field
+      // on finalize. prefillLabel(identity) only backstops the (unreachable
+      // in practice) empty case.
+      if (!label) label = nameInput.trim() || (verifiedIdentity ? prefillLabel(verifiedIdentity) : "");
+      if (!icon) icon = pickAvailableIcon(ICON_POOL, usedIcons);
       if (!colour) colour = COLOUR_POOL[0]!;
     }
 

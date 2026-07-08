@@ -4,7 +4,6 @@ import {
   COLOUR_POOL,
   LOGIN_TIMEOUT_MS,
   pickAvailableIcon,
-  nextRerollIndex,
   prefillLabel,
   tierLabel,
   formatElapsed,
@@ -36,30 +35,6 @@ describe("pickAvailableIcon", () => {
 
   it("returns empty string for an empty pool", () => {
     expect(pickAvailableIcon([], [])).toBe("");
-  });
-});
-
-describe("nextRerollIndex", () => {
-  it("advances by one and wraps at the end of the pool", () => {
-    expect(nextRerollIndex(ICON_POOL, 0)).toBe(1);
-    expect(nextRerollIndex(ICON_POOL, ICON_POOL.length - 1)).toBe(0);
-  });
-
-  it("returns 0 for an empty pool", () => {
-    expect(nextRerollIndex([], 5)).toBe(0);
-  });
-});
-
-describe("reroll skip-used integration", () => {
-  it("repeated rerolls never land on an icon another account already uses", () => {
-    const used = new Set([ICON_POOL[0], ICON_POOL[2], ICON_POOL[4]]);
-    let index = 0;
-    let icon = pickAvailableIcon(ICON_POOL, used, index);
-    for (let i = 0; i < ICON_POOL.length * 2; i++) {
-      expect(used.has(icon)).toBe(false);
-      index = nextRerollIndex(ICON_POOL, index);
-      icon = pickAvailableIcon(ICON_POOL, used, index);
-    }
   });
 });
 

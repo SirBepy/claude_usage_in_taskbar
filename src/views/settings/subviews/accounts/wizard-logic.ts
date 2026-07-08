@@ -57,16 +57,6 @@ export function pickAvailableIcon(
 }
 
 /**
- * Advances the reroll cursor by one, wrapping. Kept separate from
- * `pickAvailableIcon` so repeated reroll clicks walk forward through the pool
- * instead of always restarting from index 0.
- */
-export function nextRerollIndex(pool: readonly string[], currentIndex: number): number {
-  if (pool.length === 0) return 0;
-  return (currentIndex + 1) % pool.length;
-}
-
-/**
  * "Fibo Studio" -> "Fibo Studio"; falls back to the email's local part,
  * title-cased on `.`/`_`/`-`, when there's no org name (personal accounts
  * often have none).
