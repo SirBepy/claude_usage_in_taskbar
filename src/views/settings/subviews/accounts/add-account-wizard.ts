@@ -46,6 +46,11 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     let sessionId: string | null = null;
     let adoptedExisting = false;
     let existingIdentity: OauthAccountInfo | null = null;
+    let loginSkipped = false;
+    let terminalTitle: string | null = null;
+    let configDir = "";
+    let misdirected: string | null = null;
+    let manualCheckPending = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let loginStartedAt = 0;
     let elapsedMs = 0;
@@ -139,8 +144,12 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     }
 
     function renderLoginStep(): string {
-      const adoptHint = adoptedExisting
-        ? `<div class="aaw-note"><i class="ph ph-info"></i> This profile dir already existed${existingIdentity ? ` (logged in as ${escapeHtml(existingIdentity.emailAddress)})` : ""} - log into the SAME account in the terminal.</div>`
+      // Only meaningful when the adopted dir actually held an identity - a
+      // cancelled wizard run can leave an empty husk dir behind, and telling
+      // the user to "log into the SAME account" about an empty folder is
+      // pure confusion.
+      const adoptHint = adoptedExisting && existingIdentity && !loginSkipped
+        ? `<div class="aaw-note"><i class="ph ph-info"></i> This profile dir already existed (logged in as ${escapeHtml(existingIdentity.emailAddress)}) - log into the SAME account in the terminal.</div>`
         : "";
 
       if (loginFailure) {
@@ -155,8 +164,11 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       }
 
       if (verifiedIdentity) {
+        const skippedNote = loginSkipped
+          ? `<div class="aaw-note"><i class="ph ph-check-circle"></i> This folder already had a valid login - no /login needed.</div>`
+          : "";
         return `
-          ${adoptHint}
+          ${skippedNote}
           <div class="detected">
             <span class="av"><i class="ph ph-check-circle"></i></span>
             <span class="info">
@@ -172,16 +184,24 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         `;
       }
 
+      const misdirectedNote = misdirected
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> A login just landed in ${escapeHtml(misdirected)}, not in this account's profile. You probably used a different terminal - type /login in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</div>`
+        : "";
+      const notDetectedNote = manualCheckPending
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> No login detected yet in <code>${escapeHtml(configDir)}</code>. Make sure /login finished in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</div>`
+        : "";
       return `
         ${adoptHint}
+        ${misdirectedNote}
+        ${notDetectedNote}
         <div class="aaw-waiting">
           <i class="ph ph-spinner aaw-spin"></i>
-          <div>Run <code>/login</code> in the terminal that just opened, and pick the right account.</div>
+          <div>Run <code>/login</code> in the terminal that just opened${terminalTitle ? ` (window titled "${escapeHtml(terminalTitle)}")` : ""}, and pick the right account.</div>
           <div class="muted">Waiting... ${formatElapsed(elapsedMs)}</div>
         </div>
         <div class="wz-actions">
-          <span></span>
           <button class="btn" id="aaw-cancel-btn">Cancel</button>
+          <button class="btn" id="aaw-checknow-btn">I've logged in - check now</button>
         </div>
       `;
     }
@@ -286,6 +306,10 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
           step = "cookie";
           render();
         });
+        overlay.querySelector<HTMLButtonElement>("#aaw-checknow-btn")?.addEventListener("click", () => {
+          manualCheckPending = true;
+          void pollLogin();
+        });
       } else if (step === "cookie") {
         overlay.querySelector<HTMLButtonElement>("#aaw-capture-btn")?.addEventListener("click", () => {
           if (cookieCaptured) { step = "finalize"; render(); return; }
@@ -327,6 +351,9 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         sessionId = session.session_id;
         adoptedExisting = session.adopted_existing;
         existingIdentity = session.existing_identity;
+        loginSkipped = session.login_skipped;
+        terminalTitle = session.terminal_title;
+        configDir = String(session.config_dir);
         busy = false;
         step = "login";
         startPolling();
@@ -359,6 +386,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         const outcome = await api.addAccountCheckLogin(sessionId);
         const view = describeLoginOutcome(outcome);
         if (view.kind === "pending") {
+          misdirected = view.misdirected;
           render();
           return;
         }

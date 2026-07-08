@@ -4,6 +4,7 @@
 //! restart just means the next wizard run adopts it).
 
 use super::identity::OauthAccountInfo;
+use super::login_step::LoginWatch;
 use std::path::PathBuf;
 
 /// One in-progress add-account attempt, keyed by a random session id in
@@ -26,8 +27,10 @@ pub struct WizardSession {
     /// started (adoption case only). Used to detect a mismatched re-login
     /// into a different account inside the same dir.
     pub pre_existing_identity: Option<OauthAccountInfo>,
-    /// `profileFetchedAt` baseline passed to `login_step::poll_login`.
-    pub baseline_fetched_at: Option<String>,
+    /// `.credentials.json` mtimes of every OTHER profile dir, captured when
+    /// the login terminal spawned - lets `check_login` warn when a /login
+    /// landed in the wrong profile (see `login_step::detect_misdirected_login`).
+    pub login_watch: LoginWatch,
     /// Filled in once `check_login` observes a fresh, non-duplicate identity.
     pub verified_identity: Option<OauthAccountInfo>,
     /// Filled in once the web-cookie capture step succeeds. Kept in memory

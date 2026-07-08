@@ -131,8 +131,20 @@ describe("isLoginTimedOut", () => {
 });
 
 describe("describeLoginOutcome", () => {
-  it("maps Pending to kind pending", () => {
-    expect(describeLoginOutcome({ status: "Pending" })).toEqual({ kind: "pending" });
+  it("maps Pending to kind pending, defaulting misdirected to null", () => {
+    expect(describeLoginOutcome({ status: "Pending", misdirected: null })).toEqual({
+      kind: "pending",
+      misdirected: null,
+    });
+  });
+
+  it("passes a misdirected-login hint through on Pending", () => {
+    expect(
+      describeLoginOutcome({ status: "Pending", misdirected: "your terminal's default profile (~/.claude)" }),
+    ).toEqual({
+      kind: "pending",
+      misdirected: "your terminal's default profile (~/.claude)",
+    });
   });
 
   it("maps Ready to kind ready, passing the identity through", () => {

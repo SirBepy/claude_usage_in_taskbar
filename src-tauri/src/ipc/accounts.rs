@@ -24,19 +24,32 @@ fn home_claude_dir() -> Result<std::path::PathBuf, String> {
 pub struct AddAccountSession {
     pub session_id: String,
     pub config_dir: std::path::PathBuf,
-    /// True if `config_dir` already existed (adoption path) - the frontend
-    /// should tell the user to log into the SAME account that dir already
-    /// used, since a mismatch will be rejected at the check-login step.
+    /// True if `config_dir` already existed (adoption path). Only meaningful
+    /// to the user when `existing_identity` is also set - a cancelled wizard
+    /// run can leave an empty husk dir behind (the open terminal locks it
+    /// against deletion), and adopting a husk is indistinguishable from a
+    /// fresh add.
     pub adopted_existing: bool,
     pub existing_identity: Option<OauthAccountInfo>,
+    /// True when the adopted dir already held a complete login (identity +
+    /// credentials): no terminal was spawned, and the first
+    /// `add_account_check_login` will come back `Ready` immediately.
+    pub login_skipped: bool,
+    /// The window title the spawned `/login` terminal was given (present iff
+    /// a terminal was actually spawned), so the waiting UI can tell the user
+    /// exactly which window to type into.
+    pub terminal_title: Option<String>,
 }
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(tag = "status")]
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum LoginCheckOutcome {
-    /// No fresh `oauthAccount` observed yet; keep polling.
-    Pending,
+    /// No complete login observed in the profile dir yet; keep polling.
+    /// `misdirected` carries a hint when a login was just observed landing in
+    /// a DIFFERENT profile (wrong terminal) - a nudge, not a hard failure,
+    /// since token auto-refresh also rewrites credentials files.
+    Pending { misdirected: Option<String> },
     /// A fresh, non-duplicate identity was observed - ready to capture the
     /// cookie and/or finalize.
     Ready { identity: OauthAccountInfo },
@@ -74,11 +87,21 @@ pub fn add_account_create(
     }
 
     let existing_identity = identity::read_oauth_account(&outcome.config_dir);
-    let baseline_fetched_at = existing_identity
-        .as_ref()
-        .and_then(|i| i.profile_fetched_at.clone());
 
-    login_step::spawn_login_terminal(&outcome.config_dir).map_err(|e| e.to_string())?;
+    // Adoption fast-path: a dir that already holds a complete login (identity
+    // + credentials) needs NO /login - an expired access token still counts,
+    // the CLI self-refreshes. Skip the terminal; the first check_login call
+    // returns Ready with the existing identity for the user to confirm.
+    let login_skipped = login_step::has_complete_login(&outcome.config_dir);
+    let (login_watch, terminal_title) = if login_skipped {
+        (login_step::LoginWatch::default(), None)
+    } else {
+        let watch = dirs::home_dir()
+            .map(|home| login_step::capture_login_watch(&home, &outcome.config_dir))
+            .unwrap_or_default();
+        login_step::spawn_login_terminal(&outcome.config_dir, &slug).map_err(|e| e.to_string())?;
+        (watch, Some(login_step::login_terminal_title(&slug)))
+    };
 
     let account_id = uuid::Uuid::new_v4().to_string();
     let chrome_profile_dir =
@@ -90,6 +113,8 @@ pub fn add_account_create(
         config_dir: outcome.config_dir.clone(),
         adopted_existing: !outcome.created_new,
         existing_identity: existing_identity.clone(),
+        login_skipped,
+        terminal_title,
     };
     let session = WizardSession {
         account_id,
@@ -98,7 +123,7 @@ pub fn add_account_create(
         chrome_profile_dir,
         created_new_dir: outcome.created_new,
         pre_existing_identity: existing_identity,
-        baseline_fetched_at,
+        login_watch,
         verified_identity: None,
         session_key: None,
     };
@@ -119,8 +144,12 @@ pub fn add_account_check_login(
         .get_mut(&session_id)
         .ok_or_else(|| "wizard session not found or already finished".to_string())?;
 
-    let identity = match login_step::poll_login(&session.config_dir, session.baseline_fetched_at.as_deref()) {
-        login_step::LoginPollResult::Pending => return Ok(LoginCheckOutcome::Pending),
+    let identity = match login_step::poll_login(&session.config_dir) {
+        login_step::LoginPollResult::Pending => {
+            return Ok(LoginCheckOutcome::Pending {
+                misdirected: login_step::detect_misdirected_login(&session.login_watch),
+            })
+        }
         login_step::LoginPollResult::Ready(identity) => identity,
     };
 
@@ -448,7 +477,7 @@ pub fn reauth_account(account_id: String) -> Result<(), String> {
         .iter()
         .find(|a| a.id == account_id)
         .ok_or_else(|| format!("no account with id {account_id}"))?;
-    login_step::spawn_login_terminal(&account.config_dir).map_err(|e| e.to_string())
+    login_step::spawn_login_terminal(&account.config_dir, &account.label).map_err(|e| e.to_string())
 }
 
 /// Per-account cookie (re)capture for accounts that skipped the browser step

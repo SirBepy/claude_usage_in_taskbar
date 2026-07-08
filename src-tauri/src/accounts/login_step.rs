@@ -1,45 +1,123 @@
 //! Interactive `/login` step. There is no headless login (locked decision,
 //! 00-overview.md): the wizard spawns a VISIBLE terminal with
 //! `CLAUDE_CONFIG_DIR` set to the profile dir, the user runs `/login` and
-//! picks the right account by hand, and the wizard polls `.claude.json` for
-//! `oauthAccount` to appear/refresh. `claude setup-token` is never used here.
+//! picks the right account by hand, and the wizard polls the profile dir for
+//! a complete login (`oauthAccount` + parseable `.credentials.json`).
+//! `claude setup-token` is never used here.
+//!
+//! When the profile dir ALREADY holds a complete login, the wizard skips this
+//! step entirely (`ipc::accounts::add_account_create` never spawns the
+//! terminal) - an expired access token is still "complete" because the CLI
+//! self-refreshes via the refresh token.
 
 use super::identity::{self, OauthAccountInfo};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
-/// Result of comparing the profile dir's current identity against the
-/// baseline captured when the wizard step started.
+/// Result of checking whether the profile dir holds a complete login.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoginPollResult {
-    /// No identity yet, or the identity present is the same one that was
-    /// already there before this login attempt started (login hasn't
-    /// completed).
+    /// No complete login in the dir yet (missing/parseless `.claude.json`
+    /// `oauthAccount`, or missing/parseless `.credentials.json`).
     Pending,
-    /// A fresh (or newly-appeared) identity was observed.
+    /// The dir holds an identity AND credentials - login is complete.
     Ready(OauthAccountInfo),
 }
 
-/// Polls `<config_dir>/.claude.json` and compares against `baseline_fetched_at`
-/// (the `profileFetchedAt` captured before the login terminal was spawned, or
-/// `None` for a brand-new dir that never had an identity). A login is
-/// considered complete once `profileFetchedAt` is present and strictly newer
-/// than the baseline (RFC3339 timestamps sort lexicographically, so a plain
-/// string compare is enough - same convention `ProjectConfig.last_active_at`
-/// comparisons use elsewhere in this codebase).
-pub fn poll_login(config_dir: &Path, baseline_fetched_at: Option<&str>) -> LoginPollResult {
+/// A login is complete once BOTH artifacts exist in the profile dir: the
+/// `oauthAccount` identity block in `.claude.json` and a parseable
+/// `.credentials.json`. No timestamp freshness check: current Claude Code
+/// builds no longer write `profileFetchedAt`, so "did the files appear"
+/// is the only reliable signal. Whether the identity is the RIGHT one
+/// (adoption mismatch, duplicates) is the caller's job
+/// (`ipc::accounts::add_account_check_login`).
+pub fn poll_login(config_dir: &Path) -> LoginPollResult {
     let Some(identity) = identity::read_oauth_account(config_dir) else {
         return LoginPollResult::Pending;
     };
-    let is_fresh = match (baseline_fetched_at, identity.profile_fetched_at.as_deref()) {
-        (None, _) => true,
-        (Some(_), None) => false,
-        (Some(base), Some(now)) => now > base,
-    };
-    if is_fresh {
-        LoginPollResult::Ready(identity)
-    } else {
-        LoginPollResult::Pending
+    if identity::read_token_expiry(config_dir).is_none() {
+        return LoginPollResult::Pending;
     }
+    LoginPollResult::Ready(identity)
+}
+
+/// True when the profile dir already holds a complete login and the wizard
+/// can skip spawning the `/login` terminal altogether (adoption fast-path).
+pub fn has_complete_login(config_dir: &Path) -> bool {
+    matches!(poll_login(config_dir), LoginPollResult::Ready(_))
+}
+
+// ── Misdirected-login detection ─────────────────────────────────────────────
+// The wizard's terminal is easy to lose among other terminals/tabs (past
+// incident: /login typed into a stale terminal from a cancelled wizard run -
+// the credentials landed in a different profile dir and the wizard waited
+// forever). While the login step is Pending, we watch every OTHER known
+// Claude profile (`~/.claude` plus each `~/.claude-*` sibling) for a
+// `.credentials.json` write that happened after the step started, and surface
+// "your login went to X" instead of spinning silently.
+
+/// `.credentials.json` mtimes of every profile dir that is NOT the wizard's
+/// target, captured when the login step starts.
+#[derive(Debug, Clone, Default)]
+pub struct LoginWatch {
+    entries: Vec<WatchEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct WatchEntry {
+    /// Human description used in the misdirected-login message.
+    desc: String,
+    creds_path: PathBuf,
+    baseline_mtime: Option<SystemTime>,
+}
+
+fn creds_mtime(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Captures the watch baseline: `<home>/.claude` (the terminal's default
+/// profile) plus every `<home>/.claude-*` sibling dir, excluding
+/// `target_config_dir` itself.
+pub fn capture_login_watch(home_dir: &Path, target_config_dir: &Path) -> LoginWatch {
+    let mut entries = Vec::new();
+    let mut push = |dir: PathBuf, desc: String| {
+        if dir == target_config_dir {
+            return;
+        }
+        let creds_path = dir.join(".credentials.json");
+        let baseline_mtime = creds_mtime(&creds_path);
+        entries.push(WatchEntry { desc, creds_path, baseline_mtime });
+    };
+
+    push(home_dir.join(".claude"), "your terminal's default profile (~/.claude)".to_string());
+    if let Ok(read) = std::fs::read_dir(home_dir) {
+        for entry in read.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(".claude-") && entry.path().is_dir() {
+                push(entry.path(), format!("the \"{}\" profile folder", name));
+            }
+        }
+    }
+    LoginWatch { entries }
+}
+
+/// Returns a description of the first watched profile whose
+/// `.credentials.json` was (re)written after the baseline - i.e. a login that
+/// landed somewhere OTHER than the wizard's target dir. `None` while nothing
+/// suspicious happened. Token auto-refresh also rewrites `.credentials.json`,
+/// so callers should phrase this as a hint, not a hard error.
+pub fn detect_misdirected_login(watch: &LoginWatch) -> Option<String> {
+    for entry in &watch.entries {
+        let Some(now) = creds_mtime(&entry.creds_path) else { continue };
+        let fresh = match entry.baseline_mtime {
+            None => true,
+            Some(base) => now > base,
+        };
+        if fresh {
+            return Some(entry.desc.clone());
+        }
+    }
+    None
 }
 
 /// Spawns a visible terminal running `claude` with `CLAUDE_CONFIG_DIR` set to
@@ -48,8 +126,31 @@ pub fn poll_login(config_dir: &Path, baseline_fetched_at: Option<&str>) -> Login
 /// `Command::env`) because several of these terminal launchers (Windows
 /// Terminal, gnome-terminal) hand the command off to an already-running
 /// server process rather than inheriting our env directly.
-pub fn spawn_login_terminal(config_dir: &Path) -> std::io::Result<()> {
-    imp::spawn(config_dir)
+///
+/// `display_name` (the account slug/label) goes into the window title +
+/// banner so the window is distinguishable from the user's other terminals -
+/// past incident: /login typed into the wrong, identical-looking window.
+pub fn spawn_login_terminal(config_dir: &Path, display_name: &str) -> std::io::Result<()> {
+    imp::spawn(config_dir, &sanitize_display_name(display_name))
+}
+
+/// Title/banner text is interpolated into a shell command string; keep only
+/// characters that are inert in cmd.exe, AppleScript, and bash. Slugs are
+/// already this tame - this guards the `reauth_account` path where the
+/// account LABEL (free text) is passed.
+fn sanitize_display_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() { "account".to_string() } else { trimmed.to_string() }
+}
+
+/// The window title the login terminal is given, shared so UI copy can tell
+/// the user which window to type into.
+pub fn login_terminal_title(display_name: &str) -> String {
+    format!("Claude login - {}", sanitize_display_name(display_name))
 }
 
 #[cfg(target_os = "windows")]
@@ -57,12 +158,17 @@ mod imp {
     use std::path::Path;
     use std::process::Command;
 
-    pub fn spawn(config_dir: &Path) -> std::io::Result<()> {
+    pub fn spawn(config_dir: &Path, display_name: &str) -> std::io::Result<()> {
         let dir_str = config_dir.to_string_lossy().to_string();
-        let inner = format!("set CLAUDE_CONFIG_DIR={dir_str}&&claude");
-        // Prefer Windows Terminal.
+        let title = super::login_terminal_title(display_name);
+        let inner = format!(
+            "title {title}&&set CLAUDE_CONFIG_DIR={dir_str}&&echo(&&echo   Log in for the \"{display_name}\" account HERE (run /login).&&echo(&&claude"
+        );
+        // Prefer Windows Terminal. `-w new` forces a NEW window: a tab
+        // appended to an existing window is exactly how the user ends up
+        // typing /login into the wrong tab.
         let mut wt = Command::new("wt.exe");
-        wt.args(["-d", &dir_str, "cmd.exe", "/K", &inner]);
+        wt.args(["-w", "new", "-d", &dir_str, "cmd.exe", "/K", &inner]);
         if wt.spawn().is_ok() {
             return Ok(());
         }
@@ -80,10 +186,11 @@ mod imp {
     use std::path::Path;
     use std::process::Command;
 
-    pub fn spawn(config_dir: &Path) -> std::io::Result<()> {
+    pub fn spawn(config_dir: &Path, display_name: &str) -> std::io::Result<()> {
         let dir_esc = config_dir.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+        let banner = format!("Log in for the {display_name} account HERE (run /login).");
         let script = format!(
-            "tell application \"Terminal\" to do script \"cd \\\"{dir_esc}\\\" && export CLAUDE_CONFIG_DIR=\\\"{dir_esc}\\\" && claude\""
+            "tell application \"Terminal\" to do script \"cd \\\"{dir_esc}\\\" && export CLAUDE_CONFIG_DIR=\\\"{dir_esc}\\\" && echo && echo '  {banner}' && echo && claude\""
         );
         Command::new("osascript").arg("-e").arg(&script).spawn()?;
         let _ = Command::new("osascript")
@@ -99,9 +206,12 @@ mod imp {
     use std::path::Path;
     use std::process::Command;
 
-    pub fn spawn(config_dir: &Path) -> std::io::Result<()> {
+    pub fn spawn(config_dir: &Path, display_name: &str) -> std::io::Result<()> {
         let dir_str = config_dir.to_string_lossy().to_string();
-        let run = format!("export CLAUDE_CONFIG_DIR=\"{dir_str}\"; claude; exec bash");
+        let banner = format!("Log in for the {display_name} account HERE (run /login).");
+        let run = format!(
+            "export CLAUDE_CONFIG_DIR=\"{dir_str}\"; echo; echo \"  {banner}\"; echo; claude; exec bash"
+        );
         let candidates = ["gnome-terminal", "konsole", "xfce4-terminal", "xterm"];
         for bin in candidates {
             let mut cmd = Command::new(bin);
@@ -139,60 +249,146 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    fn write_identity(dir: &Path, fetched_at: &str) {
-        let raw = format!(
-            r#"{{"oauthAccount": {{"emailAddress": "a@x.com", "organizationUuid": "org-1", "profileFetchedAt": "{fetched_at}"}}}}"#
-        );
+    fn write_identity(dir: &Path) {
+        let raw = r#"{"oauthAccount": {"emailAddress": "a@x.com", "organizationUuid": "org-1"}}"#;
         std::fs::write(dir.join(".claude.json"), raw).unwrap();
     }
 
-    #[test]
-    fn poll_pending_when_no_identity_file_yet() {
-        let dir = tempdir().unwrap();
-        assert_eq!(poll_login(dir.path(), None), LoginPollResult::Pending);
+    fn write_credentials(dir: &Path) {
+        std::fs::write(
+            dir.join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"sk-ant-oat01-x","refreshToken":"sk-ant-ort01-x","expiresAt":1783437706982,"scopes":[]}}"#,
+        )
+        .unwrap();
     }
 
     #[test]
-    fn poll_ready_on_first_identity_with_no_baseline() {
+    fn poll_pending_when_dir_empty() {
         let dir = tempdir().unwrap();
-        write_identity(dir.path(), "2026-07-07T10:00:00Z");
-        match poll_login(dir.path(), None) {
+        assert_eq!(poll_login(dir.path()), LoginPollResult::Pending);
+    }
+
+    #[test]
+    fn poll_pending_when_identity_but_no_credentials() {
+        let dir = tempdir().unwrap();
+        write_identity(dir.path());
+        assert_eq!(poll_login(dir.path()), LoginPollResult::Pending);
+    }
+
+    #[test]
+    fn poll_pending_when_credentials_but_no_identity() {
+        let dir = tempdir().unwrap();
+        write_credentials(dir.path());
+        assert_eq!(poll_login(dir.path()), LoginPollResult::Pending);
+    }
+
+    #[test]
+    fn poll_ready_when_identity_and_credentials_present() {
+        let dir = tempdir().unwrap();
+        write_identity(dir.path());
+        write_credentials(dir.path());
+        match poll_login(dir.path()) {
             LoginPollResult::Ready(identity) => assert_eq!(identity.email_address, "a@x.com"),
             other => panic!("expected Ready, got {other:?}"),
         }
     }
 
     #[test]
-    fn poll_pending_when_identity_unchanged_since_baseline() {
+    fn poll_ready_without_profile_fetched_at() {
+        // Current Claude Code builds don't write profileFetchedAt at all -
+        // completion must not depend on it (past incident: adopted dirs).
         let dir = tempdir().unwrap();
-        write_identity(dir.path(), "2026-07-07T10:00:00Z");
-        assert_eq!(
-            poll_login(dir.path(), Some("2026-07-07T10:00:00Z")),
-            LoginPollResult::Pending
-        );
+        write_identity(dir.path());
+        write_credentials(dir.path());
+        assert!(matches!(poll_login(dir.path()), LoginPollResult::Ready(_)));
     }
 
     #[test]
-    fn poll_ready_when_identity_refreshed_after_baseline() {
+    fn has_complete_login_matches_poll() {
         let dir = tempdir().unwrap();
-        write_identity(dir.path(), "2026-07-07T11:00:00Z");
-        match poll_login(dir.path(), Some("2026-07-07T10:00:00Z")) {
-            LoginPollResult::Ready(_) => {}
-            other => panic!("expected Ready, got {other:?}"),
-        }
+        assert!(!has_complete_login(dir.path()));
+        write_identity(dir.path());
+        write_credentials(dir.path());
+        assert!(has_complete_login(dir.path()));
+    }
+
+    // ── misdirected-login watch ─────────────────────────────────────────────
+
+    fn touch_creds(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(".credentials.json"), "{}").unwrap();
     }
 
     #[test]
-    fn poll_pending_when_baseline_present_but_new_identity_has_no_timestamp() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join(".claude.json"),
-            r#"{"oauthAccount": {"emailAddress": "a@x.com", "organizationUuid": "org-1"}}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            poll_login(dir.path(), Some("2026-07-07T10:00:00Z")),
-            LoginPollResult::Pending
-        );
+    fn watch_ignores_target_dir_and_preexisting_credentials() {
+        let home = tempdir().unwrap();
+        let target = home.path().join(".claude-personal");
+        std::fs::create_dir_all(&target).unwrap();
+        touch_creds(&home.path().join(".claude"));
+
+        let watch = capture_login_watch(home.path(), &target);
+        // Nothing changed since baseline -> no hint.
+        assert_eq!(detect_misdirected_login(&watch), None);
+
+        // A login INTO THE TARGET must never trigger the hint.
+        touch_creds(&target);
+        assert_eq!(detect_misdirected_login(&watch), None);
+    }
+
+    #[test]
+    fn watch_flags_new_credentials_in_home_profile() {
+        let home = tempdir().unwrap();
+        let target = home.path().join(".claude-personal");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+
+        let watch = capture_login_watch(home.path(), &target);
+        touch_creds(&home.path().join(".claude"));
+
+        let hint = detect_misdirected_login(&watch).expect("expected a hint");
+        assert!(hint.contains("~/.claude"), "hint should name the profile: {hint}");
+    }
+
+    #[test]
+    fn watch_flags_new_credentials_in_sibling_profile_dir() {
+        let home = tempdir().unwrap();
+        let target = home.path().join(".claude-personal");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(home.path().join(".claude-work")).unwrap();
+
+        let watch = capture_login_watch(home.path(), &target);
+        touch_creds(&home.path().join(".claude-work"));
+
+        let hint = detect_misdirected_login(&watch).expect("expected a hint");
+        assert!(hint.contains(".claude-work"), "hint should name the dir: {hint}");
+    }
+
+    #[test]
+    fn watch_flags_rewritten_credentials_as_fresh() {
+        let home = tempdir().unwrap();
+        let target = home.path().join(".claude-personal");
+        std::fs::create_dir_all(&target).unwrap();
+        let work = home.path().join(".claude-work");
+        touch_creds(&work);
+
+        let watch = capture_login_watch(home.path(), &target);
+        // Force an mtime strictly newer than the baseline.
+        let newer = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        let f = std::fs::File::options().write(true).open(work.join(".credentials.json")).unwrap();
+        f.set_modified(newer).unwrap();
+
+        assert!(detect_misdirected_login(&watch).is_some());
+    }
+
+    #[test]
+    fn sanitize_display_name_strips_shell_metacharacters() {
+        assert_eq!(sanitize_display_name("per&&sonal\"|;`$"), "personal");
+        assert_eq!(sanitize_display_name("Fibo Studio"), "Fibo Studio");
+        assert_eq!(sanitize_display_name("&&\"`"), "account");
+    }
+
+    #[test]
+    fn login_terminal_title_is_stable_copy() {
+        assert_eq!(login_terminal_title("personal"), "Claude login - personal");
     }
 }
