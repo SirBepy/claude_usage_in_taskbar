@@ -4,7 +4,9 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::settings::{self, paths};
 
 /// Show + focus an already-built main window.
 pub fn surface_main(w: &tauri::WebviewWindow) {
@@ -328,8 +330,14 @@ fn rect_physical(rect: &tauri::Rect) -> (f64, f64, f64, f64) {
 fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), String> {
     use std::sync::atomic::AtomicBool;
     use tauri::webview::PageLoadEvent;
-    let (ix, iy, iw, ih) = rect_physical(&icon_rect);
-    let (x, y) = overlay_position(ix, iy, iw, ih, OVERLAY_WIDTH, OVERLAY_HEIGHT);
+    // Reopen where the user last parked it (persisted in settings by
+    // save_overlay_position after a drag/flick). First-ever open, or if the
+    // saved spot is gone, falls back to sitting above the tray icon.
+    let (x, y) = persisted_overlay_pos(app)
+        .unwrap_or_else(|| {
+            let (ix, iy, iw, ih) = rect_physical(&icon_rect);
+            overlay_position(ix, iy, iw, ih, OVERLAY_WIDTH, OVERLAY_HEIGHT)
+        });
     let shown = Arc::new(AtomicBool::new(false));
     let builder = tauri::WebviewWindowBuilder::new(
         app,
@@ -339,7 +347,10 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
     .title("Claude usage")
     .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
     .position(x, y)
-    .resizable(false)
+    // Resizable so the frontend can setSize the window to hug its content
+    // (resizeOverlayToContent). Frameless + decorationless, so no user-facing
+    // resize handle appears — this only unlocks the programmatic resize.
+    .resizable(true)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
@@ -358,14 +369,45 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
     })
     .build()
     .map_err(|e| e.to_string())?;
-    // Hide (not close) on focus loss, like a flyout/popover — an instant
-    // reopen on the next click, and no per-toggle webview boot cost.
-    let hide_on_blur = window.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(false) = event {
-            let _ = hide_on_blur.hide();
-        }
-    });
+    // No hide-on-blur: the overlay is a persistent, draggable panel toggled
+    // only by the tray icon (show on click, hide on next click — see
+    // toggle_overlay_window). Hiding it the instant focus moves elsewhere is
+    // exactly the "vanishes when I click anything" behaviour we're removing.
+    let _ = window;
+    Ok(())
+}
+
+/// The overlay's last parked top-left, in physical pixels, persisted to
+/// settings by `save_overlay_position`. `None` until the user first moves it.
+fn persisted_overlay_pos(app: &AppHandle) -> Option<(f64, f64)> {
+    let state = app.try_state::<crate::state::AppState>()?;
+    let s = state.settings.lock().ok()?;
+    let x = s.extra.get("overlayX")?.as_f64()?;
+    let y = s.extra.get("overlayY")?.as_f64()?;
+    Some((x, y))
+}
+
+/// Persist the overlay's dragged/flicked position (physical px) so it reopens
+/// in the same spot across restarts. Kept separate from `save_settings` so a
+/// drag doesn't round-trip the whole settings blob; still emits
+/// `settings-changed` so every window's cached settings stay coherent (else a
+/// later full save from the main window would clobber the position).
+#[tauri::command]
+pub async fn save_overlay_position(
+    x: f64,
+    y: f64,
+    state: State<'_, crate::state::AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let updated = {
+        let mut s = state.settings.lock().unwrap();
+        s.extra.insert("overlayX".into(), serde_json::json!(x));
+        s.extra.insert("overlayY".into(), serde_json::json!(y));
+        s.clone()
+    };
+    let path = paths::settings_file().map_err(|e| e.to_string())?;
+    settings::save(&path, &updated).map_err(|e| e.to_string())?;
+    let _ = app.emit("settings-changed", updated);
     Ok(())
 }
 
@@ -377,9 +419,9 @@ pub fn toggle_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
         } else {
-            let (ix, iy, iw, ih) = rect_physical(&icon_rect);
-            let (x, y) = overlay_position(ix, iy, iw, ih, OVERLAY_WIDTH, OVERLAY_HEIGHT);
-            let _ = w.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
+            // Reopen exactly where the user left it: a hidden window keeps its
+            // position, so just show it. No re-anchoring to the tray (that was
+            // the old behaviour, before drag/flick + position persistence).
             let _ = w.show();
             let _ = w.set_focus();
         }

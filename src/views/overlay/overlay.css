@@ -2,63 +2,55 @@
  * rendered in the `session-overlay` Tauri window (see main.ts's
  * overlaywindow=1 bypass and src-tauri/src/ipc/window.rs), so these rules
  * are unscoped rather than nested under a `.view-*` ancestor. The native
- * window itself is fully transparent (`.transparent(true)` in Rust); the
- * translucency the mockup shows comes from THIS panel's own background
- * alpha, controlled by --overlay-opacity (set from the overlayOpacity
- * setting in overlay.ts), going fully opaque on hover. */
+ * window is fully transparent (`.transparent(true)` in Rust) AND resized to
+ * hug the card stack (overlay-drag.ts::resizeOverlayToContent), so there's no
+ * wrapper background and no oversized transparent area to eat clicks. Each
+ * account is a self-contained floating card carrying its own translucency
+ * (--overlay-opacity, set from the overlayOpacity setting in overlay.ts),
+ * going fully opaque on hover or while dragging. */
 
 html.overlay-window-mode,
 body.overlay-window-mode {
   background: transparent !important;
   height: auto;
   min-height: 0;
+  overflow: hidden;
 }
 
 body.overlay-window-mode #app {
-  height: 100vh;
-  display: flex;
+  height: auto;
+  min-height: 0;
 }
 
-.oc-panel {
-  flex: 1;
+/* The card stack: transparent container, auto height, and the drag surface
+ * (grab anywhere — see overlay-drag.ts). Padding leaves room for the cards'
+ * drop shadows and a comfortable drag margin. */
+.oc-rows {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  cursor: grab;
+}
+body.oc-dragging .oc-rows { cursor: grabbing; }
+
+/* Each account = one floating card. */
+.oc-row {
   background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
   backdrop-filter: blur(11px);
   -webkit-backdrop-filter: blur(11px);
   border: 1px solid var(--color-border, #2e2e40);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
-  transition: background 0.16s;
-  font-size: 13px;
-  color: var(--color-text, #e8e8f0);
-}
-.oc-panel:hover {
-  background: var(--color-surface, #1f1f2c);
-}
-
-.oc-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 11px;
-  border-bottom: 1px solid var(--color-border, #2e2e40);
-  font-weight: 700;
-  font-size: 12px;
-  flex: none;
-}
-.oc-head .grow { flex: 1; }
-
-.oc-rows { overflow-y: auto; flex: 1; }
-
-.oc-row {
-  padding: 9px 11px;
-  border-bottom: 1px solid var(--color-border, #2e2e40);
   border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
+  border-radius: 12px;
+  padding: 9px 11px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  color: var(--color-text, #e8e8f0);
+  font-size: 13px;
+  transition: background 0.16s;
 }
-.oc-row:first-child { border-top: 3px solid var(--acc, var(--color-primary, #6e8fff)); }
-.oc-row:last-child { border-bottom: 0; }
+/* Hover or drag the stack → every card goes fully opaque for easy reading. */
+.oc-rows:hover .oc-row,
+body.oc-dragging .oc-row { background: var(--color-surface, #1f1f2c); }
 
 .oc-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 12px; }
 .oc-top .grow { flex: 1; }
@@ -88,7 +80,15 @@ body.overlay-window-mode #app {
 .oc-nums .oc-cur-dim { color: var(--color-text-muted, #8a8aa0); }
 .oc-nums .oc-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.5; font-size: 10px; }
 
+/* Placeholder (loading / no accounts): give it a card look so it's legible
+ * against the transparent window instead of floating text. */
 .oc-empty {
+  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
+  backdrop-filter: blur(11px);
+  -webkit-backdrop-filter: blur(11px);
+  border: 1px solid var(--color-border, #2e2e40);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
   padding: 18px 12px;
   text-align: center;
   color: var(--color-text-muted, #8a8aa0);

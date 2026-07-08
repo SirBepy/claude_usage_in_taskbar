@@ -221,6 +221,10 @@ export const api = {
   getSettings: (): Promise<SettingsShape | null> => invoke("get_settings"),
   saveSettings: (settings: SettingsShape): Promise<unknown> =>
     invoke("save_settings", { updated: settings }),
+  /** Persist the floating overlay's parked position (physical px) so it
+   * reopens where the user last dragged/flicked it. */
+  saveOverlayPosition: (x: number, y: number): Promise<unknown> =>
+    invoke("save_overlay_position", { x, y }),
   fetchAvailableModels: (): Promise<string[]> => invoke("fetch_available_models"),
   probeModelsAvailability: (models: string[]): Promise<ModelAvailability[]> =>
     invoke("probe_models_availability", { models }),

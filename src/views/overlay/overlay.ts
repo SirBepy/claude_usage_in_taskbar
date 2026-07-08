@@ -17,9 +17,12 @@ import { getSettings, setSettings } from "../../shared/state";
 import type { SettingsShape } from "../../shared/state";
 import { buildOverlayRows } from "./overlay-logic";
 import type { OverlayMetric, OverlayRow } from "./overlay-logic";
+import { initOverlayDrag, resizeOverlayToContent } from "./overlay-drag";
 
 const DEFAULT_OVERLAY_OPACITY = 0.72;
 const REFRESH_INTERVAL_MS = 30_000;
+/** Logical width of the overlay window (matches OVERLAY_WIDTH in window.rs). */
+const OVERLAY_WIDTH_CSS = 320;
 
 function metricHtml(label: string, metric: OverlayMetric, colour: string, settings: ValueColorSettings): string {
   if (metric.pct == null) {
@@ -52,11 +55,15 @@ function readOverlayOpacity(settings: SettingsShape): number {
 }
 
 export async function renderOverlay(root: HTMLElement): Promise<() => void> {
-  root.innerHTML = `<div class="oc-panel">
-    <div class="oc-head"><i class="ph ph-gauge"></i> Claude usage<span class="grow"></span></div>
-    <div id="ocRows" class="oc-rows"><div class="oc-empty">Loading…</div></div>
-  </div>`;
+  // The stack of account cards IS the whole overlay: transparent wrapper,
+  // floating cards, height sized to fit (see overlay.css + overlay-drag.ts).
+  // No header/background — dragging happens anywhere on the stack.
+  root.innerHTML = `<div id="ocRows" class="oc-rows"><div class="oc-empty">Loading…</div></div>`;
   const rowsEl = root.querySelector<HTMLElement>("#ocRows");
+
+  function syncSize(): void {
+    if (rowsEl) requestAnimationFrame(() => void resizeOverlayToContent(rowsEl, OVERLAY_WIDTH_CSS));
+  }
 
   async function refresh(): Promise<void> {
     const settings = getSettings();
@@ -65,13 +72,16 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
     const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
     if (!accounts.length) {
       rowsEl.innerHTML = `<div class="oc-empty">No accounts yet</div>`;
+      syncSize();
       return;
     }
     const rows = buildOverlayRows(accounts, usageMap);
     rowsEl.innerHTML = rows.map((r) => rowHtml(r, settings)).join("");
+    syncSize();
   }
 
   await refresh();
+  const cleanupDrag = rowsEl ? initOverlayDrag(rowsEl) : () => {};
   const unlistenHistory = api.onHistoryUpdated(() => void refresh());
   // The overlay window skips initBoot(), so it has no other subscription to
   // settings changes made elsewhere (e.g. Settings > Visuals color rules) -
@@ -95,6 +105,7 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
   return () => {
     try { unlistenHistory(); } catch { /* ignore */ }
     if (unlistenSettings) { try { unlistenSettings(); } catch { /* ignore */ } }
+    try { cleanupDrag(); } catch { /* ignore */ }
     window.clearInterval(timer);
   };
 }
