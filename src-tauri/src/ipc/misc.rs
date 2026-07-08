@@ -48,6 +48,8 @@ pub fn frontend_ready(app: AppHandle) {
             if let Some(w) = app.get_webview_window("main") {
                 if nav == "dashboard" {
                     let _ = w.emit("navigate-to-dashboard", ());
+                } else if nav == "settings-accounts" {
+                    let _ = w.emit("navigate-to-settings-accounts", ());
                 } else if let Some(cwd) = nav.strip_prefix("project:") {
                     let _ = w.emit("navigate-to-project", cwd.to_string());
                 }

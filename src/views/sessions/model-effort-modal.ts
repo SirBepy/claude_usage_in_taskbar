@@ -24,13 +24,6 @@ import { characterForSession } from "./session-characters";
 export type { SessionConfig };
 export type { EffortPreset };
 
-interface LegacyGlobals {
-  navigateTo?: (name: string) => Promise<void>;
-}
-function windowGlobals(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
-
 // ── Sound debounce ────────────────────────────────────────────────────────────
 // Module-level so multiple rapid picks don't stack timers.
 let _selectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -434,7 +427,10 @@ export async function openModelEffortModal(
       });
       overlay.querySelector<HTMLButtonElement>(".me-acc-add-link")?.addEventListener("click", () => {
         close(null);
-        void windowGlobals().navigateTo?.("settings-accounts");
+        // Route through the dashboard window rather than this window's own
+        // router - navigating this (chats) window to settings-accounts left
+        // no way back to the chat view (regression in 0.2.6/0.2.7).
+        void invoke("open_dashboard_settings_accounts");
       });
 
       overlay.querySelector<HTMLButtonElement>(".me-cancel")?.addEventListener("click", () => close(null));

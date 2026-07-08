@@ -234,6 +234,13 @@ if (!await ensureRemoteToken()) {
       void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("dashboard");
     });
 
+    // Cross-window jump from the chats window's "Add account" link: navigate
+    // to the accounts settings page in the dashboard window instead of the
+    // chats window's own router (see navigate-to-project comment below).
+    void window.__TAURI__?.event?.listen?.("navigate-to-settings-accounts", () => {
+      void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("settings-accounts");
+    });
+
     // Cross-window jump from the chats window's per-chat menu: navigate to
     // a specific project's detail page in the main dashboard.
     void window.__TAURI__?.event?.listen?.("navigate-to-project", async (e: { payload: string }) => {

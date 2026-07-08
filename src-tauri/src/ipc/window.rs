@@ -84,6 +84,32 @@ pub fn open_dashboard_project(app: AppHandle, cwd: String) {
     }
 }
 
+/// Surfaces the main dashboard window and tells it to navigate to the
+/// accounts settings page. Called from the chats window's "Add account" link
+/// (model-effort-modal) so the account picker never routes the settings view
+/// into the chats window's own router - that trapped users there with no way
+/// back to the chat view (regression introduced in 0.2.6/0.2.7).
+#[tauri::command]
+pub fn open_dashboard_settings_accounts(app: AppHandle) {
+    use tauri::Emitter;
+    if let Some(w) = app.get_webview_window("main") {
+        surface_main(&w);
+        let alive = app
+            .try_state::<crate::state::AppState>()
+            .map(|s| s.frontend_alive.load(Ordering::SeqCst))
+            .unwrap_or(true);
+        if alive {
+            let _ = w.emit("navigate-to-settings-accounts", ());
+        } else {
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                *state.pending_main_nav.lock().unwrap() = Some("settings-accounts".into());
+            }
+        }
+    } else {
+        let _ = build_main_window(&app, Some("settings-accounts"));
+    }
+}
+
 /// Build the main dashboard window (label `main`) lazily, on first open, rather
 /// than eagerly at startup. An eagerly-created window (whether via
 /// `tauri.conf.json app.windows` or in `setup()`) is the process's first window
