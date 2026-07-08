@@ -11,6 +11,7 @@ import type { ProjectConfig } from "../../../../types/ipc.generated";
 import { accountIconBadgeHtml } from "../../../../shared/account-chip";
 import { pickProject } from "../../../sessions/project-picker";
 import { openAddAccountWizard } from "./add-account-wizard";
+import { askConfirm } from "../../../../shared/confirm";
 import { buildIdentitySurface } from "./wizard-logic";
 import "../../../../shared/account-chip.css";
 import "./accounts.css";
@@ -202,11 +203,15 @@ async function refreshList(root: HTMLElement): Promise<void> {
       if (!id) return;
       const row = accounts.find((a) => a.id === id);
       const label = row?.label ?? "this account";
-      if (!confirm(`Remove ${label}? This deletes its profile folder (and its browser/cookie login) - it never touches ~/.claude.`)) return;
       void (async () => {
+        if (!(await askConfirm(`Remove ${label}? This deletes its profile folder (and its browser/cookie login) - it never touches ~/.claude.`))) return;
         btn.disabled = true;
         try { await api.removeAccount(id); await refreshList(root); }
-        catch (e) { console.error("[settings-accounts] removeAccount failed", e); btn.disabled = false; }
+        catch (e) {
+          console.error("[settings-accounts] removeAccount failed", e);
+          alert(e instanceof Error ? e.message : "Removing the account failed - see the console.");
+          btn.disabled = false;
+        }
       })();
     });
   });

@@ -414,15 +414,26 @@ pub fn remove_account(account_id: String, state: State<AppState>, app: AppHandle
         .iter()
         .position(|a| a.id == account_id)
         .ok_or_else(|| format!("no account with id {account_id}"))?;
-    let removed = accounts.remove(idx);
-    accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
 
-    profile::delete_profile_dir(&removed.config_dir).map_err(|e| e.to_string())?;
+    // Delete the profile dir BEFORE dropping the record: a locked dir (e.g.
+    // the wizard's /login terminal still has its cwd inside it, os error 32)
+    // must fail the whole removal and keep the account visible, not leave a
+    // registry-less orphan dir behind (past incident, 2026-07-08).
+    let removed = accounts[idx].clone();
+    profile::delete_profile_dir(&removed.config_dir).map_err(|e| {
+        format!(
+            "could not delete the profile folder (close any terminal or program using {}): {e}",
+            removed.config_dir.display()
+        )
+    })?;
     if removed.chrome_profile_dir.exists() {
         let _ = std::fs::remove_dir_all(&removed.chrome_profile_dir);
     }
     let session_file = paths::account_session_file(&removed.id).map_err(|e| e.to_string())?;
     let _ = crate::auth::session::clear(&session_file);
+
+    accounts.remove(idx);
+    accounts_store::save(&accounts_path, &accounts).map_err(|e| e.to_string())?;
 
     let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
     let snapshot = {
