@@ -249,6 +249,16 @@ if (!await ensureRemoteToken()) {
       const { openProjectDetail } = await import("./shared/navigation");
       openProjectDetail(cwd);
     });
+
+    // Cross-window jump from a floating-overlay card click: show the dashboard
+    // focused on that account.
+    void window.__TAURI__?.event?.listen?.("navigate-to-account", async (e: { payload: string }) => {
+      const accountId = e.payload;
+      if (!accountId) return;
+      const { focusDashboardAccount } = await import("./views/dashboard/dashboard");
+      focusDashboardAccount(accountId);
+      await (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("dashboard");
+    });
   } else {
     // Chats window: honour "Open in chats" and "new chat" requests from the
     // main window. Fresh-created window drains the stashed request on boot;

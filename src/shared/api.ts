@@ -225,6 +225,10 @@ export const api = {
    * reopens where the user last dragged/flicked it. */
   saveOverlayPosition: (x: number, y: number): Promise<unknown> =>
     invoke("save_overlay_position", { x, y }),
+  /** Surface the main dashboard window focused on a specific account (from an
+   * overlay card click). */
+  openDashboardAccount: (accountId: string): Promise<unknown> =>
+    invoke("open_dashboard_account", { accountId }),
   fetchAvailableModels: (): Promise<string[]> => invoke("fetch_available_models"),
   probeModelsAvailability: (models: string[]): Promise<ModelAvailability[]> =>
     invoke("probe_models_availability", { models }),

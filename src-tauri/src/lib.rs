@@ -179,6 +179,7 @@ pub fn run() {
             ipc::open_dashboard_project,
             ipc::open_dashboard_settings_accounts,
             ipc::save_overlay_position,
+            ipc::open_dashboard_account,
             ipc::open_chats_window,
             ipc::open_chats_for_session,
             ipc::take_pending_chat_open,

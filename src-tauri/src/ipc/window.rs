@@ -112,6 +112,29 @@ pub fn open_dashboard_settings_accounts(app: AppHandle) {
     }
 }
 
+/// Surfaces the main dashboard window and focuses it on a specific account.
+/// Called from an overlay card click (overlay.ts) so tapping an account in the
+/// floating overlay jumps straight to that account's dashboard view. Mirrors
+/// `open_dashboard_project`: emit `navigate-to-account` if the webview is live,
+/// else queue `account:<id>` for `frontend_ready` to drain on cold boot.
+#[tauri::command]
+pub fn open_dashboard_account(app: AppHandle, account_id: String) {
+    if let Some(w) = app.get_webview_window("main") {
+        surface_main(&w);
+        let alive = app
+            .try_state::<crate::state::AppState>()
+            .map(|s| s.frontend_alive.load(Ordering::SeqCst))
+            .unwrap_or(true);
+        if alive {
+            let _ = w.emit("navigate-to-account", account_id);
+        } else if let Some(state) = app.try_state::<crate::state::AppState>() {
+            *state.pending_main_nav.lock().unwrap() = Some(format!("account:{account_id}"));
+        }
+    } else {
+        let _ = build_main_window(&app, Some(&format!("account:{account_id}")));
+    }
+}
+
 /// Build the main dashboard window (label `main`) lazily, on first open, rather
 /// than eagerly at startup. An eagerly-created window (whether via
 /// `tauri.conf.json app.windows` or in `setup()`) is the process's first window
@@ -347,10 +370,10 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
     .title("Claude usage")
     .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
     .position(x, y)
-    // Resizable so the frontend can setSize the window to hug its content
-    // (resizeOverlayToContent). Frameless + decorationless, so no user-facing
-    // resize handle appears — this only unlocks the programmatic resize.
-    .resizable(true)
+    // Not user-resizable — the frontend sizes it to hug its content
+    // (resizeOverlayToContent); set_size works regardless of this flag. This
+    // stops the user grabbing an (invisible, frameless) edge to resize it.
+    .resizable(false)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)

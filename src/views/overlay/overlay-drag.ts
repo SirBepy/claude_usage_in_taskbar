@@ -16,6 +16,10 @@ import { api } from "../../shared/api";
 // there are no bundled @tauri-apps/api types in this frontend.
 interface TauriWindowApi {
   getCurrentWindow: () => TauriWindow;
+  // currentMonitor is a MODULE-level function in @tauri-apps/api/window, NOT a
+  // Window method — calling it off the window instance returns undefined and
+  // throws, which silently killed the flick before this was fixed.
+  currentMonitor: () => Promise<Monitor | null>;
   PhysicalPosition: new (x: number, y: number) => unknown;
   LogicalSize: new (w: number, h: number) => unknown;
 }
@@ -25,7 +29,6 @@ interface TauriWindow {
   outerSize: () => Promise<{ width: number; height: number }>;
   setPosition: (p: unknown) => Promise<void>;
   setSize: (s: unknown) => Promise<void>;
-  currentMonitor: () => Promise<Monitor | null>;
 }
 interface Monitor {
   position: { x: number; y: number };
@@ -123,7 +126,7 @@ export function initOverlayDrag(surface: HTMLElement): () => void {
 
   /** Physical corner top-lefts for the current monitor + window size. */
   async function corners(): Promise<{ left: number; right: number; top: number; bottom: number } | null> {
-    const mon = await appWin.currentMonitor();
+    const mon = await w.currentMonitor();
     if (!mon) return null;
     const size = await appWin.outerSize();
     const m = Math.round(CORNER_MARGIN * scale);

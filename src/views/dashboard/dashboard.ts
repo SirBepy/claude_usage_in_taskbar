@@ -31,6 +31,10 @@ let aiPollTimer: number | null = null;
 
 // ── Module state (per-mount; reset on each renderDashboard call) ───────────
 let selectedAccountId: string | null = null;
+// Cross-window "focus this account" request (from an overlay card click). Set
+// by focusDashboardAccount; consumed on the next fullRefresh when the dashboard
+// isn't mounted yet, or applied immediately when it already is.
+let pendingFocusAccountId: string | null = null;
 let accountsCache: Account[] = [];
 let usageMapCache: Record<string, UsageRecord> = {};
 let dashboardWidgets: DashboardWidgetEntry[] = [];
@@ -162,6 +166,17 @@ registerMenuCloser(closeDashMenu);
  * currently-mounted view. */
 export function refreshDashboardView(): void {
   if (mountedContainer) void fullRefresh(mountedContainer);
+}
+
+/** Focus the dashboard on a specific account (from an overlay card click). If
+ * the dashboard is already mounted, switch immediately; otherwise remember the
+ * request so the next fullRefresh (on mount) selects it. */
+export function focusDashboardAccount(id: string): void {
+  pendingFocusAccountId = id;
+  if (mountedContainer && accountsCache.some((a) => a.id === id)) {
+    onSelectAccount(mountedContainer, id);
+    pendingFocusAccountId = null;
+  }
 }
 
 function template() {
@@ -628,6 +643,15 @@ async function fullRefresh(container: HTMLElement): Promise<void> {
 
   const defaultAccountId = (getSettings()["default_account_id"] as string | null | undefined) ?? null;
   selectedAccountId = reconcileSelectedAccountId(selectedAccountId, defaultAccountId, accountsCache);
+
+  // Honour a pending overlay "focus this account" request that arrived before
+  // the dashboard was mounted (main.ts navigate-to-account handler).
+  if (pendingFocusAccountId) {
+    if (accountsCache.some((a) => a.id === pendingFocusAccountId)) {
+      selectedAccountId = pendingFocusAccountId;
+    }
+    pendingFocusAccountId = null;
+  }
 
   renderShell(container);
 }

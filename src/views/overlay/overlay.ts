@@ -24,15 +24,22 @@ const REFRESH_INTERVAL_MS = 30_000;
 /** Logical width of the overlay window (matches OVERLAY_WIDTH in window.rs). */
 const OVERLAY_WIDTH_CSS = 320;
 
+/** The 5h/7d label, carrying a hover tooltip with that window's exact reset
+ * time when there's an active reset (point 8: reset time on hover). */
+function labelHtml(label: string, metric: OverlayMetric): string {
+  if (!metric.resetAbs) return `<span class="oc-k">${label}</span>`;
+  return `<span class="oc-k oc-k-tip">${label}<span class="oc-tip">resets ${escapeHtml(metric.resetAbs)}</span></span>`;
+}
+
 function metricHtml(label: string, metric: OverlayMetric, colour: string, settings: ValueColorSettings): string {
   if (metric.pct == null) {
-    return `<div class="oc-metric"><span class="oc-k">${label}</span><div class="oc-bar"></div><span class="oc-nums"><b class="oc-cur oc-cur-dim">--</b></span></div>`;
+    return `<div class="oc-metric">${labelHtml(label, metric)}<div class="oc-bar"></div><span class="oc-nums"><b class="oc-cur oc-cur-dim">--</b></span></div>`;
   }
   const color = valueColor(metric.pct, metric.safePct, settings, "overlay");
   const tick = metric.safePct != null ? `<i class="oc-tick" style="left:${metric.safePct}%"></i>` : "";
   const safeNum = metric.safePct != null ? `<span class="oc-safe">/${metric.safePct}%</span>` : "";
   return `<div class="oc-metric">
-    <span class="oc-k">${label}</span>
+    ${labelHtml(label, metric)}
     <div class="oc-bar" style="--acc:${escapeHtml(colour)}"><span style="width:${Math.max(0, Math.min(100, metric.pct))}%"></span>${tick}</div>
     <span class="oc-nums" title="usage / safe pace. Safe pace is the even-burn line; green = under it, red = over.">
       <b class="oc-cur" style="color:${escapeHtml(color)}">${metric.pct}%</b>${safeNum}
@@ -41,7 +48,7 @@ function metricHtml(label: string, metric: OverlayMetric, colour: string, settin
 }
 
 function rowHtml(row: OverlayRow, settings: ValueColorSettings): string {
-  return `<div class="oc-row" style="--acc:${escapeHtml(row.colour)}">
+  return `<div class="oc-row" data-acc-id="${escapeHtml(row.id)}" style="--acc:${escapeHtml(row.colour)}">
     <div class="oc-top">${accountIconBadgeHtml(row)}<span class="oc-nm">${escapeHtml(row.label)}</span><span class="grow"></span><span class="oc-rs">${escapeHtml(row.resetLabel)}</span></div>
     ${metricHtml("5h", row.session, row.colour, settings)}
     ${metricHtml("7d", row.weekly, row.colour, settings)}
@@ -55,15 +62,27 @@ function readOverlayOpacity(settings: SettingsShape): number {
 }
 
 export async function renderOverlay(root: HTMLElement): Promise<() => void> {
-  // The stack of account cards IS the whole overlay: transparent wrapper,
-  // floating cards, height sized to fit (see overlay.css + overlay-drag.ts).
-  // No header/background — dragging happens anywhere on the stack.
-  root.innerHTML = `<div id="ocRows" class="oc-rows"><div class="oc-empty">Loading…</div></div>`;
+  // Transparent panel: a top drag grip + a stack of floating account cards,
+  // window height sized to fit (see overlay.css + overlay-drag.ts). Dragging
+  // is only via the grip; clicking a card opens the dashboard for that account.
+  root.innerHTML = `<div id="ocPanel">
+    <div class="oc-grip" id="ocGrip" title="drag to move — flick toward a corner to snap"><i class="ph ph-dots-six"></i></div>
+    <div id="ocRows" class="oc-rows"><div class="oc-empty">Loading…</div></div>
+  </div>`;
+  const panelEl = root.querySelector<HTMLElement>("#ocPanel");
+  const gripEl = root.querySelector<HTMLElement>("#ocGrip");
   const rowsEl = root.querySelector<HTMLElement>("#ocRows");
 
   function syncSize(): void {
-    if (rowsEl) requestAnimationFrame(() => void resizeOverlayToContent(rowsEl, OVERLAY_WIDTH_CSS));
+    if (panelEl) requestAnimationFrame(() => void resizeOverlayToContent(panelEl, OVERLAY_WIDTH_CSS));
   }
+
+  // Click a card → surface the dashboard focused on that account.
+  rowsEl?.addEventListener("click", (e) => {
+    const card = (e.target as HTMLElement).closest<HTMLElement>(".oc-row[data-acc-id]");
+    const id = card?.dataset["accId"];
+    if (id) void api.openDashboardAccount(id);
+  });
 
   async function refresh(): Promise<void> {
     const settings = getSettings();
@@ -81,7 +100,7 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
   }
 
   await refresh();
-  const cleanupDrag = rowsEl ? initOverlayDrag(rowsEl) : () => {};
+  const cleanupDrag = gripEl ? initOverlayDrag(gripEl) : () => {};
   const unlistenHistory = api.onHistoryUpdated(() => void refresh());
   // The overlay window skips initBoot(), so it has no other subscription to
   // settings changes made elsewhere (e.g. Settings > Visuals color rules) -

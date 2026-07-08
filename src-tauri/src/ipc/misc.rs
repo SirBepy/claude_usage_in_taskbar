@@ -52,6 +52,8 @@ pub fn frontend_ready(app: AppHandle) {
                     let _ = w.emit("navigate-to-settings-accounts", ());
                 } else if let Some(cwd) = nav.strip_prefix("project:") {
                     let _ = w.emit("navigate-to-project", cwd.to_string());
+                } else if let Some(acc) = nav.strip_prefix("account:") {
+                    let _ = w.emit("navigate-to-account", acc.to_string());
                 }
             }
         }

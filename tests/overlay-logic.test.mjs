@@ -10,8 +10,8 @@ describe("buildOverlayRow", () => {
   it("marks an account with no usage entry as no-data, all metrics null", () => {
     const row = buildOverlayRow(personal, undefined, NOW);
     expect(row.hasData).toBe(false);
-    expect(row.session).toEqual({ pct: null, safePct: null });
-    expect(row.weekly).toEqual({ pct: null, safePct: null });
+    expect(row.session).toEqual({ pct: null, safePct: null, resetAbs: null });
+    expect(row.weekly).toEqual({ pct: null, safePct: null, resetAbs: null });
     expect(row.resetLabel).toBe("");
     expect(row.id).toBe("acct-personal");
     expect(row.colour).toBe("#9d7dfc");

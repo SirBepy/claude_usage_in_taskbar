@@ -1,13 +1,16 @@
 /* Floating multi-account overlay (milestone 06). This is the ONLY view
  * rendered in the `session-overlay` Tauri window (see main.ts's
- * overlaywindow=1 bypass and src-tauri/src/ipc/window.rs), so these rules
- * are unscoped rather than nested under a `.view-*` ancestor. The native
- * window is fully transparent (`.transparent(true)` in Rust) AND resized to
- * hug the card stack (overlay-drag.ts::resizeOverlayToContent), so there's no
- * wrapper background and no oversized transparent area to eat clicks. Each
- * account is a self-contained floating card carrying its own translucency
- * (--overlay-opacity, set from the overlayOpacity setting in overlay.ts),
- * going fully opaque on hover or while dragging. */
+ * overlaywindow=1 bypass and src-tauri/src/ipc/window.rs), so these rules are
+ * unscoped rather than nested under a `.view-*` ancestor. The native window is
+ * fully transparent (`.transparent(true)` in Rust) AND resized to hug the
+ * panel (overlay-drag.ts::resizeOverlayToContent), so there's no wrapper
+ * background and no oversized transparent area to eat clicks.
+ *
+ * Layout: a top drag grip (the only grab surface) above a stack of floating
+ * account cards. Cards are transparent by default and reveal their background
+ * on hover; clicking a card opens the dashboard for that account. Each card's
+ * 5h/7d label carries a hover tooltip with that window's exact reset time; the
+ * relative "resets in …" line is hidden until the card is hovered. */
 
 html.overlay-window-mode,
 body.overlay-window-mode {
@@ -22,63 +25,124 @@ body.overlay-window-mode #app {
   min-height: 0;
 }
 
-/* The card stack: transparent container, auto height, and the drag surface
- * (grab anywhere — see overlay-drag.ts). Padding leaves room for the cards'
- * drop shadows and a comfortable drag margin. */
-.oc-rows {
+#ocPanel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-  cursor: grab;
+  color: var(--color-text, #e8e8f0);
 }
-body.oc-dragging .oc-rows { cursor: grabbing; }
 
-/* Each account = one floating card. */
+/* Drag grip: the only grab surface (dragging cards is off — clicks open the
+ * dashboard instead). Flick from here toward a corner to snap. */
+.oc-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  margin: 2px 8px 2px;
+  border-radius: 8px;
+  color: var(--color-text-muted, #8a8aa0);
+  font-size: 18px;
+  line-height: 1;
+  cursor: grab;
+  opacity: 0.45;
+  transition: opacity 0.15s, background 0.15s;
+}
+.oc-grip:hover { opacity: 0.9; background: rgba(255, 255, 255, 0.06); }
+body.oc-dragging .oc-grip { cursor: grabbing; opacity: 0.9; }
+
+.oc-rows { display: flex; flex-direction: column; gap: 8px; padding: 0 8px 8px; }
+
+/* Each account = one floating card, transparent until hovered. */
 .oc-row {
-  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
-  backdrop-filter: blur(11px);
-  -webkit-backdrop-filter: blur(11px);
-  border: 1px solid var(--color-border, #2e2e40);
+  position: relative;
+  background: transparent;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid transparent;
   border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
   border-radius: 12px;
-  padding: 9px 11px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
-  color: var(--color-text, #e8e8f0);
-  font-size: 13px;
-  transition: background 0.16s;
+  padding: 10px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, box-shadow 0.16s;
 }
-/* Hover or drag the stack → every card goes fully opaque for easy reading. */
-.oc-rows:hover .oc-row,
-body.oc-dragging .oc-row { background: var(--color-surface, #1f1f2c); }
+/* Reveal the background on hover; opacity honours the overlayOpacity setting. */
+.oc-row:hover {
+  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
+  border-color: var(--color-border, #2e2e40);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
 
-.oc-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; font-size: 12px; }
+.oc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
 .oc-top .grow { flex: 1; }
 .oc-nm { font-weight: 600; }
-.oc-rs { color: var(--color-text-muted, #8a8aa0); font-size: 10.5px; }
+
+/* Relative reset line — hidden until the card is hovered. */
+.oc-rs {
+  color: var(--color-text-muted, #8a8aa0);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+.oc-row:hover .oc-rs { opacity: 1; }
 
 .oc-metric {
   display: grid;
-  grid-template-columns: 20px 1fr auto;
+  grid-template-columns: 24px 1fr 74px;   /* fixed number column → bars stay the same width even at 3 digits */
   align-items: center;
   gap: 9px;
-  margin-top: 5px;
+  margin-top: 6px;
 }
-.oc-k { font-size: 9.5px; color: var(--color-text-muted, #8a8aa0); text-transform: uppercase; }
-.oc-bar { position: relative; height: 6px; border-radius: 4px; background: var(--color-surface-alt, #262637); }
+.oc-k { font-size: 10.5px; color: var(--color-text-muted, #8a8aa0); text-transform: uppercase; }
+
+/* 5h/7d label with an exact-reset-time tooltip (point 8). The tooltip opens
+ * upward into the card, so it stays within the content-tight, transparent
+ * native window (the grip above the first card gives the topmost one headroom). */
+.oc-k-tip {
+  position: relative;
+  width: fit-content;
+  cursor: help;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.3);
+  text-underline-offset: 2px;
+}
+.oc-tip {
+  position: absolute;
+  bottom: 155%;
+  left: 0;
+  z-index: 5;
+  background: #10101a;
+  border: 1px solid var(--color-border, #2e2e40);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--color-text, #e8e8f0);
+  text-transform: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.12s, transform 0.12s;
+}
+.oc-k-tip:hover .oc-tip { opacity: 1; transform: translateY(0); }
+
+.oc-bar { position: relative; height: 8px; border-radius: 4px; background: var(--color-surface-alt, #262637); }
 .oc-bar > span { display: block; height: 100%; background: var(--acc, var(--color-primary, #6e8fff)); border-radius: 4px; }
 .oc-bar > .oc-tick {
   position: absolute;
   top: -2px;
-  height: 10px;
+  height: 12px;
   width: 2px;
   border-radius: 1px;
   background: rgba(226, 224, 240, 0.9);
 }
-.oc-nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; cursor: help; }
-.oc-nums .oc-cur { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 11px; }
+.oc-nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; white-space: nowrap; cursor: help; }
+.oc-nums .oc-cur { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12px; }
 .oc-nums .oc-cur-dim { color: var(--color-text-muted, #8a8aa0); }
-.oc-nums .oc-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.5; font-size: 10px; }
+.oc-nums .oc-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.6; font-size: 11px; }
 
 /* Placeholder (loading / no accounts): give it a card look so it's legible
  * against the transparent window instead of floating text. */
