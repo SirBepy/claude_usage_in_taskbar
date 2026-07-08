@@ -743,6 +743,7 @@ function mountUsageWidget(
 export const sessionChartWidget: Widget = {
   id: "session-chart",
   title: "Session usage",
+  icon: "ph-chart-line",
   scope: "account",
   dataDeps: ["usageHistory", "tokenHistory"],
   render: (root, ctx) => mountUsageWidget("session", "chart", root, ctx),
@@ -751,6 +752,7 @@ export const sessionChartWidget: Widget = {
 export const sessionBarsWidget: Widget = {
   id: "session-bars",
   title: "Session by project",
+  icon: "ph-chart-bar",
   scope: "account",
   dataDeps: ["usageHistory", "tokenHistory"],
   render: (root, ctx) => mountUsageWidget("session", "bars", root, ctx),
@@ -759,6 +761,7 @@ export const sessionBarsWidget: Widget = {
 export const weeklyChartWidget: Widget = {
   id: "weekly-chart",
   title: "Weekly session usage",
+  icon: "ph-chart-line-up",
   scope: "account",
   dataDeps: ["usageHistory", "tokenHistory"],
   render: (root, ctx) => mountUsageWidget("weekly", "chart", root, ctx),
@@ -767,6 +770,7 @@ export const weeklyChartWidget: Widget = {
 export const weeklyBarsWidget: Widget = {
   id: "weekly-bars",
   title: "Weekly by project",
+  icon: "ph-chart-bar-horizontal",
   scope: "account",
   dataDeps: ["usageHistory", "tokenHistory"],
   render: (root, ctx) => mountUsageWidget("weekly", "bars", root, ctx),

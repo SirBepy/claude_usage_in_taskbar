@@ -197,7 +197,9 @@ function template() {
 
 function onToggleEditMode(): void {
   editMode = !editMode;
-  if (mountedContainer) renderShell(mountedContainer);
+  // Pure class toggle - the edit controls are already in the DOM, so the
+  // widget bodies (graphs) are never torn down and re-mounted here.
+  mountedContainer?.classList.toggle("editing", editMode);
 }
 
 async function triggerRefresh(): Promise<void> {
@@ -290,7 +292,7 @@ function openAddWidgetSubmenu(parent: HTMLElement): void {
     const item = document.createElement("button");
     item.className = "smore-item" + (entry.enabled ? " is-disabled" : "");
     item.innerHTML =
-      `<i class="ph ph-squares-four"></i>` +
+      `<i class="ph ${escapeHtml(widget.icon)}"></i>` +
       `<span>${escapeHtml(widget.title)}</span>` +
       (entry.enabled ? `<i class="ph ph-check" style="margin-left:auto;opacity:0.6"></i>` : "");
     if (entry.enabled) {
@@ -441,17 +443,20 @@ function widgetShellHtml(entry: DashboardWidgetEntry, index: number, total: numb
   const tag = widget.scope === "global"
     ? `<span class="dash-tag dash-tag-global">Global</span>`
     : `<span class="dash-tag dash-tag-scoped" style="--acc:${escapeHtml(accountsCache.find((a) => a.id === selectedAccountId)?.colour ?? "")}">${escapeHtml(selectedAccountLabel())}</span>`;
-  const editButtons = editMode
-    ? `<button class="icon-btn dash-widget-up" data-widget-id="${escapeHtml(entry.id)}" title="Move up" ${index === 0 ? "disabled" : ""}><i class="ph ph-caret-up"></i></button>
-       <button class="icon-btn dash-widget-down" data-widget-id="${escapeHtml(entry.id)}" title="Move down" ${index === total - 1 ? "disabled" : ""}><i class="ph ph-caret-down"></i></button>
-       <button class="icon-btn dash-widget-remove" data-widget-id="${escapeHtml(entry.id)}" title="Remove"><i class="ph ph-x"></i></button>`
-    : "";
+  // Edit buttons are always in the DOM; CSS (`#stats-content.editing`) shows
+  // them only in edit mode, so toggling edit never re-renders the widget
+  // bodies (which would blank the graphs for a frame).
+  const editButtons =
+    `<button class="icon-btn dash-widget-up" data-widget-id="${escapeHtml(entry.id)}" title="Move up" ${index === 0 ? "disabled" : ""}><i class="ph ph-caret-up"></i></button>
+     <button class="icon-btn dash-widget-down" data-widget-id="${escapeHtml(entry.id)}" title="Move down" ${index === total - 1 ? "disabled" : ""}><i class="ph ph-caret-down"></i></button>
+     <button class="icon-btn dash-widget-remove" data-widget-id="${escapeHtml(entry.id)}" title="Remove"><i class="ph ph-x"></i></button>`;
   return `<div class="dash-widget" data-widget-id="${escapeHtml(entry.id)}">
     <div class="dash-widget-header">
+      <i class="ph ${escapeHtml(widget.icon)} dash-widget-icon"></i>
       <span class="dash-widget-title">${escapeHtml(widget.title)}</span>
       ${tag}
       <span class="grow"></span>
-      ${editButtons}
+      <span class="dash-widget-edit">${editButtons}</span>
     </div>
     <div class="dash-widget-body"></div>
   </div>`;
@@ -474,6 +479,8 @@ function renderShell(container: HTMLElement): void {
     ${cardsHtml}
     <div class="dash-widgets">${widgetsHtml}</div>
   `;
+
+  container.classList.toggle("editing", editMode);
 
   if (accountsCache.length > 0) {
     wireAccountCardClicks(container, (id) => onSelectAccount(container, id));

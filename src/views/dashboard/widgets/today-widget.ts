@@ -44,6 +44,7 @@ function buildTodayHTML(): string {
 export const todayWidget: Widget = {
   id: "today",
   title: "Today across all projects",
+  icon: "ph-calendar-dot",
   scope: "global",
   dataDeps: ["tokenHistory"],
   render: (root) => {

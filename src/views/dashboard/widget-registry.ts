@@ -15,6 +15,7 @@ import {
 const skillUsageWidget: Widget = {
   id: "skill-usage",
   title: "Skills (last 7 days)",
+  icon: "ph-wrench",
   scope: "global",
   dataDeps: ["skillUsage"],
   render: (root) => renderSkillUsageWidget(root),

@@ -17,6 +17,10 @@ export interface WidgetContext {
 export interface Widget {
   id: string;
   title: string;
+  /** Phosphor icon name (e.g. "ph-chart-line") shown next to the title in the
+   * widget header + the "add widget" menu so each widget is recognisable
+   * without opening it. */
+  icon: string;
   scope: WidgetScope;
   /** Documents what live-data events should trigger a re-render; dashboard.ts
    * currently just re-renders every mounted widget on history/token-history
