@@ -50,6 +50,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
     let terminalTitle: string | null = null;
     let configDir = "";
     let misdirected: string | null = null;
+    let credentialsNoProfile = false;
     let manualCheckPending = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let loginStartedAt = 0;
@@ -185,14 +186,18 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       }
 
       const misdirectedNote = misdirected
-        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> A login just landed in ${escapeHtml(misdirected)}, not in this account's profile. You probably used a different terminal - type /login in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</div>`
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>A login just landed in ${escapeHtml(misdirected)}, not in this account's profile. You probably used a different terminal - type /login in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</span></div>`
         : "";
-      const notDetectedNote = manualCheckPending
-        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> No login detected yet in <code>${escapeHtml(configDir)}</code>. Make sure /login finished in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</div>`
+      const credentialsNoProfileNote = credentialsNoProfile
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>This profile already has valid stored credentials, but Claude Code hasn't confirmed the account email yet. You probably don't need to run /login again - just run any command in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}" (even just sending a message), then check again.</span></div>`
+        : "";
+      const notDetectedNote = manualCheckPending && !credentialsNoProfile
+        ? `<div class="aaw-warn"><i class="ph ph-warning"></i> <span>No login detected yet in <code>${escapeHtml(configDir)}</code>. Make sure /login finished in the window titled "${escapeHtml(terminalTitle ?? "Claude login")}".</span></div>`
         : "";
       return `
         ${adoptHint}
         ${misdirectedNote}
+        ${credentialsNoProfileNote}
         ${notDetectedNote}
         <div class="aaw-waiting">
           <i class="ph ph-spinner aaw-spin"></i>
@@ -387,6 +392,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
         const view = describeLoginOutcome(outcome);
         if (view.kind === "pending") {
           misdirected = view.misdirected;
+          credentialsNoProfile = view.credentialsNoProfile;
           render();
           return;
         }

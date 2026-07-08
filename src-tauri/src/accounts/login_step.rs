@@ -20,6 +20,15 @@ pub enum LoginPollResult {
     /// No complete login in the dir yet (missing/parseless `.claude.json`
     /// `oauthAccount`, or missing/parseless `.credentials.json`).
     Pending,
+    /// `.credentials.json` holds a valid (parseable, unexpired-or-refreshable)
+    /// token, but `.claude.json` has no `oauthAccount` block yet. Happens with
+    /// a profile dir that was `/login`-ed at some point but never ran an
+    /// interactive turn afterward (the CLI only writes `oauthAccount` once it
+    /// fetches the org/profile info) - distinct from `Pending` so the caller
+    /// can tell the user "you're not stuck waiting on /login, the CLI just
+    /// hasn't confirmed the account yet" instead of a generic not-detected
+    /// message.
+    CredentialsNoProfile,
     /// The dir holds an identity AND credentials - login is complete.
     Ready(OauthAccountInfo),
 }
@@ -32,13 +41,13 @@ pub enum LoginPollResult {
 /// (adoption mismatch, duplicates) is the caller's job
 /// (`ipc::accounts::add_account_check_login`).
 pub fn poll_login(config_dir: &Path) -> LoginPollResult {
-    let Some(identity) = identity::read_oauth_account(config_dir) else {
-        return LoginPollResult::Pending;
-    };
-    if identity::read_token_expiry(config_dir).is_none() {
-        return LoginPollResult::Pending;
+    let identity = identity::read_oauth_account(config_dir);
+    let has_valid_credentials = identity::read_token_expiry(config_dir).is_some();
+    match identity {
+        Some(identity) if has_valid_credentials => LoginPollResult::Ready(identity),
+        None if has_valid_credentials => LoginPollResult::CredentialsNoProfile,
+        _ => LoginPollResult::Pending,
     }
-    LoginPollResult::Ready(identity)
 }
 
 /// True when the profile dir already holds a complete login and the wizard
@@ -279,10 +288,10 @@ mod tests {
     }
 
     #[test]
-    fn poll_pending_when_credentials_but_no_identity() {
+    fn poll_credentials_no_profile_when_credentials_but_no_identity() {
         let dir = tempdir().unwrap();
         write_credentials(dir.path());
-        assert_eq!(poll_login(dir.path()), LoginPollResult::Pending);
+        assert_eq!(poll_login(dir.path()), LoginPollResult::CredentialsNoProfile);
     }
 
     #[test]

@@ -49,7 +49,11 @@ pub enum LoginCheckOutcome {
     /// `misdirected` carries a hint when a login was just observed landing in
     /// a DIFFERENT profile (wrong terminal) - a nudge, not a hard failure,
     /// since token auto-refresh also rewrites credentials files.
-    Pending { misdirected: Option<String> },
+    /// `credentials_no_profile` is true when the dir already holds a valid
+    /// `.credentials.json` but the CLI hasn't written `oauthAccount` yet - the
+    /// user isn't stuck waiting on `/login`, they just haven't run an
+    /// interactive turn in that terminal since.
+    Pending { misdirected: Option<String>, credentials_no_profile: bool },
     /// A fresh, non-duplicate identity was observed - ready to capture the
     /// cookie and/or finalize.
     Ready { identity: OauthAccountInfo },
@@ -148,6 +152,13 @@ pub fn add_account_check_login(
         login_step::LoginPollResult::Pending => {
             return Ok(LoginCheckOutcome::Pending {
                 misdirected: login_step::detect_misdirected_login(&session.login_watch),
+                credentials_no_profile: false,
+            })
+        }
+        login_step::LoginPollResult::CredentialsNoProfile => {
+            return Ok(LoginCheckOutcome::Pending {
+                misdirected: login_step::detect_misdirected_login(&session.login_watch),
+                credentials_no_profile: true,
             })
         }
         login_step::LoginPollResult::Ready(identity) => identity,

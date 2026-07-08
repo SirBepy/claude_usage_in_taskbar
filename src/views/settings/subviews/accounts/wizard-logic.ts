@@ -118,7 +118,7 @@ export function isLoginTimedOut(elapsedMs: number): boolean {
 }
 
 export type LoginOutcomeView =
-  | { kind: "pending"; misdirected: string | null }
+  | { kind: "pending"; misdirected: string | null; credentialsNoProfile: boolean }
   | { kind: "ready"; identity: OauthAccountInfo }
   | { kind: "mismatch"; message: string }
   | { kind: "duplicate"; message: string };
@@ -129,7 +129,11 @@ export type LoginOutcomeView =
 export function describeLoginOutcome(outcome: LoginCheckOutcome): LoginOutcomeView {
   switch (outcome.status) {
     case "Pending":
-      return { kind: "pending", misdirected: outcome.misdirected ?? null };
+      return {
+        kind: "pending",
+        misdirected: outcome.misdirected ?? null,
+        credentialsNoProfile: outcome.credentials_no_profile,
+      };
     case "Ready":
       return { kind: "ready", identity: outcome.identity };
     case "Mismatch":
