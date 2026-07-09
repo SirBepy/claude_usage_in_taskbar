@@ -188,7 +188,7 @@ function template() {
         <div class="kit-section">
           <div class="kit-section-title">OVERLAY</div>
           <div class="kit-row">
-            <span class="kit-row-label"><span class="info-wrap">Overlay Opacity<span class="info-icon">?</span><span class="info-tooltip">How see-through the floating multi-account overlay is when not hovered - it always goes fully opaque on hover</span></span></span>
+            <span class="kit-row-label"><span class="info-wrap">Overlay Opacity<span class="info-icon">?</span><span class="info-tooltip">How see-through the floating multi-account overlay is when idle - each card's background fades in on hover, and the whole window snaps fully opaque the moment your cursor enters it</span></span></span>
             <div style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px">
               <input type="range" id="overlayOpacity" min="0" max="100" step="5" style="flex:1">
               <span id="overlayOpacityValue" style="font-size:0.78rem;color:var(--text-dim);width:36px;text-align:right">72%</span>

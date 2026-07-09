@@ -62,6 +62,23 @@ function readOverlayOpacity(settings: SettingsShape): number {
 }
 
 export async function renderOverlay(root: HTMLElement): Promise<() => void> {
+  // Whole-window idle dim (additive to the existing per-card .oc-row hover
+  // reveal): the entire overlay content (text/icons included) fades to the
+  // overlayOpacity value while the mouse is outside the window, and pops to
+  // fully opaque the instant the mouse enters - mirrors pomodoro-overlay's
+  // visibility.ts. This window is not click-through, so plain DOM
+  // mouseenter/mouseleave on document.body work without a cursor-polling
+  // workaround.
+  let overlayHovered = false;
+  let idleOpacity = DEFAULT_OVERLAY_OPACITY;
+  function applyBodyOpacity(): void {
+    document.body.style.opacity = overlayHovered ? "1" : String(idleOpacity);
+  }
+  const onMouseEnter = () => { overlayHovered = true; applyBodyOpacity(); };
+  const onMouseLeave = () => { overlayHovered = false; applyBodyOpacity(); };
+  document.body.addEventListener("mouseenter", onMouseEnter);
+  document.body.addEventListener("mouseleave", onMouseLeave);
+
   // Transparent panel: a top drag grip + a stack of floating account cards,
   // window height sized to fit (see overlay.css + overlay-drag.ts). Dragging
   // is only via the grip; clicking a card opens the dashboard for that account.
@@ -86,7 +103,9 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
 
   async function refresh(): Promise<void> {
     const settings = getSettings();
-    document.documentElement.style.setProperty("--overlay-opacity", `${readOverlayOpacity(settings) * 100}%`);
+    idleOpacity = readOverlayOpacity(settings);
+    document.documentElement.style.setProperty("--overlay-opacity", `${idleOpacity * 100}%`);
+    applyBodyOpacity();
     if (!rowsEl) return;
     const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
     if (!accounts.length) {
@@ -125,6 +144,9 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
     try { unlistenHistory(); } catch { /* ignore */ }
     if (unlistenSettings) { try { unlistenSettings(); } catch { /* ignore */ } }
     try { cleanupDrag(); } catch { /* ignore */ }
+    document.body.removeEventListener("mouseenter", onMouseEnter);
+    document.body.removeEventListener("mouseleave", onMouseLeave);
+    document.body.style.opacity = "";
     window.clearInterval(timer);
   };
 }
