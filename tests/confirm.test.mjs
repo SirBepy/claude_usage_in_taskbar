@@ -56,14 +56,15 @@ describe("askConfirm", () => {
     expect(overlay()).toBeNull();
   });
 
-  it("styles the confirm button as danger by default, plain when danger:false", () => {
+  it("styles the confirm button as danger by default, primary when danger:false", () => {
     void askConfirm("a");
-    expect(document.querySelector(".app-confirm-ok").classList.contains("danger")).toBe(true);
+    expect(document.querySelector(".app-confirm-ok").classList.contains("btn-danger")).toBe(true);
     document.querySelector(".app-confirm-cancel").click();
 
     void askConfirm("b", { danger: false });
     const ok = document.querySelectorAll(".app-confirm-ok");
-    expect(ok[ok.length - 1].classList.contains("danger")).toBe(false);
+    expect(ok[ok.length - 1].classList.contains("btn-primary")).toBe(true);
+    expect(ok[ok.length - 1].classList.contains("btn-danger")).toBe(false);
     document.querySelector(".app-confirm-cancel").click();
   });
 

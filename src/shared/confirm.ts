@@ -36,11 +36,11 @@ export function askConfirm(text: string, options: ConfirmOptions = {}): Promise<
     actions.className = "app-confirm-actions";
 
     const cancelBtn = document.createElement("button");
-    cancelBtn.className = "btn app-confirm-cancel";
+    cancelBtn.className = "app-confirm-cancel btn-secondary";
     cancelBtn.textContent = options.cancelLabel ?? "Cancel";
 
     const confirmBtn = document.createElement("button");
-    confirmBtn.className = `btn app-confirm-ok${options.danger === false ? "" : " danger"}`;
+    confirmBtn.className = `app-confirm-ok ${options.danger === false ? "btn-primary" : "btn-danger"}`;
     confirmBtn.textContent = options.confirmLabel ?? "Confirm";
 
     function finish(result: boolean): void {
