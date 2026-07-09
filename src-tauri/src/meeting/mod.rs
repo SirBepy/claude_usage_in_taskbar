@@ -98,6 +98,11 @@ pub fn start(app: AppHandle) {
 
     std::thread::spawn(move || {
         let mut last: Option<bool> = None;
+        // Last capture-exclusion state we actually pushed to the windows. Starts
+        // `false` because a freshly-created window is WDA_NONE by default, so we
+        // only ever touch a HWND when this needs to change (the common
+        // `hideInMeeting=false` config therefore does zero window work).
+        let mut applied_exclude = false;
         loop {
             let sources = Sources {
                 camera: source.camera_in_use(),
@@ -125,7 +130,21 @@ pub fn start(app: AppHandle) {
                         })
                     })
                     .unwrap_or(false);
-                apply_capture_affinity(active && hide);
+                let want_exclude = active && hide;
+                if want_exclude != applied_exclude {
+                    applied_exclude = want_exclude;
+                    // `SetWindowDisplayAffinity` is a USER32 call against windows
+                    // owned by the MAIN thread. Calling it from this watcher
+                    // thread marshals a synchronous inter-thread window message;
+                    // if it lands while the main thread is inside WebView2 window
+                    // creation (opening the dashboard/chats window) the two can
+                    // wedge, freezing every window and the tray. Marshal it onto
+                    // the main event loop so the HWND is only ever touched by its
+                    // owning thread.
+                    let _ = app.run_on_main_thread(move || {
+                        apply_capture_affinity(want_exclude);
+                    });
+                }
             }
             std::thread::sleep(POLL_INTERVAL);
         }
