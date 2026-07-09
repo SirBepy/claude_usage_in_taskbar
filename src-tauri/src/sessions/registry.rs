@@ -346,13 +346,16 @@ impl Registry {
 
     /// Remove ended instances whose `ended_at` is strictly before `cutoff`.
     /// Cutoff is an RFC3339 string; lexicographic comparison works on
-    /// `Z`-suffix timestamps.
-    pub fn prune_ended_before(&self, cutoff: &str) {
+    /// `Z`-suffix timestamps. Returns the number of instances removed, so
+    /// callers can decide whether a change notification is warranted.
+    pub fn prune_ended_before(&self, cutoff: &str) -> usize {
         let mut guard = self.inner.lock().unwrap();
+        let before = guard.len();
         guard.retain(|_, i| match i.ended_at.as_deref() {
             None => true,
             Some(t) => t >= cutoff,
         });
+        before - guard.len()
     }
 
     pub fn list(&self) -> Vec<Instance> {

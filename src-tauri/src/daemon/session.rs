@@ -22,6 +22,11 @@ pub struct Session {
     /// pump exit. None if write_mcp_config failed (degrades to no
     /// permission-prompt tool, which is OK for v1).
     pub mcp_config_path: Option<PathBuf>,
+    /// Path to the per-session hook-settings .settings.json file (registers
+    /// the AskUserQuestion PreToolUse hook). Removed on session end / pump
+    /// exit, mirroring `mcp_config_path`. None if write_hook_settings failed
+    /// (degrades to AskUserQuestion being unanswerable this session).
+    pub hook_settings_path: Option<PathBuf>,
     /// The registry account id this session was spawned under (resolved at
     /// spawn time - see `daemon::lifecycle::spawn_session`). Always set: a
     /// chat requires a registry account, there is no no-account spawn path.
@@ -37,6 +42,7 @@ impl Session {
         pid: u32,
         stdin: ChildStdin,
         mcp_config_path: Option<PathBuf>,
+        hook_settings_path: Option<PathBuf>,
         account_id: String,
     ) -> Arc<Self> {
         let (tx, _rx) = broadcast::channel(BROADCAST_CAPACITY);
@@ -49,6 +55,7 @@ impl Session {
             stdin: Mutex::new(stdin),
             events: tx,
             mcp_config_path,
+            hook_settings_path,
             account_id,
         })
     }

@@ -65,12 +65,21 @@ pub fn mark_listener_non_inheritable(listener: &tokio::net::TcpListener) {
     }
 }
 
+/// Process-wide shared `System`, so repeated live-pid checks (lockfile
+/// startup, the detector's 5s tick, the channel-adopt exit watcher's 5s poll)
+/// refresh the same process table in place instead of each allocating and
+/// tearing down a fresh one. Lazily built on first use.
+fn shared_system() -> &'static std::sync::Mutex<sysinfo::System> {
+    static SYSTEM: std::sync::OnceLock<std::sync::Mutex<sysinfo::System>> = std::sync::OnceLock::new();
+    SYSTEM.get_or_init(|| std::sync::Mutex::new(sysinfo::System::new()))
+}
+
 /// Whether a process with `pid` is currently alive. Centralizes the sysinfo
 /// dance so the `refresh_processes` / `Pid::from_u32` contract lives in one
 /// place. Used by the daemon lockfile's stale-vs-live reclaim.
 pub fn pid_is_live(pid: u32) -> bool {
-    use sysinfo::{Pid, ProcessesToUpdate, System};
-    let mut s = System::new();
+    use sysinfo::{Pid, ProcessesToUpdate};
+    let mut s = shared_system().lock().unwrap();
     s.refresh_processes(ProcessesToUpdate::All);
     s.process(Pid::from_u32(pid)).is_some()
 }
@@ -78,8 +87,8 @@ pub fn pid_is_live(pid: u32) -> bool {
 /// Snapshot of every currently-live pid. Used by the detector's reconcile loop
 /// to mark instances whose process has gone away.
 pub fn live_pids() -> Vec<u32> {
-    use sysinfo::{ProcessesToUpdate, System};
-    let mut s = System::new();
+    use sysinfo::ProcessesToUpdate;
+    let mut s = shared_system().lock().unwrap();
     s.refresh_processes(ProcessesToUpdate::All);
     s.processes().keys().map(|p| p.as_u32()).collect()
 }

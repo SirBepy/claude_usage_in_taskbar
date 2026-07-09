@@ -121,6 +121,15 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     };
     detector_task::spawn(state.clone());
 
+    // Startup + periodic (every 24h) GC of leaked per-turn mcp-temp files
+    // (`.mcp.json` / hook `.settings.json`) - see `claude_config::gc_temp_files`.
+    tokio::spawn(async {
+        loop {
+            claude_config::gc_temp_files();
+            tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+        }
+    });
+
     // Remote-access server (phone cockpit, Phase 1). Localhost-bound + token-
     // authed; opt-in remote reach via the user's `tailscale serve`. Best-effort:
     // never fails daemon startup. See daemon/remote_server.rs for the security
@@ -220,6 +229,14 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
             }
         }
         log::info!("daemon: main loop exiting");
+    }
+    // Orphan-prevention: a chat session's `claude -p --input-format
+    // stream-json` process is long-lived (it survives across turns), so a
+    // bare Ctrl-C would otherwise leave any in-flight session's `claude`
+    // child (and its subprocess tree) running with no pump task left to
+    // reap it. Kill every live session's tree before exiting.
+    for entry in state.sessions.iter() {
+        crate::channels::kill::kill_tree(entry.pid);
     }
     // Graceful teardown: never let the Python STT sidecar outlive the daemon.
     stt.kill().await;

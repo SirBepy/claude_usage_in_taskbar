@@ -8,7 +8,15 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
+
+/// How long an ended instance stays in the registry before `prune_ended_before`
+/// is allowed to drop it.
+const RETENTION: chrono::Duration = chrono::Duration::hours(48);
+/// Pruning is a full-registry retain pass, so it doesn't need to run on every
+/// 5s tick - once every 10 minutes is plenty to keep the in-memory registry
+/// from growing unbounded across long daemon uptimes.
+const PRUNE_INTERVAL: Duration = Duration::from_secs(10 * 60);
 
 pub fn spawn(state: Arc<DaemonState>) {
     let registry = state.registry.clone();
@@ -16,6 +24,7 @@ pub fn spawn(state: Arc<DaemonState>) {
     // Task-local (no mutex) cache of each session's last-seen transcript mtime,
     // so we only re-read the file when it actually grew.
     let mut mtimes: HashMap<String, SystemTime> = HashMap::new();
+    let mut last_prune = Instant::now();
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(5));
         loop {
@@ -36,7 +45,18 @@ pub fn spawn(state: Arc<DaemonState>) {
                 .collect();
             let renamed = refresh_overrides(&registry, &live, &mut mtimes);
 
-            if ended || renamed {
+            let mut pruned = false;
+            if last_prune.elapsed() >= PRUNE_INTERVAL {
+                last_prune = Instant::now();
+                let cutoff = (chrono::Utc::now() - RETENTION).to_rfc3339();
+                let removed = registry.prune_ended_before(&cutoff);
+                if removed > 0 {
+                    log::info!("detector: pruned {removed} ended instance(s) older than 48h");
+                    pruned = true;
+                }
+            }
+
+            if ended || renamed || pruned {
                 notifier.publish("instances_changed", json!({"instances": registry.list()}));
             }
         }

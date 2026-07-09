@@ -160,6 +160,17 @@ pub async fn spawn_session(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    // Belt-and-suspenders orphan guard: `child` lives inside the pump task
+    // spawned below for the session's whole natural lifetime (it is only
+    // dropped after an explicit `child.wait().await` once stdout hits EOF,
+    // i.e. after the process has already exited on its own - so this never
+    // fires early on the normal per-turn respawn cycle). If the pump task's
+    // future is instead dropped without reaching that point (daemon exiting
+    // while a turn is in flight, or the pump task panicking), `kill_on_drop`
+    // makes sure the child doesn't outlive it. Doesn't replace the explicit
+    // `kill_tree` shutdown sweeps (those also reap grandchildren); this only
+    // covers the direct child.
+    cmd.kill_on_drop(true);
 
     let mut child = cmd.spawn()?;
     let pid = child.id().expect("pid");
@@ -175,6 +186,7 @@ pub async fn spawn_session(
         pid,
         stdin,
         mcp_config_path,
+        hook_settings_path,
         account.id.clone(),
     );
     map.insert(session_id.clone(), Arc::clone(&session));
@@ -330,6 +342,9 @@ pub async fn spawn_session(
         if let Some(ref p) = pump_session.mcp_config_path {
             let _ = std::fs::remove_file(p);
         }
+        if let Some(ref p) = pump_session.hook_settings_path {
+            let _ = std::fs::remove_file(p);
+        }
         let _ = child.wait().await;
     });
 
@@ -424,6 +439,9 @@ pub async fn end_session(map: &SessionMap, session_id: &str) -> Result<(), Lifec
     // Force-kill if still present.
     crate::channels::kill::kill_tree(session.pid);
     if let Some(ref p) = session.mcp_config_path {
+        let _ = std::fs::remove_file(p);
+    }
+    if let Some(ref p) = session.hook_settings_path {
         let _ = std::fs::remove_file(p);
     }
     Ok(())
