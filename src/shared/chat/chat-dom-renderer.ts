@@ -49,6 +49,14 @@ export function describeActivity(toolName: string, input: unknown): string {
 }
 
 export function flushRender(r: ChatRenderer): void {
+  // Elements actually added or replaced THIS call - the highlight/wrap
+  // passes below only ever need to look inside these, not the whole
+  // container (ai_todo streaming-render O(n^2) fix, Fix 3). `appendedAny`
+  // additionally gates clampUserMessages, which only ever has new work when
+  // a message was appended (a dirty-replaced element is always the
+  // streaming/question slot, never `kind: "user"`).
+  const touchedEls: HTMLElement[] = [];
+  let appendedAny = false;
   if (r.dirtyIndices.size > 0) {
     for (const idx of r.dirtyIndices) {
       if (idx < r.messageEls.length) {
@@ -56,17 +64,20 @@ export function flushRender(r: ChatRenderer): void {
         const oldEl = r.messageEls[idx]!;
         oldEl.replaceWith(newEl);
         r.messageEls[idx] = newEl;
+        touchedEls.push(newEl);
       }
     }
     r.dirtyIndices.clear();
   }
   if (r.messageEls.length < r.messages.length) {
+    appendedAny = true;
     const frag = document.createDocumentFragment();
     while (r.messageEls.length < r.messages.length) {
       const idx = r.messageEls.length;
       const el = buildMessageEl(r.messages[idx]!);
       frag.appendChild(el);
       r.messageEls.push(el);
+      touchedEls.push(el);
     }
     r.container.appendChild(frag);
   }
@@ -77,10 +88,69 @@ export function flushRender(r: ChatRenderer): void {
     groupToolRange(r.messages, r.messageEls, r.activeTurnStart, r.messages.length, r.activeToolGroups, footer);
   }
   applyRunningHighlight(r);
-  void highlightCodeBlocks(r.container);
-  wrapBlockquotes(r.container);
-  highlightInlineCode(r.container);
-  clampUserMessages(r.messages, r.messageEls);
+  // Nothing rendered this flush (a redundant trailing-throttle tick, or a
+  // turn_usage settle with no pending dirty/appended state): the passes
+  // below only ever act on new/changed elements, so there is nothing for
+  // them to do - skip the whole-container querySelectorAll cost entirely.
+  if (touchedEls.length === 0) return;
+  for (const el of touchedEls) {
+    void highlightCodeBlocks(el);
+    wrapBlockquotes(el);
+    highlightInlineCode(el);
+  }
+  if (appendedAny) clampUserMessages(r.messages, r.messageEls);
+}
+
+/** Trailing-edge-with-immediate-leading throttle window for scheduleFlush. */
+const FLUSH_THROTTLE_MS = 80;
+
+/**
+ * Throttled entry point for the live per-event render path (ai_todo
+ * streaming-render O(n^2) fix, Fix 2). Every content_block_delta used to
+ * call flushRender() directly - one full render pass per token. This
+ * coalesces a burst of events into at most one flush per ~80ms window: the
+ * first event in a burst still renders immediately (so typing/tool-card feel
+ * stays instant), and any events that land inside an already-open window
+ * mark their state (messages/dirtyIndices, done by the caller before this
+ * runs) and ride the single trailing flush at the end of the window instead
+ * of each triggering their own.
+ *
+ * Uses setTimeout, not requestAnimationFrame: rAF callbacks are paused while
+ * the hosting WebView2 window is hidden/backgrounded (a chat pane not
+ * currently focused), so an rAF-only trailing flush could stall indefinitely.
+ * setTimeout keeps firing regardless, so the transcript never gets stuck
+ * behind a stale throttle window.
+ *
+ * `afterFlush`, if given, runs synchronously right after flushRender - both
+ * for the immediate leading-edge render AND for the eventual trailing one -
+ * so a caller doing e.g. a `wasAtBottom`-gated scrollToBottom always reads a
+ * FRESH scrollHeight (the DOM update that grew it just ran), never a stale
+ * one from before a throttled/swallowed call. Events swallowed by an
+ * already-open window don't run their own `afterFlush`; the leading event's
+ * decision (rarely stale across one ~80ms window) governs the burst.
+ */
+export function scheduleFlush(r: ChatRenderer, afterFlush?: () => void): void {
+  if (r._flushTimer !== null) return; // window already open; trailing flush below will pick this up
+  flushRender(r);
+  afterFlush?.();
+  r._flushTimer = setTimeout(() => {
+    r._flushTimer = null;
+    flushRender(r);
+    afterFlush?.();
+  }, FLUSH_THROTTLE_MS);
+}
+
+/**
+ * Force an immediate flush and cancel any pending trailing timer, so a
+ * turn-end/settle event (e.g. turn_usage landing) is never delayed behind
+ * scheduleFlush's throttle window.
+ */
+export function flushRenderNow(r: ChatRenderer): void {
+  if (r._flushTimer !== null) {
+    clearTimeout(r._flushTimer);
+    r._flushTimer = null;
+  }
+  flushRender(r);
 }
 
 /** The active turn's history-timestamp span (duration fallback), or 0. */

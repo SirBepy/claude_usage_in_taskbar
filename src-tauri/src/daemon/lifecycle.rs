@@ -214,102 +214,149 @@ pub async fn spawn_session(
         // a stale result line from an interrupted turn from clearing the
         // busy=true that a new send_message set in the meantime.
         let mut pump_turn_gen: u64 = 0;
+        // Coalescing (ai_todo streaming-render O(n^2) fix): parser.rs re-clones
+        // the FULL accumulated text into every content_block_delta snapshot, so
+        // a long reply otherwise broadcasts - and re-serializes across
+        // daemon->app IPC, app->webview emit, AND the remote websocket - once
+        // per token. At most one streaming snapshot is held here; a newer one
+        // for the same block simply replaces it (both are idempotent full-text
+        // snapshots, so dropping a superseded one loses nothing). It flushes on
+        // whichever comes first: the ~100ms timer below, the next non-snapshot
+        // event (flushed BEFORE that event so relative order is exact), or the
+        // stream ending. The event shape on the wire is unchanged - only the
+        // count of broadcasts drops, from O(n) per response to a handful.
+        let mut pending_snapshot: Option<ChatEvent> = None;
+        let mut flush_deadline: Option<tokio::time::Instant> = None;
+        const SNAPSHOT_FLUSH_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
         loop {
-            line_buf.clear();
-            match buf_reader.read_until(b'\n', &mut line_buf).await {
-                Ok(0) => break,
-                Ok(_) => {
-                    // claude -p shows an interactive workspace-trust prompt when
-                    // the cwd hasn't been trusted before. With stdin piped the
-                    // process blocks indefinitely waiting for keyboard input.
-                    // Detect the prompt and auto-accept by selecting option 1.
-                    if !line_buf.starts_with(b"{") {
-                        if let Ok(s) = std::str::from_utf8(&line_buf) {
-                            if s.contains("Enter to confirm") {
-                                let mut stdin_guard = pump_session.stdin.lock().await;
-                                let _ = stdin_guard.write_all(b"1\n").await;
-                                let _ = stdin_guard.flush().await;
+            tokio::select! {
+                result = buf_reader.read_until(b'\n', &mut line_buf) => {
+                    match result {
+                        Ok(0) => {
+                            if let Some(pending) = pending_snapshot.take() {
+                                broadcast::publish(&pump_session, pending);
                             }
+                            break;
                         }
-                    }
-                    for ev in ctx.feed(&line_buf) {
-                        // Suppress SessionStarted: claude re-emits a system/init
-                        // line at the start of EVERY turn. The app shows the
-                        // session via its own synthetic SessionStarted handoff,
-                        // so forwarding these spams "Session started" each turn.
-                        if matches!(ev, ChatEvent::SessionStarted { .. }) {
-                            continue;
-                        }
-                        // A streaming AssistantMessage marks the current turn as
-                        // live (not a replayed history line from --resume).
-                        // On the FIRST such event per turn, snapshot the registry's
-                        // turn_gen so the turn-end guard can detect if a newer
-                        // send_message arrived before the result line was processed.
-                        if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
-                            if !saw_stream_turn {
-                                pump_turn_gen = state_for_pump
-                                    .registry
-                                    .current_turn_gen(&pump_session.session_id);
+                        Ok(_) => {
+                            // claude -p shows an interactive workspace-trust prompt when
+                            // the cwd hasn't been trusted before. With stdin piped the
+                            // process blocks indefinitely waiting for keyboard input.
+                            // Detect the prompt and auto-accept by selecting option 1.
+                            if !line_buf.starts_with(b"{") {
+                                if let Ok(s) = std::str::from_utf8(&line_buf) {
+                                    if s.contains("Enter to confirm") {
+                                        let mut stdin_guard = pump_session.stdin.lock().await;
+                                        let _ = stdin_guard.write_all(b"1\n").await;
+                                        let _ = stdin_guard.flush().await;
+                                    }
+                                }
                             }
-                            saw_stream_turn = true;
-                        }
-                        // A `result` line parses to TurnUsage and marks the turn
-                        // complete: update awaiting status, clear busy, and
-                        // broadcast the registry change.
-                        let (turn_done_awaiting, turn_autopilot_changed) =
-                            if let ChatEvent::TurnUsage { ref awaiting, ref autopilot_changed, .. } = ev {
-                                (Some(awaiting.clone()), *autopilot_changed)
-                            } else {
-                                (None, None)
-                            };
-                        if log::log_enabled!(log::Level::Debug) {
-                            let variant = serde_json::to_value(&ev)
-                                .ok()
-                                .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_string))
-                                .unwrap_or_else(|| "?".into());
-                            log::debug!("daemon publish: {variant} for {}", pump_session.session_id);
-                        }
-                        broadcast::publish(&pump_session, ev);
-                        if let Some(awaiting) = turn_done_awaiting {
-                            // Character "work finished" / "asking" sound. The in-app chat's
-                            // turn completion is NOT covered by the global Stop/Notification
-                            // hooks (those only drive skill-usage + external sessions), so
-                            // fire the sound here off the same `result` line that sets
-                            // awaiting. The app maps this to `notifications::fire`, which
-                            // resolves the session character + slot + mute/meeting gating.
-                            // Guard on saw_stream_turn so replayed history result lines
-                            // (emitted by claude on --resume before the live turn starts)
-                            // don't each trigger their own sound.
-                            if saw_stream_turn && matches!(awaiting.as_deref(), Some("done") | Some("question")) {
-                                state_for_pump.notifier.publish(
-                                    "turn_sound",
-                                    serde_json::json!({
-                                        "session_id": pump_session.session_id,
-                                        "cwd": pump_session.cwd.to_string_lossy(),
-                                        "awaiting": awaiting.as_deref(),
-                                    }),
-                                );
+                            for ev in ctx.feed(&line_buf) {
+                                // Suppress SessionStarted: claude re-emits a system/init
+                                // line at the start of EVERY turn. The app shows the
+                                // session via its own synthetic SessionStarted handoff,
+                                // so forwarding these spams "Session started" each turn.
+                                if matches!(ev, ChatEvent::SessionStarted { .. }) {
+                                    continue;
+                                }
+                                // A streaming AssistantMessage marks the current turn as
+                                // live (not a replayed history line from --resume).
+                                // On the FIRST such event per turn, snapshot the registry's
+                                // turn_gen so the turn-end guard can detect if a newer
+                                // send_message arrived before the result line was processed.
+                                if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
+                                    if !saw_stream_turn {
+                                        pump_turn_gen = state_for_pump
+                                            .registry
+                                            .current_turn_gen(&pump_session.session_id);
+                                    }
+                                    saw_stream_turn = true;
+                                    // Hold instead of broadcasting immediately - see the
+                                    // coalescing comment above `pending_snapshot`.
+                                    pending_snapshot = Some(ev);
+                                    if flush_deadline.is_none() {
+                                        flush_deadline = Some(tokio::time::Instant::now() + SNAPSHOT_FLUSH_WINDOW);
+                                    }
+                                    continue;
+                                }
+                                // Any other event type (tool_use, tool_result, finalized
+                                // AssistantMessage, TurnUsage, Notification, ...): flush a
+                                // held snapshot FIRST so subscribers see it before this
+                                // one, preserving the parser's original event order exactly.
+                                if let Some(pending) = pending_snapshot.take() {
+                                    flush_deadline = None;
+                                    broadcast::publish(&pump_session, pending);
+                                }
+                                // A `result` line parses to TurnUsage and marks the turn
+                                // complete: update awaiting status, clear busy, and
+                                // broadcast the registry change.
+                                let (turn_done_awaiting, turn_autopilot_changed) =
+                                    if let ChatEvent::TurnUsage { ref awaiting, ref autopilot_changed, .. } = ev {
+                                        (Some(awaiting.clone()), *autopilot_changed)
+                                    } else {
+                                        (None, None)
+                                    };
+                                if log::log_enabled!(log::Level::Debug) {
+                                    let variant = serde_json::to_value(&ev)
+                                        .ok()
+                                        .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_string))
+                                        .unwrap_or_else(|| "?".into());
+                                    log::debug!("daemon publish: {variant} for {}", pump_session.session_id);
+                                }
+                                broadcast::publish(&pump_session, ev);
+                                if let Some(awaiting) = turn_done_awaiting {
+                                    // Character "work finished" / "asking" sound. The in-app chat's
+                                    // turn completion is NOT covered by the global Stop/Notification
+                                    // hooks (those only drive skill-usage + external sessions), so
+                                    // fire the sound here off the same `result` line that sets
+                                    // awaiting. The app maps this to `notifications::fire`, which
+                                    // resolves the session character + slot + mute/meeting gating.
+                                    // Guard on saw_stream_turn so replayed history result lines
+                                    // (emitted by claude on --resume before the live turn starts)
+                                    // don't each trigger their own sound.
+                                    if saw_stream_turn && matches!(awaiting.as_deref(), Some("done") | Some("question")) {
+                                        state_for_pump.notifier.publish(
+                                            "turn_sound",
+                                            serde_json::json!({
+                                                "session_id": pump_session.session_id,
+                                                "cwd": pump_session.cwd.to_string_lossy(),
+                                                "awaiting": awaiting.as_deref(),
+                                            }),
+                                        );
+                                    }
+                                    saw_stream_turn = false;
+                                    state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
+                                    state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
+                                    if let Some(active) = turn_autopilot_changed {
+                                        state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
+                                    }
+                                    state_for_pump.notifier.publish(
+                                        "instances_changed",
+                                        serde_json::json!({"instances": state_for_pump.registry.list()}),
+                                    );
+                                }
                             }
-                            saw_stream_turn = false;
-                            state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
-                            state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
-                            if let Some(active) = turn_autopilot_changed {
-                                state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
+                            line_buf.clear();
+                        }
+                        Err(e) => {
+                            if let Some(pending) = pending_snapshot.take() {
+                                broadcast::publish(&pump_session, pending);
                             }
-                            state_for_pump.notifier.publish(
-                                "instances_changed",
-                                serde_json::json!({"instances": state_for_pump.registry.list()}),
+                            log::warn!(
+                                "daemon: session {} stdout read failed: {}",
+                                pump_session.session_id,
+                                e
                             );
+                            break;
                         }
                     }
                 }
-                Err(e) => {
-                    log::warn!(
-                        "daemon: session {} stdout read failed: {}",
-                        pump_session.session_id,
-                        e
-                    );
-                    break;
+                _ = tokio::time::sleep_until(flush_deadline.unwrap()), if flush_deadline.is_some() => {
+                    if let Some(pending) = pending_snapshot.take() {
+                        broadcast::publish(&pump_session, pending);
+                    }
+                    flush_deadline = None;
                 }
             }
         }

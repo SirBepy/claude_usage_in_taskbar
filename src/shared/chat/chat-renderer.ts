@@ -54,6 +54,11 @@ export class ChatRenderer {
   unsubscribe: (() => void) | null = null;
   streamingIndex: number | null = null;
   liveBuffer: ChatEvent[] | null = null;
+  // Pending trailing-edge flush timer for scheduleFlush's throttle (ai_todo
+  // streaming-render O(n^2) fix, Fix 2). Non-null while a coalescing window
+  // is open; cleared by flushRenderNow or by detach() so a stray timer never
+  // fires flushRender() against a renderer reused for a different session.
+  _flushTimer: ReturnType<typeof setTimeout> | null = null;
   sessionId: string | null = null;
   _bulkGen = 0;
   meta: SessionMeta = { model: null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
@@ -274,6 +279,10 @@ export class ChatRenderer {
     }
     this.paginator.remove();
     this.paginator.resetTurnCarry();
+    if (this._flushTimer !== null) {
+      clearTimeout(this._flushTimer);
+      this._flushTimer = null;
+    }
     this.streamingIndex = null;
     this.dirtyIndices.clear();
     this.activeTurnStart = null;

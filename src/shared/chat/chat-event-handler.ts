@@ -23,6 +23,8 @@ import { canonicalTool } from "./tool-meta";
 import {
   describeActivity,
   flushRender,
+  scheduleFlush,
+  flushRenderNow,
   scrollToBottom,
   isNearBottom,
   enqueueTurnClose,
@@ -49,6 +51,13 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
   // gate naturally re-engages auto-scroll for their own messages.
   const wasAtBottom = isNearBottom(r);
   let touched = false;
+  // Set only by the streaming assistant_message accumulation branch below -
+  // the true O(n^2) hot path (one event per content_block_delta token). Every
+  // other event type (tool_use, tool_result, user_message, finalized
+  // assistant_message, ...) is one-shot per user/tool action, not a hot
+  // loop, so it keeps rendering immediately - preserving the existing
+  // synchronous "handleEvent then assert on the DOM" test contract for those.
+  let coalesce = false;
   switch (ev.type) {
     case "session_started":
       r.meta = { model: ev.model || null, inputTokens: 0, hasThinking: false, totalCostUsd: 0, hasUsage: false };
@@ -137,6 +146,9 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
         ts,
       };
       if (ev.streaming) {
+        // The hot loop: one of these per content_block_delta token. Eligible
+        // for the trailing-edge throttle below (Fix 2).
+        coalesce = true;
         if (r.streamingIndex !== null) {
           r.messages[r.streamingIndex] = msg;
           r.dirtyIndices.add(r.streamingIndex);
@@ -345,7 +357,10 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
         }
       }
       if (!opts.silent) {
-        flushRender(r);
+        // turn_usage is a settle event (the meta row locking in its final
+        // numbers) - flush now, bypassing scheduleFlush's throttle, so it's
+        // never delayed behind a coalescing window opened by prior deltas.
+        flushRenderNow(r);
       }
       return;
     }
@@ -360,8 +375,25 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
     if (ts > r.activeTurnLastTs) r.activeTurnLastTs = ts;
   }
   if (!opts.silent) {
-    flushRender(r);
-    if (!opts.skipScroll && wasAtBottom) scrollToBottom(r);
+    const afterFlush = () => {
+      if (!opts.skipScroll && wasAtBottom) scrollToBottom(r);
+    };
+    if (coalesce) {
+      // Throttled: this is the path a fast token stream drives once per
+      // content_block_delta (ai_todo streaming-render O(n^2) fix, Fix 2).
+      // scheduleFlush renders the first event of a burst immediately and
+      // coalesces the rest into one trailing flush. The scroll check rides
+      // along as `afterFlush` so it always reads a scrollHeight fresh off
+      // the actual DOM update, not a stale one from a throttled call.
+      scheduleFlush(r, afterFlush);
+    } else {
+      // Every other touched event type (tool_use, tool_result, user_message,
+      // finalized assistant_message, ...) is one-shot, not a hot loop -
+      // render immediately, and cancel any streaming throttle window still
+      // open from before this event so its DOM update isn't left pending.
+      flushRenderNow(r);
+      afterFlush();
+    }
   }
 }
 
