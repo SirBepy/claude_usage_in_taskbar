@@ -30,6 +30,7 @@ import { renderAppearanceView } from "./views/settings/subviews/appearance/appea
 import { renderNotificationsView } from "./views/settings/subviews/notifications/notifications";
 import { renderSoundView } from "./views/settings/subviews/sound/sound";
 import { renderPresetsView } from "./views/settings/subviews/presets/presets";
+import { renderChatDefaultsView } from "./views/settings/subviews/chat-defaults/chat-defaults";
 import { renderCharactersSettingsView } from "./views/settings/subviews/characters/characters";
 import { renderShortcutsView } from "./views/settings/subviews/shortcuts/shortcuts";
 import { renderPermissionsView } from "./views/settings/subviews/permissions/permissions";
@@ -117,6 +118,7 @@ registerView("settings-appearance", renderAppearanceView);
 registerView("settings-notifications", renderNotificationsView);
 registerView("settings-sound", renderSoundView);
 registerView("settings-presets", renderPresetsView);
+registerView("settings-chat-defaults", renderChatDefaultsView);
 registerView("settings-characters", renderCharactersSettingsView);
 registerView("settings-shortcuts", renderShortcutsView);
 registerView("settings-permissions", renderPermissionsView);

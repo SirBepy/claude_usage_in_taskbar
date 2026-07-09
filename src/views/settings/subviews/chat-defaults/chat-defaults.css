@@ -1,0 +1,58 @@
+/* Chat defaults subview (replaces subviews/presets/presets.ts, absorbs the
+ * root page's "Sort chats by" select). Ported from presets.css, renamed to
+ * cd-* and rescoped under .view-settings-chat-defaults. Shared .kit-* rules
+ * (.kit-section, .kit-row, .kit-toggle, .kit-select) live in the kit. */
+
+.view-settings-chat-defaults .cd-hint {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin: 0 0 12px;
+}
+
+.view-settings-chat-defaults .cd-models-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  margin-bottom: 6px;
+}
+
+.view-settings-chat-defaults .cd-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.view-settings-chat-defaults .cd-preset-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 90px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.view-settings-chat-defaults .cd-preset-row .preset-name,
+.view-settings-chat-defaults .cd-preset-row .preset-model,
+.view-settings-chat-defaults .cd-preset-row .preset-effort {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.view-settings-chat-defaults .cd-error {
+  margin-top: 10px;
+  color: var(--color-danger, #ff4444);
+  font-size: 0.8rem;
+}
