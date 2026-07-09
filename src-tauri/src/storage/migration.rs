@@ -38,7 +38,10 @@ fn rename_to_bak(path: &Path) {
 }
 
 /// `foo.jsonl` -> `foo.jsonl.bak` (appends, does not replace the extension).
-fn bak_path(path: &Path) -> PathBuf {
+///
+/// `pub(crate)` so `accounts::migration::retire_legacy_session_at` can share
+/// this instead of keeping its own byte-for-byte copy.
+pub(crate) fn bak_path(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(".bak");
     path.with_file_name(name)

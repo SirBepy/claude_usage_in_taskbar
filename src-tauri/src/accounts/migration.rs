@@ -59,14 +59,6 @@ pub enum MigrationOutcome {
     },
 }
 
-/// `foo.txt` -> `foo.txt.bak` (appends, never replaces an existing
-/// extension - mirrors `storage::migration`'s private `bak_path`).
-fn bak_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".bak");
-    path.with_file_name(name)
-}
-
 /// Re-keys every legacy (`account_id IS NULL`) `usage_snapshots` row to
 /// `account_id`. Rewrites BOTH the indexed column and the row's stored JSON
 /// blob's `account_id` field - `usage_store::get_snapshots`/`get_all_snapshots`
@@ -117,7 +109,7 @@ pub fn retire_legacy_session_at(legacy_session_path: &Path) -> Result<Option<Pat
     if !legacy_session_path.exists() {
         return Ok(None);
     }
-    let backup = bak_path(legacy_session_path);
+    let backup = crate::storage::migration::bak_path(legacy_session_path);
     std::fs::rename(legacy_session_path, &backup)?;
     Ok(Some(backup))
 }
