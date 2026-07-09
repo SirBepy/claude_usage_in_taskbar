@@ -47,6 +47,13 @@ pub struct WebAccountOrg {
     pub name: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Set on Team/Enterprise orgs instead of a `claude_*` capability string
+    /// (observed live 2026-07-09, ai_todo 173: `capabilities: ["raven",
+    /// "chat"]`, `raven_type: "team"` - no `claude_team` anywhere). `None` for
+    /// plain individual-subscription orgs, which still carry `claude_max`/
+    /// `claude_pro` etc. directly in `capabilities`.
+    #[serde(default)]
+    pub raven_type: Option<String>,
 }
 
 impl WebAccountIdentity {
@@ -65,9 +72,17 @@ impl WebAccountIdentity {
 impl WebAccountOrg {
     /// Subscription tier in the same vocabulary the CLI's `oauthAccount`
     /// uses for `organizationType` ("claude_max", "claude_pro", ...): the
-    /// first `claude_*` capability. `None` when the org doesn't state one.
+    /// first `claude_*` capability. Team/Enterprise orgs don't carry one of
+    /// those - they signal their tier via `raven_type` instead (ai_todo 173)
+    /// - so fall back to `"claude_" + raven_type` (e.g. `raven_type: "team"`
+    /// -> `"claude_team"`), which lines up with `tierLabel()`'s `KNOWN_TIERS`
+    /// map on the frontend. `None` only when neither source states a tier.
     pub fn subscription_tier(&self) -> Option<String> {
-        self.capabilities.iter().find(|c| c.starts_with("claude_")).cloned()
+        self.capabilities
+            .iter()
+            .find(|c| c.starts_with("claude_"))
+            .cloned()
+            .or_else(|| self.raven_type.as_deref().map(|t| format!("claude_{t}")))
     }
 }
 
@@ -325,6 +340,18 @@ mod tests {
             .with_status(401).create_async().await;
         let err = fetch_web_account(&server.url(), "sk-bad").await.unwrap_err();
         assert!(matches!(err, ScrapeError::Unauthorized));
+    }
+
+    #[test]
+    fn subscription_tier_falls_back_to_raven_type_for_team_orgs() {
+        // Trimmed live shape (ai_todo 173, 2026-07-09): a Team org has no
+        // `claude_*` capability at all - the tier only shows up as
+        // `raven_type`. `capabilities: ["raven","chat"]` alone must not
+        // resolve to a tier; `raven_type` is what makes it "claude_team".
+        let org: WebAccountOrg = serde_json::from_str(
+            r#"{"uuid": "ORG-TEAM", "capabilities": ["raven", "chat"], "raven_type": "team"}"#,
+        ).unwrap();
+        assert_eq!(org.subscription_tier().as_deref(), Some("claude_team"));
     }
 
     #[test]

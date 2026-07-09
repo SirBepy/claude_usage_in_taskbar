@@ -377,6 +377,18 @@ pub async fn add_account_finalize(
         sessions.remove(&session_id).expect("session existed under the same lock")
     };
     let identity = session.verified_identity.expect("checked above");
+    if identity.organization_type.is_none() {
+        // Not fatal - the account still gets created - but a silently empty
+        // tier is how ai_todo 173 (fibo showing "Unknown plan") went
+        // unnoticed. Surface it in the log so a future org shape we don't
+        // recognize is visible instead of silently swallowed.
+        log::warn!(
+            "add_account_finalize: no subscription tier resolved for org {} ({}) - \
+             will show as \"Unknown plan\" until fixed and re-added",
+            identity.organization_uuid,
+            identity.email_address
+        );
+    }
 
     let account = Account {
         id: session.account_id,
