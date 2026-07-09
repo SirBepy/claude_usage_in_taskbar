@@ -9,7 +9,7 @@
 // chat container and enhances a window's hunks on first open. The changes
 // panel sheet is visible immediately, so it calls enhanceEditDiffs eagerly.
 
-import { codeToTokens, bundledLanguages } from "shiki/bundle/full";
+import { loadShiki } from "./shiki-loader";
 import { buildDiffRows, normalizeEol, type DiffRow } from "./diff-rows";
 import { escapeHtml } from "../escape-html";
 
@@ -37,13 +37,14 @@ const EXT_LANG_ALIASES: Record<string, string> = {
   rakefile: "ruby",
 };
 
-export function langForPath(path: string | undefined): string | null {
+export async function langForPath(path: string | undefined): Promise<string | null> {
   if (!path) return null;
   const m = /\.([A-Za-z0-9_]+)$/.exec(path);
   if (!m) return null;
   const ext = m[1]!.toLowerCase();
   const lang = EXT_LANG_ALIASES[ext] ?? ext;
   // An unbundled lang makes codeToTokens throw, so gate on the bundle index.
+  const { bundledLanguages } = await loadShiki();
   return lang in bundledLanguages ? lang : null;
 }
 
@@ -51,6 +52,7 @@ type TokenLine = { content: string; htmlStyle?: Record<string, string> }[];
 
 async function tokenizeSide(text: string, lang: string): Promise<TokenLine[] | null> {
   try {
+    const { codeToTokens, bundledLanguages } = await loadShiki();
     const result = await codeToTokens(text, {
       lang: lang as keyof typeof bundledLanguages,
       themes: { light: "github-light", dark: "github-dark" },
@@ -134,7 +136,7 @@ async function enhanceHunk(hunk: HTMLElement): Promise<void> {
   if (!rows) return; // diff too large - keep the plain two-pane fallback
 
   const path = hunk.closest<HTMLElement>("[data-path]")?.dataset.path;
-  const lang = langForPath(path);
+  const lang = await langForPath(path);
 
   let oldTokens: TokenLine[] | null = null;
   let newTokens: TokenLine[] | null = null;

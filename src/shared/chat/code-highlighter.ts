@@ -1,7 +1,7 @@
-// bundle/full (not /web): the web bundle lacks rust/toml/etc grammars that
-// this app's sessions edit constantly; grammars are lazy dynamic imports so
-// unused languages cost nothing at runtime.
-import { codeToHtml } from "shiki/bundle/full";
+// shiki/bundle/full is loaded lazily via shiki-loader (see its header comment)
+// so the highlighting engine isn't in the main bundle at boot; grammars within
+// it are themselves lazy dynamic imports, so unused languages cost nothing.
+import { loadShiki } from "./shiki-loader";
 import { escapeHtml } from "../escape-html";
 
 function extractFenceLang(className: string): string | null {
@@ -46,6 +46,7 @@ export async function highlightCodeBlocks(container: HTMLElement): Promise<void>
     if (!pre || pre.tagName !== "PRE") continue;
     const lang = pre.dataset.lang || extractFenceLang(code.className) || "text";
     try {
+      const { codeToHtml } = await loadShiki();
       const html = await codeToHtml(code.textContent ?? "", {
         lang,
         theme: "github-dark",

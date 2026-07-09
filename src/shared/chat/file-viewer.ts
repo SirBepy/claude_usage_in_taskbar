@@ -10,9 +10,11 @@
 import { invoke } from "../ipc";
 import { basename } from "../path-utils";
 import { escapeHtml } from "../escape-html";
-// REUSE the existing full Shiki build (same highlighter the chat diffs use).
-// The /web bundle lacks rust/toml/etc grammars, so this MUST stay /bundle/full.
-import { codeToHtml } from "shiki/bundle/full";
+// REUSE the existing full Shiki build (same highlighter the chat diffs use),
+// loaded lazily via shiki-loader (see its header comment) so it's not in the
+// main bundle at boot. The /web bundle lacks rust/toml/etc grammars, so the
+// lazy import MUST stay /bundle/full.
+import { loadShiki } from "./shiki-loader";
 import { renderStackedDiff } from "./edit-window";
 import { enhanceEditDiffs } from "./diff-enhancer";
 import type { FileEditView } from "./file-edits";
@@ -260,6 +262,7 @@ async function renderFileView(body: HTMLElement, data: TextFileData): Promise<vo
   const lang = langFromPath(state.path);
   let highlighted: string;
   try {
+    const { codeToHtml } = await loadShiki();
     highlighted = await codeToHtml(data.content, { lang, theme: "github-dark" });
   } catch {
     if (!overlay || !overlay.contains(body)) return;
