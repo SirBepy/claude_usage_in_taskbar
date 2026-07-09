@@ -2,7 +2,7 @@
 
 # Claude Conductor
 
-Cross-platform Tauri 2 app (Rust + vanilla JS webview). Usage monitoring via CDP-driven Chrome scraping, interactive Claude chat sessions (daemon-hosted persistent `claude` per session), hooks/MCP permission relay, and channel management.
+Cross-platform Tauri 2 app (Rust + vanilla JS webview). Usage monitoring via cookie-authenticated HTTPS polling of the claude.ai usage API (Chrome/CDP runs only during the one-time login flow to capture the sessionKey), interactive Claude chat sessions (daemon-hosted persistent `claude` per session), hooks/MCP permission relay, and channel management.
 
 ## Project
 
