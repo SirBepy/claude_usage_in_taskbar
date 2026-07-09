@@ -6,6 +6,7 @@ import {
   withRemovedRule,
   type PermissionRule,
 } from "../../../sessions/permission-rules";
+import { askConfirm } from "../../../../shared/confirm";
 import "./permissions.css";
 
 interface LegacyGlobals {
@@ -105,7 +106,8 @@ export async function renderPermissionsView(root: HTMLElement): Promise<() => vo
         if (!block) return;
         const cwd = block.dataset.cwd;
         if (!cwd) return;
-        if (!confirm(`Remove every remembered permission for ${escapeHtml(cwd)}?`)) return;
+        const ok = await askConfirm(`Remove every remembered permission for ${escapeHtml(cwd)}?`, { confirmLabel: "Remove" });
+        if (!ok) return;
         let updated = settings;
         const rules = loadAllRules(settings)[cwd] ?? [];
         for (const rule of rules) {

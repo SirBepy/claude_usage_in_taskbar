@@ -2,11 +2,13 @@ import { invoke } from "../../shared/ipc";
 import { api } from "../../shared/api";
 import { state } from "./state";
 import { characterForSession } from "./session-characters";
+import { askConfirm } from "../../shared/confirm";
 
 export async function closeChat(sessionId: string): Promise<void> {
   const sess = state.sessions.find((s) => s.session_id === sessionId);
   if (sess?.busy) {
-    if (!confirm("A turn is in progress. Close and discard it?")) return;
+    const ok = await askConfirm("A turn is in progress. Close and discard it?", { confirmLabel: "Discard" });
+    if (!ok) return;
     try { await invoke<void>("cancel_turn", { sessionId }); } catch { /* best-effort */ }
   }
   // Closing cue: play the session character's "death" slot (best-effort;

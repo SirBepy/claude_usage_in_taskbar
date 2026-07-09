@@ -23,6 +23,7 @@ import { renderSidebar, refreshSessions } from "./sidebar";
 import { characterForSession, characterIconUrl, loadSessionCharacters } from "./session-characters";
 import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import { api } from "../../shared/api";
+import { askConfirm } from "../../shared/confirm";
 import { openChangeCharacterModal } from "../../shared/change-character-modal";
 import {
   addBackgroundSession,
@@ -542,7 +543,11 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       await selectSession(sessionId, pane);
     });
     pane.querySelector<HTMLButtonElement>(".takeover-btn")?.addEventListener("click", async () => {
-      if (!confirm(`Take over manual session? This kills the external claude process (pid ${sess.pid}) so this app can resume the session.`)) return;
+      const ok = await askConfirm(
+        `Take over manual session? This kills the external claude process (pid ${sess.pid}) so this app can resume the session.`,
+        { confirmLabel: "Take over" },
+      );
+      if (!ok) return;
       try {
         const newId = await invoke<string>("takeover_manual", { manualPid: sess.pid });
         if (newId) {

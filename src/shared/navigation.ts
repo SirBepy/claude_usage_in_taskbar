@@ -17,6 +17,7 @@ import {
   setCurrentSessionRecord,
 } from "./state";
 import { updateSidemenuActive } from "./sidemenu";
+import { askConfirm } from "./confirm";
 
 const LEGACY_VIEWS = [
   "settings",
@@ -105,10 +106,12 @@ export function showMergeModal(
   text: string,
   onConfirm: () => void,
   onCancel?: () => void,
-  _confirmLabel?: string,
+  confirmLabel?: string,
 ): void {
-  if (window.confirm(text)) onConfirm();
-  else if (onCancel) onCancel();
+  void askConfirm(text, { confirmLabel, danger: false }).then((ok) => {
+    if (ok) onConfirm();
+    else if (onCancel) onCancel();
+  });
 }
 
 // ── Back-compat window bindings ────────────────────────────────────────────
