@@ -1,0 +1,211 @@
+/* System subview styles (Startup + Shortcuts + Data & storage). Shared rules
+ * (.kit-section, .kit-section-title, .kit-row, .kit-toggle, .btn-danger, etc.)
+ * live in the kit. */
+
+/* ── Shortcuts section (ported from subviews/shortcuts/shortcuts.css) ────── */
+
+.shortcut-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  gap: 8px;
+}
+
+.shortcut-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.shortcut-row.is-todo {
+  opacity: 0.45;
+}
+
+.shortcut-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shortcut-row-label {
+  font-size: 0.88rem;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.shortcut-row-desc {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.shortcut-row-todo-tag {
+  font-size: 0.65rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--color-text-muted);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.shortcut-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.shortcut-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.75rem;
+  color: var(--color-text);
+}
+
+.shortcut-kbd kbd {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--color-text);
+  box-shadow: 0 1px 0 var(--color-border);
+}
+
+.shortcut-capture-input {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  font-style: italic;
+  padding: 2px 6px;
+  border: 1px dashed var(--color-primary);
+  border-radius: 4px;
+}
+
+.shortcut-conflict-msg {
+  font-size: 0.7rem;
+  color: #e74c3c;
+  margin-top: 2px;
+}
+
+.shortcut-rebind-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.shortcut-rebind-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+.shortcut-reset-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 3px;
+}
+
+.shortcut-reset-btn:hover {
+  color: var(--color-text);
+}
+
+.shortcut-group-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 12px 0 6px;
+}
+
+.shortcut-group-header:first-child {
+  margin-top: 0;
+}
+
+.shortcut-group-header--sub {
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+/* Standalone description under the slot-mode kit-toggle row (the old
+ * checkbox+label combo folded the description into the same <label>; the
+ * kit-toggle row is now its own element, so the description renders below it). */
+.shortcut-slot-mode-desc-standalone {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  padding: 0 0 8px;
+  margin-top: -4px;
+}
+
+/* ── Data & storage section (ported from settings.css) ────────────────── */
+
+.data-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-card {
+  /* nested kit-section inside the Data section: trim the default chrome so the
+   * cards read as rows, not full sections. */
+  margin: 0;
+}
+
+.data-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 6px;
+}
+
+.data-card-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.data-card-controls {
+  gap: 8px;
+}
+
+.data-control-label {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.data-control-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.data-retention {
+  min-width: 110px;
+}
+
+.data-card .btn-danger.data-clear {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  width: auto;
+}
+
+.data-total {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding: 8px 2px 2px;
+}
