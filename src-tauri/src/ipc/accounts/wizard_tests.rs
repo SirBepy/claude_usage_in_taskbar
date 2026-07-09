@@ -8,7 +8,6 @@ fn ident(email: &str, org: &str) -> OauthAccountInfo {
         organization_uuid: org.to_string(),
         organization_name: None,
         organization_type: None,
-        profile_fetched_at: None,
     }
 }
 

@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn poll_ready_without_profile_fetched_at() {
+    fn poll_ready_without_profile_freshness_timestamp() {
         // Current Claude Code builds don't write profileFetchedAt at all -
         // completion must not depend on it (past incident: adopted dirs).
         let dir = tempdir().unwrap();

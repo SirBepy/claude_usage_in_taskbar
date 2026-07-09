@@ -285,7 +285,6 @@ pub async fn add_account_capture_cookie(
         organization_uuid: org.uuid.clone(),
         organization_name: org.name.clone(),
         organization_type: org.subscription_tier(),
-        profile_fetched_at: None,
     };
 
     // Cross-check: when this profile dir already has a known identity (CLI

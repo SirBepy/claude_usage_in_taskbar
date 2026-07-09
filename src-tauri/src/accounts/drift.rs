@@ -91,7 +91,6 @@ mod tests {
             organization_uuid: org_uuid.into(),
             organization_name: None,
             organization_type: None,
-            profile_fetched_at: None,
         }
     }
 

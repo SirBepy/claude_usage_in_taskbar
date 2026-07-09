@@ -18,8 +18,6 @@ pub struct OauthAccountInfo {
     pub organization_name: Option<String>,
     #[serde(default)]
     pub organization_type: Option<String>,
-    #[serde(default)]
-    pub profile_fetched_at: Option<String>,
 }
 
 fn read_from_state_file(path: &Path) -> Option<OauthAccountInfo> {
@@ -67,8 +65,7 @@ mod tests {
             "emailAddress": "joe@example.com",
             "organizationUuid": "org-abc",
             "organizationName": "Fibo Studio",
-            "organizationType": "claude_max",
-            "profileFetchedAt": "2026-07-07T10:00:00Z"
+            "organizationType": "claude_max"
         }
     }"#;
 
@@ -81,7 +78,6 @@ mod tests {
         assert_eq!(identity.organization_uuid, "org-abc");
         assert_eq!(identity.organization_name.as_deref(), Some("Fibo Studio"));
         assert_eq!(identity.organization_type.as_deref(), Some("claude_max"));
-        assert_eq!(identity.profile_fetched_at.as_deref(), Some("2026-07-07T10:00:00Z"));
     }
 
     #[test]
@@ -117,7 +113,6 @@ mod tests {
         let identity = read_oauth_account(dir.path()).unwrap();
         assert_eq!(identity.organization_name, None);
         assert_eq!(identity.organization_type, None);
-        assert_eq!(identity.profile_fetched_at, None);
     }
 
     #[test]
