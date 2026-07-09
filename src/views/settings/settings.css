@@ -1,6 +1,11 @@
 /* Settings views. Shared rules (.kit-section, .kit-section-title, .kit-row,
  * .kit-toggle, .kit-toggle-track, .kit-nav-row, .btn-danger, etc.) live in the kit. */
 
+/* Leading Phosphor icon on a kit-nav-row (see views/settings/ui.ts navRow). */
+.kit-nav-row .ph {
+  margin-right: 8px;
+}
+
 /* ── Settings > Data section ───────────────────────────────────────────── */
 .data-cards {
   display: flex;
