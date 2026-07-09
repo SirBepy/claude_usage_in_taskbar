@@ -10,9 +10,28 @@
 #![cfg(windows)]
 
 use super::signal::{process_name_matches, SignalSource};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
-pub struct WindowsSignalSource;
+/// How long a `pid -> process name` snapshot stays valid before
+/// `meeting_app_audio_active` forces a rebuild via `pid_name_map()` (a full
+/// `CreateToolhelp32Snapshot` process-table walk), even if the active-audio
+/// PID set hasn't changed. ~3 poll ticks at the mod-level 3s `POLL_INTERVAL`.
+const PID_NAME_CACHE_TTL: Duration = Duration::from_secs(9);
+
+#[derive(Default)]
+struct AudioCache {
+    names: HashMap<u32, String>,
+    built_at: Option<Instant>,
+    /// Sorted, so equality doesn't depend on WASAPI's session-enumeration order.
+    last_pids: Vec<u32>,
+}
+
+#[derive(Default)]
+pub struct WindowsSignalSource {
+    audio_cache: RefCell<AudioCache>,
+}
 
 impl SignalSource for WindowsSignalSource {
     fn camera_in_use(&self) -> bool {
@@ -26,21 +45,39 @@ impl SignalSource for WindowsSignalSource {
             return false;
         }
         match active_audio_pids() {
-            Ok(pids) if !pids.is_empty() => {
-                let names = pid_name_map();
-                pids.iter().any(|pid| {
-                    names
-                        .get(pid)
-                        .map(|n| process_name_matches(n, allow))
-                        .unwrap_or(false)
-                })
-            }
+            Ok(pids) if !pids.is_empty() => self.pids_match_allowlist(&pids, allow),
             Ok(_) => false,
             Err(e) => {
                 log::warn!("meeting: audio session scan failed: {e}");
                 false
             }
         }
+    }
+}
+
+impl WindowsSignalSource {
+    /// Matches `pids` (the current active-audio-session PIDs, already known
+    /// non-empty) against `allow`, rebuilding the cached name map only when
+    /// the PID set has changed since the last poll or the cache has aged past
+    /// `PID_NAME_CACHE_TTL` - whichever comes first. A stale cache is safe: a
+    /// PID unknown to it just fails the match for one extra poll tick, and
+    /// Windows doesn't reuse a PID within a single 3s tick.
+    fn pids_match_allowlist(&self, pids: &[u32], allow: &[String]) -> bool {
+        let mut sorted = pids.to_vec();
+        sorted.sort_unstable();
+
+        let mut cache = self.audio_cache.borrow_mut();
+        let stale = cache.built_at.map_or(true, |t| t.elapsed() >= PID_NAME_CACHE_TTL);
+        let changed = sorted != cache.last_pids;
+        if stale || changed {
+            cache.names = pid_name_map();
+            cache.built_at = Some(Instant::now());
+            cache.last_pids = sorted;
+        }
+
+        pids.iter().any(|pid| {
+            cache.names.get(pid).map(|n| process_name_matches(n, allow)).unwrap_or(false)
+        })
     }
 }
 

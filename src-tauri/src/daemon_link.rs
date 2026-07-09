@@ -87,14 +87,29 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
 /// the broadcast, the app polls `list_pending_prompts` over the reliable RPC
 /// channel and emits each open prompt's Tauri event exactly once. Spawned once;
 /// reads the current daemon client from shared state each tick.
+///
+/// Adaptive interval, never skipping a poll (this is the must-deliver path):
+/// stays at `MIN_POLL_INTERVAL` while a prompt is pending or any known session
+/// is busy (cheap - reads the in-memory instance cache, no RPC), since either
+/// can produce a prompt on the very next tick. Otherwise it steps up by
+/// `BACKOFF_STEP` per consecutive empty poll, capped at `MAX_POLL_INTERVAL`
+/// after `BACKOFF_STEPS_TO_MAX` empties in a row. Any poll that comes back
+/// non-empty snaps straight back to `MIN_POLL_INTERVAL`.
 fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
     use tauri::{Emitter, Manager};
+    const MIN_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+    const MAX_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(2000);
+    const BACKOFF_STEP: std::time::Duration = std::time::Duration::from_millis(150);
+    const BACKOFF_STEPS_TO_MAX: u32 = 10; // 500ms + 10*150ms = 2000ms
+
     tokio::spawn(async move {
         let state = app_handle.state::<crate::state::AppState>();
         let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut was_connected = false;
+        let mut empty_streak: u32 = 0;
+        let mut interval = MIN_POLL_INTERVAL;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(interval).await;
             let (prompts, connected) = {
                 let guard = state.daemon_client.lock().await;
                 match guard.as_ref() {
@@ -110,7 +125,12 @@ fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
                 emitted.clear();
             }
             was_connected = connected;
-            let Some(prompts) = prompts else { continue };
+            let Some(prompts) = prompts else {
+                // Not connected / RPC failed - not a confirmed-empty result,
+                // so leave the backoff state alone and retry at the current
+                // interval rather than treating this as "nothing pending".
+                continue;
+            };
             let arr = match prompts.as_array() {
                 Some(a) => a.clone(),
                 None => continue,
@@ -138,6 +158,15 @@ fn spawn_pending_prompt_poll(app_handle: tauri::AppHandle) {
                 let _ = app_handle.emit("prompt-resolved", serde_json::json!({ "id": id }));
             }
             emitted.retain(|id| present.contains(id));
+
+            let any_busy = state.cached_instances.lock().unwrap().iter().any(|i| i.busy);
+            if !arr.is_empty() || any_busy {
+                empty_streak = 0;
+                interval = MIN_POLL_INTERVAL;
+            } else {
+                empty_streak = (empty_streak + 1).min(BACKOFF_STEPS_TO_MAX);
+                interval = (MIN_POLL_INTERVAL + BACKOFF_STEP * empty_streak).min(MAX_POLL_INTERVAL);
+            }
         }
     });
 }

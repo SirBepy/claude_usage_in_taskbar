@@ -158,12 +158,23 @@ pub fn run() {
             // flags include VISIBLE, which causes the window to appear before
             // WebView2 has loaded index.html (white screen on startup when the
             // previous session quit with the window open).
+            //
+            // `session-overlay` persists its own position via
+            // settings.extra.overlayX/Y (see ipc::save_overlay_position), and
+            // the ephemeral `session-<id>` detached-chat windows (opened/closed
+            // constantly, one per session) have no geometry worth remembering -
+            // both would just be redundant tracked-window churn. Exclude the
+            // whole `session-` prefix EXCEPT `session-chats`, the persistent
+            // Chats window, which relies on window-state to restore its size
+            // before first paint (see `ipc::window::build_chats_window`).
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::SIZE
                         | tauri_plugin_window_state::StateFlags::POSITION
                         | tauri_plugin_window_state::StateFlags::MAXIMIZED,
                 )
+                .with_denylist(&["session-overlay"])
+                .with_filter(|label| label == "session-chats" || !label.starts_with("session-"))
                 .build(),
         )
         .manage(state)
@@ -481,7 +492,7 @@ pub fn run() {
                     .remote_access_enabled;
                 crate::ipc::remote_access::reapply_on_boot(enabled);
             }
-            crate::ipc::remote_access::start_tailscale_watcher();
+            crate::ipc::remote_access::start_tailscale_watcher(app.handle().clone());
             crate::scheduler::spawn(app.handle().clone());
             crate::news::spawn_poll_loop(app.handle().clone());
             crate::slash::watcher::spawn(app.handle().clone());

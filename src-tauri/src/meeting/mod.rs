@@ -18,8 +18,13 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-/// How often the watcher samples the OS signals.
+/// How often the watcher samples the OS signals when the feature is enabled.
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
+
+/// How often the watcher checks back in while neither consumer needs a live
+/// signal (see `detection_wanted`). No registry/COM/process work happens on
+/// these ticks, so this can be much longer than `POLL_INTERVAL`.
+const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Built-in meeting-app process names, matched against active audio sessions.
 pub fn default_meeting_apps() -> Vec<String> {
@@ -91,7 +96,7 @@ pub fn apply_capture_affinity(exclude: bool) {
 /// signal source always reports false, so `meeting_active` stays off.
 pub fn start(app: AppHandle) {
     #[cfg(windows)]
-    let source: Box<dyn SignalSource> = Box::new(windows_source::WindowsSignalSource);
+    let source: Box<dyn SignalSource> = Box::new(windows_source::WindowsSignalSource::default());
     #[cfg(not(windows))]
     let source: Box<dyn SignalSource> = Box::new(NoopSource);
     let apps = default_meeting_apps();
@@ -104,6 +109,32 @@ pub fn start(app: AppHandle) {
         // `hideInMeeting=false` config therefore does zero window work).
         let mut applied_exclude = false;
         loop {
+            if !detection_wanted(&app) {
+                // Neither `hideInMeeting` (window capture-hiding) nor
+                // `pauseInMeeting` (notification suppression, on by default)
+                // currently consumes a live signal, so skip every
+                // registry/COM/process call below. Collapse to "not in a
+                // meeting" once, so nothing is left showing a stale "active"
+                // from before the toggle, then idle at a longer beat instead
+                // of the normal 3s poll.
+                if last != Some(false) {
+                    last = Some(false);
+                    if let Some(state) = app.try_state::<AppState>() {
+                        state.meeting_active.store(false, Ordering::Relaxed);
+                    }
+                    let _ = app.emit(
+                        "meeting://changed",
+                        MeetingState { active: false, sources: Sources::default() },
+                    );
+                    if applied_exclude {
+                        applied_exclude = false;
+                        let _ = app.run_on_main_thread(move || apply_capture_affinity(false));
+                    }
+                }
+                std::thread::sleep(IDLE_POLL_INTERVAL);
+                continue;
+            }
+
             let sources = Sources {
                 camera: source.camera_in_use(),
                 mic: source.mic_in_use(),
@@ -149,6 +180,25 @@ pub fn start(app: AppHandle) {
             std::thread::sleep(POLL_INTERVAL);
         }
     });
+}
+
+/// Whether anything currently consumes a live `meeting_active` signal:
+/// `hideInMeeting` (window capture-affinity hiding) or `pauseInMeeting`
+/// (notification suppression - see `notifications::rules::fire` and
+/// `ipc::characters::play_character_slot`), which defaults to on. Reads
+/// straight from the already-loaded `AppState.settings` lock - no disk I/O -
+/// so this check is effectively free next to the registry/COM/process calls
+/// it gates. Fails open (returns true) if state isn't available yet, matching
+/// `pauseInMeeting`'s own on-by-default behavior.
+fn detection_wanted(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .and_then(|s| {
+            s.settings.lock().ok().map(|g| {
+                let hide = g.extra.get("hideInMeeting").and_then(|v| v.as_bool()).unwrap_or(false);
+                hide || g.pause_notifications_in_meeting()
+            })
+        })
+        .unwrap_or(true)
 }
 
 #[cfg(not(windows))]

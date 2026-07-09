@@ -186,23 +186,29 @@ pub fn reapply_on_boot(enabled: bool) {
 }
 
 /// Spawn a background thread that re-applies `tailscale serve` when it has
-/// dropped while remote access is still enabled. Polls every 30 seconds.
+/// dropped while remote access is still enabled. Polls every 5 minutes (was
+/// 30s), reading `remote_access_enabled` straight from the in-memory
+/// `AppState.settings` lock instead of re-reading + re-parsing settings.json
+/// off disk every tick. `serve status` (a subprocess spawn) is only paid for
+/// when the flag is on, so this tick IS the health check - toggling the
+/// setting itself already runs `serve_enable`/`serve_disable` synchronously
+/// (see `set_remote_access_enabled`), so this watcher only needs to notice
+/// "serve died underneath us while still enabled", and a 5-minute worst-case
+/// re-establish is an accepted trade-off for not shelling out every 30s.
 /// Best-effort: errors are logged, never fatal.
-pub fn start_tailscale_watcher() {
-    std::thread::spawn(|| {
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(30));
-            let enabled = crate::settings::paths::settings_file()
-                .ok()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-                .and_then(|v| v.get("remote_access_enabled").and_then(|b| b.as_bool()))
-                .unwrap_or(false);
-            if enabled && !serve_running() {
-                match serve_enable() {
-                    Ok(()) => log::info!("remote-access: watcher re-applied tailscale serve"),
-                    Err(e) => log::warn!("remote-access: watcher tailscale serve failed: {e}"),
-                }
+pub fn start_tailscale_watcher(app: AppHandle) {
+    use tauri::Manager;
+    const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+    std::thread::spawn(move || loop {
+        std::thread::sleep(POLL_INTERVAL);
+        let enabled = app
+            .try_state::<AppState>()
+            .map(|s| s.settings.lock().unwrap().remote_access_enabled)
+            .unwrap_or(false);
+        if enabled && !serve_running() {
+            match serve_enable() {
+                Ok(()) => log::info!("remote-access: watcher re-applied tailscale serve"),
+                Err(e) => log::warn!("remote-access: watcher tailscale serve failed: {e}"),
             }
         }
     });
