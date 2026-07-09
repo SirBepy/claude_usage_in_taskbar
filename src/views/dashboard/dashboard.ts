@@ -22,8 +22,11 @@ import {
   widgetsNeedingAccountRerender,
 } from "./widget-registry";
 import type { DashboardWidgetEntry, WidgetContext } from "./widget-registry";
-import { positionDropdown } from "../sessions/position-dropdown";
-import { registerMenuCloser, closeAllMenus } from "../sessions/menu-registry";
+import {
+  closeDashMenu,
+  onDashMoreClick as onDashMoreClickImpl,
+} from "./dashboard-more-menu";
+import type { DashMoreMenuDeps } from "./dashboard-more-menu";
 
 let refreshBusy = false;
 let lastAutoPollMs = 0;
@@ -41,10 +44,6 @@ let dashboardWidgets: DashboardWidgetEntry[] = [];
 let editMode = false;
 const widgetTeardowns = new Map<string, () => void>();
 
-// ── "More options" header menu (kebab) ─────────────────────────────────────
-let dashMenu: HTMLElement | null = null;
-let dashSubmenu: HTMLElement | null = null;
-let dashMenuCleanup: (() => void) | null = null;
 // Multi-account milestone 08: one-time "set up your accounts" migration
 // prompt. Fetched once per mount (not on every refresh) - see renderDashboard.
 let showSetupBanner = false;
@@ -158,8 +157,6 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   };
 }
 
-registerMenuCloser(closeDashMenu);
-
 /** Re-renders the mounted dashboard content, if any - the replacement for the
  * deleted statistics.ts's `refreshDashboard()` global (boot.ts calls this on
  * every history/token-history update). No-op when the dashboard isn't the
@@ -232,108 +229,26 @@ async function triggerRefresh(): Promise<void> {
   }
 }
 
-// ── "More options" kebab menu (reuses the sessions .session-more-menu look) ──
+// ── "More options" kebab menu delegation ────────────────────────────────────
+// The menu itself (build/position/close) lives in dashboard-more-menu.ts;
+// dashboard.ts only supplies the small dependency bag it needs.
 
-function closeDashMenu(): void {
-  dashSubmenu?.remove();
-  dashSubmenu = null;
-  dashMenu?.remove();
-  dashMenu = null;
-  if (dashMenuCleanup) { dashMenuCleanup(); dashMenuCleanup = null; }
+function dashMenuDeps(): DashMoreMenuDeps {
+  return {
+    isEditMode: () => editMode,
+    onToggleEditMode,
+    triggerRefresh,
+    getDashboardWidgets: () => dashboardWidgets,
+    enableWidget: (id) => {
+      dashboardWidgets = setWidgetEnabled(dashboardWidgets, id, true);
+      persistDashboardWidgets();
+      if (mountedContainer) renderShell(mountedContainer);
+    },
+  };
 }
 
 function onDashMoreClick(e: Event): void {
-  const btn = e.currentTarget as HTMLButtonElement;
-  if (dashMenu) closeDashMenu();
-  else openDashMenu(btn);
-}
-
-function openDashMenu(btn: HTMLButtonElement): void {
-  closeAllMenus();
-  const menu = document.createElement("div");
-  menu.className = "session-more-menu";
-  document.body.appendChild(menu);
-  dashMenu = menu;
-
-  const editItem = document.createElement("button");
-  editItem.className = "smore-item" + (editMode ? " is-on" : "");
-  editItem.innerHTML =
-    `<i class="ph ph-sliders-horizontal"></i>` +
-    `<span>${editMode ? "Done editing" : "Edit dashboard"}</span>` +
-    (editMode ? `<span class="smore-check-dot"></span>` : "");
-  editItem.onclick = () => { closeDashMenu(); onToggleEditMode(); };
-  menu.appendChild(editItem);
-
-  const refreshItem = document.createElement("button");
-  refreshItem.className = "smore-item";
-  refreshItem.innerHTML = `<i class="ph ph-arrows-clockwise"></i><span>Refresh now</span>`;
-  refreshItem.onclick = () => { closeDashMenu(); void triggerRefresh(); };
-  menu.appendChild(refreshItem);
-
-  const sep = document.createElement("div");
-  sep.className = "smore-sep";
-  menu.appendChild(sep);
-
-  const addParent = document.createElement("button");
-  addParent.className = "smore-item smore-has-sub";
-  addParent.innerHTML =
-    `<i class="ph ph-plus"></i><span>Add widget</span>` +
-    `<i class="ph ph-caret-right smore-sub-caret"></i>`;
-  addParent.onclick = (ev) => {
-    ev.stopPropagation();
-    if (dashSubmenu) { dashSubmenu.remove(); dashSubmenu = null; return; }
-    openAddWidgetSubmenu(addParent);
-  };
-  menu.appendChild(addParent);
-
-  positionDropdown(menu, btn);
-
-  const onOutside = (ev: MouseEvent) => {
-    const t = ev.target as Node;
-    if (!menu.contains(t) && t !== btn && !dashSubmenu?.contains(t)) closeDashMenu();
-  };
-  setTimeout(() => document.addEventListener("click", onOutside), 0);
-  dashMenuCleanup = () => document.removeEventListener("click", onOutside);
-}
-
-/** Add-widget submenu: every registry widget is listed; already-added ones are
- * greyed out (not clickable), the rest enable on click. */
-function openAddWidgetSubmenu(parent: HTMLElement): void {
-  const sub = document.createElement("div");
-  sub.className = "session-more-menu";
-  for (const entry of dashboardWidgets) {
-    const widget = getWidget(entry.id);
-    if (!widget) continue;
-    const item = document.createElement("button");
-    item.className = "smore-item" + (entry.enabled ? " is-disabled" : "");
-    item.innerHTML =
-      `<i class="ph ${escapeHtml(widget.icon)}"></i>` +
-      `<span>${escapeHtml(widget.title)}</span>` +
-      (entry.enabled ? `<i class="ph ph-check" style="margin-left:auto;opacity:0.6"></i>` : "");
-    if (entry.enabled) {
-      item.title = "Already added";
-    } else {
-      item.onclick = () => {
-        dashboardWidgets = setWidgetEnabled(dashboardWidgets, entry.id, true);
-        persistDashboardWidgets();
-        closeDashMenu();
-        if (mountedContainer) renderShell(mountedContainer);
-      };
-    }
-    sub.appendChild(item);
-  }
-  document.body.appendChild(sub);
-  dashSubmenu = sub;
-
-  const itemRect = parent.getBoundingClientRect();
-  const subRect = sub.getBoundingClientRect();
-  let left = itemRect.right + 4;
-  if (left + subRect.width > window.innerWidth - 4) left = itemRect.left - subRect.width - 4;
-  let top = itemRect.top;
-  if (top + subRect.height > window.innerHeight - 4) top = window.innerHeight - subRect.height - 4;
-  if (top < 4) top = 4;
-  sub.style.left = `${left}px`;
-  sub.style.top = `${top}px`;
+  onDashMoreClickImpl(e, dashMenuDeps());
 }
 
 // ── Settings persistence for the widget layout ──────────────────────────────
