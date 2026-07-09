@@ -265,6 +265,13 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
             }
             let _ = app.emit("channels-changed", params);
         }
+        // Scheduled messages / scheduled new-chats (`daemon::schedule::notify_changed`).
+        // No app-side cache to seed (unlike instances/channels): the schedule view
+        // and the missed-fire popup both re-read via `schedule_list` on this event
+        // rather than trusting the payload shape, so this is a pure forward.
+        "scheduled_items_changed" => {
+            let _ = app.emit("scheduled-items-changed", params);
+        }
         // "permission_request" and "question_request" are intentionally NOT handled
         // here. Both are delivered via the reliable `list_pending_prompts` poll (see
         // `spawn_pending_prompt_poll`) because the broadcast can silently drop frames

@@ -11,6 +11,7 @@ import { mountRouter, registerView } from "./router";
 import { renderDashboard } from "./views/dashboard/dashboard";
 import { renderSessionsView, renderDetachedSession, queueSessionSelect, queueNewChat } from "./views/sessions/sessions";
 import { renderHistoryView, queueHistorySelect } from "./views/history/history";
+import { renderScheduleView } from "./views/schedule/schedule";
 import { renderProjectsView } from "./views/projects/projects";
 import { renderCharactersView } from "./views/characters/characters";
 import { renderCharacterDetailView } from "./views/characters/character-detail";
@@ -47,7 +48,8 @@ import { renderSidebar } from "./views/sessions/sidebar";
 import { installExternalLinkInterceptor } from "./shared/external-links";
 import { invoke } from "./shared/ipc";
 import { sessionEvents } from "./shared/chat/event-store";
-import type { ChatEvent, NewsPost } from "./types/ipc.generated";
+import { askConfirm } from "./shared/confirm";
+import type { ChatEvent, NewsPost, ScheduledItem } from "./types/ipc.generated";
 
 // Test seam (ai_todo 53 e2e): in dev only, expose a helper that injects a
 // synthetic file-edit tool_use into a mounted session so the wdio harness can
@@ -97,6 +99,7 @@ if (import.meta.env.DEV) {
 registerView("dashboard", renderDashboard);
 registerView("sessions", renderSessionsView);
 registerView("history", renderHistoryView);
+registerView("schedule", renderScheduleView);
 registerView("projects", renderProjectsView);
 registerView("characters", renderCharactersView);
 registerView("character-detail", renderCharacterDetailView);
@@ -284,6 +287,7 @@ if (!await ensureRemoteToken()) {
   });
 
   setupNewsBadgeAndNotifications();
+  setupScheduleMissedPopup();
 }
 })();
 
@@ -372,6 +376,55 @@ function setupNewsBadgeAndNotifications(): void {
     requestAnimationFrame(() => toast.classList.add("show"));
     setTimeout(() => toast.classList.add("leaving"), 5000);
     setTimeout(() => toast.remove(), 5300);
+  });
+}
+
+// Scheduled items (messages / new chats) that missed their fire time (past the
+// grace window - see `daemon::schedule::compute_missed`). Global, not gated on
+// the schedule view being open: fires a dialog (never auto-dismissed, per the
+// app's askConfirm convention) plus an OS notification when the window is
+// hidden (reusing the same raw `Notification` API as the news-notification
+// path above - no new plugin). `seenMissedIds` is in-memory only, cleared on
+// relaunch by design: this is "don't let a fresh Missed slip by unnoticed
+// this session", not a durable read-receipt.
+const seenMissedIds = new Set<string>();
+
+function setupScheduleMissedPopup(): void {
+  const ev = window.__TAURI__?.event;
+  if (!ev?.listen) return;
+
+  void ev.listen("scheduled-items-changed", async () => {
+    let items: ScheduledItem[];
+    try {
+      items = (await invoke<ScheduledItem[]>("schedule_list")) || [];
+    } catch (err) {
+      console.warn("[schedule] schedule_list failed", err);
+      return;
+    }
+    const missed = items.filter((i) => i.status.type === "missed" && !seenMissedIds.has(i.id));
+    if (missed.length === 0) return;
+    for (const m of missed) seenMissedIds.add(m.id);
+
+    const text = `${missed.length} scheduled item${missed.length === 1 ? "" : "s"} missed their fire time.`;
+
+    if (document.hidden) {
+      try {
+        if (typeof Notification !== "undefined") {
+          if (Notification.permission === "default") {
+            await Notification.requestPermission();
+          }
+          if (Notification.permission === "granted") {
+            const n = new Notification("Claude Conductor", { body: text });
+            n.onclick = () => { window.focus(); void showView("schedule"); };
+          }
+        }
+      } catch (err) {
+        console.warn("[schedule] OS notification failed", err);
+      }
+    }
+
+    const ok = await askConfirm(text, { confirmLabel: "Open schedule", cancelLabel: "Dismiss", danger: false });
+    if (ok) showView("schedule");
   });
 }
 
