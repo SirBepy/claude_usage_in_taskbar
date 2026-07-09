@@ -478,6 +478,20 @@ class SessionEventStore {
     if (entry.subscribers.size === 0) this.teardown(sessionId, entry);
   }
 
+  /**
+   * Inverse of {@link evictEnded}'s deferred branch: a fresh successful
+   * instance list shows this session alive again, so clear the `ended` latch.
+   * Without this, a session that transiently vanished from the registry while
+   * it was the viewed pane (e.g. a daemon restart briefly empties the list -
+   * a SUCCESSFUL fetch, see setActiveSession's doc in sessions/state.ts) would
+   * keep `ended: true` forever, and closing the pane later would wrongly tear
+   * down a live session's cache and listeners. No-op when not cached.
+   */
+  unmarkEnded(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (entry) entry.ended = false;
+  }
+
   /** Module-level TTL sweep (every SWEEP_INTERVAL_MS): reclaims entries that
    * are both unviewed (no subscribers) and idle past IDLE_TTL_MS. Skips
    * anything with a subscriber (visible in some pane right now) regardless of

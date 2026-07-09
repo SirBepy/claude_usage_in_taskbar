@@ -319,12 +319,24 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       // session that just ended or vanished and reclaim its event-store cache
       // entry (listeners + buffered events). Deferred by evictEnded itself if
       // the session is still open in this pane.
+      //
+      // Gated on the fetch actually succeeding: refreshSessions' catch empties
+      // state.sessions on ANY list_instances failure, which this diff cannot
+      // tell apart from "everything ended" — evicting there would flush every
+      // background cache on a transient IPC blip. A successful-but-empty list
+      // still evicts (those sessions genuinely ended). Ids present in a
+      // successful list also un-latch a stale `ended` mark left by an earlier
+      // transient vanish (e.g. daemon restart), so closing the pane later
+      // doesn't tear down a live session's cache.
       const previousIds = new Set(state.sessions.map((s) => s.session_id));
-      await refreshSessions();
+      const refreshed = await refreshSessions();
       if (state.mountId !== myMount) return;
-      const currentIds = new Set(state.sessions.map((s) => s.session_id));
-      for (const id of previousIds) {
-        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+      if (refreshed) {
+        const currentIds = new Set(state.sessions.map((s) => s.session_id));
+        for (const id of currentIds) sessionEvents.unmarkEnded(id);
+        for (const id of previousIds) {
+          if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+        }
       }
 
       // Ensure every newly-appeared live session gets a character assigned.
@@ -649,12 +661,18 @@ export async function renderDetachedSession(
       if (state.mountId !== myMount) return;
       // Same ended/vanished diff as the main sessions view's handler — this
       // detached window has its own event-store singleton (separate webview),
-      // so it must reclaim its own cache entry independently.
+      // so it must reclaim its own cache entry independently. Same gating:
+      // no eviction on a failed fetch (the catch empties state.sessions), and
+      // alive ids un-latch a stale `ended` mark from a transient vanish.
       const previousIds = new Set(state.sessions.map((s) => s.session_id));
-      await refreshSessions();
-      const currentIds = new Set(state.sessions.map((s) => s.session_id));
-      for (const id of previousIds) {
-        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+      const refreshed = await refreshSessions();
+      if (state.mountId !== myMount) return;
+      if (refreshed) {
+        const currentIds = new Set(state.sessions.map((s) => s.session_id));
+        for (const id of currentIds) sessionEvents.unmarkEnded(id);
+        for (const id of previousIds) {
+          if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+        }
       }
       // Live-update the pane header title when the session name resolves, and
       // recolour the header avatar's status ring.

@@ -73,7 +73,16 @@ export function isLive(i: Instance): boolean {
   return !i.ended_at && (i.kind === "interactive" || i.kind === "external" || i.kind === "automated");
 }
 
-export async function refreshSessions(): Promise<void> {
+/**
+ * Re-fetch the live session list into `state.sessions`. Returns whether the
+ * `list_instances` IPC actually succeeded: on failure the catch below empties
+ * `state.sessions` (pre-existing behavior the sidebar render relies on), which
+ * is indistinguishable from "everything genuinely ended" to callers that diff
+ * the list - the event-store eviction hooks in sessions.ts MUST skip their
+ * ended-session diff on a failed refresh or a transient IPC blip would evict
+ * every cached background transcript. Existing callers ignore the return.
+ */
+export async function refreshSessions(): Promise<boolean> {
   try {
     const all = await invoke<Instance[]>("list_instances");
     const next = (all || []).filter(isLive);
@@ -141,9 +150,11 @@ export async function refreshSessions(): Promise<void> {
 
     saveUnreadSet(unread);
     state.sessions = next;
+    return true;
   } catch (err) {
     console.error("[sessions] list_instances failed", err);
     state.sessions = [];
+    return false;
   }
 }
 
