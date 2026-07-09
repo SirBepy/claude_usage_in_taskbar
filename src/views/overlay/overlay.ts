@@ -62,22 +62,14 @@ function readOverlayOpacity(settings: SettingsShape): number {
 }
 
 export async function renderOverlay(root: HTMLElement): Promise<() => void> {
-  // Whole-window idle dim (additive to the existing per-card .oc-row hover
-  // reveal): the entire overlay content (text/icons included) fades to the
-  // overlayOpacity value while the mouse is outside the window, and pops to
-  // fully opaque the instant the mouse enters - mirrors pomodoro-overlay's
-  // visibility.ts. This window is not click-through, so plain DOM
-  // mouseenter/mouseleave on document.body work without a cursor-polling
-  // workaround.
-  let overlayHovered = false;
-  let idleOpacity = DEFAULT_OVERLAY_OPACITY;
-  function applyBodyOpacity(): void {
-    document.body.style.opacity = overlayHovered ? "1" : String(idleOpacity);
-  }
-  const onMouseEnter = () => { overlayHovered = true; applyBodyOpacity(); };
-  const onMouseLeave = () => { overlayHovered = false; applyBodyOpacity(); };
-  document.body.addEventListener("mouseenter", onMouseEnter);
-  document.body.addEventListener("mouseleave", onMouseLeave);
+  // Transparency is driven purely by the per-card `.oc-row` hover reveal (see
+  // overlay.css): off-hover the cards carry no background so the whole window
+  // reads straight through to the desktop. Deliberately NOT a whole-body
+  // `opacity` dim - setting `opacity` on the root of a transparent WebView2
+  // window forces the body onto its own compositing layer with a black
+  // backing, so the panel goes *darker* instead of see-through (the exact bug
+  // this used to have). Card backgrounds use rgba/color-mix instead, which
+  // composite correctly over the transparent window.
 
   // Transparent panel: a top drag grip + a stack of floating account cards,
   // window height sized to fit (see overlay.css + overlay-drag.ts). Dragging
@@ -103,9 +95,7 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
 
   async function refresh(): Promise<void> {
     const settings = getSettings();
-    idleOpacity = readOverlayOpacity(settings);
-    document.documentElement.style.setProperty("--overlay-opacity", `${idleOpacity * 100}%`);
-    applyBodyOpacity();
+    document.documentElement.style.setProperty("--overlay-opacity", `${readOverlayOpacity(settings) * 100}%`);
     if (!rowsEl) return;
     const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
     if (!accounts.length) {
@@ -144,9 +134,6 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
     try { unlistenHistory(); } catch { /* ignore */ }
     if (unlistenSettings) { try { unlistenSettings(); } catch { /* ignore */ } }
     try { cleanupDrag(); } catch { /* ignore */ }
-    document.body.removeEventListener("mouseenter", onMouseEnter);
-    document.body.removeEventListener("mouseleave", onMouseLeave);
-    document.body.style.opacity = "";
     window.clearInterval(timer);
   };
 }
