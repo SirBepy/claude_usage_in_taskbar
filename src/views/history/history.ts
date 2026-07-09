@@ -11,7 +11,7 @@ import "../../shared/chat/chat.css";
 import "./history.css";
 import type { HistoryEntry } from "../../types/ipc.generated";
 import { cwdToProjectName } from "../sessions/sessions-helpers";
-import { projBadgeHtml } from "../sessions/sidebar";
+import { projBadgeHtml } from "../sessions/sidebar-row-visuals";
 import { hydrateProjectTechIcons } from "../../shared/projects";
 
 interface HistoryState {

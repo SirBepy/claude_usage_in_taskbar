@@ -1,5 +1,5 @@
 import { escapeHtml } from "../../shared/escape-html";
-import { projBadgeHtml } from "./sidebar";
+import { projBadgeHtml } from "./sidebar-row-visuals";
 
 export interface SessionHeaderBindOpts {
   sessionId: string;
