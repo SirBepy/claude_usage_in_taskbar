@@ -5,8 +5,9 @@
 //! `session-*` capability wildcard (`capabilities/default.json`) that already
 //! covers the chats window, so this window needs no capabilities edit.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::settings::{self, paths};
@@ -14,6 +15,21 @@ use crate::settings::{self, paths};
 const OVERLAY_LABEL: &str = "session-overlay";
 const OVERLAY_WIDTH: f64 = 320.0;
 const OVERLAY_HEIGHT: f64 = 420.0;
+
+/// How long a hidden overlay window is left resident (WebView2 renderer and
+/// all) before being torn down outright. Recreated lazily on the next toggle
+/// (`build_overlay_window` is cheap and the position is persisted via
+/// `overlayX`/`overlayY`), so this trades a beat of rebuild latency on the
+/// first re-open after 10 idle minutes for not keeping a renderer resident
+/// forever after a single first open.
+const OVERLAY_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// Bumped on every show/hide toggle. `schedule_overlay_destroy` captures the
+/// generation at spawn time; when its sleep elapses it only destroys the
+/// window if the generation is still the same one it captured - i.e. nothing
+/// re-toggled the overlay in the meantime. This is the cancellation mechanism
+/// for a timer with no `AbortHandle` threaded through `toggle_overlay_window`.
+static OVERLAY_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Where the overlay's top-left corner should land given the tray icon's
 /// screen rect and the overlay's own size: right-aligned with the icon,
@@ -62,7 +78,7 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
     let builder = tauri::WebviewWindowBuilder::new(
         app,
         OVERLAY_LABEL,
-        tauri::WebviewUrl::App("index.html?overlaywindow=1".into()),
+        tauri::WebviewUrl::App("overlay.html".into()),
     )
     .title("Claude usage")
     .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
@@ -138,10 +154,15 @@ pub fn toggle_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) {
     if let Some(w) = app.get_webview_window(OVERLAY_LABEL) {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
+            schedule_overlay_destroy(app);
         } else {
             // Reopen exactly where the user left it: a hidden window keeps its
             // position, so just show it. No re-anchoring to the tray (that was
             // the old behaviour, before drag/flick + position persistence).
+            // Bump the generation first so any destroy-timer left over from
+            // the last hide sees a stale value and no-ops instead of tearing
+            // down the window we just showed.
+            OVERLAY_GEN.fetch_add(1, Ordering::SeqCst);
             let _ = w.show();
             let _ = w.set_focus();
         }
@@ -150,6 +171,27 @@ pub fn toggle_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) {
     if let Err(e) = build_overlay_window(app, icon_rect) {
         log::warn!("build_overlay_window failed: {e}");
     }
+}
+
+/// After the overlay is hidden, destroy it outright if it's still hidden
+/// `OVERLAY_IDLE_TIMEOUT` later - see `OVERLAY_GEN` for how a re-show/re-hide
+/// before then cancels this. Destroying (vs just hiding) frees the WebView2
+/// renderer; the next toggle rebuilds the window lazily like a cold first
+/// open.
+fn schedule_overlay_destroy(app: &AppHandle) {
+    let my_gen = OVERLAY_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(OVERLAY_IDLE_TIMEOUT).await;
+        if OVERLAY_GEN.load(Ordering::SeqCst) != my_gen {
+            return; // shown and/or hidden again since - this timer is stale
+        }
+        if let Some(w) = handle.get_webview_window(OVERLAY_LABEL) {
+            if !w.is_visible().unwrap_or(true) {
+                let _ = w.close();
+            }
+        }
+    });
 }
 
 #[cfg(test)]

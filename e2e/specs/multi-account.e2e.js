@@ -25,8 +25,8 @@
 //     command (mirroring `__injectEdit`'s dev-only seam in main.ts) could
 //     extend these to the populated (`.dash-acard` / account-chip) path.
 //   - The overlay lives in a SEPARATE always-on-top Tauri window
-//     (`session-overlay`, `index.html?overlaywindow=1`) built only from
-//     `ipc::window::toggle_overlay_window`, which is a plain Rust fn wired to
+//     (`session-overlay`, `overlay.html`) built only from
+//     `ipc::overlay_window::toggle_overlay_window`, which is a plain Rust fn wired to
 //     the tray icon's real OS click - NOT an invokable `#[tauri::command]`.
 //     There is no scripted way to open it from the webview. The spec below
 //     documents this and instead asserts the one thing reachable from here:

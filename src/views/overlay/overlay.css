@@ -1,10 +1,11 @@
 /* Floating multi-account overlay (milestone 06). This is the ONLY view
- * rendered in the `session-overlay` Tauri window (see main.ts's
- * overlaywindow=1 bypass and src-tauri/src/ipc/window.rs), so these rules are
- * unscoped rather than nested under a `.view-*` ancestor. The native window is
- * fully transparent (`.transparent(true)` in Rust) AND resized to hug the
- * panel (overlay-drag.ts::resizeOverlayToContent), so there's no wrapper
- * background and no oversized transparent area to eat clicks.
+ * rendered in the `session-overlay` Tauri window (see src/overlay.html,
+ * src/overlay-main.ts, and src-tauri/src/ipc/overlay_window.rs), so these
+ * rules are unscoped rather than nested under a `.view-*` ancestor. The
+ * native window is fully transparent (`.transparent(true)` in Rust) AND
+ * resized to hug the panel (overlay-drag.ts::resizeOverlayToContent), so
+ * there's no wrapper background and no oversized transparent area to eat
+ * clicks.
  *
  * Layout: a top drag grip (the only grab surface) above a stack of floating
  * account cards. Cards are transparent by default and reveal their background

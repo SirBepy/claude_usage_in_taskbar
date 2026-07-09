@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="void" data-mode="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Claude usage</title>
+    <!-- Same policy as index.html (also mirrored in src-tauri/tauri.conf.json's
+         app.security.csp) - keep the three in sync. -->
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com https://unpkg.com; script-src 'self' 'unsafe-inline' blob: https://unpkg.com; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:27183 ws://localhost:27183; img-src 'self' data: blob:">
+    <!-- Only the grip's ph-dots-six icon needs Phosphor (see
+         src/views/overlay/overlay.ts). Devicon and the dashboard's Manrope/
+         Fira-Code font families are never referenced by overlay.css, so this
+         window skips them entirely - see src-tauri/src/ipc/overlay_window.rs
+         and src/overlay-main.ts for the rest of the trimmed boot. -->
+    <script defer src="https://unpkg.com/@phosphor-icons/web@2.1.1/src/index.js"
+            integrity="sha384-cPFV+/abYd3INVFHPmSKpBmcnH+Q+bTZW7dv/EiuShUNPkHyFmRF8PsL7Ibfvunk"
+            crossorigin="anonymous"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- DM Sans only, weights 400 (body default) + 600 (.oc-nm) - the only
+         two overlay.css actually sets (see .oc-nums .oc-cur's 700, which the
+         main app's own font link doesn't load either; unchanged here). -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
+</head>
+
+<body class="overlay-window-mode">
+    <div id="app"></div>
+    <script type="module" src="./overlay-main.ts"></script>
+</body>
+
+</html>

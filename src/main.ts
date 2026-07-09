@@ -141,13 +141,6 @@ function detachedSessionFromHash(): string | null {
   return params.get("session");
 }
 
-// Multi-account milestone 06: the floating overlay window
-// (`build_overlay_window` in src-tauri/src/ipc/window.rs) loads
-// `index.html?overlaywindow=1` — a tiny single-purpose panel, so it bypasses
-// the router/sidemenu/back-button boot entirely, same idea as the detached
-// single-session window above.
-const isOverlayWindow = new URLSearchParams(window.location.search).get("overlaywindow") === "1";
-
 // Install the permission/question relay listener once per window, regardless
 // of whether this is the main window or a detached single-session window. The
 // listener is a no-op until either a permission-requested or question-requested
@@ -189,25 +182,6 @@ if (!await ensureRemoteToken()) {
   // Hide all static legacy views from index.html so only #app renders.
   document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
   void renderDetachedSession(app, detachedSessionId);
-  // Skip mountRouter + sidemenu wiring; this window is single-purpose.
-} else if (isOverlayWindow) {
-  document.body.classList.add("overlay-window-mode");
-  document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
-  // This window skips initBoot(), which is the only other place settings get
-  // hydrated into window.currentSettings - without this, overlay.ts's
-  // valueColor(...,"overlay") call would never see colorMode/paceColors/
-  // colorThresholds/colorApplyTo and readOverlayOpacity would always fall
-  // back to its default (ai_todo: multi-account overlay settings bug).
-  const { api } = await import("./shared/api");
-  const { setSettings } = await import("./shared/state");
-  try {
-    const settings = await api.getSettings();
-    if (settings) setSettings(settings);
-  } catch (e) {
-    console.error("overlay: initial settings fetch failed", e);
-  }
-  const { renderOverlay } = await import("./views/overlay/overlay");
-  void renderOverlay(app);
   // Skip mountRouter + sidemenu wiring; this window is single-purpose.
 } else {
   mountRouter(app);

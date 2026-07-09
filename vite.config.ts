@@ -12,6 +12,18 @@ export default defineConfig(({ command }) => ({
     // `vite build` - the multi-MB .map files have no business in a shipped
     // NSIS/DMG/DEB bundle.
     sourcemap: command === "serve",
+    rollupOptions: {
+      // Multi-page build: overlay.html (src-tauri/src/ipc/overlay_window.rs)
+      // is a separate entry from index.html so the floating overlay window's
+      // chunk doesn't pull in main.ts's full statically-imported view graph.
+      // Explicit once rollupOptions.input is set, Vite's implicit
+      // `<root>/index.html` default no longer applies - both entries must be
+      // listed or the production build would silently drop one.
+      input: {
+        main: resolve(__dirname, "src/index.html"),
+        overlay: resolve(__dirname, "src/overlay.html"),
+      },
+    },
   },
   server: {
     port: 1420,
