@@ -313,8 +313,19 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
     state.unlistenInstances = await ev.listen("instances-changed", async () => {
       if (state.mountId !== myMount) return;
+      // refreshSessions() replaces state.sessions with only the LIVE ones
+      // (sidebar.ts's isLive filters out ended_at) — snapshot the ids we
+      // currently know about before the refresh, then diff, to catch any
+      // session that just ended or vanished and reclaim its event-store cache
+      // entry (listeners + buffered events). Deferred by evictEnded itself if
+      // the session is still open in this pane.
+      const previousIds = new Set(state.sessions.map((s) => s.session_id));
       await refreshSessions();
       if (state.mountId !== myMount) return;
+      const currentIds = new Set(state.sessions.map((s) => s.session_id));
+      for (const id of previousIds) {
+        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+      }
 
       // Ensure every newly-appeared live session gets a character assigned.
       // Track ensured ids so we don't re-call on every subsequent event.
@@ -636,7 +647,15 @@ export async function renderDetachedSession(
   if (ev?.listen) {
     state.unlistenInstances = await ev.listen("instances-changed", async () => {
       if (state.mountId !== myMount) return;
+      // Same ended/vanished diff as the main sessions view's handler — this
+      // detached window has its own event-store singleton (separate webview),
+      // so it must reclaim its own cache entry independently.
+      const previousIds = new Set(state.sessions.map((s) => s.session_id));
       await refreshSessions();
+      const currentIds = new Set(state.sessions.map((s) => s.session_id));
+      for (const id of previousIds) {
+        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+      }
       // Live-update the pane header title when the session name resolves, and
       // recolour the header avatar's status ring.
       if (state.selectedId) {

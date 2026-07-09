@@ -39,6 +39,20 @@ const DEDUP_WINDOW_MS = 10_000;
 // user_message case in sigOf for why.
 const FILE_TOKEN_SIG_RE = /<file:[^>]*>/g;
 
+// Eviction (ai_todo perf fix): a session ever opened stays cached forever
+// (see file header) unless reclaimed. An entry is eligible once it has both
+// (a) no subscribers - nothing is currently rendering it in a pane, on this
+// window/webview - and (b) gone idle for IDLE_TTL_MS. "Idle" is driven by
+// lastAccess, which every genuine read/render touches AND every accepted live
+// event (deliver()) refreshes - so a background session with an active turn
+// (tool calls, streaming chunks, anything) keeps pushing lastAccess forward
+// and never goes idle long enough to be swept mid-turn. Reopening after
+// eviction is safe: loadInitial/subscribe rebuild a fresh entry and re-fetch
+// from disk via load_history_page, same as a session touched for the first
+// time.
+const IDLE_TTL_MS = 30 * 60_000;
+const SWEEP_INTERVAL_MS = 60_000;
+
 interface RecentSig {
   /** Dedup key: type + content/id. */
   sig: string;
@@ -62,6 +76,14 @@ interface CacheEntry {
   subscribers: Set<EventListener>;
   /** Recently-delivered live event signatures, for cross-source dedup. */
   recent: RecentSig[];
+  /** Wall-clock ms of the last genuine access (load/read/subscribe) or
+   * accepted live event. Drives the TTL sweep - see IDLE_TTL_MS above. */
+  lastAccess: number;
+  /** True once an `instances-changed` snapshot reported this session's
+   * `ended_at` set. An ended session will never produce another event, so
+   * once it also has no subscribers it is torn down immediately rather than
+   * waiting out the TTL. */
+  ended: boolean;
 }
 
 class SessionEventStore {
@@ -69,13 +91,28 @@ class SessionEventStore {
   /** Routes rate-limit rejections to the global banner instead of the transcript. */
   private rateLimitHandler: ((sessionId: string, body: string) => void) | null = null;
 
+  constructor() {
+    // Single module-level sweep (ai_todo perf fix): reclaims cache entries -
+    // events array, dedup ring, and both live listeners - for sessions nobody
+    // has viewed and that have gone quiet for IDLE_TTL_MS. Pure in-memory scan,
+    // no IPC, safe to run unconditionally on both the desktop and remote
+    // transports. unref() (Node-only) is best-effort so a test process that
+    // imports this module doesn't hang on an open timer handle; the browser's
+    // numeric interval id has no unref and is left alone.
+    const timer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
+    const maybeUnref = (timer as unknown as { unref?: () => void })?.unref;
+    if (typeof maybeUnref === "function") maybeUnref.call(timer);
+  }
+
   /** Register the global rate-limit-rejection sink (the banner controller). */
   setRateLimitHandler(fn: (sessionId: string, body: string) => void): void {
     this.rateLimitHandler = fn;
   }
 
   events(sessionId: string): ChatEvent[] {
-    return this.cache.get(sessionId)?.events.slice() ?? [];
+    const entry = this.cache.get(sessionId);
+    if (entry) entry.lastAccess = Date.now();
+    return entry?.events.slice() ?? [];
   }
 
   isLoaded(sessionId: string): boolean {
@@ -94,6 +131,7 @@ class SessionEventStore {
   async loadInitial(sessionId: string, cwd?: string): Promise<ChatEvent[]> {
     let entry = this.cache.get(sessionId);
     if (entry?.initialLoaded) {
+      entry.lastAccess = Date.now();
       await this.ensureListener(sessionId);
       return entry.events;
     }
@@ -101,6 +139,7 @@ class SessionEventStore {
       entry = this.makeEntry();
       this.cache.set(sessionId, entry);
     }
+    entry.lastAccess = Date.now();
     await this.ensureListener(sessionId);
     try {
       const args: { sessionId: string; cwd?: string; messageLimit: number } = {
@@ -153,6 +192,7 @@ class SessionEventStore {
   async reconcileLatest(sessionId: string, cwd?: string): Promise<void> {
     const entry = this.cache.get(sessionId);
     if (!entry || !entry.initialLoaded) return;
+    entry.lastAccess = Date.now();
     let page: HistoryPage;
     try {
       const args: { sessionId: string; cwd?: string; messageLimit: number } = {
@@ -199,6 +239,7 @@ class SessionEventStore {
   async loadOlder(sessionId: string, cwd?: string): Promise<ChatEvent[] | null> {
     const entry = this.cache.get(sessionId);
     if (!entry || !entry.initialLoaded) return null;
+    entry.lastAccess = Date.now();
     if (!entry.hasMore || entry.loadingOlder) return null;
     if (entry.oldestSeq == null) return null;
     entry.loadingOlder = true;
@@ -232,10 +273,19 @@ class SessionEventStore {
       this.cache.set(sessionId, entry);
     }
     entry.subscribers.add(fn);
+    entry.lastAccess = Date.now();
     void this.ensureListener(sessionId);
     return () => {
       const e = this.cache.get(sessionId);
-      e?.subscribers.delete(fn);
+      if (!e) return;
+      e.subscribers.delete(fn);
+      if (e.subscribers.size === 0) {
+        e.lastAccess = Date.now();
+        // The session already ended while we were the last viewer - it will
+        // never produce another event, so tear down now instead of waiting
+        // out the TTL (see evictEnded).
+        if (e.ended) this.teardown(sessionId, e);
+      }
     };
   }
 
@@ -302,6 +352,10 @@ class SessionEventStore {
     if (this.isLiveDuplicate(entry, ev)) return;
     this.recordSig(entry, ev);
     entry.events.push(ev);
+    // Any accepted live event (tool call, streaming chunk, notification, ...)
+    // counts as activity, keeping a background session with a turn in flight
+    // from ever going idle long enough for the TTL sweep to evict it mid-turn.
+    entry.lastAccess = Date.now();
     entry.subscribers.forEach((fn) => {
       try { fn(ev); } catch { /* ignore */ }
     });
@@ -385,7 +439,56 @@ class SessionEventStore {
       unlistenWatch: null,
       subscribers: new Set(),
       recent: [],
+      lastAccess: Date.now(),
+      ended: false,
     };
+  }
+
+  /** Full teardown: stop both live listeners (runner + file-watcher) and drop
+   * the entry entirely. The single choke point every eviction path routes
+   * through, so a session that gets re-touched later goes through the normal
+   * "no entry yet" cold path (loadInitial/subscribe rebuild it and re-fetch
+   * from disk) rather than resurrecting stale state. */
+  private teardown(sessionId: string, entry: CacheEntry): void {
+    if (entry.unlisten) {
+      try { entry.unlisten(); } catch { /* ignore */ }
+    }
+    if (entry.unlistenWatch) {
+      try { entry.unlistenWatch(); } catch { /* ignore */ }
+    }
+    this.cache.delete(sessionId);
+  }
+
+  /**
+   * Mark a session as ended (its `ended_at` is now set) and evict it if
+   * nothing is currently viewing it. Called from the sessions/detached-window
+   * "instances-changed" handlers for any id that just dropped out of the live
+   * registry - see sidebar.ts's `isLive`. Idempotent and safe to call for a
+   * session that isn't cached (no-op) or was never opened.
+   *
+   * If the session IS currently open in a pane (subscribers present), eviction
+   * is deferred: `ended` is recorded so `subscribe()`'s returned unsubscribe
+   * finishes the teardown the moment the pane stops viewing it, instead of
+   * blanking a transcript the user is looking at.
+   */
+  evictEnded(sessionId: string): void {
+    const entry = this.cache.get(sessionId);
+    if (!entry) return;
+    entry.ended = true;
+    if (entry.subscribers.size === 0) this.teardown(sessionId, entry);
+  }
+
+  /** Module-level TTL sweep (every SWEEP_INTERVAL_MS): reclaims entries that
+   * are both unviewed (no subscribers) and idle past IDLE_TTL_MS. Skips
+   * anything with a subscriber (visible in some pane right now) regardless of
+   * how stale lastAccess looks. */
+  private sweep(): void {
+    const now = Date.now();
+    for (const [sessionId, entry] of this.cache) {
+      if (entry.subscribers.size > 0) continue;
+      if (now - entry.lastAccess < IDLE_TTL_MS) continue;
+      this.teardown(sessionId, entry);
+    }
   }
 
   private async ensureListener(sessionId: string): Promise<void> {
