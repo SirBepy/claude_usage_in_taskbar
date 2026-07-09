@@ -352,7 +352,14 @@ pub async fn spawn_session(
                         }
                     }
                 }
-                _ = tokio::time::sleep_until(flush_deadline.unwrap()), if flush_deadline.is_some() => {
+                // NOTE: in `tokio::select!` a disabled branch (guard = false) still
+                // has its future EXPRESSION evaluated (only the polling is skipped),
+                // so `flush_deadline.unwrap()` here would panic on every iteration
+                // where `flush_deadline` is None (the common case) and, with
+                // `panic = "abort"`, take the whole daemon down. Fall back to a
+                // throwaway `now` when None; the guard still prevents this branch
+                // from ever firing unless a real deadline is set.
+                _ = tokio::time::sleep_until(flush_deadline.unwrap_or_else(tokio::time::Instant::now)), if flush_deadline.is_some() => {
                     if let Some(pending) = pending_snapshot.take() {
                         broadcast::publish(&pump_session, pending);
                     }
