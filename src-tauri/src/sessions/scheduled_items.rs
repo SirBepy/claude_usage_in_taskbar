@@ -62,6 +62,12 @@ pub enum RecurrenceRule {
 #[ts(export_to = "../../src/types/ipc.generated.ts")]
 pub enum ScheduledStatus {
     Pending,
+    /// Claimed by a fire path (tick loop or `schedule_fire_now`) and persisted
+    /// BEFORE the send is attempted - see `claim_for_fire`/`finish_fire`. A
+    /// item stuck here across a daemon restart is swept to `Failed` at boot
+    /// (`sweep_firing_to_failed`), since whether the send actually went out
+    /// is unknown.
+    Firing,
     Sent,
     Failed { reason: String },
     Missed,
@@ -180,6 +186,83 @@ fn delete_at(path: &Path, id: &str) -> bool {
         write_atomic(path, &map);
     }
     existed
+}
+
+/// Atomically claims a Pending item for firing: flips its status to `Firing`
+/// and persists that BEFORE any fire is attempted (the write-before-send
+/// guard), then returns the claimed item. Returns `None` if the item doesn't
+/// exist or isn't `Pending` - which is exactly how the tick loop and
+/// `schedule_fire_now` avoid double-firing the same item when they race:
+/// whichever calls this first wins, the other sees `None` and skips.
+pub fn claim_for_fire(id: &str) -> Option<ScheduledItem> {
+    let path = config_path()?;
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    claim_for_fire_at(&path, id)
+}
+
+fn claim_for_fire_at(path: &Path, id: &str) -> Option<ScheduledItem> {
+    let mut map = load_map(path);
+    let entry = map.get_mut(id)?;
+    if !matches!(entry.status, ScheduledStatus::Pending) {
+        return None;
+    }
+    entry.status = ScheduledStatus::Firing;
+    let claimed = entry.clone();
+    write_atomic(path, &map);
+    Some(claimed)
+}
+
+/// Persists the outcome of a fire attempt, but ONLY if the item is still the
+/// same `Firing` record this process claimed. If a concurrent delete or
+/// update raced in while the fire was in flight, the map either no longer has
+/// `item.id` or that entry has moved off `Firing` - in both cases this drops
+/// the stale write-back and returns `false` instead of resurrecting a record
+/// the user already deleted/edited. Returns `true` if the write happened.
+pub fn finish_fire(item: ScheduledItem) -> bool {
+    let Some(path) = config_path() else { return false };
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    finish_fire_at(&path, item)
+}
+
+fn finish_fire_at(path: &Path, item: ScheduledItem) -> bool {
+    let mut map = load_map(path);
+    match map.get(&item.id) {
+        Some(existing) if matches!(existing.status, ScheduledStatus::Firing) => {
+            map.insert(item.id.clone(), item);
+            write_atomic(path, &map);
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Startup recovery: any item left in `Firing` status (the daemon crashed or
+/// was killed mid-fire on a previous run, so `finish_fire` never ran) is
+/// converted to `Failed`, since whether the send actually went out is
+/// unknown. Called once before the scheduler's first tick
+/// (`daemon::schedule::spawn`). Returns whether anything changed, so the
+/// caller only publishes `scheduled_items_changed` when it did.
+pub fn sweep_firing_to_failed() -> bool {
+    let Some(path) = config_path() else { return false };
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    sweep_firing_to_failed_at(&path)
+}
+
+fn sweep_firing_to_failed_at(path: &Path) -> bool {
+    let mut map = load_map(path);
+    let mut changed = false;
+    for entry in map.values_mut() {
+        if matches!(entry.status, ScheduledStatus::Firing) {
+            entry.status = ScheduledStatus::Failed {
+                reason: "daemon restarted mid-fire; it may or may not have gone out".to_string(),
+            };
+            changed = true;
+        }
+    }
+    if changed {
+        write_atomic(path, &map);
+    }
+    changed
 }
 
 /// Computes the next local-time occurrence strictly after `after`, per
@@ -347,6 +430,104 @@ mod tests {
         it.id = String::new();
         upsert_at(&path, it);
         assert!(!path.exists(), "no file written for empty id");
+    }
+
+    // --- atomic claim / finish / startup sweep ---
+
+    #[test]
+    fn claim_for_fire_on_pending_flips_to_firing_and_persists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        let it = item(message_kind());
+        let id = it.id.clone();
+        upsert_at(&path, it);
+        let claimed = claim_for_fire_at(&path, &id).expect("pending item claims");
+        assert_eq!(claimed.status, ScheduledStatus::Firing);
+        assert_eq!(get_at(&path, &id).unwrap().status, ScheduledStatus::Firing, "claim must persist immediately");
+    }
+
+    #[test]
+    fn claim_for_fire_on_already_firing_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        let it = item(message_kind());
+        let id = it.id.clone();
+        upsert_at(&path, it);
+        assert!(claim_for_fire_at(&path, &id).is_some(), "first claim wins");
+        assert!(claim_for_fire_at(&path, &id).is_none(), "second concurrent claim loses");
+    }
+
+    #[test]
+    fn claim_for_fire_on_missing_id_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        assert!(claim_for_fire_at(&path, "no-such-id").is_none());
+    }
+
+    #[test]
+    fn finish_fire_writes_back_when_still_firing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        let it = item(message_kind());
+        let id = it.id.clone();
+        upsert_at(&path, it);
+        let mut claimed = claim_for_fire_at(&path, &id).unwrap();
+        claimed.status = ScheduledStatus::Sent;
+        assert!(finish_fire_at(&path, claimed));
+        assert_eq!(get_at(&path, &id).unwrap().status, ScheduledStatus::Sent);
+    }
+
+    #[test]
+    fn finish_fire_drops_write_when_item_deleted_after_claim() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        let it = item(message_kind());
+        let id = it.id.clone();
+        upsert_at(&path, it);
+        let mut claimed = claim_for_fire_at(&path, &id).unwrap();
+        // Concurrent delete races in while the fire is in flight.
+        assert!(delete_at(&path, &id));
+        claimed.status = ScheduledStatus::Sent;
+        assert!(!finish_fire_at(&path, claimed), "delete-after-claim must win over the stale write-back");
+        assert!(get_at(&path, &id).is_none(), "deleted item must not be resurrected");
+    }
+
+    #[test]
+    fn finish_fire_drops_write_when_item_edited_after_claim() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        let it = item(message_kind());
+        let id = it.id.clone();
+        upsert_at(&path, it.clone());
+        let mut claimed = claim_for_fire_at(&path, &id).unwrap();
+        // Concurrent edit (e.g. schedule_update) races in and resets it to Pending.
+        let mut edited = it;
+        edited.status = ScheduledStatus::Pending;
+        edited.prompt = "edited mid-fire".into();
+        upsert_at(&path, edited.clone());
+        claimed.status = ScheduledStatus::Sent;
+        assert!(!finish_fire_at(&path, claimed), "concurrent edit must win over the stale fire write-back");
+        assert_eq!(get_at(&path, &id).unwrap().prompt, "edited mid-fire");
+    }
+
+    #[test]
+    fn sweep_firing_to_failed_converts_stuck_firing_items() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        let it = item(message_kind());
+        let id = it.id.clone();
+        upsert_at(&path, it);
+        claim_for_fire_at(&path, &id).expect("claim leaves it Firing"); // simulates a crash before finish_fire
+        assert!(sweep_firing_to_failed_at(&path));
+        assert!(matches!(get_at(&path, &id).unwrap().status, ScheduledStatus::Failed { .. }));
+    }
+
+    #[test]
+    fn sweep_firing_to_failed_is_noop_when_nothing_stuck() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("scheduled-items.json");
+        upsert_at(&path, item(message_kind())); // stays Pending
+        assert!(!sweep_firing_to_failed_at(&path), "no Firing items means no write");
     }
 
     #[test]

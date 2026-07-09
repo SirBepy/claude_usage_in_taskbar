@@ -26,6 +26,13 @@ const DEFAULT_GRACE_SECS: i64 = 3600;
 /// other background loops in `daemon::run_daemon_main` (e.g. `detector_task::spawn`).
 pub fn spawn(state: Arc<DaemonState>) {
     tokio::spawn(async move {
+        // Startup recovery: an item stuck in `Firing` means the daemon died
+        // mid-fire on a previous run (claimed and persisted, but `finish_fire`
+        // never ran) - resolve the ambiguity to `Failed` before the first
+        // tick so it can't be silently re-fired.
+        if scheduled_items::sweep_firing_to_failed() {
+            notify_changed(&state);
+        }
         loop {
             sleep_chunked(TICK_SECS).await;
             tick(&state).await;
@@ -68,31 +75,68 @@ async fn tick(state: &Arc<DaemonState>) {
             continue;
         }
         let lateness = (now - fire_at).num_seconds();
-        let updated = if lateness >= grace_secs {
-            compute_missed(item, now)
-        } else {
-            compute_fired(state, item, now).await
+        // Defect 4 guard: a live, busy Message-kind session (mid-turn) must
+        // not be written into out of band - every interactive send path
+        // respects the same busy gate. Only defer within the grace window;
+        // once grace is exhausted we fall through to the normal Missed path
+        // below instead of deferring forever, so the popup gives the user
+        // manual control.
+        if lateness < grace_secs && is_message_session_busy(state, &item) {
+            continue; // stays Pending; retried next tick (~30s later)
+        }
+        // Atomic claim (Defects 1 & 3): flips Pending -> Firing and persists
+        // BEFORE any fire is attempted. `None` means a concurrent fire_now
+        // (or a delete/update) already claimed or removed this item this
+        // tick, so there's nothing left for us to do.
+        let Some(claimed) = scheduled_items::claim_for_fire(&item.id) else {
+            continue;
         };
-        scheduled_items::upsert(updated);
-        changed = true;
+        let result = if lateness >= grace_secs {
+            compute_missed(claimed, now)
+        } else {
+            compute_fired(state, claimed, now).await
+        };
+        // Defect 2: only writes back if the item is still the `Firing` record
+        // we claimed - a concurrent delete/update wins over this stale
+        // write-back instead of being resurrected.
+        if scheduled_items::finish_fire(result) {
+            changed = true;
+        }
     }
     if changed {
         notify_changed(state);
     }
 }
 
+/// Defect 4 guard: only `Message`-kind items can collide with an in-flight
+/// turn on an existing session (a `NewChat` always spawns fresh, so it never
+/// races with one). "Busy" mirrors the exact flag every interactive send path
+/// checks before writing into a session - `sessions::registry::Instance::busy`,
+/// set by `daemon::lifecycle`'s `set_busy`/`set_busy_false_if_gen` around a
+/// turn's lifetime (see `daemon/lifecycle.rs` pump loop).
+fn is_message_session_busy(state: &Arc<DaemonState>, item: &ScheduledItem) -> bool {
+    match &item.kind {
+        ScheduledKind::Message { session_id, .. } => {
+            state.registry.get(session_id).map(|inst| inst.busy).unwrap_or(false)
+        }
+        ScheduledKind::NewChat { .. } => false,
+    }
+}
+
 /// Fires exactly one item by id right now, regardless of its current
 /// `fire_at` - used by the `schedule_fire_now` RPC so "fire now" doesn't wait
-/// for the next tick. No-ops if the item is unknown or not Pending.
+/// for the next tick. No-ops if the item is unknown or not Pending (including
+/// "not Pending because the tick loop just claimed it" - the same atomic
+/// claim that guards against the tick loop racing itself also guards this
+/// explicit user action). Deliberately has no busy check: an explicit "fire
+/// now" click keeps its existing behavior regardless of in-flight turns.
 pub async fn fire_now(state: &Arc<DaemonState>, id: &str) {
-    let Some(item) = scheduled_items::get(id) else { return };
-    if !matches!(item.status, ScheduledStatus::Pending) {
-        return;
-    }
+    let Some(claimed) = scheduled_items::claim_for_fire(id) else { return };
     let now = Utc::now();
-    let updated = compute_fired(state, item, now).await;
-    scheduled_items::upsert(updated);
-    notify_changed(state);
+    let result = compute_fired(state, claimed, now).await;
+    if scheduled_items::finish_fire(result) {
+        notify_changed(state);
+    }
 }
 
 /// Daemon-side notifier method name; snake_case to match every other
@@ -340,8 +384,62 @@ mod tests {
     async fn fire_now_unknown_id_is_a_noop() {
         let state = test_state();
         // Must not panic even though the id was never created. Read-only
-        // (scheduled_items::get on a nonexistent id never writes), so this
-        // is safe against the real data dir too.
+        // (claim_for_fire on a nonexistent id never writes), so this is safe
+        // against the real data dir too.
         fire_now(&state, "totally-unknown-id").await;
+    }
+
+    // --- Defect 4: is_message_session_busy (pure - registry is in-memory, no
+    // store I/O, so these never touch the real scheduled-items.json) ---
+
+    #[test]
+    fn is_message_session_busy_true_when_registry_marks_busy() {
+        let state = test_state();
+        state.registry.upsert_interactive("sess-live", std::path::Path::new("C:/proj"), "proj-1", "2026-01-01T00:00:00Z");
+        state.registry.set_busy("sess-live", true);
+        let item = ScheduledItem::new(
+            ScheduledKind::Message { session_id: "sess-live".into(), cwd: "C:/proj".into() },
+            "hi".into(),
+            Utc::now().to_rfc3339(),
+            None,
+        );
+        assert!(is_message_session_busy(&state, &item));
+    }
+
+    #[test]
+    fn is_message_session_busy_false_when_registry_not_busy() {
+        let state = test_state();
+        state.registry.upsert_interactive("sess-idle", std::path::Path::new("C:/proj"), "proj-1", "2026-01-01T00:00:00Z");
+        let item = ScheduledItem::new(
+            ScheduledKind::Message { session_id: "sess-idle".into(), cwd: "C:/proj".into() },
+            "hi".into(),
+            Utc::now().to_rfc3339(),
+            None,
+        );
+        assert!(!is_message_session_busy(&state, &item));
+    }
+
+    #[test]
+    fn is_message_session_busy_false_when_session_unknown() {
+        let state = test_state();
+        let item = make_item(Utc::now(), None); // "ghost-session", never registered
+        assert!(!is_message_session_busy(&state, &item));
+    }
+
+    #[test]
+    fn is_message_session_busy_false_for_new_chat_kind_regardless_of_registry() {
+        let state = test_state();
+        let item = ScheduledItem::new(
+            ScheduledKind::NewChat {
+                cwd: "C:/proj".into(),
+                model: "opus".into(),
+                effort: "high".into(),
+                account_id: None,
+            },
+            "hi".into(),
+            Utc::now().to_rfc3339(),
+            None,
+        );
+        assert!(!is_message_session_busy(&state, &item), "NewChat never spawns into an existing turn, so it needs no busy check");
     }
 }

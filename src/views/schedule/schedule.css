@@ -190,6 +190,10 @@ details.schedule-section[open] > summary.schedule-section-title::before {
   background: color-mix(in srgb, var(--color-primary) 15%, transparent);
   color: var(--color-primary);
 }
+.schedule-status-pill--firing {
+  background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+  color: var(--color-primary);
+}
 .schedule-status-pill--sent {
   background: color-mix(in srgb, var(--color-success, #7af0c0) 15%, transparent);
   color: var(--color-success, #7af0c0);

@@ -128,6 +128,8 @@ function statusPill(item: ScheduledItem): string {
   switch (item.status.type) {
     case "pending":
       return `<span class="schedule-status-pill schedule-status-pill--pending">Pending</span>`;
+    case "firing":
+      return `<span class="schedule-status-pill schedule-status-pill--firing">Firing&hellip;</span>`;
     case "sent":
       return `<span class="schedule-status-pill schedule-status-pill--sent">Sent</span>`;
     case "failed":
@@ -189,20 +191,26 @@ function attentionRowHtml(item: ScheduledItem): string {
 }
 
 function upcomingItemRowHtml(item: ScheduledItem): string {
+  // A Firing item is mid-send (claimed by the tick loop or "fire now" but not
+  // yet resolved to Sent/Failed) - show it read-only, no actions, since the
+  // fire is already in flight and can't be canceled or rescheduled from here.
+  const firing = item.status.type === "firing";
   return `
     <li class="schedule-row" data-id="${escapeHtml(item.id)}">
       <i class="ph ${kindIconClass(item)} schedule-row-icon"></i>
       <div class="schedule-row-main">
         <div class="schedule-row-title">${escapeHtml(targetLabel(item))}</div>
         <div class="schedule-row-meta">
+          ${firing ? statusPill(item) : ""}
           <span class="schedule-time">${escapeHtml(localTimeFromIso(item.fire_at))}</span>
           ${recurrenceBadge(item.recurrence)}
         </div>
       </div>
+      ${firing ? "" : `
       <div class="schedule-row-actions">
         <button class="icon-btn" data-action="fire-now" data-id="${escapeHtml(item.id)}" title="Fire now"><i class="ph ph-play"></i></button>
         <button class="icon-btn" data-action="delete" data-id="${escapeHtml(item.id)}" title="Delete"><i class="ph ph-trash"></i></button>
-      </div>
+      </div>`}
     </li>
   `;
 }
@@ -268,7 +276,10 @@ function renderBody(): string {
   }
 
   const needsAttention = state.items.filter((i) => i.status.type === "missed" || i.status.type === "failed");
-  const pending = state.items.filter((i) => i.status.type === "pending");
+  // Firing items are listed under Upcoming too (read-only, no actions - see
+  // upcomingItemRowHtml), not as a separate section - they're mid-send, not
+  // something needing the user's attention.
+  const pending = state.items.filter((i) => i.status.type === "pending" || i.status.type === "firing");
   const past = state.items
     .filter((i) => i.status.type === "sent" || i.status.type === "failed" || i.status.type === "missed")
     .sort((a, b) => {

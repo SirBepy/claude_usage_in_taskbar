@@ -44,7 +44,10 @@ export class ScheduledChip {
     try {
       const all = await invoke<ScheduledItem[]>("schedule_list");
       this.items = all.filter(
-        (it) => it.kind.type === "message" && it.kind.session_id === this.opts.sessionId && it.status.type === "pending",
+        (it) =>
+          it.kind.type === "message" &&
+          it.kind.session_id === this.opts.sessionId &&
+          (it.status.type === "pending" || it.status.type === "firing"),
       );
     } catch (err) {
       console.error("[scheduled-chip] schedule_list failed", err);
@@ -127,19 +130,25 @@ export class ScheduledChip {
   private rowHtml(it: ScheduledItem): string {
     const preview = it.prompt.length > 80 ? `${it.prompt.slice(0, 80)}…` : it.prompt;
     const when = formatFireAt(it.fire_at);
+    // Firing = claimed by a fire path but not yet resolved to Sent/Failed -
+    // show it read-only (no send/edit/delete), since the send is already in
+    // flight.
+    const firing = it.status.type === "firing";
     const badge = it.recurrence
       ? `<span class="scheduled-row-badge">${escapeHtml(formatRecurrenceBadge(it.recurrence))}</span>`
       : "";
+    const firingBadge = firing ? `<span class="scheduled-row-badge scheduled-row-badge--firing">sending&hellip;</span>` : "";
     return `
       <div class="scheduled-row" data-id="${escapeHtml(it.id)}">
         <div class="scheduled-row-main">
           <div class="scheduled-row-preview" title="${escapeHtml(it.prompt)}">${escapeHtml(preview)}</div>
-          <div class="scheduled-row-meta"><span class="scheduled-row-when">${escapeHtml(when)}</span>${badge}</div>
+          <div class="scheduled-row-meta"><span class="scheduled-row-when">${escapeHtml(when)}</span>${badge}${firingBadge}</div>
         </div>
         <div class="scheduled-row-actions">
+          ${firing ? "" : `
           <button type="button" class="scheduled-row-btn scheduled-row-send" title="Send now"><i class="ph ph-paper-plane-tilt"></i></button>
           <button type="button" class="scheduled-row-btn scheduled-row-edit" title="Edit"><i class="ph ph-pencil-simple"></i></button>
-          <button type="button" class="scheduled-row-btn scheduled-row-delete" title="Delete"><i class="ph ph-trash"></i></button>
+          <button type="button" class="scheduled-row-btn scheduled-row-delete" title="Delete"><i class="ph ph-trash"></i></button>`}
         </div>
       </div>
     `;

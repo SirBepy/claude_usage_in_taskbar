@@ -28,43 +28,60 @@ struct IdParams {
 }
 
 pub fn register_schedule(router: &mut Router, state: Arc<DaemonState>) {
-    router.register("schedule_create", move |params, _ctx| {
-        async move {
-            let p: CreateParams = serde_json::from_value(params.unwrap_or(Value::Null))
-                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
-            let item = ScheduledItem::new(p.kind, p.prompt, p.fire_at, p.recurrence);
-            scheduled_items::upsert(item.clone());
-            serde_json::to_value(&item).map_err(|e| RpcError::internal(e.to_string()))
-        }
-    });
-
-    router.register("schedule_update", move |params, _ctx| {
-        async move {
-            let item: ScheduledItem = serde_json::from_value(params.unwrap_or(Value::Null))
-                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
-            if item.id.is_empty() {
-                return Err(RpcError::invalid_params("schedule_update: id must not be empty"));
+    {
+        let state = state.clone();
+        router.register("schedule_create", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let p: CreateParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let item = ScheduledItem::new(p.kind, p.prompt, p.fire_at, p.recurrence);
+                scheduled_items::upsert(item.clone());
+                publish_changed(&state);
+                serde_json::to_value(&item).map_err(|e| RpcError::internal(e.to_string()))
             }
-            if scheduled_items::get(&item.id).is_none() {
-                return Err(RpcError {
-                    code: -32004,
-                    message: format!("scheduled item {} not found", item.id),
-                    data: None,
-                });
-            }
-            scheduled_items::upsert(item);
-            Ok(json!({"ok": true}))
-        }
-    });
+        });
+    }
 
-    router.register("schedule_delete", move |params, _ctx| {
-        async move {
-            let p: IdParams = serde_json::from_value(params.unwrap_or(Value::Null))
-                .map_err(|e| RpcError::invalid_params(e.to_string()))?;
-            let existed = scheduled_items::delete(&p.id);
-            Ok(json!({"ok": existed}))
-        }
-    });
+    {
+        let state = state.clone();
+        router.register("schedule_update", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let item: ScheduledItem = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                if item.id.is_empty() {
+                    return Err(RpcError::invalid_params("schedule_update: id must not be empty"));
+                }
+                if scheduled_items::get(&item.id).is_none() {
+                    return Err(RpcError {
+                        code: -32004,
+                        message: format!("scheduled item {} not found", item.id),
+                        data: None,
+                    });
+                }
+                scheduled_items::upsert(item);
+                publish_changed(&state);
+                Ok(json!({"ok": true}))
+            }
+        });
+    }
+
+    {
+        let state = state.clone();
+        router.register("schedule_delete", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                let p: IdParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let existed = scheduled_items::delete(&p.id);
+                if existed {
+                    publish_changed(&state);
+                }
+                Ok(json!({"ok": existed}))
+            }
+        });
+    }
 
     {
         let state = state.clone();
@@ -78,6 +95,17 @@ pub fn register_schedule(router: &mut Router, state: Arc<DaemonState>) {
             }
         });
     }
+}
+
+/// Mirrors `daemon::schedule`'s own `notify_changed` exactly (same notifier
+/// method name and payload shape): Defect 5 was that these RPC handlers never
+/// published, so the schedule view only ever caught up when the next tick (or
+/// a manual reload) happened to run.
+fn publish_changed(state: &Arc<DaemonState>) {
+    state.notifier.publish(
+        "scheduled_items_changed",
+        json!({ "items": scheduled_items::list() }),
+    );
 }
 
 #[cfg(test)]
