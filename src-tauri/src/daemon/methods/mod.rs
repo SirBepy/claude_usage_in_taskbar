@@ -6,11 +6,13 @@ mod channels;
 mod lifecycle;
 mod permission;
 mod registry;
+mod schedule;
 
 pub use channels::register_channels;
 pub use lifecycle::{register, register_notifier, register_settings};
 pub use permission::register_responders;
 pub use registry::register_chat_registry;
+pub use schedule::register_schedule;
 
 #[cfg(test)]
 mod tests {

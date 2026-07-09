@@ -25,6 +25,7 @@ pub mod files;
 pub mod skill_usage;
 pub mod storage;
 pub mod remote_access;
+pub mod schedule;
 
 pub use usage::*;
 pub use accounts::*;
@@ -53,6 +54,7 @@ pub use files::*;
 pub use skill_usage::*;
 pub use storage::*;
 pub use remote_access::*;
+pub use schedule::*;
 
 // Re-export test helper submodules so integration tests can reach them via
 // `claude_conductor_lib::ipc::projects_test_helpers` and

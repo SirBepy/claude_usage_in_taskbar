@@ -13,8 +13,12 @@ use claude_conductor_lib::ipc::accounts::{
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::git::GitInfo;
 use claude_conductor_lib::ipc::files::TextFileData;
+use claude_conductor_lib::ipc::schedule::ExternalScheduledJob;
 use claude_conductor_lib::notifications::piper::{PiperStatus, VoiceEntry};
 use claude_conductor_lib::sessions::kinds::InstanceKind;
+use claude_conductor_lib::sessions::scheduled_items::{
+    Recurrence, RecurrenceRule, ScheduledItem, ScheduledKind, ScheduledStatus,
+};
 use claude_conductor_lib::skill_usage::types::{
     InstalledSkill, InvocationCounts, InvocationSource, SkillDetail, SkillUsageEntry,
     SkillUsageEvent, SkillUsageWeek, TokenBreakdown,
@@ -134,6 +138,14 @@ fn emit_ipc_types() {
     out.push_str(&decl::<TerminalAction>());
     out.push_str(&decl::<ProtocolPhase>());
     out.push_str(&decl::<ProtocolState>());
+
+    // scheduling (scheduled messages / scheduled new-chats)
+    out.push_str(&decl::<ScheduledKind>());
+    out.push_str(&decl::<RecurrenceRule>());
+    out.push_str(&decl::<Recurrence>());
+    out.push_str(&decl::<ScheduledStatus>());
+    out.push_str(&decl::<ScheduledItem>());
+    out.push_str(&decl::<ExternalScheduledJob>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {

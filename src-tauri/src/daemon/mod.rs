@@ -22,6 +22,7 @@ pub mod push;
 mod remote_handlers;
 pub mod remote_server;
 pub mod rpc;
+pub mod schedule;
 pub mod session;
 pub mod settings_cache;
 pub mod spawn_self;
@@ -105,6 +106,7 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     methods::register_responders(&mut router, state.clone());
     methods::register_channels(&mut router, state.clone());
     methods::register_chat_registry(&mut router, state.clone());
+    methods::register_schedule(&mut router, state.clone());
 
     // Bind hook server BEFORE the RPC accept loop so in-flight claude
     // processes can re-discover the port the moment we're up.
@@ -120,6 +122,8 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
         Err(e) => return Err(e.into()),
     };
     detector_task::spawn(state.clone());
+    // Scheduled messages / scheduled new-chats (scheduling feature, Phase 1).
+    schedule::spawn(state.clone());
 
     // Startup + periodic (every 24h) GC of leaked per-turn mcp-temp files
     // (`.mcp.json` / hook `.settings.json`) - see `claude_config::gc_temp_files`.

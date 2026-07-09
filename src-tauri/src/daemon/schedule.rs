@@ -1,0 +1,347 @@
+//! Daemon-side scheduler for scheduled messages / scheduled new-chats
+//! (`sessions::scheduled_items`). Mirrors `crate::scheduler`'s wall-clock
+//! chunked-sleep pattern (see `scheduler.rs:114-128`, standby-safe) but on a
+//! short fixed ~30s tick rather than a single aligned poll slot, since
+//! scheduled items fire at arbitrary times.
+//!
+//! Each tick: load every item, fire (or mark Missed) whatever is due, then
+//! emit `scheduled_items_changed` at most once for the whole tick via the
+//! daemon's existing notifier broadcast (the same mechanism `instances_
+//! changed` uses - see `daemon::notifier`).
+
+use crate::daemon::lifecycle::{self, LifecycleError, StartSessionParams};
+use crate::daemon::state::DaemonState;
+use crate::sessions::scheduled_items::{self, ScheduledItem, ScheduledKind, ScheduledStatus};
+use chrono::{DateTime, Utc};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+const TICK_SECS: u64 = 30;
+const SLEEP_CHUNK_SECS: u64 = 15;
+/// Fallback grace window when `Settings.schedule_grace_secs` is unset.
+const DEFAULT_GRACE_SECS: i64 = 3600;
+
+/// Spawn the scheduler tick loop. Call once at daemon startup, alongside the
+/// other background loops in `daemon::run_daemon_main` (e.g. `detector_task::spawn`).
+pub fn spawn(state: Arc<DaemonState>) {
+    tokio::spawn(async move {
+        loop {
+            sleep_chunked(TICK_SECS).await;
+            tick(&state).await;
+        }
+    });
+}
+
+/// Sleeps in `SLEEP_CHUNK_SECS` steps instead of one long sleep, so a system
+/// suspend/resume is recovered from within one chunk instead of missing a
+/// whole tick - same rationale as `scheduler::sleep_until_next_target`.
+async fn sleep_chunked(total_secs: u64) {
+    let mut remaining = total_secs;
+    while remaining > 0 {
+        let step = remaining.min(SLEEP_CHUNK_SECS);
+        tokio::time::sleep(Duration::from_secs(step)).await;
+        remaining -= step;
+    }
+}
+
+/// One scheduler tick: evaluate every Pending item against `now`.
+async fn tick(state: &Arc<DaemonState>) {
+    let now = Utc::now();
+    let grace_secs = state
+        .settings
+        .snapshot()
+        .schedule_grace_secs
+        .map(|s| s as i64)
+        .unwrap_or(DEFAULT_GRACE_SECS);
+    let mut changed = false;
+    for item in scheduled_items::list() {
+        if !matches!(item.status, ScheduledStatus::Pending) {
+            continue;
+        }
+        let Ok(fire_at) = DateTime::parse_from_rfc3339(&item.fire_at) else {
+            log::warn!("scheduled item {} has unparsable fire_at {:?}; skipping", item.id, item.fire_at);
+            continue;
+        };
+        let fire_at = fire_at.with_timezone(&Utc);
+        if fire_at > now {
+            continue;
+        }
+        let lateness = (now - fire_at).num_seconds();
+        let updated = if lateness >= grace_secs {
+            compute_missed(item, now)
+        } else {
+            compute_fired(state, item, now).await
+        };
+        scheduled_items::upsert(updated);
+        changed = true;
+    }
+    if changed {
+        notify_changed(state);
+    }
+}
+
+/// Fires exactly one item by id right now, regardless of its current
+/// `fire_at` - used by the `schedule_fire_now` RPC so "fire now" doesn't wait
+/// for the next tick. No-ops if the item is unknown or not Pending.
+pub async fn fire_now(state: &Arc<DaemonState>, id: &str) {
+    let Some(item) = scheduled_items::get(id) else { return };
+    if !matches!(item.status, ScheduledStatus::Pending) {
+        return;
+    }
+    let now = Utc::now();
+    let updated = compute_fired(state, item, now).await;
+    scheduled_items::upsert(updated);
+    notify_changed(state);
+}
+
+/// Daemon-side notifier method name; snake_case to match every other
+/// notifier method (`instances_changed`, `channels_changed`, ...- see
+/// `daemon_link::handle_daemon_notification`). The app-side Tauri event
+/// (`scheduled-items-changed`, hyphenated per the rest of that layer's
+/// `instances-changed` / `channels-changed` convention) is wired up where the
+/// schedule view consumes it (later phase); this only emits the daemon-side
+/// notification.
+fn notify_changed(state: &Arc<DaemonState>) {
+    state.notifier.publish(
+        "scheduled_items_changed",
+        serde_json::json!({ "items": scheduled_items::list() }),
+    );
+}
+
+/// Past the grace window: never fires. Recurring items reset to Pending at
+/// their next occurrence (computed from `now`, not the missed `fire_at`, so a
+/// long-missed daily item doesn't immediately re-fire); one-shots go terminal.
+/// Pure (no store I/O) so it's directly unit-testable; the caller persists
+/// the returned item via `scheduled_items::upsert`.
+fn compute_missed(mut item: ScheduledItem, now: DateTime<Utc>) -> ScheduledItem {
+    item.last_result = Some("missed: past the grace window".to_string());
+    if let Some(rec) = item.recurrence.clone() {
+        item.fire_at = scheduled_items::next_occurrence(now, &rec).to_rfc3339();
+        item.status = ScheduledStatus::Pending;
+    } else {
+        item.status = ScheduledStatus::Missed;
+    }
+    item
+}
+
+/// Within the grace window: attempt the fire, record the outcome, and either
+/// reset to Pending (recurring) or go terminal (one-shot). The fire attempt
+/// itself has side effects (spawns/sends via `state`), but never touches the
+/// scheduled-items store directly - the caller persists the returned item.
+async fn compute_fired(state: &Arc<DaemonState>, mut item: ScheduledItem, now: DateTime<Utc>) -> ScheduledItem {
+    let outcome = fire_kind(state, &item).await;
+    item.last_fired_at = Some(now.to_rfc3339());
+    item.last_result = Some(match &outcome {
+        Ok(()) => "sent".to_string(),
+        Err(reason) => reason.clone(),
+    });
+    if let Some(rec) = item.recurrence.clone() {
+        item.fire_at = scheduled_items::next_occurrence(now, &rec).to_rfc3339();
+        item.status = ScheduledStatus::Pending;
+    } else {
+        item.status = match outcome {
+            Ok(()) => ScheduledStatus::Sent,
+            Err(reason) => ScheduledStatus::Failed { reason },
+        };
+    }
+    item
+}
+
+async fn fire_kind(state: &Arc<DaemonState>, item: &ScheduledItem) -> Result<(), String> {
+    match &item.kind {
+        ScheduledKind::Message { session_id, cwd } => {
+            fire_message(state, session_id, cwd, &item.prompt).await
+        }
+        ScheduledKind::NewChat { cwd, model, effort, account_id } => {
+            fire_new_chat(state, cwd, model, effort, account_id.as_deref(), &item.prompt).await
+        }
+    }
+}
+
+/// Sends `prompt` into `session_id`, respawning it first (via `resume_id`,
+/// daemon-internal) if it isn't currently live. Mirrors the app-side -32004
+/// retry in `ipc/chat/run.rs::send_message_daemon` (~line 126), but without
+/// the RPC hop: this runs inside the daemon itself.
+async fn fire_message(
+    state: &Arc<DaemonState>,
+    session_id: &str,
+    cwd: &str,
+    prompt: &str,
+) -> Result<(), String> {
+    let session = match state.sessions.get(session_id).map(|s| s.clone()) {
+        Some(s) => s,
+        None => respawn_for_message(state, session_id, cwd).await?,
+    };
+    lifecycle::send_message(&session, prompt).await.map_err(|e| e.to_string())?;
+    state.registry.set_awaiting(session_id, None);
+    state.registry.set_busy(session_id, true);
+    state.notifier.publish("instances_changed", serde_json::json!({"instances": state.registry.list()}));
+    Ok(())
+}
+
+/// Respawns a not-currently-live session with `--resume`, using the
+/// registry's last-known model/effort/account (falling back to opus/high/
+/// default when the registry has nothing recorded, same fallback
+/// `ipc/chat/run.rs::send_message` uses for a cold cache).
+async fn respawn_for_message(
+    state: &Arc<DaemonState>,
+    session_id: &str,
+    cwd: &str,
+) -> Result<Arc<crate::daemon::session::Session>, String> {
+    let (model, effort, account_id) = state
+        .registry
+        .get(session_id)
+        .map(|inst| {
+            let model = if inst.model.is_empty() { "opus".to_string() } else { inst.model };
+            let effort = if inst.effort.is_empty() { "high".to_string() } else { inst.effort };
+            (model, effort, inst.account_id)
+        })
+        .unwrap_or_else(|| ("opus".to_string(), "high".to_string(), None));
+    let params = StartSessionParams {
+        cwd: PathBuf::from(cwd),
+        model,
+        effort,
+        resume_id: Some(session_id.to_string()),
+        remote: false,
+        account_id,
+    };
+    lifecycle::spawn_session(state, params).await.map_err(err_to_string)
+}
+
+/// Spawns a brand-new chat and sends `prompt` as its first turn. Mirrors the
+/// bookkeeping the `start_session` RPC handler performs around
+/// `spawn_session` (project upsert, registry entries, chat-config record,
+/// `instances_changed` notify - see `daemon::methods::lifecycle::register`'s
+/// `start_session` handler), since this fires with no RPC round trip to
+/// replicate that path automatically. Respects the metered-billing gate
+/// already inside `spawn_session` (surfaces as `Err` -> `Failed{reason}`).
+async fn fire_new_chat(
+    state: &Arc<DaemonState>,
+    cwd: &str,
+    model: &str,
+    effort: &str,
+    account_id: Option<&str>,
+    prompt: &str,
+) -> Result<(), String> {
+    let params = StartSessionParams {
+        cwd: PathBuf::from(cwd),
+        model: model.to_string(),
+        effort: effort.to_string(),
+        resume_id: None,
+        remote: false,
+        account_id: account_id.map(|s| s.to_string()),
+    };
+    let session = lifecycle::spawn_session(state, params).await.map_err(err_to_string)?;
+    let sid = session.session_id.clone();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let (project_id, created_new) = state.settings.upsert_project_for_cwd(&PathBuf::from(cwd), &now);
+    if created_new {
+        state.notifier.publish("project_created", serde_json::json!({
+            "project_id": project_id,
+            "cwd": cwd,
+            "now": now,
+        }));
+    }
+    state.registry.upsert_interactive(&sid, &PathBuf::from(cwd), &project_id, &now);
+    state.registry.set_model_effort(&sid, model, effort);
+    state.registry.set_account(&sid, &session.account_id);
+    crate::sessions::chat_config::record(&sid, model, effort);
+    crate::sessions::chat_config::set_account(&sid, &session.account_id);
+    crate::sessions::persistence::save_snapshot_default(&state.registry);
+
+    lifecycle::send_message(&session, prompt).await.map_err(|e| e.to_string())?;
+    state.registry.set_awaiting(&sid, None);
+    state.registry.set_busy(&sid, true);
+    state.notifier.publish("instances_changed", serde_json::json!({"instances": state.registry.list()}));
+    Ok(())
+}
+
+fn err_to_string(e: LifecycleError) -> String {
+    e.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::daemon::session::new_session_map;
+    use crate::daemon::settings_cache::SettingsCache;
+    use crate::sessions::scheduled_items::{Recurrence, RecurrenceRule};
+    use crate::types::Settings;
+
+    fn test_state() -> Arc<DaemonState> {
+        DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()))
+    }
+
+    fn make_item(fire_at: DateTime<Utc>, recurrence: Option<Recurrence>) -> ScheduledItem {
+        ScheduledItem::new(
+            ScheduledKind::Message { session_id: "ghost-session".into(), cwd: "Z:\\does\\not\\exist".into() },
+            "hi".into(),
+            fire_at.to_rfc3339(),
+            recurrence,
+        )
+    }
+
+    // compute_missed / compute_fired are pure (no store I/O), so these run
+    // against in-memory ScheduledItem values only - never touching the real
+    // scheduled-items.json.
+
+    #[test]
+    fn compute_missed_one_shot_goes_terminal() {
+        let item = make_item(Utc::now() - chrono::Duration::hours(3), None);
+        let updated = compute_missed(item, Utc::now());
+        assert_eq!(updated.status, ScheduledStatus::Missed);
+        assert!(updated.last_result.is_some());
+    }
+
+    #[test]
+    fn compute_missed_recurring_resets_to_pending_with_new_fire_at() {
+        let rec = Recurrence { time: "09:00".into(), rule: RecurrenceRule::Daily };
+        let old_fire_at = Utc::now() - chrono::Duration::hours(5);
+        let item = make_item(old_fire_at, Some(rec));
+        let now = Utc::now();
+        let updated = compute_missed(item, now);
+        assert_eq!(updated.status, ScheduledStatus::Pending, "recurring item resets to Pending after a miss");
+        assert_ne!(updated.fire_at, old_fire_at.to_rfc3339(), "fire_at must advance to the next occurrence");
+    }
+
+    #[tokio::test]
+    async fn compute_fired_one_shot_failure_goes_failed_with_reason() {
+        let state = test_state();
+        let item = make_item(Utc::now() - chrono::Duration::minutes(1), None);
+        let now = Utc::now();
+        let updated = compute_fired(&state, item, now).await;
+        assert!(matches!(updated.status, ScheduledStatus::Failed { .. }), "missing cwd must surface as Failed, not panic");
+        assert!(updated.last_fired_at.is_some());
+        assert!(updated.last_result.is_some());
+    }
+
+    #[tokio::test]
+    async fn compute_fired_recurring_resets_to_pending_even_on_failure() {
+        let state = test_state();
+        let rec = Recurrence { time: "09:00".into(), rule: RecurrenceRule::Daily };
+        let old_fire_at = Utc::now() - chrono::Duration::minutes(1);
+        let item = make_item(old_fire_at, Some(rec));
+        let now = Utc::now();
+        let updated = compute_fired(&state, item, now).await;
+        assert_eq!(updated.status, ScheduledStatus::Pending, "recurring item stays Pending regardless of fire outcome");
+        assert_ne!(updated.fire_at, old_fire_at.to_rfc3339());
+    }
+
+    #[tokio::test]
+    async fn fire_message_unknown_session_and_missing_cwd_fails_with_reason() {
+        let state = test_state();
+        let result = fire_message(&state, "no-such-session", "Z:\\does\\not\\exist", "hi").await;
+        assert!(result.is_err(), "respawn of a session with a missing cwd must fail, not panic");
+    }
+
+    #[tokio::test]
+    async fn fire_now_unknown_id_is_a_noop() {
+        let state = test_state();
+        // Must not panic even though the id was never created. Read-only
+        // (scheduled_items::get on a nonexistent id never writes), so this
+        // is safe against the real data dir too.
+        fire_now(&state, "totally-unknown-id").await;
+    }
+}

@@ -97,6 +97,14 @@ pub struct Settings {
     /// `get_accounts_setup_prompt_state` requires BOTH conditions.
     #[serde(default)]
     pub accounts_setup_prompt_dismissed: bool,
+    /// Grace window (seconds) for a missed scheduled item: on daemon
+    /// wake/tick, a Pending item whose `fire_at` is at most this many
+    /// seconds in the past still fires; older ones are marked `Missed`
+    /// instead (see `daemon::schedule`). `None` (unset) means the default of
+    /// 3600 (1h) applies - computed at the read site, matching
+    /// `poll_interval_secs`'s `.max(60)` idiom rather than a stored default.
+    #[serde(default)]
+    pub schedule_grace_secs: Option<u64>,
     /// Everything the dashboard persists that Rust doesn't need to read —
     /// project aliases, blacklist, colour thresholds, themes, etc. Stored
     /// verbatim so renames / hides / theme changes actually stick.
@@ -132,6 +140,7 @@ impl Default for Settings {
             remote_access_enabled: false,
             default_account_id: None,
             accounts_setup_prompt_dismissed: false,
+            schedule_grace_secs: None,
             extra: serde_json::Map::new(),
         }
     }
