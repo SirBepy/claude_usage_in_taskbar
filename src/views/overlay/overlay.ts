@@ -61,6 +61,20 @@ function readOverlayOpacity(settings: SettingsShape): number {
   return Math.max(0, Math.min(1, n));
 }
 
+/** Mirror the user's chosen theme/mode onto this window's <html>. The overlay
+ * skips initBoot(), so it never runs boot.ts's applyThemeFromSettings and would
+ * otherwise stay stuck on overlay.html's static `data-theme="void"` default.
+ * Replicated (not imported) to keep boot.ts's heavy view graph out of the
+ * overlay chunk (see overlay-main.ts). Runs from refresh(), which fires on both
+ * initial render and the settings-changed path, so live theme switches follow. */
+function applyOverlayTheme(settings: SettingsShape): void {
+  const fullId = (settings.theme as string) || "void";
+  const isLight = fullId.endsWith("-light");
+  const el = document.documentElement;
+  el.dataset.theme = isLight ? fullId.replace("-light", "") : fullId;
+  el.dataset.mode = isLight ? "light" : "dark";
+}
+
 export async function renderOverlay(root: HTMLElement): Promise<() => void> {
   // Transparency is driven purely by the per-card `.oc-row` hover reveal (see
   // overlay.css): off-hover the cards carry no background so the whole window
@@ -95,6 +109,7 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
 
   async function refresh(): Promise<void> {
     const settings = getSettings();
+    applyOverlayTheme(settings);
     document.documentElement.style.setProperty("--overlay-opacity", `${readOverlayOpacity(settings) * 100}%`);
     if (!rowsEl) return;
     const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
