@@ -56,8 +56,6 @@ body.oc-dragging .oc-grip { cursor: grabbing; opacity: 0.9; }
 .oc-row {
   position: relative;
   background: transparent;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   border: 1px solid transparent;
   border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
   border-radius: 12px;
@@ -148,8 +146,6 @@ body.oc-dragging .oc-grip { cursor: grabbing; opacity: 0.9; }
  * against the transparent window instead of floating text. */
 .oc-empty {
   background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
-  backdrop-filter: blur(11px);
-  -webkit-backdrop-filter: blur(11px);
   border: 1px solid var(--color-border, #2e2e40);
   border-radius: 12px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
