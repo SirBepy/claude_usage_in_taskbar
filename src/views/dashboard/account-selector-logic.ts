@@ -7,12 +7,9 @@
 // pre-resolved), so it falls back to the first registered account instead of
 // returning null when no default is set.
 
-export interface AccountLite {
-  id: string;
-  label: string;
-  icon: string;
-  colour: string;
-}
+import type { AccountLite } from "../../shared/account-chip";
+
+export type { AccountLite };
 
 /** Which account card is selected by default when the dashboard mounts: the
  * global default account if still registered, else the first account in

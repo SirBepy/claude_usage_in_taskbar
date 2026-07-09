@@ -4,12 +4,9 @@
 // tests/account-picker-logic.test.mjs). model-effort-modal.ts is the only
 // caller. See docs/multi-account/04-project-binding.md.
 
-export interface AccountLite {
-  id: string;
-  label: string;
-  icon: string;
-  colour: string;
-}
+import type { AccountLite } from "../../shared/account-chip";
+
+export type { AccountLite };
 
 /**
  * Resolve which account a new chat in this project should pre-select:

@@ -12,6 +12,17 @@ export interface AccountChipInfo {
   label: string;
 }
 
+/** The 4-field "lite account" shape shared by the dashboard account-selector,
+ * new-chat account picker, and overlay row mapping - each only needs id +
+ * the display fields, not the full `Account` type from shared/api.ts. One
+ * declaration here, imported everywhere, instead of three per-view copies. */
+export interface AccountLite {
+  id: string;
+  label: string;
+  icon: string;
+  colour: string;
+}
+
 /** Coloured circular icon badge for an account. Pair with `.account-chip-css`
  * (imported by the caller) for the `.account-icon-badge` rule. */
 export function accountIconBadgeHtml(a: AccountChipInfo): string {

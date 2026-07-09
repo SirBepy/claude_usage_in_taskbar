@@ -6,16 +6,12 @@
 // HTML for their own (differently-shaped) markup.
 
 import { computeSafePacePct, fmtResetDisplay } from "../../shared/formatters";
+import type { AccountLite } from "../../shared/account-chip";
 
 const SESSION_WINDOW_MS = 5 * 3_600_000;
 const WEEKLY_WINDOW_MS = 7 * 24 * 3_600_000;
 
-export interface OverlayAccountLite {
-  id: string;
-  label: string;
-  colour: string;
-  icon: string;
-}
+export type OverlayAccountLite = AccountLite;
 
 export interface OverlayUsageLite {
   session_pct: number | null;
