@@ -13,7 +13,7 @@
 // relocated into this menu; they stay dormant in #view-more-host.
 
 import type { TerminalAction } from "../../types/ipc.generated";
-import { positionDropdown } from "./position-dropdown";
+import { positionDropdown, positionSubmenu } from "./position-dropdown";
 import {
   armOrToggleWhenDone,
   cancelWhenDone,
@@ -146,19 +146,7 @@ function openViewMoreMenu(btn: HTMLButtonElement): void {
     _whenDoneSubMenu = sub;
 
     // Position the submenu to the right (or left if no room) of the parent item.
-    const itemRect = whenDoneParent.getBoundingClientRect();
-    const subRect = sub.getBoundingClientRect();
-    let left = itemRect.right + 4;
-    if (left + subRect.width > window.innerWidth - 4) {
-      left = itemRect.left - subRect.width - 4;
-    }
-    let top = itemRect.top;
-    if (top + subRect.height > window.innerHeight - 4) {
-      top = window.innerHeight - subRect.height - 4;
-    }
-    if (top < 4) top = 4;
-    sub.style.left = `${left}px`;
-    sub.style.top = `${top}px`;
+    positionSubmenu(sub, whenDoneParent);
 
     sub.addEventListener("click", (ev) => {
       const target = ev.target as HTMLElement;

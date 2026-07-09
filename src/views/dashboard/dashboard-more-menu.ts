@@ -7,7 +7,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { getWidget } from "./widget-registry";
 import type { DashboardWidgetEntry } from "./widget-registry";
-import { positionDropdown } from "../sessions/position-dropdown";
+import { positionDropdown, positionSubmenu } from "../sessions/position-dropdown";
 import { registerMenuCloser, closeAllMenus } from "../sessions/menu-registry";
 
 export interface DashMoreMenuDeps {
@@ -115,13 +115,5 @@ function openAddWidgetSubmenu(parent: HTMLElement, deps: DashMoreMenuDeps): void
   document.body.appendChild(sub);
   dashSubmenu = sub;
 
-  const itemRect = parent.getBoundingClientRect();
-  const subRect = sub.getBoundingClientRect();
-  let left = itemRect.right + 4;
-  if (left + subRect.width > window.innerWidth - 4) left = itemRect.left - subRect.width - 4;
-  let top = itemRect.top;
-  if (top + subRect.height > window.innerHeight - 4) top = window.innerHeight - subRect.height - 4;
-  if (top < 4) top = 4;
-  sub.style.left = `${left}px`;
-  sub.style.top = `${top}px`;
+  positionSubmenu(sub, parent);
 }

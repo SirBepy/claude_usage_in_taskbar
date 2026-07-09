@@ -28,3 +28,21 @@ export function positionDropdown(
     menu.style.right = "";
   }
 }
+
+/** Position a submenu to the right (or left if no room) of its parent item,
+ *  clamped to the viewport. */
+export function positionSubmenu(sub: HTMLElement, parent: HTMLElement): void {
+  const itemRect = parent.getBoundingClientRect();
+  const subRect = sub.getBoundingClientRect();
+  let left = itemRect.right + 4;
+  if (left + subRect.width > window.innerWidth - 4) {
+    left = itemRect.left - subRect.width - 4;
+  }
+  let top = itemRect.top;
+  if (top + subRect.height > window.innerHeight - 4) {
+    top = window.innerHeight - subRect.height - 4;
+  }
+  if (top < 4) top = 4;
+  sub.style.left = `${left}px`;
+  sub.style.top = `${top}px`;
+}
