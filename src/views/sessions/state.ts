@@ -2,6 +2,7 @@ import type { Instance, ProtocolState } from "../../types/ipc.generated";
 import type { ChatRenderer } from "../../shared/chat/chat-renderer";
 import type { Composer } from "../../shared/chat/composer";
 import type { HeldMessages } from "../../shared/chat/held-messages";
+import type { ScheduledChip } from "../../shared/chat/scheduled-chip";
 import { setSelectedSessionId } from "./permission-modal";
 import type { SessionStatusbar } from "./session-statusbar";
 import type { SessionConfig } from "./model-effort-modal";
@@ -54,6 +55,10 @@ export interface SessionsState {
    * bundled into one send). Per-session held set survives session switches;
    * re-attached to the active pane on every mount. In-memory only. */
   heldMessages: HeldMessages | null;
+  /** Per-chat scheduled-message chip for the active pane. Re-created on every
+   * mount (unlike heldMessages, it holds no cross-session state worth
+   * preserving); destroyed on unmount. In-memory only. */
+  scheduledChip: ScheduledChip | null;
   unlistenInstances: (() => void) | null;
   pendingNewSession: PendingNewSession | null;
   parkedDrafts: ParkedDraft[];
@@ -94,6 +99,7 @@ export function createInitialState(mountId: number): SessionsState {
     renderer: null,
     composer: null,
     heldMessages: null,
+    scheduledChip: null,
     unlistenInstances: null,
     pendingNewSession: null,
     parkedDrafts: [],

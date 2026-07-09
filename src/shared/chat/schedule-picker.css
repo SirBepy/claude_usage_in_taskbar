@@ -1,0 +1,150 @@
+/* Schedule picker popover: body-appended, position:fixed (see
+   views/sessions/statusbar-popovers.ts for the same idiom). */
+
+.schedule-picker-popover {
+  position: fixed;
+  z-index: 600;
+  width: 260px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-picker-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+  padding: 0 2px 2px;
+}
+
+.schedule-picker-back {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.schedule-picker-back:hover {
+  color: var(--color-text);
+}
+
+.schedule-picker-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.schedule-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--color-surface-alt);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.schedule-picker-row:hover {
+  border-color: var(--color-primary);
+}
+
+.schedule-picker-row-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedule-picker-row-abs {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.schedule-picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+
+.schedule-picker-field input,
+.schedule-picker-field select {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.schedule-picker-field-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedule-picker-field-inline input {
+  width: 64px;
+}
+
+.schedule-picker-weekdays {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.schedule-picker-weekday {
+  flex: 1;
+  min-width: 30px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 5px 0;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.schedule-picker-weekday.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.schedule-picker-confirm {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 2px;
+  font-family: inherit;
+}
+
+.schedule-picker-confirm:hover {
+  filter: brightness(1.08);
+}

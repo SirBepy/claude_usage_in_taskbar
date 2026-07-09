@@ -1,0 +1,137 @@
+/* Per-chat scheduled-message chip + dropdown. Sibling slot to
+   .session-thinking (not inside it — held-messages owns that bar's chipSlot
+   and this must never fight it for the same DOM). */
+
+.scheduled-chip-slot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 20px 0;
+}
+
+.scheduled-chip-slot:empty {
+  display: none;
+}
+
+.scheduled-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.scheduled-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.scheduled-chip .scheduled-chip-count {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.scheduled-dropdown {
+  position: fixed;
+  z-index: 500;
+  width: 300px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.scheduled-dropdown-empty {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  padding: 10px;
+  text-align: center;
+}
+
+.scheduled-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--color-surface-alt);
+}
+
+.scheduled-row-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.scheduled-row-preview {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduled-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.scheduled-row-when {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+.scheduled-row-badge {
+  font-size: 0.64rem;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.scheduled-row-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.scheduled-row-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.scheduled-row-btn:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.scheduled-row-delete:hover {
+  color: var(--color-danger);
+}

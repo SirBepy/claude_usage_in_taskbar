@@ -4,8 +4,9 @@
 // command and converts attachments to <file:path> mention text on send.
 
 import { invoke } from "../ipc";
-import type { ContentBlock } from "../../types/ipc.generated";
+import type { ContentBlock, Recurrence } from "../../types/ipc.generated";
 import { mimeToIcon } from "./attachment-hydrator";
+import { openSchedulePicker } from "./schedule-picker";
 import { CaretSuggestPopup } from "./caret-popup/popup";
 import { SlashProvider } from "./caret-popup/providers/slash";
 import { FileProvider } from "./caret-popup/providers/file";
@@ -59,6 +60,10 @@ export interface ComposerOptions {
   flushHeldWithDraft?: (draftBlocks: ContentBlock[]) => void;
   /** Fired on draft input/blur so a deferred auto-flush can retry. */
   onDraftActivity?: () => void;
+  /** Schedule the current draft to fire later instead of sending it now. When
+   * omitted, the split-Send chevron doesn't render. The composer builds the
+   * blocks from the draft and clears itself before calling. */
+  onSchedule?: (blocks: ContentBlock[], fireAtUtcIso: string, recurrence: Recurrence | null) => Promise<void> | void;
 }
 
 let _composerInstanceCount = 0;
@@ -79,6 +84,7 @@ export class Composer {
   private highlightEl: HTMLElement | null = null;
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
+  private scheduleBtn: HTMLButtonElement | null = null;
   private slash: SlashProvider | null = null;
   private file: FileProvider | null = null;
   private popup: CaretSuggestPopup | null = null;
@@ -239,9 +245,15 @@ export class Composer {
           <button class="composer-mic icon-btn" ${this.disabled ? "disabled" : ""} title="Voice dictation (tap to start/stop)">
             <i class="ph ph-microphone"></i>
           </button>
-          <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
-            <i class="ph ph-paper-plane-right"></i>
-          </button>
+          <div class="composer-send-split">
+            <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
+              <i class="ph ph-paper-plane-right"></i>
+            </button>
+            ${this.opts.onSchedule ? `
+            <button class="composer-send-chevron icon-btn" ${this.disabled ? "disabled" : ""} title="Schedule message">
+              <i class="ph ph-caret-down"></i>
+            </button>` : ""}
+          </div>
         </div>
       </div>
       <input type="file" class="composer-file-input" accept="image/*,application/pdf,text/plain,.log,.md,.csv,.json" multiple hidden>
@@ -250,6 +262,7 @@ export class Composer {
     this.highlightEl = this.root.querySelector<HTMLElement>(".composer-highlight");
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
+    this.scheduleBtn = this.root.querySelector<HTMLButtonElement>(".composer-send-chevron");
     this.micBtn = this.root.querySelector<HTMLButtonElement>(".composer-mic");
     this.attachBtn = this.root.querySelector<HTMLButtonElement>(".composer-attach");
     this.fileInput = this.root.querySelector<HTMLInputElement>(".composer-file-input");
@@ -271,6 +284,7 @@ export class Composer {
         this.updateHighlight();
         this.popup?.handleInput();
         this.persistDraft();
+        this.updateScheduleBtnState();
         this.opts.onDraftActivity?.();
       });
       this.textarea.addEventListener("blur", () => this.opts.onDraftActivity?.());
@@ -278,6 +292,19 @@ export class Composer {
         if (this.highlightEl && this.textarea) this.highlightEl.scrollTop = this.textarea.scrollTop;
       });
       this.sendBtn?.addEventListener("click", () => void this.send());
+      this.scheduleBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (this.disabled || this.isDraftEmpty() || !this.scheduleBtn) return;
+        openSchedulePicker({
+          anchor: this.scheduleBtn,
+          onConfirm: (result) => {
+            const text = (this.textarea?.value ?? "").trim();
+            const blocks = this.buildBlocks(text);
+            this.clearComposer();
+            void this.opts.onSchedule?.(blocks, result.fireAtUtcIso, result.recurrence);
+          },
+        });
+      });
       this.attachBtn?.addEventListener("click", () => {
         if (!this.fileInput) return;
         this.fileInput.value = "";
@@ -307,6 +334,13 @@ export class Composer {
     }
     this.autoResize();
     this.updateHighlight();
+    this.updateScheduleBtnState();
+  }
+
+  /** Chevron is disabled while read-only or the draft (text + attachments +
+   * pasted blocks) is empty — mirrors isDraftEmpty()'s definition of "empty". */
+  private updateScheduleBtnState(): void {
+    if (this.scheduleBtn) this.scheduleBtn.disabled = this.disabled || this.isDraftEmpty();
   }
 
   private autoResize(): void {
@@ -529,6 +563,7 @@ export class Composer {
       div.appendChild(rm);
       this.attachmentsEl!.appendChild(div);
     });
+    this.updateScheduleBtnState();
   }
 
   private builtinCtx(): BuiltinContext {

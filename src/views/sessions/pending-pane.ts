@@ -5,8 +5,9 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { Composer } from "../../shared/chat/composer";
 import { HeldMessages } from "../../shared/chat/held-messages";
-import type { ChatEvent, ContentBlock } from "../../types/ipc.generated";
+import type { ChatEvent, ContentBlock, ScheduledItem, ScheduledKind } from "../../types/ipc.generated";
 import { blocksToText } from "../../shared/chat/content-blocks";
+import { formatFireAt } from "../../shared/chat/schedule-picker";
 import { state, setActiveSession } from "./state";
 import { isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
 import { projectName, sessionSubtitle } from "./sessions-helpers";
@@ -179,6 +180,30 @@ export async function renderPendingPane(
       hasHeld: () => !!state.heldMessages?.hasItemsForActive(),
       flushHeldWithDraft: (draftBlocks) => { void state.heldMessages?.flushHeldWithDraft(draftBlocks); },
       onDraftActivity: () => state.heldMessages?.notifyDraftActivity(),
+      // Phase 3: schedule a brand-new chat instead of starting one now. Always
+      // ScheduledKind::NewChat — this pane's job is exactly that, regardless of
+      // whether the first message has already started a real session (started
+      // stays irrelevant here; the pane's own cwd/model/effort/account are what
+      // a fresh spawn at fire time needs, not the mid-conversation state).
+      onSchedule: (blocks: ContentBlock[], fireAtUtcIso: string, recurrence) => {
+        const prompt = blocksToText(blocks);
+        if (!prompt.trim()) return;
+        const kind: ScheduledKind = {
+          type: "new_chat",
+          cwd: project.path,
+          model: config.model,
+          effort: config.effort,
+          account_id: config.accountId ?? null,
+        };
+        void invoke<ScheduledItem>("schedule_create", { kind, prompt, fireAt: fireAtUtcIso, recurrence })
+          .then((item) => {
+            showToast(`Scheduled new chat for ${formatFireAt(item.fire_at)}`);
+          })
+          .catch((err) => {
+            console.error("[sessions] schedule_create failed", err);
+            showToast(`Failed to schedule: ${err}`);
+          });
+      },
       onSend: async (blocks: ContentBlock[]) => {
         if (state.mountId !== myMount) return;
         const promptText = blocksToText(blocks);

@@ -161,6 +161,28 @@
   flex-direction: column;
 }
 
+/* Split-Send: one visual control, two hit areas (Send | schedule chevron). */
+.composer-send-split {
+  display: flex;
+  align-items: stretch;
+}
+
+.composer-send-split .composer-send {
+  border-radius: 6px 0 0 6px;
+}
+
+.composer-send-split .composer-send-chevron {
+  width: 16px;
+  border-radius: 0 6px 6px 0;
+  border-left: 1px solid var(--color-border);
+  font-size: 0.7rem;
+}
+
+.composer-send-split .composer-send-chevron:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Post-send attachment chips (inside user messages) */
 
 .attachment-chip {

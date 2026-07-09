@@ -5,8 +5,12 @@ import { sessionEvents } from "../../shared/chat/event-store";
 import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { Composer } from "../../shared/chat/composer";
 import { HeldMessages } from "../../shared/chat/held-messages";
+import { ScheduledChip } from "../../shared/chat/scheduled-chip";
+import { formatFireAt } from "../../shared/chat/schedule-picker";
+import { blocksToText } from "../../shared/chat/content-blocks";
+import { showToast } from "../../shared/toast";
 import { setFileEditsProvider } from "../../shared/chat/file-viewer";
-import type { ChatEvent, ContentBlock, Instance } from "../../types/ipc.generated";
+import type { ChatEvent, ContentBlock, Instance, ScheduledItem, ScheduledKind } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import { getSettings } from "../../shared/state";
 import {
@@ -150,6 +154,8 @@ export function dismountActivePane(opts?: { rerenderSidebar?: boolean }): void {
   state.renderer = null;
   state.composer?.destroy();
   state.composer = null;
+  state.scheduledChip?.destroy();
+  state.scheduledChip = null;
   state.changesPanel?.unmount();
   state.changesPanel = null;
   state.activeChatActions = null;
@@ -250,6 +256,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     readOnly ? `<div class="readonly-banner"><i class="ph ph-eye"></i> <span class="readonly-banner-text">Read-only session</span><button type="button" class="refresh-btn" title="Reload messages"><i class="ph ph-arrows-clockwise"></i></button><button type="button" class="takeover-btn">Take Over</button></div>` : "",
     `<div class="session-messages"></div>`,
     `<div class="session-thinking" hidden><span class="thinking-text"></span><span class="held-chip-slot"></span><button class="thinking-pause-btn icon-btn" title="Stop turn" hidden><i class="ph ph-stop-circle"></i></button></div>`,
+    `<div class="scheduled-chip-slot"></div>`,
     `<div class="session-composer"></div>`,
   ].join("");
   pane.insertBefore(header.el, pane.firstChild);
@@ -488,9 +495,27 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       hasHeld: () => !!state.heldMessages?.hasItemsForActive(),
       flushHeldWithDraft: (draftBlocks) => { void state.heldMessages?.flushHeldWithDraft(draftBlocks); },
       onDraftActivity: () => state.heldMessages?.notifyDraftActivity(),
+      onSchedule: (blocks, fireAtUtcIso, recurrence) => {
+        const prompt = blocksToText(blocks);
+        if (!prompt.trim()) return;
+        const kind: ScheduledKind = { type: "message", session_id: sess.session_id, cwd: String(sess.cwd ?? ".") };
+        void invoke<ScheduledItem>("schedule_create", { kind, prompt, fireAt: fireAtUtcIso, recurrence })
+          .then((item) => {
+            showToast(`Scheduled for ${formatFireAt(item.fire_at)}`);
+            void state.scheduledChip?.refresh();
+          })
+          .catch((err) => {
+            console.error("[sessions] schedule_create failed", err);
+            showToast(`Failed to schedule: ${err}`);
+          });
+      },
     });
     state.composer = composer;
     composer.setSessionId(sessionId, { readOnly });
+
+    state.scheduledChip?.destroy();
+    const scheduledChipSlot = pane.querySelector<HTMLElement>(".scheduled-chip-slot");
+    state.scheduledChip = scheduledChipSlot ? new ScheduledChip({ root: scheduledChipSlot, sessionId }) : null;
     if (state.renderer) {
       state.renderer.onSendText = (text) => { void sendBundle([{ type: "text", text }]); };
     }
