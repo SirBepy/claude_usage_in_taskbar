@@ -9,6 +9,13 @@
 let modulePromise: Promise<typeof import("shiki/bundle/full")> | null = null;
 
 export function loadShiki(): Promise<typeof import("shiki/bundle/full")> {
-  if (!modulePromise) modulePromise = import("shiki/bundle/full");
+  if (!modulePromise) {
+    modulePromise = import("shiki/bundle/full").catch((err) => {
+      // Don't cache a rejection - a later call should retry the import
+      // instead of leaving highlighting dead until window reload.
+      modulePromise = null;
+      throw err;
+    });
+  }
   return modulePromise;
 }
