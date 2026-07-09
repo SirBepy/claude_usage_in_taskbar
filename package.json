@@ -17,6 +17,7 @@
     "test:e2e:flow": "wdio run e2e/wdio.conf.js --spec e2e/specs/chat-flow.e2e.js",
     "test:e2e:news": "wdio run e2e/wdio.conf.js --spec e2e/specs/news-redesign.e2e.js",
     "test:e2e:accounts": "wdio run e2e/wdio.conf.js --spec e2e/specs/multi-account.e2e.js",
+    "test:e2e:close": "wdio run e2e/wdio.conf.js --spec e2e/specs/close-teardown.e2e.js",
     "kill-orphans": "node scripts/kill-dev-orphans.mjs"
   },
   "devDependencies": {
