@@ -1,0 +1,291 @@
+//! End-to-end integration tests for the scheduling fire path
+//! (`daemon::schedule`'s tick loop + `schedule_fire_now`).
+//!
+//! Manual run only:
+//!   cargo test --manifest-path src-tauri/Cargo.toml --test daemon_schedule_e2e -- --ignored --nocapture
+//!
+//! These tests SPAWN A REAL CLAUDE PROCESS (haiku/low, ~5-token prompts) and
+//! burn the user's subscription quota. Each test spawns its own isolated
+//! daemon instance (distinct named pipe + lockfile via `CC_DAEMON_INSTANCE`)
+//! exactly like `daemon_session_e2e.rs` - never the user's real daemon.
+//!
+//! CRITICAL: `scheduled-items.json` lives in the SHARED app-data dir
+//! (`dirs::data_dir()/claude-conductor/`) - the same file the user's real
+//! installation uses. Every item this file creates is deleted via a
+//! `Drop`-guard (`ScheduledItemGuard`) so cleanup runs even if an assertion
+//! panics partway through. Only the exact ids created here are ever touched.
+
+#![cfg(windows)]
+
+use claude_conductor_lib::daemon_client::PersistentClient;
+use claude_conductor_lib::sessions::scheduled_items::{self, ScheduledStatus};
+use serde_json::json;
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+fn daemon_exe() -> std::path::PathBuf {
+    // Respects `CARGO_TARGET_DIR` if the environment sets it (e.g. to avoid
+    // colliding with a currently-running daemon locking the default
+    // `target/debug/cc-conductor-daemon.exe`); falls back to the default
+    // `<cwd>/target/debug` otherwise, matching `daemon_session_e2e.rs`.
+    let mut p = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let mut p = std::env::current_dir().unwrap();
+            p.push("target");
+            p
+        });
+    p.push("debug");
+    p.push("cc-conductor-daemon.exe");
+    p
+}
+
+/// Kills the spawned test-daemon child on drop (including on a mid-test
+/// panic from a failed assertion), so a failing test never leaves an orphan
+/// `cc-conductor-daemon.exe` running under this instance label.
+struct ChildGuard(std::process::Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Deletes a `scheduled-items.json` entry by id on drop, even if the test
+/// panics on an assertion partway through. Uses the sync store helper
+/// directly (not an RPC round trip) so cleanup still works even if the
+/// daemon connection itself is what broke.
+struct ScheduledItemGuard {
+    id: String,
+}
+
+impl Drop for ScheduledItemGuard {
+    fn drop(&mut self) {
+        if self.id.is_empty() {
+            return;
+        }
+        let existed = scheduled_items::delete(&self.id);
+        eprintln!("cleanup: schedule_delete({}) existed={existed}", self.id);
+    }
+}
+
+/// Builds and spawns an isolated test daemon under `instance`, and returns a
+/// guard (kills the child on drop) plus the pipe address to connect to.
+async fn spawn_test_daemon(instance: &str) -> (ChildGuard, String) {
+    let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+    let pipe_name = format!(r"\\.\pipe\cc-conductor-daemon-{user}-{instance}");
+    if let Some(app_data) = dirs::data_dir() {
+        let lock = app_data.join("claude-conductor").join(format!("daemon-{instance}.lock"));
+        let _ = std::fs::remove_file(&lock);
+    }
+
+    let build = Command::new("cargo")
+        .args(["build", "--bin", "cc-conductor-daemon"])
+        .status()
+        .expect("cargo build");
+    assert!(build.success());
+
+    let exe = daemon_exe();
+    let child = Command::new(&exe)
+        .env("CC_DAEMON_INSTANCE", instance)
+        .env("CC_DAEMON_NO_AUTOSTART", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn daemon");
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    (ChildGuard(child), pipe_name)
+}
+
+/// Drains notifications on `rx` up to `timeout`, returning true as soon as an
+/// `assistant_message`, `turn_usage`, or `session_ended` `ChatEvent` variant
+/// is observed. Mirrors `daemon_session_e2e.rs`'s drain loop exactly (same
+/// internally-tagged `/params/event/type` pointer).
+async fn drain_for_reply(rx: &mut tokio::sync::mpsc::Receiver<serde_json::Value>, timeout: Duration) -> (usize, bool) {
+    let mut events_seen = 0usize;
+    let mut saw_reply = false;
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+            Ok(Some(notif)) => {
+                events_seen += 1;
+                let variant = notif
+                    .pointer("/params/event")
+                    .and_then(|v| v.as_object())
+                    .and_then(|o| o.get("type"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                eprintln!("notif #{events_seen}: variant={variant:?}");
+                if let Some(k) = variant.as_deref() {
+                    if k == "assistant_message" || k == "turn_usage" || k == "session_ended" {
+                        saw_reply = true;
+                        if k == "turn_usage" || k == "session_ended" {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(None) => break,
+            Err(_) => {
+                eprintln!("timeout waiting for next event; events_seen={events_seen}");
+                if saw_reply {
+                    break;
+                }
+            }
+        }
+    }
+    (events_seen, saw_reply)
+}
+
+const TINY_PROMPT: &str = "reply with the literal word OK and stop.";
+
+/// Test 1: a scheduled `Message` item, due immediately, must be picked up by
+/// the daemon's autonomous ~30s tick loop (NOT `fire_now`) and delivered into
+/// the live session.
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn scheduled_message_fires_via_tick_loop() {
+    const INSTANCE: &str = "test-schedule-msg";
+    let (_daemon_guard, pipe_name) = spawn_test_daemon(INSTANCE).await;
+
+    let client = PersistentClient::connect(&pipe_name).await.expect("connect");
+
+    let cwd = std::env::temp_dir();
+    let cwd_str = cwd.to_string_lossy().to_string();
+    let session_id = client
+        .start_session(&cwd_str, "haiku", "low", None, false, None)
+        .await
+        .expect("start_session");
+    eprintln!("started session {session_id}");
+
+    // Due immediately (now), well within the default 3600s grace window, so
+    // the tick loop claims and fires it rather than marking it Missed.
+    let fire_at = chrono::Utc::now().to_rfc3339();
+    let kind = json!({"type": "message", "session_id": session_id, "cwd": cwd_str});
+    let created = client
+        .schedule_create(kind, TINY_PROMPT, &fire_at, None)
+        .await
+        .expect("schedule_create");
+    let item_id = created["id"].as_str().expect("created item has id").to_string();
+    eprintln!("scheduled item {item_id} fire_at={fire_at}");
+    let _cleanup = ScheduledItemGuard { id: item_id.clone() };
+
+    let mut rx = client.attach_session(&session_id).await.expect("attach");
+
+    // Do NOT call fire_now here - the point is to prove the autonomous tick
+    // loop (TICK_SECS=30) delivers it on its own.
+    let (events_seen, saw_reply) = drain_for_reply(&mut rx, Duration::from_secs(120)).await;
+    eprintln!("---- TEST 1 RESULT ----");
+    eprintln!("events_seen: {events_seen}, saw_reply: {saw_reply}");
+
+    // finish_fire may land moments after the send goes out, so poll briefly
+    // for the item to flip to Sent rather than reading it exactly once.
+    let mut final_status = scheduled_items::get(&item_id).map(|i| i.status);
+    let poll_deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !matches!(final_status, Some(ScheduledStatus::Sent)) && std::time::Instant::now() < poll_deadline {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        final_status = scheduled_items::get(&item_id).map(|i| i.status);
+    }
+    eprintln!("final scheduled item status: {final_status:?}");
+
+    let _ = client.end_session(&session_id).await;
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert!(
+        saw_reply,
+        "expected an assistant_message/turn_usage/session_ended event fired by the tick loop (events_seen={events_seen})"
+    );
+    assert!(
+        matches!(final_status, Some(ScheduledStatus::Sent)),
+        "expected the scheduled item to end in Sent status, got {final_status:?}"
+    );
+}
+
+/// Test 2: `schedule_fire_now` on a `NewChat` item (scheduled far in the
+/// future so the tick loop never claims it) must spawn a brand-new session
+/// immediately and deliver the prompt into it.
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn fire_now_spawns_scheduled_new_chat() {
+    const INSTANCE: &str = "test-schedule-newchat";
+    let (_daemon_guard, pipe_name) = spawn_test_daemon(INSTANCE).await;
+
+    let client = PersistentClient::connect(&pipe_name).await.expect("connect");
+
+    let cwd = std::env::temp_dir();
+    let cwd_str = cwd.to_string_lossy().to_string();
+
+    let prior_ids: std::collections::HashSet<String> = client
+        .list_instances()
+        .await
+        .expect("list_instances (baseline)")
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v["session_id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Far future (+1h): the ~30s tick loop must NOT claim this before
+    // fire_now does.
+    let fire_at = (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339();
+    let kind = json!({
+        "type": "new_chat",
+        "cwd": cwd_str,
+        "model": "haiku",
+        "effort": "low",
+        "account_id": null,
+    });
+    let created = client
+        .schedule_create(kind, TINY_PROMPT, &fire_at, None)
+        .await
+        .expect("schedule_create");
+    let item_id = created["id"].as_str().expect("created item has id").to_string();
+    eprintln!("scheduled item {item_id} fire_at={fire_at} (far future)");
+    let _cleanup = ScheduledItemGuard { id: item_id.clone() };
+
+    client.schedule_fire_now(&item_id).await.expect("schedule_fire_now");
+
+    // fire_now's RPC handler awaits the full fire chain (spawn_session +
+    // registry bookkeeping + send_message) before replying, so the new
+    // session is already registered by the time this call returns.
+    let instances = client.list_instances().await.expect("list_instances (after fire)");
+    let new_session_id = instances
+        .as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .filter_map(|v| v["session_id"].as_str())
+                .find(|sid| !prior_ids.contains(*sid))
+                .map(str::to_string)
+        })
+        .expect("a new session must appear after schedule_fire_now");
+    eprintln!("new session spawned: {new_session_id}");
+
+    // Attach as fast as possible - send_message only writes to the child's
+    // stdin (fire-and-forget), so the real LLM round trip should still be
+    // well ahead of us here.
+    let mut rx = client.attach_session(&new_session_id).await.expect("attach");
+    let (events_seen, saw_reply) = drain_for_reply(&mut rx, Duration::from_secs(120)).await;
+    eprintln!("---- TEST 2 RESULT ----");
+    eprintln!("events_seen: {events_seen}, saw_reply: {saw_reply}");
+
+    let final_status = scheduled_items::get(&item_id).map(|i| i.status);
+    eprintln!("final scheduled item status: {final_status:?}");
+
+    let _ = client.end_session(&new_session_id).await;
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert!(
+        matches!(final_status, Some(ScheduledStatus::Sent)),
+        "expected the scheduled item to end in Sent status, got {final_status:?}"
+    );
+    assert!(
+        saw_reply,
+        "expected an assistant_message/turn_usage/session_ended event from the fire_now-spawned session (events_seen={events_seen})"
+    );
+}
