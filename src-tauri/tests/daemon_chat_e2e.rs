@@ -178,7 +178,7 @@ async fn takeover_manual_promotes_external_to_interactive() {
     client
         .call(
             "takeover_manual",
-            json!({ "manual_pid": fake_pid, "model": "haiku", "effort": "low" }),
+            json!({ "manual_pid": fake_pid, "model": "haiku", "effort": "low", "account_id": "test-acct" }),
         )
         .await
         .expect("takeover_manual");

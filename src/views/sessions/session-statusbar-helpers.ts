@@ -152,4 +152,8 @@ export interface StatusbarOptions {
   hideZero?: boolean;
   /** Called instead of set_session_effort IPC when effort changes (e.g. pending sessions). */
   onEffortChange?: (effort: string) => void;
+  /** Account this session is running under, for the `account` chip. */
+  accountId?: string | null;
+  /** Called when the `account` chip is clicked, to open the change-account picker. */
+  onAccountClick?: () => void;
 }

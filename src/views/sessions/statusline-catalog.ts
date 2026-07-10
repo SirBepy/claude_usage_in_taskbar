@@ -25,6 +25,7 @@ export interface ChipMeta {
 // Static (non-tool) chips. Key is the ChipType id.
 export const STATIC_CHIPS = {
   model:          { section: "model",   icon: "ph-robot",            sample: "Sonnet 4.6", tooltip: "Active model for this session (locked once started)." },
+  account:        { section: "model",   icon: "ph-user-circle",      sample: "Work",       tooltip: "Claude account this chat is running under. Click to move it to a different account." },
   effort:         { section: "model",   icon: "ph-gauge",            sample: "Normal",     tooltip: "Thinking effort. Click the chip in chat to change it." },
   context_pct:    { section: "model",   icon: "ph-stack",            sample: "45%",        tooltip: "Context window used, as a percentage." },
   context_tokens: { section: "model",   icon: "ph-stack",            sample: "90k / 200k", tooltip: "Context window used, raw tokens / window size." },
@@ -77,7 +78,7 @@ export function chipToolName(t: ToolChipType): string {
 /** Default 2-row layout for fresh users: row 1 = the classic field set, row 2 =
  *  the default-visible tool chips (AskUserQuestion + TodoWrite stay off). */
 export const DEFAULT_ROWS: ChipType[][] = [
-  ["model", "effort", "branch", "repo", "context_pct", "thinking", "messages", "turns"],
+  ["model", "account", "effort", "branch", "repo", "context_pct", "thinking", "messages", "turns"],
   ["tool:Read", "tool:Edit", "tool:Grep", "tool:Bash", "tool:Task", "tool:Skill", "tool:Search"],
 ];
 

@@ -16,7 +16,9 @@ import { escapeHtml } from "../escape-html";
 import { api } from "../api";
 import { showToast } from "../toast";
 import { showView } from "../navigation";
-import type { Account, Instance } from "../../types/ipc.generated";
+import type { Instance } from "../../types/ipc.generated";
+import { setCachedAccounts, listCachedAccounts, getCachedAccount, capitalize } from "../accounts-cache";
+export { getCachedAccount, capitalize } from "../accounts-cache";
 
 /** Live predicate for "is this session's account currently blocked by a
  * usage-limit rejection". Purely time-derived (no clear-event): a session
@@ -25,11 +27,6 @@ import type { Account, Instance } from "../../types/ipc.generated";
  * to read the old `rateLimitBanner.interruptedSet`. */
 export function isBlocked(i: Instance): boolean {
   return i.rate_limited_resets_at != null && Number(i.rate_limited_resets_at) * 1000 > Date.now();
-}
-
-/** Title-cases the first letter of an account label ("fibo" -> "Fibo"). */
-export function capitalize(s: string): string {
-  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 /** Local 12h clock, lowercase am/pm, no leading zero ("1:50pm"). */
@@ -65,23 +62,12 @@ function humanWindow(t: string | null): string {
   }
 }
 
-// Module-level accounts cache, shared by the banner controller and by any
-// chat-pane code (composer placeholder) that needs an account's label
-// without threading a fresh async fetch through every render. Refreshed on
-// mount(); accounts change rarely enough that a stale label for a few
-// seconds is a non-issue.
-let accountsCache: Account[] = [];
-
+// Refreshed on mount(); accounts change rarely enough that a stale label for
+// a few seconds is a non-issue. The cache itself lives in accounts-cache.ts
+// (shared with session-statusbar.ts's account chip).
 async function refreshAccountsCache(): Promise<void> {
-  try { accountsCache = await api.listAccounts(); }
+  try { setCachedAccounts(await api.listAccounts()); }
   catch { /* keep whatever we had */ }
-}
-
-/** Synchronous lookup into the shared accounts cache. Null before the first
- * successful refreshAccountsCache() or for an unknown id. */
-export function getCachedAccount(accountId: string | null): Account | null {
-  if (!accountId) return null;
-  return accountsCache.find((a) => a.id === accountId) ?? null;
 }
 
 export interface RateLimitBannerDeps {
@@ -186,7 +172,7 @@ export class RateLimitBanner {
       const countdown = formatCountdown(resetsAtMs - nowMs);
 
       // "Continue on <other>" only when a DIFFERENT account exists.
-      const other = accountsCache.find((a) => a.id !== accountId);
+      const other = listCachedAccounts().find((a) => a.id !== accountId);
       let moveBtn = "";
       if (other) {
         const otherLabel = capitalize(other.label);

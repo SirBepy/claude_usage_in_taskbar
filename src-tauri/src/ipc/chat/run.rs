@@ -243,12 +243,13 @@ pub(crate) fn blocks_to_prompt_text(blocks: &[ContentBlock]) -> String {
 pub async fn register_historical_session(
     session_id: String,
     cwd: String,
+    account_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     super::attachments::validate_session_id(&session_id)?;
     let guard = state.daemon_client.lock().await;
     let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
-    client.register_historical(&session_id, &cwd).await.map_err(|e| e.to_string())?;
+    client.register_historical(&session_id, &cwd, &account_id).await.map_err(|e| e.to_string())?;
     // Sync the instance cache immediately so the Sessions view's list_instances
     // call sees the new entry before the async instances_changed notification
     // arrives via daemon_link (avoids a race that caused the resume to silently

@@ -22,6 +22,7 @@ async function seedSession(cwd) {
     await window.__TAURI__.core.invoke("register_historical_session", {
       sessionId,
       cwd: sessionCwd,
+      accountId: "e2e-seeded-account",
     });
   }, SESSION_ID, cwd);
 }

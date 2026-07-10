@@ -131,6 +131,9 @@
 }
 
 .sb-chip.sb-model { color: var(--color-primary); border-color: rgba(157, 125, 252, 0.2); }
+.sb-chip.sb-account { color: var(--acc, var(--color-primary)); border-color: color-mix(in srgb, var(--acc, var(--color-primary)) 25%, transparent); }
+.sb-chip.sb-account-btn { cursor: pointer; }
+.sb-chip.sb-account-btn:hover { background: color-mix(in srgb, var(--acc, var(--color-primary)) 10%, transparent); }
 .sb-chip.sb-effort { color: #c4b5fd; border-color: rgba(196, 181, 253, 0.25); }
 .sb-chip.sb-branch { color: #4ade80; border-color: rgba(74, 222, 128, 0.2); }
 .sb-chip.sb-repo { color: var(--color-text-muted); }

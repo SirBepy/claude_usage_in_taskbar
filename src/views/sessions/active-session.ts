@@ -29,6 +29,7 @@ import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/p
 import { api } from "../../shared/api";
 import { askConfirm } from "../../shared/confirm";
 import { openChangeCharacterModal } from "../../shared/change-character-modal";
+import { openChangeAccountModal } from "../../shared/change-account-modal";
 import {
   addBackgroundSession,
   removeBackgroundSession,
@@ -136,6 +137,37 @@ export async function changeCharacterForSession(sessionId: string): Promise<void
   const root = document.querySelector<HTMLElement>(".view-sessions");
   const listEl = root?.querySelector<HTMLElement>("#sessions-list");
   if (listEl) renderSidebar(listEl);
+}
+
+/**
+ * Move a session to a different Claude account: opens the account picker,
+ * forks the transcript onto a fresh session id under the picked account
+ * (via `moveSessionToAccount`, the same mechanism the rate-limit banner's
+ * "Continue on <Other>" button uses), then retires the old session.
+ * Shared by the statusline account chip's click handler and the ⋮ "Change
+ * account" menu item.
+ */
+export async function changeAccountForSession(sessionId: string): Promise<void> {
+  const sess = state.sessions.find((s) => s.session_id === sessionId);
+  if (!sess) return;
+  const picked = await openChangeAccountModal({ currentId: sess.account_id ?? null, title: "Change account" });
+  if (!picked || picked === sess.account_id) return;
+  try {
+    const newId = await api.moveSessionToAccount(sessionId, picked);
+    const label = capitalize(getCachedAccount(picked)?.label ?? "the other account");
+    showToast(`Moved to ${label}, continuing there.`);
+    await refreshSessions();
+    const root = document.querySelector<HTMLElement>(".view-sessions");
+    const listEl = root?.querySelector<HTMLElement>("#sessions-list");
+    if (listEl) renderSidebar(listEl);
+    if (state.selectedId === sessionId) {
+      const pane = root?.querySelector<HTMLElement>("#session-pane");
+      if (pane) await selectSession(newId, pane);
+    }
+  } catch (e) {
+    console.error("[active-session] change account failed", e);
+    showToast("Failed to move chat to that account.");
+  }
 }
 
 let _watchedId: string | null = null;
@@ -291,6 +323,8 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       readOnly: sess.kind === "external",
       sessionModel: sess.model || null,
       hideZero,
+      accountId: sess.account_id ?? null,
+      onAccountClick: () => { void changeAccountForSession(sess.session_id); },
     });
     state.statusbar = sb;
     // Fetch git info async (cache-first; instantly populated by constructor
@@ -587,8 +621,14 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
         { confirmLabel: "Take over" },
       );
       if (!ok) return;
+      // The manual session was started outside this app, so there is no
+      // account already on record for it - ask which one future turns
+      // (--resume calls) should run under, instead of silently falling back
+      // to the app's default account.
+      const accountId = await openChangeAccountModal({ currentId: null, title: "Take over as which account?" });
+      if (!accountId) return;
       try {
-        const newId = await invoke<string>("takeover_manual", { manualPid: sess.pid });
+        const newId = await invoke<string>("takeover_manual", { manualPid: sess.pid, accountId });
         if (newId) {
           await refreshSessions();
           const root = document.querySelector<HTMLElement>(".view-sessions");

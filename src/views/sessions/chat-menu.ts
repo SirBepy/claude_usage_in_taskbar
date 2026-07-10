@@ -226,6 +226,17 @@ export function buildChatMenuBlock(
           },
       disabledReason: isDraft ? "Available once the chat starts" : (!sessionId ? "No session" : undefined),
     },
+    {
+      icon: "user-circle",
+      label: "Change account",
+      run: isDraft || !sessionId
+        ? undefined
+        : async () => {
+            const m = await import("./active-session");
+            await m.changeAccountForSession(sessionId);
+          },
+      disabledReason: isDraft ? "Available once the chat starts" : (!sessionId ? "No session" : undefined),
+    },
   ];
   const allChatItems = [...chatItems, ...configureItems];
 

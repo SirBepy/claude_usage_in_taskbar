@@ -6,6 +6,7 @@ import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
 import { type ChipType, isToolChip, chipToolName } from "./statusline-catalog";
+import { getCachedAccount, capitalize } from "../../shared/accounts-cache";
 import {
   formatDuration,
   shortModelName,
@@ -66,6 +67,8 @@ export class SessionStatusbar {
   private sessionModel: string | null;
   private readOnlyEffort: boolean;
   private onEffortChange: ((effort: string) => void) | null;
+  private accountId: string | null;
+  private onAccountClick: (() => void) | null;
   // Global hide-at-zero: when true, count/tool chips resolving to 0 are omitted.
   private hideZero: boolean;
   private durationTimer: ReturnType<typeof setInterval> | null = null;
@@ -92,6 +95,8 @@ export class SessionStatusbar {
     this.sessionModel = opts.sessionModel ?? null;
     this.readOnlyEffort = opts.readOnly ?? false;
     this.onEffortChange = opts.onEffortChange ?? null;
+    this.accountId = opts.accountId ?? null;
+    this.onAccountClick = opts.onAccountClick ?? null;
     this.hideZero = opts.hideZero ?? true;
     this.container.className = "session-statusbar";
     this.tally = new ToolTallyRow(this.container);
@@ -259,6 +264,12 @@ export class SessionStatusbar {
     this.render();
   }
 
+  setAccountId(accountId: string | null): void {
+    if (this.accountId === accountId) return;
+    this.accountId = accountId;
+    this.render();
+  }
+
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
     this.tally.destroy();
@@ -306,6 +317,12 @@ export class SessionStatusbar {
         if (model) return `<span class="sb-chip sb-model sb-model-btn${this.animClass("model")}" role="button" tabindex="0"><i class="ph ph-robot"></i>${escapeHtml(shortModelName(model))}</span>`;
         if (!this.metaLoaded) return this.skeletonChip("model", "sb-model", "ph-robot", "70px");
         return "";
+      }
+      case "account": {
+        const acc = getCachedAccount(this.accountId);
+        if (!acc) return "";
+        const clickable = this.onAccountClick ? " sb-account-btn" : "";
+        return `<span class="sb-chip sb-account${clickable}${this.animClass("account")}" style="--acc:${escapeHtml(acc.colour)}" role="button" tabindex="0" title="Click to move this chat to a different account"><i class="ph ph-${escapeHtml(acc.icon)}"></i>${escapeHtml(capitalize(acc.label))}</span>`;
       }
       case "effort": {
         if (!this.effort) return "";
@@ -451,6 +468,11 @@ export class SessionStatusbar {
 
     this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
       if (this.cwd) void invoke<void>("open_in_explorer", { path: this.cwd });
+    });
+
+    this.container.querySelector<HTMLElement>(".sb-account-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.onAccountClick?.();
     });
 
     this.tally.wireChips();

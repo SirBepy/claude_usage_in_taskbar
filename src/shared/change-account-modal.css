@@ -1,0 +1,16 @@
+/* ── Change-account picker modal ───────────────────────────────────────────── */
+
+.cam-modal-card {
+  width: 340px;
+}
+
+.cam-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cam-account-list .account-chip {
+  width: 100%;
+  box-sizing: border-box;
+}

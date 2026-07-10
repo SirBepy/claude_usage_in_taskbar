@@ -7,6 +7,7 @@ import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
 import { queueHistoryResume } from "../sessions/sessions";
+import { openChangeAccountModal } from "../../shared/change-account-modal";
 import "../../shared/chat/chat.css";
 import "./history.css";
 import type { HistoryEntry } from "../../types/ipc.generated";
@@ -139,8 +140,14 @@ async function selectHistorySession(sessionId: string, pane: HTMLElement): Promi
   const entry = state.entries.find(e => e.session_id === sessionId);
   if (entry) {
     pane.querySelector<HTMLButtonElement>(".btn-continue-chat")?.addEventListener("click", async () => {
+      // A historical session predates account tracking (or was never
+      // associated with one), so ask which account future turns should run
+      // under instead of silently falling back to the app's default account
+      // - same reasoning as the manual-takeover confirmation.
+      const accountId = await openChangeAccountModal({ currentId: null, title: "Continue as which account?" });
+      if (!accountId) return;
       try {
-        await invoke<void>("register_historical_session", { sessionId: entry.session_id, cwd: entry.cwd });
+        await invoke<void>("register_historical_session", { sessionId: entry.session_id, cwd: entry.cwd, accountId });
       } catch (err) {
         console.error("[history] register_historical_session failed", err);
       }

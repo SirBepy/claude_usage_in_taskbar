@@ -251,15 +251,20 @@ fn open_terminal(cwd: &std::path::Path, initial_cmd: Option<&str>) -> std::io::R
 /// claude process so this app's per-turn `--resume` calls don't race the
 /// external one for JSONL writes. Returns the session_id of the now-Interactive
 /// entry; the frontend switches the chat pane to bind to it.
+///
+/// `account_id` is the account the user picked in the takeover confirmation
+/// (the manual session was spawned outside this app, so there is no account
+/// already on record for it - see `chat::takeover::takeover`).
 #[tauri::command]
 pub async fn takeover_manual(
     manual_pid: u32,
+    account_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let (model, effort) = resolve_takeover_model_effort(manual_pid, &state);
     let guard = state.daemon_client.lock().await;
     let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
-    client.takeover_manual(manual_pid, &model, &effort).await.map_err(|e| e.to_string())
+    client.takeover_manual(manual_pid, &model, &effort, &account_id).await.map_err(|e| e.to_string())
 }
 
 /// Move a chat session to a different account: forks its transcript onto a

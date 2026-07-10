@@ -24,6 +24,7 @@ pub fn takeover(
     manual_pid: u32,
     model: &str,
     effort: &str,
+    account_id: &str,
     registry: &Registry,
     settings: &Mutex<Settings>,
 ) -> Result<String, TakeoverError> {
@@ -73,6 +74,13 @@ pub fn takeover(
     registry.record_interactive_session(&session_id, &cwd, settings, &now);
     registry.set_model_effort(&session_id, model, effort);
     crate::sessions::chat_config::record(&session_id, model, effort);
+    // The manual session was spawned outside this app, so there is no
+    // resolved account on record for it. Without this, the next respawn
+    // (send_message_daemon's NotFound path) would silently fall back to
+    // Settings.default_account_id instead of the account the user just
+    // picked in the takeover confirmation.
+    registry.set_account(&session_id, account_id);
+    crate::sessions::chat_config::set_account(&session_id, account_id);
 
     Ok(session_id)
 }
@@ -92,7 +100,7 @@ mod tests {
     fn takeover_returns_not_found_for_unknown_pid() {
         let registry = Registry::new();
         let settings = fresh_settings();
-        let r = takeover(99999, "opus", "high", &registry, &settings);
+        let r = takeover(99999, "opus", "high", "acct-a", &registry, &settings);
         assert!(matches!(r, Err(TakeoverError::NotFound(99999))));
     }
 
@@ -119,7 +127,7 @@ mod tests {
 
         // Takeover. (kill_tree on a non-existent pid is a no-op silent
         // failure - safe for tests.)
-        let result = takeover(manual_pid, "opus", "high", &registry, &settings);
+        let result = takeover(manual_pid, "opus", "high", "acct-work", &registry, &settings);
         assert!(result.is_ok());
         let new_id = result.unwrap();
         assert_eq!(new_id, "abc-session-1");
@@ -127,5 +135,6 @@ mod tests {
         let entry = registry.get("abc-session-1").unwrap();
         assert_eq!(entry.kind, InstanceKind::Interactive);
         assert_eq!(entry.busy, false);
+        assert_eq!(entry.account_id.as_deref(), Some("acct-work"));
     }
 }

@@ -410,8 +410,8 @@ impl PersistentClient {
         Ok(())
     }
 
-    pub async fn register_historical(&self, session_id: &str, cwd: &str) -> Result<(), ClientError> {
-        self.call("register_historical", json!({"session_id": session_id, "cwd": cwd})).await?;
+    pub async fn register_historical(&self, session_id: &str, cwd: &str, account_id: &str) -> Result<(), ClientError> {
+        self.call("register_historical", json!({"session_id": session_id, "cwd": cwd, "account_id": account_id})).await?;
         Ok(())
     }
 
@@ -455,8 +455,8 @@ impl PersistentClient {
         Ok(())
     }
 
-    pub async fn takeover_manual(&self, manual_pid: u32, model: &str, effort: &str) -> Result<String, ClientError> {
-        let res = self.call("takeover_manual", json!({"manual_pid": manual_pid, "model": model, "effort": effort})).await?;
+    pub async fn takeover_manual(&self, manual_pid: u32, model: &str, effort: &str, account_id: &str) -> Result<String, ClientError> {
+        let res = self.call("takeover_manual", json!({"manual_pid": manual_pid, "model": model, "effort": effort, "account_id": account_id})).await?;
         res.get("session_id")
             .and_then(serde_json::Value::as_str)
             .map(|s| s.to_string())

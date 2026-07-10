@@ -13,7 +13,7 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
     #[derive(serde::Deserialize)]
     struct EffortParams { session_id: String, effort: String }
     #[derive(serde::Deserialize)]
-    struct HistoricalParams { session_id: String, cwd: String }
+    struct HistoricalParams { session_id: String, cwd: String, account_id: String }
 
     {
         let state = state.clone();
@@ -98,6 +98,13 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
                     }));
                 }
                 state.registry.upsert_interactive(&p.session_id, &cwd, &project_id, &now);
+                // A historical session was never associated with an account in
+                // this run (the registry entry may be brand new, or a stale one
+                // from before account tracking existed) - record the account the
+                // user picked in the "Continue this chat" confirmation, same
+                // reasoning as chat::takeover::takeover.
+                state.registry.set_account(&p.session_id, &p.account_id);
+                crate::sessions::chat_config::set_account(&p.session_id, &p.account_id);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
@@ -110,11 +117,11 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             let state = state.clone();
             async move {
                 #[derive(serde::Deserialize)]
-                struct TakeoverParams { manual_pid: u32, model: String, effort: String }
+                struct TakeoverParams { manual_pid: u32, model: String, effort: String, account_id: String }
                 let p: TakeoverParams = serde_json::from_value(params.unwrap_or(Value::Null))
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 let shim = std::sync::Mutex::new(state.settings.snapshot());
-                let sid = crate::chat::takeover::takeover(p.manual_pid, &p.model, &p.effort, &state.registry, &shim)
+                let sid = crate::chat::takeover::takeover(p.manual_pid, &p.model, &p.effort, &p.account_id, &state.registry, &shim)
                     .map_err(|e| RpcError::internal(e.to_string()))?;
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);
