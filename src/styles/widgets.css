@@ -737,12 +737,14 @@ input:checked + .slider:before {
 /* Merged paths rules moved to
  * src/views/project-detail/subviews/folder-mapping/folder-mapping.css. */
 
-.option.is-disabled {
+.option.is-disabled,
+.kit-row.is-disabled {
   opacity: 0.5;
   pointer-events: none;
 }
 
-.mute-all-on .option.mute-child {
+.mute-all-on .option.mute-child,
+.mute-all-on .kit-row.mute-child {
   opacity: 0.5;
   pointer-events: none;
 }
