@@ -27,4 +27,17 @@ describe("modelContextWindow", () => {
   it("claude-3-opus -> 200K (not 1M)", () => {
     expect(modelContextWindow("claude-3-opus-20240229")).toBe(200_000);
   });
+  it("claude-fable-5 -> 1M", () => {
+    expect(modelContextWindow("claude-fable-5")).toBe(1_000_000);
+  });
+  it("claude-sonnet-5 -> 1M", () => {
+    expect(modelContextWindow("claude-sonnet-5")).toBe(1_000_000);
+  });
+  it("claude-sonnet-4-6 -> 1M", () => {
+    expect(modelContextWindow("claude-sonnet-4-6")).toBe(1_000_000);
+  });
+  it("older sonnet (4.0/4.5) stays 200K", () => {
+    expect(modelContextWindow("claude-sonnet-4-0")).toBe(200_000);
+    expect(modelContextWindow("claude-sonnet-4-5")).toBe(200_000);
+  });
 });

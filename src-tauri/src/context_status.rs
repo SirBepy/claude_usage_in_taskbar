@@ -31,17 +31,24 @@ pub struct ContextStatus {
     pub confidence: String,
 }
 
-/// Window heuristic, ported EXACTLY from the frontend's `modelContextWindow`
-/// (session-statusbar-helpers.ts:39-45):
-///   claude-3*opus -> 200K; any other opus -> 1M; everything else -> 200K.
-/// The blocklist approach means a new opus version never needs a code change.
+/// Window heuristic, kept in sync with the frontend's `modelContextWindow`
+/// (session-statusbar-helpers.ts):
+///   claude-3*opus -> 200K; any other opus or fable -> 1M; sonnet-5/sonnet-4-6
+///   -> 1M; everything else -> 200K.
+/// Opus/fable use a blocklist (new versions default to 1M without a code
+/// change); sonnet uses a narrow allowlist instead, since older sonnet
+/// (4.0/4.5/3.x) isn't confirmed 1M by default and the sticky correction
+/// below only ever raises the window, never lowers it.
 fn model_window(model: &str) -> u64 {
     // /claude-3[^0-9]*opus/i : "claude-3" then non-digits then "opus".
     let lower = model.to_ascii_lowercase();
     if is_claude_3_opus(&lower) {
         return 200_000;
     }
-    if lower.contains("opus") {
+    if lower.contains("opus") || lower.contains("fable") {
+        return 1_000_000;
+    }
+    if lower.contains("sonnet-5") || lower.contains("sonnet-4-6") {
         return 1_000_000;
     }
     200_000
@@ -259,6 +266,31 @@ mod tests {
         let s = score_context(&[1_000], "claude-sonnet-4-5").unwrap();
         assert_eq!(s.window, 200_000);
         let s2 = score_context(&[1_000], "some-mystery-model").unwrap();
+        assert_eq!(s2.window, 200_000);
+    }
+
+    #[test]
+    fn window_heuristic_fable_5_is_1m() {
+        let s = score_context(&[1_000], "claude-fable-5").unwrap();
+        assert_eq!(s.window, 1_000_000);
+        assert_eq!(s.confidence, "heuristic");
+    }
+
+    #[test]
+    fn window_heuristic_sonnet_5_and_sonnet_4_6_are_1m() {
+        let s = score_context(&[1_000], "claude-sonnet-5").unwrap();
+        assert_eq!(s.window, 1_000_000);
+        let s2 = score_context(&[1_000], "claude-sonnet-4-6").unwrap();
+        assert_eq!(s2.window, 1_000_000);
+    }
+
+    #[test]
+    fn window_heuristic_older_sonnet_stays_200k() {
+        // Sonnet 4.0/4.5's default (non-beta) window isn't confirmed 1M, so
+        // only sonnet-5 and sonnet-4-6 are allowlisted.
+        let s = score_context(&[1_000], "claude-sonnet-4-0").unwrap();
+        assert_eq!(s.window, 200_000);
+        let s2 = score_context(&[1_000], "claude-sonnet-4-5").unwrap();
         assert_eq!(s2.window, 200_000);
     }
 
