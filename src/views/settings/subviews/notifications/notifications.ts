@@ -11,6 +11,9 @@ import { getSettings } from "../../../../shared/state";
 import { api } from "../../../../shared/api";
 import { isRemote } from "../../../../shared/transport";
 import { pushSupported, pushEnabledLocally, enablePush, disablePush } from "../../../../shared/push";
+import { populateAudioDevicePicker } from "../../../../../vendor/tauri_kit/frontend/audio/device-picker";
+import { listMics, getSelectedMic, setSelectedMic } from "../../../../shared/chat/voice/voice-devices";
+import { settingsHeader, toggleRow } from "../../ui";
 import "./notifications.css";
 
 const DEFAULT_SOUNDS: { id: string; label: string }[] = [
@@ -31,15 +34,6 @@ function populateDefaultSoundSelect(sel: HTMLSelectElement, currentSoundId: stri
 
 interface PiperVoice { id: string; label: string; installed: boolean; [k: string]: unknown; }
 interface PiperStatus { voices?: PiperVoice[]; [k: string]: unknown; }
-
-interface LegacyGlobals {
-  navigateTo(name: string): Promise<void>;
-  renderNotificationSettings?(): Promise<void> | void;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
@@ -251,6 +245,7 @@ async function hydrateNotifications(): Promise<void> {
   const muteAllSwitch = $("muteAllSwitch") as HTMLInputElement | null;
   const muteSoundsSwitch = $("muteSoundsSwitch") as HTMLInputElement | null;
   const muteSystemSwitch = $("muteSystemSwitch") as HTMLInputElement | null;
+  const pauseInMeetingSwitch = $("pauseInMeetingSwitch") as HTMLInputElement | null;
   const voicePreviewProjectRow = $("voicePreviewProjectRow");
   if (!muteAllSwitch || !muteSoundsSwitch || !muteSystemSwitch) return;
 
@@ -262,6 +257,12 @@ async function hydrateNotifications(): Promise<void> {
   muteAllSwitch.addEventListener("change", () => { applyMuteAllVisual(); saveSettings(); });
   muteSoundsSwitch.addEventListener("change", saveSettings);
 
+  if (pauseInMeetingSwitch) {
+    // Default on when the key is absent.
+    pauseInMeetingSwitch.checked = s.pauseInMeeting !== false;
+    pauseInMeetingSwitch.addEventListener("change", saveSettings);
+  }
+
   buildNotifCards();
   const notifs = (s.notifications as Record<string, Record<string, unknown>>) || {};
   await Promise.all(NOTIF_TYPES.map((t) => renderNotifCard(t.key, notifs[t.key] || {})));
@@ -270,7 +271,67 @@ async function hydrateNotifications(): Promise<void> {
   primeWebVoices();
 
   if (voicePreviewProjectRow) voicePreviewProjectRow.style.display = "flex";
+
+  await populateDevicePicker();
+  await populateMicPicker();
+
+  // Per-slot character-sound toggles. Each defaults ON when its key is absent.
+  const slots = (s.characterSoundSlots as Record<string, boolean | undefined>) || {};
+  for (const [id, key] of CHARACTER_SLOT_SWITCHES) {
+    const el = $(id) as HTMLInputElement | null;
+    if (!el) continue;
+    el.checked = slots[key] !== false;
+    el.addEventListener("change", saveSettings);
+  }
+  const selectOnClick = $("selectOnSessionClickSwitch") as HTMLInputElement | null;
+  if (selectOnClick) {
+    // Default off.
+    selectOnClick.checked = s.selectOnSessionClick === true;
+    selectOnClick.addEventListener("change", saveSettings);
+  }
 }
+
+async function populateDevicePicker(): Promise<void> {
+  const sel = $("audioOutputDevice") as HTMLSelectElement | null;
+  if (!sel) return;
+  const current = (getSettings().audioOutputDevice as string | null) || "";
+  const devices = await api.listAudioOutputDevices();
+  populateAudioDevicePicker(sel, devices, current);
+  sel.removeEventListener("change", saveSettings);
+  sel.addEventListener("change", saveSettings);
+}
+
+async function populateMicPicker(): Promise<void> {
+  const sel = $("audioInputDevice") as HTMLSelectElement | null;
+  if (!sel) return;
+  const mics = await listMics();
+  const current = getSelectedMic() || "";
+  sel.innerHTML = '<option value="">System default</option>';
+  for (const mic of mics) {
+    const opt = document.createElement("option");
+    opt.value = mic.deviceId;
+    opt.textContent = mic.label;
+    if (mic.deviceId === current) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.removeEventListener("change", onMicChange);
+  sel.addEventListener("change", onMicChange);
+}
+
+function onMicChange(e: Event): void {
+  const sel = e.target as HTMLSelectElement;
+  setSelectedMic(sel.value || null);
+}
+
+// [checkbox id, settings key] for the six character-sound slot toggles.
+const CHARACTER_SLOT_SWITCHES: Array<[string, string]> = [
+  ["soundSlotWorkFinished", "workFinished"],
+  ["soundSlotQuestionAsked", "questionAsked"],
+  ["soundSlotReady", "ready"],
+  ["soundSlotSelect", "select"],
+  ["soundSlotDeath", "death"],
+  ["soundSlotAnnoyed", "annoyed"],
+];
 
 // Back-compat window binding.
 (window as unknown as { renderNotificationSettings?: () => Promise<void> }).renderNotificationSettings = hydrateNotifications;
@@ -325,9 +386,6 @@ export async function renderNotificationsView(
 ): Promise<() => void> {
   render(template(), root);
 
-  const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
-  if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
-
   wirePushSection(root);
 
   try { await hydrateNotifications(); }
@@ -336,14 +394,14 @@ export async function renderNotificationsView(
   return () => { /* no teardown */ };
 }
 
+function characterSlotRow(id: string, label: string) {
+  return toggleRow({ label, inputId: id, checked: true });
+}
+
 function template() {
   return html`
     <div class="view view-settings-notifications">
-      <div class="view-header">
-        <button class="icon-btn back-to-settings" title="Back">←</button>
-        <h2>Notifications</h2>
-        <div style="width:32px"></div>
-      </div>
+      ${settingsHeader("Notifications & Sound")}
       <div class="view-body">
         <div class="kit-section" id="push-section" style="display:none">
           <div class="kit-section-title">Push to this phone</div>
@@ -354,7 +412,7 @@ function template() {
               <span class="kit-toggle-track"></span>
             </label>
           </div>
-          <p class="ra-caption" id="push-status" style="margin-top:4px;font-size:0.78rem;color:var(--text-dim)">
+          <p class="ra-caption push-status-caption" id="push-status">
             Get a push on this phone when a chat needs a permission or a question answered and you've stepped away from the PC.
           </p>
         </div>
@@ -375,12 +433,14 @@ function template() {
             </label>
           </div>
           <div class="kit-row mute-child is-disabled" title="Coming soon - OS toasts aren't implemented yet">
-            <span class="kit-row-label">Mute system notifications <span style="color:var(--text-dim);font-size:0.75rem">(coming soon)</span></span>
+            <span class="kit-row-label">Mute system notifications <span class="coming-soon-label">(coming soon)</span></span>
             <label class="kit-toggle">
               <input type="checkbox" id="muteSystemSwitch" disabled>
               <span class="kit-toggle-track"></span>
             </label>
           </div>
+          ${toggleRow({ label: "Pause sounds during meetings", inputId: "pauseInMeetingSwitch", checked: true })}
+          <div class="settings-caption">Silences sounds and voice while your camera or mic is in use, or a meeting app (Teams, Zoom, Discord...) is in a call. Windows only.</div>
         </div>
         <template id="notifCardTemplate">
           <div class="kit-section notif-card">
@@ -393,39 +453,69 @@ function template() {
               </label>
             </div>
             <div class="kit-row notif-body" style="display:none">
-              <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Type</span>
-              <div style="display:flex;gap:10px">
-                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="radio" class="notif-mode" value="sound"> Sound</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem"><input type="radio" class="notif-mode" value="voice"> Voice</label>
+              <span class="kit-row-label notif-dim-label">Type</span>
+              <div class="notif-mode-options">
+                <label class="notif-mode-label"><input type="radio" class="notif-mode" value="sound"> Sound</label>
+                <label class="notif-mode-label"><input type="radio" class="notif-mode" value="voice"> Voice</label>
               </div>
             </div>
             <div class="kit-row notif-sound-row" style="display:none">
-              <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Sound</span>
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              <span class="kit-row-label notif-dim-label">Sound</span>
+              <div class="notif-sound-controls">
                 <select class="notif-sound-file"></select>
-                <button class="btn-secondary notif-sound-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
+                <button class="btn-secondary notif-sound-preview notif-preview-btn"><i class="ph ph-play"></i></button>
               </div>
             </div>
-            <div class="notif-voice-rows" style="display:none;flex-direction:column;gap:6px;padding:6px 0">
-              <div class="kit-row" style="border:none;padding:0">
-                <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Voice</span>
-                <select class="notif-voice-select" style="flex:1;max-width:220px"></select>
+            <div class="notif-voice-rows" style="display:none">
+              <div class="kit-row notif-row-plain">
+                <span class="kit-row-label notif-dim-label">Voice</span>
+                <select class="notif-voice-select"></select>
               </div>
-              <div class="kit-row" style="border:none;padding:0;flex-direction:column;align-items:stretch;gap:4px">
-                <span class="kit-row-label notif-template-label" style="font-size:0.82rem;color:var(--text-dim)">Message</span>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <input type="text" class="notif-template" style="flex:1;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:0.85rem">
-                  <button class="btn-secondary notif-voice-preview" style="padding:3px 10px;font-size:0.8rem">▶</button>
+              <div class="kit-row notif-message-row">
+                <span class="kit-row-label notif-template-label">Message</span>
+                <div class="notif-message-input-row">
+                  <input type="text" class="notif-template">
+                  <button class="btn-secondary notif-voice-preview notif-preview-btn"><i class="ph ph-play"></i></button>
                 </div>
-                <span class="notif-template-hint" style="font-size:0.72rem;color:var(--text-dim)"></span>
+                <span class="notif-template-hint"></span>
               </div>
             </div>
           </div>
         </template>
         <div id="notifCards"></div>
         <div class="kit-row" id="voicePreviewProjectRow" style="display:none">
-          <span class="kit-row-label" style="font-size:0.82rem;color:var(--text-dim)">Preview with project</span>
-          <select id="voicePreviewProject" style="flex:1;max-width:220px"></select>
+          <span class="kit-row-label notif-dim-label">Preview with project</span>
+          <select id="voicePreviewProject" class="notif-preview-project-select"></select>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-title">Audio</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Output device</span>
+            <select id="audioOutputDevice">
+              <option value="">System default</option>
+            </select>
+          </div>
+          <div class="settings-caption">"System default" follows your computer's default output - if you switch the default device, sounds follow automatically.</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Microphone</span>
+            <select id="audioInputDevice">
+              <option value="">System default</option>
+            </select>
+          </div>
+          <div class="settings-caption">Microphone used for voice input. Device labels appear after granting microphone permission.</div>
+        </div>
+
+        <div class="kit-section" id="characterSoundsSection">
+          <div class="kit-section-title">Character sounds</div>
+          ${characterSlotRow("soundSlotWorkFinished", "Work finished")}
+          ${characterSlotRow("soundSlotQuestionAsked", "Question asked")}
+          ${characterSlotRow("soundSlotReady", "Ready (new chat)")}
+          ${characterSlotRow("soundSlotSelect", "Select (new chat / change)")}
+          ${characterSlotRow("soundSlotDeath", "Death (chat closed)")}
+          ${characterSlotRow("soundSlotAnnoyed", "Annoyed")}
+          <div class="settings-caption">Mute individual character voice-line slots. Off here silences that slot everywhere. The tray "Mute Notifications" overrides all of these.</div>
+          ${toggleRow({ label: "Play \"select\" when clicking a session", inputId: "selectOnSessionClickSwitch", checked: false })}
         </div>
       </div>
     </div>

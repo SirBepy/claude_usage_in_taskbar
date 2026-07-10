@@ -1,2 +1,111 @@
-/* Notifications subview - .notif-card, .mute-child, .mute-all-on rules live in
- * src/dashboard.css. Shared .kit-* rules live in the kit. */
+/* Notifications & Sound subview (merges notifications.ts + the absorbed
+ * sound.ts). .notif-card, .mute-child, .mute-all-on rules live in
+ * src/dashboard.css. Shared .kit-* rules live in the kit.
+ *
+ * The rules below replace what used to be inline `style="..."` attributes on
+ * the notifications.ts template (T3 of the settings rewrite). */
+
+.push-status-caption {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.coming-soon-label {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+/* Shared dim caption line used under a control row (audio device pickers,
+ * character sounds, pause-in-meeting). */
+.settings-caption {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  padding: 2px 0 4px;
+}
+
+.notif-dim-label {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.notif-mode-options {
+  display: flex;
+  gap: 10px;
+}
+
+.notif-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.notif-sound-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.notif-preview-btn {
+  padding: 3px 10px;
+  font-size: 0.8rem;
+}
+
+.notif-voice-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.notif-row-plain {
+  border: none;
+  padding: 0;
+}
+
+.notif-message-row {
+  border: none;
+  padding: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.notif-message-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-voice-select {
+  flex: 1;
+  max-width: 220px;
+}
+
+.notif-template {
+  flex: 1;
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.notif-template-label {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.notif-template-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.notif-preview-project-select {
+  flex: 1;
+  max-width: 220px;
+}

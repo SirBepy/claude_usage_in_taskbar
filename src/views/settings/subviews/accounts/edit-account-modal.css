@@ -94,42 +94,35 @@
   font: inherit;
 }
 
-.aem-overlay .icon-grid { display: flex; flex-wrap: wrap; gap: 7px; }
-.aem-overlay .icon-tile {
+/* Icon grid / colour swatches (Details tab) now live in
+ * appearance-picker.css, shared with add-account-wizard.css - see
+ * appearance-picker.ts. This modal used slightly smaller/differently
+ * bordered tiles than the wizard's defaults, so only the delta is
+ * overridden here.
+ *
+ * The .field/.field label overrides below pin the picker's own field
+ * spacing back to this modal's original values (14px gap, last one zero,
+ * 6px label gap) with higher specificity than both the generic .aem-overlay
+ * .field rule above and appearance-picker.css's own .appearance-picker
+ * .field default (12px 0 / 5px) - those two are equal-specificity, so
+ * without this the result would depend on unpredictable CSS import order. */
+.aem-overlay .appearance-picker .field { margin: 0 0 14px; }
+.aem-overlay .appearance-picker .field:last-child { margin-bottom: 0; }
+.aem-overlay .appearance-picker .field label { margin-bottom: 6px; }
+.aem-overlay .appearance-picker .icon-tile {
   width: 32px;
   height: 32px;
-  padding: 0;
   border-radius: 8px;
   border: 1px solid var(--color-border, #2a2a36);
   background: var(--color-background, #0e0e14);
-  color: var(--color-text-muted, #8a8a96);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
   font-size: 15px;
   line-height: 1;
 }
-.aem-overlay .icon-tile.sel {
-  color: var(--color-background, #0e0e14);
-  background: var(--acc, var(--color-primary, #6e8fff));
-  border-color: var(--color-text, #e8e8ee);
-}
-
-.aem-overlay .swatches { display: flex; gap: 7px; align-items: center; }
-.aem-overlay .swatch { width: 24px; height: 24px; border-radius: 7px; cursor: pointer; border: 2px solid transparent; }
-.aem-overlay .swatch.sel { border-color: var(--color-text, #e8e8ee); }
-.aem-overlay .swatch.custom {
-  display: grid;
-  place-items: center;
+.aem-overlay .appearance-picker .swatches { align-items: center; }
+.aem-overlay .appearance-picker .swatch { width: 24px; height: 24px; }
+.aem-overlay .appearance-picker .swatch.custom {
   color: #14121d;
-  position: relative;
-  overflow: hidden;
-}
-.aem-overlay .swatch.custom input[type="color"] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
+  background: transparent;
 }
 
 .aem-overlay .aem-error {

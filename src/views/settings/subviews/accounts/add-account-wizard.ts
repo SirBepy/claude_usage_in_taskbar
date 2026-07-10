@@ -18,6 +18,7 @@ import { escapeHtml } from "../../../../shared/escape-html";
 import { api } from "../../../../shared/api";
 import type { Account } from "../../../../shared/api";
 import { askConfirm } from "../../../../shared/confirm";
+import { registerOverlayBack } from "../../../../shared/back-button";
 import "./add-account-wizard.css";
 import {
   ICON_POOL,
@@ -51,6 +52,9 @@ interface WizardCtx {
   usedIcons: string[];
   resolve: (result: Account | null) => void;
   onKey: (e: KeyboardEvent) => void;
+  /** Disposer for the back-button.ts overlay-stack registration (phone
+   * hardware-back). Filled in right after construction alongside `onKey`. */
+  disposeBack: () => void;
 }
 
 function createInitialState(): WizardState {
@@ -102,6 +106,7 @@ async function cancelSession(ctx: WizardCtx): Promise<void> {
 
 function close(ctx: WizardCtx, result: Account | null): void {
   stopPolling(ctx);
+  ctx.disposeBack();
   ctx.overlay.remove();
   document.removeEventListener("keydown", ctx.onKey);
   ctx.resolve(result);
@@ -371,6 +376,7 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
       usedIcons,
       resolve,
       onKey: () => {},
+      disposeBack: () => {},
     };
     ctx.onKey = (e) => {
       if (e.key === "Escape") {
@@ -381,8 +387,14 @@ export function openAddAccountWizard(existingAccounts: Account[]): Promise<Accou
 
     // Deliberately NO overlay-click dismiss: a stray click must never nuke a
     // half-done account setup. The X (and Escape) is the only way out, and it
-    // confirms first past step 1.
+    // confirms first past step 1. Phone hardware-back goes through the same
+    // door: register with the back-button.ts overlay stack so back triggers
+    // requestClose() too (same confirm-before-abandon rule past step 1).
     document.addEventListener("keydown", ctx.onKey);
+    ctx.disposeBack = registerOverlayBack(() => {
+      requestClose(ctx);
+      return true;
+    });
 
     document.body.appendChild(overlay);
     render(ctx);

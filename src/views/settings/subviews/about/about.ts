@@ -7,14 +7,7 @@ import {
 } from "../../../../../vendor/tauri_kit/frontend/settings/pages/about";
 import { api, type UpdateState } from "../../../../shared/api";
 import { getSettings, setSettings } from "../../../../shared/state";
-
-interface LegacyGlobals {
-  navigateTo(name: string): Promise<void>;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
+import { settingsHeader } from "../../ui";
 
 function deriveUpdateDeps(state: UpdateState, isMac: boolean): AboutUpdateDeps {
   if (isMac && (state.state === "available" || state.state === "downloading" ||
@@ -106,7 +99,7 @@ export async function renderAboutView(root: HTMLElement): Promise<() => void> {
     onCopyLogs: async () => {
       await api.copyLogs();
     },
-    onBack: () => { void g().navigateTo("settings"); },
+    onBack: () => { void (window as unknown as { navigateTo: (n: string) => Promise<void> }).navigateTo("settings"); },
     onOpenLink: (url) => { void api.openExternal(url); },
     update: deriveUpdateDeps(updateState, isMac),
     onRerender: () => doRender(),
@@ -118,13 +111,7 @@ export async function renderAboutView(root: HTMLElement): Promise<() => void> {
     render(
       html`
         <div class="view view-settings">
-          <div class="view-header">
-            <button class="icon-btn back-to-settings" title="Back">
-              <i class="ph ph-arrow-left"></i>
-            </button>
-            <h2>About</h2>
-            <div style="width:32px"></div>
-          </div>
+          ${settingsHeader("About & updates")}
           <div class="view-body">
             ${page.render()}
           </div>
@@ -132,8 +119,6 @@ export async function renderAboutView(root: HTMLElement): Promise<() => void> {
       `,
       root,
     );
-    const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
-    if (backBtn) backBtn.onclick = () => void g().navigateTo("settings");
   }
 
   doRender();

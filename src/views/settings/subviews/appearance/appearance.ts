@@ -1,32 +1,129 @@
 import { html, render } from "lit-html";
 import { saveSettings } from "../../../../shared/settings-save";
-import { getSettings } from "../../../../shared/state";
+import { getSettings, setSettings } from "../../../../shared/state";
 import { LS_ANIM } from "../../../sessions/sidebar-anim";
-import "./visuals.css";
-
-interface LegacyGlobals {
-  navigateTo(name: string): Promise<void>;
-  renderVisualsSettings?(): void;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
+import { settingsHeader, toggleRow } from "../../ui";
+import "./appearance.css";
 
 function $(id: string): HTMLElement | null {
   return document.getElementById(id);
 }
 
+// ── Theme (ported from subviews/themes/themes.ts) ───────────────────────────
+
+interface ThemeDef {
+  id: string;
+  label: string;
+  darkColors: string[];
+  lightColors: string[];
+}
+
+const THEMES: ThemeDef[] = [
+  { id: "void",    label: "Void",    darkColors: ["#16151f", "#1e1d2b", "#9d7dfc", "#6e8fff", "#e2e0f0"], lightColors: ["#f0eff5", "#ffffff", "#7c5cdb", "#4a6bdf", "#1e1d2b"] },
+  { id: "nebula",  label: "Nebula",  darkColors: ["#0f1629", "#172040", "#c084fc", "#a78bfa", "#e2dff0"], lightColors: ["#f2f0fa", "#ffffff", "#9333ea", "#7c3aed", "#1a1040"] },
+  { id: "glacier", label: "Glacier", darkColors: ["#0c1a24", "#112430", "#38bdf8", "#22d3ee", "#e0f0f8"], lightColors: ["#eef6fa", "#ffffff", "#0284c7", "#0891b2", "#0c2430"] },
+  { id: "cosmo",   label: "Cosmo",   darkColors: ["#1a0a1e", "#241430", "#f472b6", "#fb923c", "#f0e4f5"], lightColors: ["#faf0f4", "#ffffff", "#db2777", "#ea580c", "#2a1030"] },
+];
+
+function resolveThemeId(baseId: string, isLight: boolean): string {
+  return isLight ? baseId + "-light" : baseId;
+}
+
+function parseThemeId(fullId: string): { baseId: string; isLight: boolean } {
+  const isLight = fullId.endsWith("-light");
+  return { baseId: isLight ? fullId.replace("-light", "") : fullId, isLight };
+}
+
+/**
+ * Applies a flat theme id ("void" | "void-light") as the styleguide 2D pair:
+ * data-theme="<palette>" + data-mode="light|dark". Storage stays the flat id.
+ */
+function applyThemeAttrs(fullId: string): void {
+  const { baseId, isLight } = parseThemeId(fullId);
+  const el = document.documentElement;
+  el.dataset.theme = baseId;
+  el.dataset.mode = isLight ? "light" : "dark";
+}
+
+function renderThemeCards(activeTheme: string): void {
+  const themeGrid = $("themeGrid");
+  const modeLabelDark = $("modeLabelDark");
+  const modeLabelLight = $("modeLabelLight");
+  if (!themeGrid) return;
+  const { baseId: activeBase, isLight } = parseThemeId(activeTheme);
+  const colorKey: "darkColors" | "lightColors" = isLight ? "lightColors" : "darkColors";
+  themeGrid.innerHTML = "";
+  for (const t of THEMES) {
+    const card = document.createElement("div");
+    card.className = "kit-palette-card" + (t.id === activeBase ? " kit-palette-card--active" : "");
+    card.dataset.palette = t.id;
+    card.innerHTML = `
+      <span class="kit-palette-swatch">${t[colorKey].map((c) => `<span style="background:${c}"></span>`).join("")}</span>
+      <span class="kit-palette-label">${t.label}</span>
+    `;
+    card.onclick = () => applyTheme(t.id);
+    themeGrid.appendChild(card);
+  }
+
+  if (modeLabelDark) modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
+  if (modeLabelLight) modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
+}
+
+function applyTheme(baseId: string): void {
+  const themeModToggle = $("themeModToggle") as HTMLInputElement | null;
+  const isLight = themeModToggle ? themeModToggle.checked : false;
+  const fullId = resolveThemeId(baseId, isLight);
+  applyThemeAttrs(fullId);
+  const s = getSettings();
+  s.theme = fullId;
+  setSettings(s);
+  saveSettings();
+
+  const themeGrid = $("themeGrid");
+  if (themeGrid) {
+    for (const card of themeGrid.querySelectorAll<HTMLElement>(".kit-palette-card")) {
+      card.classList.toggle("kit-palette-card--active", card.dataset.palette === baseId);
+    }
+  }
+  const modeLabelDark = $("modeLabelDark");
+  const modeLabelLight = $("modeLabelLight");
+  if (modeLabelDark) modeLabelDark.style.color = isLight ? "var(--text-dim)" : "var(--primary)";
+  if (modeLabelLight) modeLabelLight.style.color = isLight ? "var(--primary)" : "var(--text-dim)";
+}
+
+function hydrateTheme(): void {
+  const themeModToggle = $("themeModToggle") as HTMLInputElement | null;
+  if (!themeModToggle) return;
+  const s = getSettings();
+  const savedTheme = (s.theme as string) || document.documentElement.dataset.theme || "void";
+  themeModToggle.checked = savedTheme.endsWith("-light");
+  renderThemeCards(savedTheme);
+
+  themeModToggle.onchange = () => {
+    const cur = getSettings();
+    const { baseId } = parseThemeId((cur.theme as string) || "void");
+    const isLight = themeModToggle.checked;
+    const fullId = resolveThemeId(baseId, isLight);
+    applyThemeAttrs(fullId);
+    cur.theme = fullId;
+    setSettings(cur);
+    saveSettings();
+    renderThemeCards(fullId);
+  };
+}
+
+// ── Usage colors / overlay / interface (ported from subviews/visuals/visuals.ts) ──
+
 function createColorRow(min = 0, color = "#ffffff"): HTMLElement {
   const row = document.createElement("div");
   row.className = "kit-row color-row";
   row.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-      <input type="number" class="color-min" value="${min}" min="0" max="100" style="width:50px">
-      <span style="font-size: 0.8rem; color: var(--text-dim);">%</span>
+    <div class="color-row-fields">
+      <input type="number" class="color-min" value="${min}" min="0" max="100">
+      <span class="color-pct-label">%</span>
       <input type="color" class="color-val" value="${color}">
     </div>
-    <button class="btn-secondary remove-color-btn" style="padding: 2px 8px; font-size: 0.7rem;">Remove</button>
+    <button class="btn-secondary remove-color-btn">Remove</button>
   `;
   const removeBtn = row.querySelector<HTMLButtonElement>(".remove-color-btn");
   if (removeBtn) removeBtn.onclick = () => { row.remove(); saveSettings(); };
@@ -67,7 +164,7 @@ function wireInfoTooltips(root: HTMLElement | Document): void {
   }
 }
 
-async function hydrateVisuals(): Promise<void> {
+async function hydrateUsageColorsAndInterface(): Promise<void> {
   const s = getSettings();
   const colorApplyDashboard = $("colorApplyDashboard") as HTMLInputElement | null;
   const colorApplyOverlay = $("colorApplyOverlay") as HTMLInputElement | null;
@@ -158,77 +255,60 @@ async function hydrateVisuals(): Promise<void> {
   }
 }
 
-// Back-compat window binding (legacy boot code calls this by name).
-(window as unknown as { renderVisualsSettings?: () => void }).renderVisualsSettings = hydrateVisuals;
-
-export async function renderVisualsView(
+export async function renderAppearanceView(
   root: HTMLElement,
 ): Promise<() => void> {
   render(template(), root);
 
-  const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
-  if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
-
-  try { await hydrateVisuals(); }
-  catch (e) { console.error("[visuals] render failed", e); }
+  try {
+    hydrateTheme();
+    await hydrateUsageColorsAndInterface();
+  } catch (e) { console.error("[appearance] render failed", e); }
 
   return () => { /* no teardown */ };
 }
 
 function template() {
   return html`
-    <div class="view view-settings-visuals">
-      <div class="view-header">
-        <button class="icon-btn back-to-settings" title="Back">←</button>
-        <h2>Visuals</h2>
-        <div style="width:32px"></div>
-      </div>
+    <div class="view view-settings-appearance">
+      ${settingsHeader("Appearance")}
       <div class="view-body">
 
         <div class="kit-section">
-          <div class="kit-section-title">OVERLAY</div>
-          <div class="kit-row">
-            <span class="kit-row-label"><span class="info-wrap">Overlay Opacity<span class="info-icon">?</span><span class="info-tooltip">How opaque each account card's background becomes when you hover it - off-hover the overlay is fully transparent to the desktop</span></span></span>
-            <div style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px">
-              <input type="range" id="overlayOpacity" min="0" max="100" step="5" style="flex:1">
-              <span id="overlayOpacityValue" style="font-size:0.78rem;color:var(--text-dim);width:36px;text-align:right">72%</span>
+          <div class="kit-section-title">Theme</div>
+          <div class="kit-row" style="justify-content: space-between;">
+            <div class="option-label-row">
+              <i class="ph ph-moon"></i>
+              <span>Dark Mode</span>
+            </div>
+            <div class="mode-toggle-row">
+              <span class="mode-toggle-label" id="modeLabelDark">Dark</span>
+              <label class="kit-toggle">
+                <input type="checkbox" id="themeModToggle">
+                <span class="kit-toggle-track"></span>
+              </label>
+              <span class="mode-toggle-label" id="modeLabelLight">Light</span>
             </div>
           </div>
+          <div class="kit-palette-grid" id="themeGrid"></div>
         </div>
 
         <div class="kit-section">
-          <div class="kit-section-title">COLORS</div>
+          <div class="kit-section-title">Usage colors</div>
           <div class="kit-row">
-            <span class="kit-row-label"><span class="info-wrap">Dashboard<span class="info-icon">?</span><span class="info-tooltip">Colors the percentage numbers shown in the dashboard</span></span></span>
-            <label class="kit-toggle">
-              <input type="checkbox" id="colorApplyDashboard" checked>
-              <span class="kit-toggle-track"></span>
-            </label>
-          </div>
-          <div class="kit-row">
-            <span class="kit-row-label"><span class="info-wrap">Overlay<span class="info-icon">?</span><span class="info-tooltip">Colors the usage numbers shown in the floating multi-account overlay window</span></span></span>
-            <label class="kit-toggle">
-              <input type="checkbox" id="colorApplyOverlay" checked>
-              <span class="kit-toggle-track"></span>
-            </label>
-          </div>
-          <div class="kit-row">
-            <span class="kit-row-label"><span class="info-wrap">Color Mode<span class="info-icon">?</span><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
+            <span class="kit-row-label"><span class="info-wrap">Color Mode<i class="ph ph-info info-icon"></i><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
             <select id="colorMode">
               <option value="pace">Safe Pace</option>
               <option value="threshold">Threshold</option>
             </select>
           </div>
-        </div>
-        <div class="kit-section">
-          <div class="kit-section-title">COLOR MODE CONFIG</div>
           <div id="thresholdSection">
             <div id="colorContainer"></div>
             <button class="btn-secondary" id="addColorBtn" style="margin-top: 10px; width: 100%; font-size: 0.8rem;">+ Add Color Threshold</button>
           </div>
           <div id="paceSection" style="display:none">
             <div class="kit-row">
-              <span class="kit-row-label"><span class="info-wrap">Band %<span class="info-icon">?</span><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
+              <span class="kit-row-label"><span class="info-wrap">Band %<i class="ph ph-info info-icon"></i><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
               <input type="number" id="paceBand" value="10" min="0" max="50" style="width:60px">
             </div>
             <div class="kit-section-title" style="margin-top:10px">Colors</div>
@@ -249,10 +329,25 @@ function template() {
               <input type="color" id="paceColorOver" value="#e74c3c">
             </div>
           </div>
+          ${toggleRow({ label: "Dashboard", inputId: "colorApplyDashboard", checked: true, tooltip: "Colors the percentage numbers shown in the dashboard" })}
+          ${toggleRow({ label: "Overlay", inputId: "colorApplyOverlay", checked: true, tooltip: "Colors the usage numbers shown in the floating multi-account overlay window" })}
         </div>
 
         <div class="kit-section">
-          <div class="kit-section-title">SESSIONS</div>
+          <div class="kit-section-title">Overlay</div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Overlay Opacity<i class="ph ph-info info-icon"></i><span class="info-tooltip">How opaque each account card's background becomes when you hover it - off-hover the overlay is fully transparent to the desktop</span></span></span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px">
+              <input type="range" id="overlayOpacity" min="0" max="100" step="5" style="flex:1">
+              <span id="overlayOpacityValue" style="font-size:0.78rem;color:var(--text-dim);width:36px;text-align:right">72%</span>
+            </div>
+          </div>
+          ${toggleRow({ label: "Hide from screen capture", inputId: "hideInMeetingSwitch", checked: false })}
+          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Hides app windows from screen shares and recordings during meetings. Windows only.</div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-title">Interface</div>
           <div class="kit-row">
             <span class="kit-row-label">Session state style</span>
             <select id="sessionStateStyle">
@@ -260,25 +355,7 @@ function template() {
               <option value="dots">Dots</option>
             </select>
           </div>
-          <div class="kit-row">
-            <span class="kit-row-label">Sidebar animations</span>
-            <label class="kit-toggle">
-              <input type="checkbox" id="sidebarAnimations">
-              <span class="kit-toggle-track"></span>
-            </label>
-          </div>
-        </div>
-
-        <div class="kit-section">
-          <div class="kit-section-title">MEETINGS</div>
-          <div class="kit-row">
-            <span class="kit-row-label">Hide from screen capture</span>
-            <label class="kit-toggle">
-              <input type="checkbox" id="hideInMeetingSwitch">
-              <span class="kit-toggle-track"></span>
-            </label>
-          </div>
-          <div style="font-size:0.72rem;color:var(--text-dim);padding:2px 0 4px">Hides app windows from screen shares and recordings during meetings. Windows only.</div>
+          ${toggleRow({ label: "Sidebar animations", inputId: "sidebarAnimations", checked: true })}
         </div>
 
       </div>

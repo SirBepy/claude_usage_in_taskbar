@@ -101,7 +101,11 @@ export function saveSettings(): void {
       if (!palette) return (prev.theme as string) || "void";
       return el.dataset.mode === "light" ? `${palette}-light` : palette;
     })(),
-    launchAtLogin: chkOr("launchAtLogin", !!prev.launchAtLogin),
+    // DOM id stays "launchAtLogin" (see subviews/system/system.ts); the
+    // destination field is the Rust-typed `autostart` (src-tauri/src/lib.rs
+    // reads settings.autostart for tauri_plugin_autostart). The old
+    // `launchAtLogin` extra-bag key was never read by anything - dropped.
+    autostart: chkOr("launchAtLogin", !!prev.autostart),
     autoUpdate: (() => {
       const el = byId<HTMLSelectElement>("autoUpdate");
       if (el && (el.value === "never" || el.value === "onStartup" || el.value === "immediate")) return el.value;

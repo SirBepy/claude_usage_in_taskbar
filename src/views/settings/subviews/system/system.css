@@ -1,5 +1,8 @@
-/* Shortcuts subview styles. Shared rules (.kit-section, .kit-section-title, etc.)
+/* System subview styles (Startup + Shortcuts + Data & storage). Shared rules
+ * (.kit-section, .kit-section-title, .kit-row, .kit-toggle, .btn-danger, etc.)
  * live in the kit. */
+
+/* ── Shortcuts section (ported from subviews/shortcuts/shortcuts.css) ────── */
 
 .shortcut-row {
   display: flex;
@@ -138,36 +141,71 @@
   opacity: 0.7;
 }
 
-.shortcut-slot-mode-toggle {
+/* Standalone description under the slot-mode kit-toggle row (the old
+ * checkbox+label combo folded the description into the same <label>; the
+ * kit-toggle row is now its own element, so the description renders below it). */
+.shortcut-slot-mode-desc-standalone {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  padding: 0 0 8px;
+  margin-top: -4px;
+}
+
+/* ── Data & storage section (ported from settings.css) ────────────────── */
+
+.data-cards {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 0;
-  cursor: pointer;
-  border-top: 1px solid var(--color-border, rgba(255,255,255,0.08));
-  border-bottom: 1px solid var(--color-border, rgba(255,255,255,0.08));
-  margin: 8px 0 4px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.shortcut-slot-mode-toggle input[type="checkbox"] {
-  margin-top: 2px;
-  flex-shrink: 0;
-  cursor: pointer;
+.data-card {
+  /* nested kit-section inside the Data section: trim the default chrome so the
+   * cards read as rows, not full sections. */
+  margin: 0;
 }
 
-.shortcut-slot-mode-label {
+.data-card-head {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 2px 0 6px;
 }
 
-.shortcut-slot-mode-label strong {
+.data-card-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.data-card-controls {
+  gap: 8px;
+}
+
+.data-control-label {
   font-size: 0.82rem;
-  color: var(--color-text);
-  font-weight: 600;
+  color: var(--text-dim);
 }
 
-.shortcut-slot-mode-desc {
-  font-size: 0.74rem;
-  color: var(--color-text-muted);
+.data-control-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.data-retention {
+  min-width: 110px;
+}
+
+.data-card .btn-danger.data-clear {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  width: auto;
+}
+
+.data-total {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding: 8px 2px 2px;
 }

@@ -8,7 +8,8 @@
 
 import { escapeHtml } from "../../../../shared/escape-html";
 import type { OauthAccountInfo } from "../../../../shared/api";
-import { ICON_POOL, COLOUR_POOL, tierLabel, formatElapsed } from "./wizard-logic";
+import { tierLabel, formatElapsed } from "./wizard-logic";
+import { renderAppearancePicker } from "./appearance-picker";
 
 export type Step = "create" | "cookie" | "login" | "finalize";
 
@@ -178,7 +179,6 @@ export function wireLoginStep(overlay: HTMLElement, _state: WizardState, cb: Wiz
 }
 
 export function renderFinalizeStep(state: WizardState): string {
-  const customColour = !COLOUR_POOL.includes(state.colour);
   const identitySummary = state.verifiedIdentity
     ? `
     <div class="detected">
@@ -192,22 +192,7 @@ export function renderFinalizeStep(state: WizardState): string {
     : "";
   return `
     ${identitySummary}
-    <div class="field" id="aaw-icon-field" style="--acc:${escapeHtml(state.colour)}">
-      <label>Icon</label>
-      <div class="icon-grid">
-        ${ICON_POOL.map((i) => `<button type="button" class="icon-tile${i === state.icon ? " sel" : ""}" data-icon="${escapeHtml(i)}"><i class="ph ph-${escapeHtml(i)}"></i></button>`).join("")}
-      </div>
-    </div>
-    <div class="field">
-      <label>Colour</label>
-      <div class="swatches">
-        ${COLOUR_POOL.map((c) => `<span class="swatch${c === state.colour ? " sel" : ""}" data-colour="${escapeHtml(c)}" style="background:${escapeHtml(c)}"></span>`).join("")}
-        <label class="swatch custom${customColour ? " sel" : ""}" title="Custom colour" ${customColour ? `style="background:${escapeHtml(state.colour)}"` : ""}>
-          <i class="ph ph-eyedropper"></i>
-          <input type="color" id="aaw-custom-colour" value="${escapeHtml(customColour ? state.colour : "#8888ff")}">
-        </label>
-      </div>
-    </div>
+    <div id="aaw-appearance-picker"></div>
     ${state.error ? `<div class="aaw-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(state.error)}</div>` : ""}
     <div class="wz-actions">
       <span></span>
@@ -219,35 +204,11 @@ export function renderFinalizeStep(state: WizardState): string {
 }
 
 export function wireFinalizeStep(overlay: HTMLElement, state: WizardState, cb: WizardCallbacks): void {
-  overlay.querySelectorAll<HTMLButtonElement>(".icon-tile").forEach((tile) => {
-    tile.addEventListener("click", () => {
-      state.icon = tile.dataset.icon ?? state.icon;
-      cb.render();
-    });
-  });
-  overlay.querySelectorAll<HTMLElement>(".swatch[data-colour]").forEach((sw) => {
-    sw.addEventListener("click", () => {
-      state.colour = sw.dataset.colour ?? state.colour;
-      cb.render();
-    });
-  });
-  const customEl = overlay.querySelector<HTMLInputElement>("#aaw-custom-colour");
-  // "input" fires live while the native picker is open - a full render()
-  // would destroy the input and close the picker, so live-preview in place
-  // and only re-render on "change" (picker confirmed/closed).
-  customEl?.addEventListener("input", () => {
-    state.colour = customEl.value;
-    overlay.querySelector<HTMLElement>("#aaw-icon-field")?.style.setProperty("--acc", state.colour);
-    overlay.querySelectorAll<HTMLElement>(".swatch").forEach((sw) => sw.classList.remove("sel"));
-    const custom = customEl.closest<HTMLElement>(".swatch.custom");
-    if (custom) {
-      custom.classList.add("sel");
-      custom.style.background = state.colour;
-    }
-  });
-  customEl?.addEventListener("change", () => {
-    state.colour = customEl.value;
-    cb.render();
-  });
+  const pickerContainer = overlay.querySelector<HTMLElement>("#aaw-appearance-picker");
+  // Self-managed: the picker re-renders only its own subtree on icon/colour
+  // picks, so nothing else in the finalize step needs to react - no
+  // onChange side effect required here (contrast edit-account-modal.ts,
+  // which uses onChange to keep its tab-underline colour in sync).
+  if (pickerContainer) renderAppearancePicker(pickerContainer, state, () => {});
   overlay.querySelector<HTMLButtonElement>("#aaw-finalize-btn")?.addEventListener("click", cb.onFinalize);
 }

@@ -21,10 +21,7 @@ import { askConfirm } from "./confirm";
 
 const LEGACY_VIEWS = [
   "settings",
-  "settings-visuals",
-  "settings-themes",
   "settings-notifications",
-  "settings-presets",
   "settings-permissions",
   "settings-statusline",
   "settings-sync",

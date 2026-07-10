@@ -9,7 +9,8 @@ import { api } from "../../../../shared/api";
 import type { Account } from "../../../../shared/api";
 import type { ProjectConfig } from "../../../../types/ipc.generated";
 import { pickProject } from "../../../sessions/project-picker";
-import { ICON_POOL, COLOUR_POOL } from "./wizard-logic";
+import { registerOverlayBack } from "../../../../shared/back-button";
+import { renderAppearancePicker, type AppearanceState } from "./appearance-picker";
 import "./edit-account-modal.css";
 
 type Tab = "details" | "projects";
@@ -25,14 +26,17 @@ export function openEditAccountModal(account: Account): Promise<Account | null> 
 
     let tab: Tab = "details";
     let label = account.label;
-    let icon = account.icon;
-    let colour = account.colour;
+    // Icon/colour live in one object (not separate `let`s) so it can be
+    // handed to renderAppearancePicker() and mutated in place - see
+    // appearance-picker.ts.
+    const appearance: AppearanceState = { icon: account.icon, colour: account.colour };
     let busy = false;
     let error: string | null = null;
     let projects: ProjectConfig[] = [];
     let projectsLoaded = false;
 
     function close(result: Account | null): void {
+      disposeBack();
       overlay.remove();
       document.removeEventListener("keydown", onKey);
       resolve(result);
@@ -42,6 +46,10 @@ export function openEditAccountModal(account: Account): Promise<Account | null> 
       if (e.key === "Escape") { e.preventDefault(); close(null); }
     }
     document.addEventListener("keydown", onKey);
+    // Phone hardware-back closes this modal the same way Escape does (no
+    // confirm - matches existing Cancel/Escape semantics, unlike the
+    // add-account wizard which confirms past step 1).
+    const disposeBack = registerOverlayBack(() => { close(null); return true; });
 
     async function loadProjects(): Promise<void> {
       try {
@@ -78,7 +86,7 @@ export function openEditAccountModal(account: Account): Promise<Account | null> 
       error = null;
       render();
       try {
-        const updated = await api.updateAccount(account.id, { label: trimmed, icon, colour });
+        const updated = await api.updateAccount(account.id, { label: trimmed, icon: appearance.icon, colour: appearance.colour });
         close(updated);
       } catch (e) {
         busy = false;
@@ -88,28 +96,12 @@ export function openEditAccountModal(account: Account): Promise<Account | null> 
     }
 
     function detailsTabHtml(): string {
-      const customColour = !COLOUR_POOL.includes(colour as (typeof COLOUR_POOL)[number]);
       return `
         <div class="field">
           <label>Label</label>
           <input class="fake-input" id="aem-label" type="text" value="${escapeHtml(label)}">
         </div>
-        <div class="field">
-          <label>Icon</label>
-          <div class="icon-grid">
-            ${ICON_POOL.map((i) => `<button type="button" class="icon-tile${i === icon ? " sel" : ""}" data-icon="${escapeHtml(i)}"><i class="ph ph-${escapeHtml(i)}"></i></button>`).join("")}
-          </div>
-        </div>
-        <div class="field">
-          <label>Colour</label>
-          <div class="swatches">
-            ${COLOUR_POOL.map((c) => `<span class="swatch${c === colour ? " sel" : ""}" data-colour="${escapeHtml(c)}" style="background:${escapeHtml(c)}"></span>`).join("")}
-            <label class="swatch custom${customColour ? " sel" : ""}" title="Custom colour" ${customColour ? `style="background:${escapeHtml(colour)}"` : ""}>
-              <i class="ph ph-eyedropper"></i>
-              <input type="color" id="aem-custom-colour" value="${escapeHtml(customColour ? colour : "#8888ff")}">
-            </label>
-          </div>
-        </div>
+        <div id="aem-appearance-picker"></div>
         ${error ? `<div class="aem-error"><i class="ph ph-warning-circle"></i> ${escapeHtml(error)}</div>` : ""}
       `;
     }
@@ -134,7 +126,7 @@ export function openEditAccountModal(account: Account): Promise<Account | null> 
 
     function render(): void {
       overlay.innerHTML = `
-        <div class="aem-modal" style="--acc:${escapeHtml(colour)}" role="dialog" aria-modal="true" aria-label="Edit ${escapeHtml(account.label)}">
+        <div class="aem-modal" style="--acc:${escapeHtml(appearance.colour)}" role="dialog" aria-modal="true" aria-label="Edit ${escapeHtml(account.label)}">
           <div class="aem-head">
             <span class="t">Edit ${escapeHtml(account.label)}</span>
             <button class="aem-close" id="aem-close-btn" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
@@ -177,21 +169,15 @@ export function openEditAccountModal(account: Account): Promise<Account | null> 
           const saveBtn = overlay.querySelector<HTMLButtonElement>("#aem-save-btn");
           if (saveBtn) saveBtn.disabled = busy || !label.trim();
         });
-        overlay.querySelectorAll<HTMLButtonElement>(".icon-tile").forEach((t) => {
-          t.addEventListener("click", () => { icon = t.dataset.icon ?? icon; render(); });
-        });
-        overlay.querySelectorAll<HTMLElement>(".swatch[data-colour]").forEach((sw) => {
-          sw.addEventListener("click", () => { colour = sw.dataset.colour ?? colour; render(); });
-        });
-        const customEl = overlay.querySelector<HTMLInputElement>("#aem-custom-colour");
-        customEl?.addEventListener("input", () => {
-          colour = customEl.value;
-          overlay.querySelector<HTMLElement>(".aem-modal")?.style.setProperty("--acc", colour);
-          overlay.querySelectorAll<HTMLElement>(".swatch").forEach((sw) => sw.classList.remove("sel"));
-          const custom = customEl.closest<HTMLElement>(".swatch.custom");
-          if (custom) { custom.classList.add("sel"); custom.style.background = colour; }
-        });
-        customEl?.addEventListener("change", () => { colour = customEl.value; render(); });
+        const pickerContainer = overlay.querySelector<HTMLElement>("#aem-appearance-picker");
+        if (pickerContainer) {
+          renderAppearancePicker(pickerContainer, appearance, () => {
+            // The picker only re-renders its own subtree; the tab-underline
+            // colour reads --acc off .aem-modal (outside the picker), so it
+            // needs its own update here on every pick, live drag included.
+            overlay.querySelector<HTMLElement>(".aem-modal")?.style.setProperty("--acc", appearance.colour);
+          });
+        }
       } else {
         overlay.querySelectorAll<HTMLElement>(".rev-item .x").forEach((x) => {
           x.addEventListener("click", () => {
