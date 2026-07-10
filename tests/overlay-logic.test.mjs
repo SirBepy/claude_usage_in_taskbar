@@ -10,8 +10,8 @@ describe("buildOverlayRow", () => {
   it("marks an account with no usage entry as no-data, all metrics null", () => {
     const row = buildOverlayRow(personal, undefined, NOW);
     expect(row.hasData).toBe(false);
-    expect(row.session).toEqual({ pct: null, safePct: null, resetAbs: null });
-    expect(row.weekly).toEqual({ pct: null, safePct: null, resetAbs: null });
+    expect(row.session).toEqual({ pct: null, safePct: null, resetAbs: null, resetRelative: null });
+    expect(row.weekly).toEqual({ pct: null, safePct: null, resetAbs: null, resetRelative: null });
     expect(row.resetLabel).toBe("");
     expect(row.id).toBe("acct-personal");
     expect(row.colour).toBe("#9d7dfc");
@@ -42,6 +42,7 @@ describe("buildOverlayRow", () => {
     };
     const row = buildOverlayRow(work, usage);
     expect(row.resetLabel).toMatch(/^resets in \d+h \d+m$/);
+    expect(row.session.resetRelative).toMatch(/^\d+h \d+m left$/);
   });
 
   it("falls back to a synthetic +1h weekly reset when the API omits it (matches account-selector.ts)", () => {

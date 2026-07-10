@@ -1,17 +1,20 @@
-/* Floating multi-account overlay (milestone 06). This is the ONLY view
- * rendered in the `session-overlay` Tauri window (see src/overlay.html,
- * src/overlay-main.ts, and src-tauri/src/ipc/overlay_window.rs), so these
- * rules are unscoped rather than nested under a `.view-*` ancestor. The
- * native window is fully transparent (`.transparent(true)` in Rust) AND
- * resized to hug the panel (overlay-drag.ts::resizeOverlayToContent), so
+/* Floating multi-account overlay (milestone 06), circle-dial layout — ports
+ * .for_bepy/overlay-circle-mockup.html. This is the ONLY view rendered in the
+ * `session-overlay` Tauri window (see src/overlay.html, src/overlay-main.ts,
+ * and src-tauri/src/ipc/overlay_window.rs), so these rules are unscoped
+ * rather than nested under a `.view-*` ancestor. The native window is fully
+ * transparent (`.transparent(true)` in Rust) AND resized to hug the dial row
+ * (overlay-drag.ts::resizeOverlayToContent / attachOverlayHoverResize), so
  * there's no wrapper background and no oversized transparent area to eat
  * clicks.
  *
- * Layout: a top drag grip (the only grab surface) above a stack of floating
- * account cards. Cards are transparent by default and reveal their background
- * on hover; clicking a card opens the dashboard for that account. Each card's
- * 5h/7d label carries a hover tooltip with that window's exact reset time; the
- * relative "resets in …" line is hidden until the card is hovered. */
+ * Layout: a top drag grip (the only grab surface) above a horizontal row of
+ * account dials — one per account, outer thick ring = 5h session, inner thin
+ * ring = 7d weekly, dimmed account icon in the centre. Dials are transparent
+ * until hovered; hovering one lays a popup (name + both windows'
+ * current%/safe%) centred over it, and hovering a value row inside the popup
+ * shows that window's session tooltip. Clicking a dial opens the dashboard
+ * for that account. */
 
 html.overlay-window-mode,
 body.overlay-window-mode {
@@ -27,121 +30,129 @@ body.overlay-window-mode #app {
 }
 
 #ocPanel {
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
+  align-items: center;
+  width: fit-content;
   color: var(--color-text, #e8e8f0);
 }
 
-/* Drag grip: the only grab surface (dragging cards is off — clicks open the
- * dashboard instead). Flick from here toward a corner to snap. */
+/* Drag grip: the only grab surface (dragging dials is off — clicks open the
+ * dashboard instead). Flick from here toward a corner to snap. Kept minimal
+ * (no fixed width/side margins) so it never forces the tight window wider
+ * than the dial row beneath it. */
 .oc-grip {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 20px;
-  margin: 2px 8px 2px;
-  border-radius: 8px;
+  width: fit-content;
+  height: 14px;
+  margin: 2px auto 0;
+  padding: 0 8px;
+  border-radius: 6px;
   color: var(--color-text-muted, #8a8aa0);
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1;
   cursor: grab;
-  opacity: 0.45;
+  opacity: 0.4;
   transition: opacity 0.15s, background 0.15s;
 }
 .oc-grip:hover { opacity: 0.9; background: rgba(255, 255, 255, 0.06); }
 body.oc-dragging .oc-grip { cursor: grabbing; opacity: 0.9; }
 
-.oc-rows { display: flex; flex-direction: column; gap: 8px; padding: 0 8px 8px; }
+.oc-dial-row { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px 6px; }
 
-/* Each account = one floating card, transparent until hovered. */
-.oc-row {
-  position: relative;
-  background: transparent;
-  border: 1px solid transparent;
-  border-top: 3px solid var(--acc, var(--color-primary, #6e8fff));
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.16s, border-color 0.16s, box-shadow 0.16s;
-}
-/* Reveal the background on hover; opacity honours the overlayOpacity setting. */
-.oc-row:hover {
-  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
-  border-color: var(--color-border, #2e2e40);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
-}
+/* One account = one dial + its (hover-revealed) popup, both anchored to this
+ * cell so the popup can centre itself over just this dial. */
+.oc-cell { position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
 
-.oc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
-.oc-top .grow { flex: 1; }
-.oc-nm { font-weight: 600; }
-
-/* Relative reset line — hidden until the card is hovered. */
-.oc-rs {
-  color: var(--color-text-muted, #8a8aa0);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.16s;
-}
-.oc-row:hover .oc-rs { opacity: 1; }
-
-.oc-metric {
-  display: grid;
-  grid-template-columns: 24px 1fr 74px;   /* fixed number column → bars stay the same width even at 3 digits */
-  align-items: center;
-  gap: 9px;
-  margin-top: 6px;
-}
-.oc-k { font-size: 10.5px; color: var(--color-text-muted, #8a8aa0); text-transform: uppercase; }
-
-/* 5h/7d label with an exact-reset-time tooltip (point 8). The tooltip opens
- * upward into the card, so it stays within the content-tight, transparent
- * native window (the grip above the first card gives the topmost one headroom). */
-.oc-k-tip {
-  position: relative;
-  width: fit-content;
-  cursor: help;
-  text-decoration: underline dotted rgba(255, 255, 255, 0.3);
-  text-underline-offset: 2px;
-}
-.oc-tip {
+.oc-dial { position: relative; width: 52px; height: 52px; cursor: help; }
+.oc-dial svg { display: block; width: 52px; height: 52px; }
+/* Centre icon: dimmed/neutral, never the account colour — colour is entirely
+ * pace status on the rings now, so it can't also disambiguate accounts; the
+ * icon does that instead. */
+.oc-ic {
   position: absolute;
-  bottom: 155%;
-  left: 0;
-  z-index: 5;
-  background: #10101a;
-  border: 1px solid var(--color-border, #2e2e40);
-  border-radius: 7px;
-  padding: 5px 8px;
-  font-size: 11px;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
   color: var(--color-text, #e8e8f0);
-  text-transform: none;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+  opacity: 0.82;
+}
+
+/* Hover popup: name + 5h/7d rows, centred over the dial it belongs to. */
+.oc-pop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.94);
+  z-index: 8;
+  width: 148px;
+  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
+  border: 1px solid var(--color-border, #2e2e40);
+  border-radius: 11px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 9px 11px;
   opacity: 0;
-  transform: translateY(4px);
   pointer-events: none;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
   transition: opacity 0.12s, transform 0.12s;
 }
-.oc-k-tip:hover .oc-tip { opacity: 1; transform: translateY(0); }
-
-.oc-bar { position: relative; height: 8px; border-radius: 4px; background: var(--color-surface-alt, #262637); }
-.oc-bar > span { display: block; height: 100%; background: var(--acc, var(--color-primary, #6e8fff)); border-radius: 4px; }
-.oc-bar > .oc-tick {
-  position: absolute;
-  top: -2px;
-  height: 12px;
-  width: 2px;
-  border-radius: 1px;
-  background: rgba(226, 224, 240, 0.9);
+.oc-cell:hover .oc-pop {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
 }
-.oc-nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; white-space: nowrap; cursor: help; }
-.oc-nums .oc-cur { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12px; }
-.oc-nums .oc-cur-dim { color: var(--color-text-muted, #8a8aa0); }
-.oc-nums .oc-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.6; font-size: 11px; }
+
+.oc-pop-nm { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; margin-bottom: 7px; }
+.oc-pop-nm i { font-size: 12px; color: var(--color-text-muted, #8a8aa0); }
+
+.oc-pop-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 0;
+  cursor: help;
+}
+.oc-pop-k { font-size: 9px; color: var(--color-text-muted, #8a8aa0); text-transform: uppercase; letter-spacing: 0.04em; }
+.oc-pop-val { font-variant-numeric: tabular-nums; }
+.oc-pop-val b { font-weight: 700; }
+.oc-pop-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.6; font-size: 10.5px; }
+
+/* Session tooltip for one 5h/7d row: window name, time-left, absolute reset
+ * clock. Opens left by default (mockup default); .oc-tt-right flips it to
+ * open right instead — set at hover-time (overlay.ts::attachTooltipSideFlip)
+ * from which half of the panel the row sits in, so it always opens toward
+ * the panel's own centre and never runs off the (content-tight) window's
+ * edge. */
+.oc-pop-tt {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%) translateX(-8px);
+  z-index: 9;
+  background: #08070d;
+  border: 1px solid var(--color-border, #2e2e40);
+  border-radius: 7px;
+  padding: 6px 9px;
+  width: 116px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.oc-pop-row:hover .oc-pop-tt { opacity: 1; }
+.oc-pop-row.oc-tt-right .oc-pop-tt {
+  right: auto;
+  left: 100%;
+  transform: translateY(-50%) translateX(8px);
+}
+.oc-tt-l1 { font-weight: 700; font-size: 11px; }
+.oc-tt-l2 { font-size: 11px; }
+.oc-tt-l3 { font-size: 10.5px; color: var(--color-text-muted, #8a8aa0); }
 
 /* Placeholder (loading / no accounts): give it a card look so it's legible
  * against the transparent window instead of floating text. */

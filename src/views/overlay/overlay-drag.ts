@@ -195,22 +195,78 @@ export function initOverlayDrag(surface: HTMLElement): () => void {
   };
 }
 
+/** Floor so a measurement glitch (e.g. a mid-layout read) can never shrink the
+ * window to 0x0 and make it unrecoverable without a restart. */
+const MIN_WIDTH_CSS = 40;
+const MIN_HEIGHT_CSS = 24;
+
 /**
- * Resize the native overlay window to hug the rendered card stack, so the
- * transparent window is never taller than its content (an oversized transparent
- * window still eats clicks meant for whatever is behind it). Width stays fixed;
- * only height tracks content. Safe no-op outside Tauri.
+ * Resize the native overlay window to hug its actual rendered content, so the
+ * transparent window is never bigger than it needs to be (an oversized
+ * transparent window still eats clicks meant for whatever is behind it).
+ * Both width and height track content now — there's no more fixed-width
+ * constant; a lone dial and a five-account row both get exactly the width
+ * they render at. `extraEls` are additional elements to union into the
+ * measurement (e.g. a hover popup) — see attachOverlayHoverResize below,
+ * which is how the dial's hover popup, itself `position: absolute` and therefore
+ * invisible to `contentEl`'s own bounding box, still gets included so it
+ * isn't clipped by the window's edge while it's showing. Safe no-op outside
+ * Tauri.
  */
-export async function resizeOverlayToContent(contentEl: HTMLElement, widthCss: number): Promise<void> {
+export async function resizeOverlayToContent(
+  contentEl: HTMLElement,
+  extraEls: readonly (HTMLElement | null | undefined)[] = [],
+): Promise<void> {
   const wapi = tauriWindow();
   if (!wapi) return;
-  // Use the stack's distance-to-viewport-bottom, not just its own height, so
-  // any top offset (margin/padding above it) is included and can't clip cards.
-  const h = Math.ceil(contentEl.getBoundingClientRect().bottom);
-  if (h <= 0) return;
+  // Use the panel's distance-to-viewport edge, not just its own size, so any
+  // top/left offset (margin/padding) is included and can't clip content.
+  const rect = contentEl.getBoundingClientRect();
+  let right = rect.right;
+  let bottom = rect.bottom;
+  for (const el of extraEls) {
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    right = Math.max(right, r.right);
+    bottom = Math.max(bottom, r.bottom);
+  }
+  const w = Math.max(MIN_WIDTH_CSS, Math.ceil(right));
+  const h = Math.max(MIN_HEIGHT_CSS, Math.ceil(bottom));
   try {
-    await wapi.getCurrentWindow().setSize(new wapi.LogicalSize(widthCss, h));
+    await wapi.getCurrentWindow().setSize(new wapi.LogicalSize(w, h));
   } catch (err) {
     console.error("overlay: resize-to-content failed", err);
   }
+}
+
+/**
+ * Wire up hover-triggered resizing so an open dial popup (or its nested
+ * session tooltip) — both `position: absolute`, so neither inflates
+ * `panelEl`'s own bounding box — still grows the window enough to render
+ * without the native window edge clipping it, then shrinks back to the tight
+ * dial-row size once nothing is hovered. Debounced past the popup's own CSS
+ * fade-in (see overlay.css `.oc-pop`/`.oc-pop-tt` transitions) so the
+ * measurement reads the popup's final, opened geometry. Returns a cleanup.
+ */
+export function attachOverlayHoverResize(rowsEl: HTMLElement, panelEl: HTMLElement): () => void {
+  let timer: number | null = null;
+  const sync = (): void => {
+    if (timer != null) window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      const pop = panelEl.querySelector<HTMLElement>(".oc-cell:hover .oc-pop");
+      const tip = panelEl.querySelector<HTMLElement>(".oc-pop-row:hover .oc-pop-tt");
+      void resizeOverlayToContent(panelEl, [pop, tip]);
+    }, 140);
+  };
+  // pointerenter/pointerleave don't bubble, but they do fire during the
+  // capture phase on ancestors as the event travels down to its target, so a
+  // single capture-phase listener here still delegates across every cell/row
+  // without per-element listeners that would need re-wiring on every refresh.
+  rowsEl.addEventListener("pointerenter", sync, true);
+  rowsEl.addEventListener("pointerleave", sync, true);
+  return () => {
+    rowsEl.removeEventListener("pointerenter", sync, true);
+    rowsEl.removeEventListener("pointerleave", sync, true);
+    if (timer != null) window.clearTimeout(timer);
+  };
 }

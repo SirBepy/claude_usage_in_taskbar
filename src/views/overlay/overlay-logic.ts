@@ -27,6 +27,10 @@ export interface OverlayMetric {
    * hover tooltip on the metric's 5h/7d label. Null when there's no active
    * reset window. */
   resetAbs: string | null;
+  /** Relative time-left until reset (e.g. "1h 14m left"), shown as the
+   * tooltip's middle line for both the 5h and 7d dial. Null when there's no
+   * active reset window. */
+  resetRelative: string | null;
 }
 
 export interface OverlayRow {
@@ -56,8 +60,8 @@ export function buildOverlayRow(
       colour: account.colour,
       icon: account.icon,
       hasData: false,
-      session: { pct: null, safePct: null, resetAbs: null },
-      weekly: { pct: null, safePct: null, resetAbs: null },
+      session: { pct: null, safePct: null, resetAbs: null, resetRelative: null },
+      weekly: { pct: null, safePct: null, resetAbs: null, resetRelative: null },
       resetLabel: "",
     };
   }
@@ -68,14 +72,18 @@ export function buildOverlayRow(
   const weeklyReset = fmtResetDisplay(usage.weekly_resets_at);
   const sessionAbs = sessionReset && sessionReset.diffMs > 0 ? sessionReset.absolute : null;
   const weeklyAbs = weeklyReset && weeklyReset.diffMs > 0 ? weeklyReset.absolute : null;
+  // "in 1h 14m" -> "1h 14m left" (dial tooltip's middle line — see
+  // overlay.ts::popupHtml). Same fmtResetDisplay the reset-label already used.
+  const timeLeft = (r: typeof sessionReset): string | null =>
+    r && r.diffMs > 0 ? `${r.relative.replace(/^in /, "")} left` : null;
   return {
     id: account.id,
     label: account.label,
     colour: account.colour,
     icon: account.icon,
     hasData: true,
-    session: { pct: usage.session_pct, safePct: sessionSafe, resetAbs: sessionAbs },
-    weekly: { pct: usage.weekly_pct, safePct: weeklySafe, resetAbs: weeklyAbs },
+    session: { pct: usage.session_pct, safePct: sessionSafe, resetAbs: sessionAbs, resetRelative: timeLeft(sessionReset) },
+    weekly: { pct: usage.weekly_pct, safePct: weeklySafe, resetAbs: weeklyAbs, resetRelative: timeLeft(weeklyReset) },
     resetLabel: sessionReset && sessionReset.diffMs > 0 ? `resets ${sessionReset.relative}` : "",
   };
 }
