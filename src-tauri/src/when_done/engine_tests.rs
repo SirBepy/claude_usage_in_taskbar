@@ -5,8 +5,14 @@ use serde_json::json;
 // --- Fixtures -----------------------------------------------------------
 
 /// Minimal `Instance` for the pure decision tests. `Instance` has no
-/// `Default`, so build it explicitly; only `session_id`, `busy`, and
-/// `ended_at` drive the logic under test, the rest are inert fillers.
+/// `Default`, so build it explicitly; only `session_id`, `busy`, `ended_at`,
+/// and `awaiting` drive the logic under test, the rest are inert fillers.
+fn instance_awaiting(session_id: &str, busy: bool, ended: bool, awaiting: Option<&str>) -> Instance {
+    let mut i = instance(session_id, busy, ended);
+    i.awaiting = awaiting.map(str::to_string);
+    i
+}
+
 fn instance(session_id: &str, busy: bool, ended: bool) -> Instance {
     Instance {
         session_id: session_id.into(),
@@ -60,6 +66,40 @@ fn all_sessions_idle_ignores_ended_sessions() {
         instance("ended-busy", true, true),
     ];
     assert!(all_sessions_idle(&with_ended_busy));
+}
+
+#[test]
+fn all_sessions_idle_false_while_a_session_reports_background_work() {
+    // awaiting == "working" = own background subagents/tasks still running
+    // (will re-invoke the session). Sleeping now would kill that work, so the
+    // engine must keep Watching even though busy is false.
+    let with_working = vec![
+        instance("idle", false, false),
+        instance_awaiting("bg", false, false, Some("working")),
+    ];
+    assert!(!all_sessions_idle(&with_working));
+}
+
+#[test]
+fn all_sessions_idle_true_for_waiting_and_question_verdicts() {
+    // Only "working" blocks: "waiting" (parked on an external process) and
+    // "question"/"done" verdicts are idle for sleep purposes (questions are
+    // handled by the prompt auto-resolve poll, not the idle check).
+    let live = vec![
+        instance_awaiting("w", false, false, Some("waiting")),
+        instance_awaiting("q", false, false, Some("question")),
+        instance_awaiting("d", false, false, Some("done")),
+    ];
+    assert!(all_sessions_idle(&live));
+}
+
+#[test]
+fn all_sessions_idle_ignores_ended_working_sessions() {
+    let ended_working = vec![
+        instance("live-idle", false, false),
+        instance_awaiting("ended-bg", false, true, Some("working")),
+    ];
+    assert!(all_sessions_idle(&ended_working));
 }
 
 #[test]

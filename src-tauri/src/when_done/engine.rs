@@ -45,11 +45,16 @@ fn log_comment(line: &str) {
     }
 }
 
-/// True when an instance counts as idle/done: not busy. A session left
-/// `awaiting == "question"` is handled separately by the prompt poll; if it has
-/// no pending prompt entry we still treat `busy == false` as idle.
+/// True when an instance counts as idle/done: not busy AND not self-reporting
+/// background work. `awaiting == "working"` means the session's own background
+/// subagents/tasks are still running and will re-invoke it - sleeping now would
+/// kill that work, so it is NOT idle. A hung "working" session cannot block
+/// forever: the Watching loop's no-progress guard (unchanged signature for
+/// NO_PROGRESS_LIMIT) disarms the protocol, same as a hung busy turn. A session
+/// left `awaiting == "question"` is handled separately by the prompt poll; if
+/// it has no pending prompt entry we still treat it as idle.
 fn instance_is_idle(i: &crate::types::Instance) -> bool {
-    !i.busy
+    !i.busy && i.awaiting.as_deref() != Some("working")
 }
 
 /// True when every live (not-ended) session is idle. An empty list (after
@@ -119,14 +124,18 @@ fn live_session_ids(app: &AppHandle) -> Vec<String> {
         .collect()
 }
 
-/// Snapshot of (session_id, busy) for live sessions.
+/// Snapshot of (session_id, in-flight) for live sessions. "In-flight" is
+/// `busy` OR `awaiting == "working"` (self-reported background subagents/tasks
+/// that will re-invoke the session) - the same non-idle definition as
+/// `instance_is_idle`, so the Watching loop's waiting list, its no-progress
+/// guard, and the all-idle break all agree.
 fn live_busy_map(app: &AppHandle) -> Vec<(String, bool)> {
     let state = app.state::<AppState>();
     let guard = state.cached_instances.lock().unwrap();
     guard
         .iter()
         .filter(|i| i.ended_at.is_none())
-        .map(|i| (i.session_id.clone(), i.busy))
+        .map(|i| (i.session_id.clone(), !instance_is_idle(i)))
         .collect()
 }
 

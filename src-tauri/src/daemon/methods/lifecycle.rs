@@ -99,7 +99,13 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 crate::sessions::chat_config::record(&sid, &model, &effort);
                 crate::sessions::chat_config::set_account(&sid, &account_id);
                 state.registry.set_awaiting(&sid, None);
-                state.registry.set_busy(&sid, true);
+                // Deliberately NOT set_busy(true) here: no turn is in flight yet
+                // (claude emits nothing until its first stdin message, so the
+                // pump can never clear a busy set now). The caller's follow-up
+                // send_message sets busy the moment a real turn starts. Setting
+                // it at spawn left a started-but-never-messaged session busy
+                // forever, deferring scheduled messages into it until they went
+                // Missed and spinning the sidebar indefinitely (ai_todo 212).
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"session_id": sid}))
