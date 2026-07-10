@@ -1,14 +1,7 @@
 import { html, render } from "lit-html";
 import { api, type RemoteAccessStatus } from "../../../../shared/api";
+import { settingsHeader } from "../../ui";
 import "./remote-access.css";
-
-interface LegacyGlobals {
-  navigateTo(name: string): Promise<void>;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
 
 function $(root: HTMLElement, sel: string): HTMLElement | null {
   return root.querySelector<HTMLElement>(sel);
@@ -166,9 +159,6 @@ export async function renderRemoteAccessView(
 ): Promise<() => void> {
   render(template(), root);
 
-  const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
-  if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
-
   try { await hydrate(root); }
   catch (e) { console.error("[remote-access] render failed", e); }
 
@@ -178,13 +168,7 @@ export async function renderRemoteAccessView(
 function template() {
   return html`
     <div class="view view-settings">
-      <div class="view-header">
-        <button class="icon-btn back-to-settings" title="Back">
-          <i class="ph ph-arrow-left"></i>
-        </button>
-        <h2>Remote access</h2>
-        <div style="width:32px"></div>
-      </div>
+      ${settingsHeader("Remote access")}
       <div class="view-body">
 
         <div class="kit-section">

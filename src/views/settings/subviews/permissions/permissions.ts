@@ -7,15 +7,8 @@ import {
   type PermissionRule,
 } from "../../../sessions/permission-rules";
 import { askConfirm } from "../../../../shared/confirm";
+import { settingsHeader } from "../../ui";
 import "./permissions.css";
-
-interface LegacyGlobals {
-  navigateTo(name: string): Promise<void>;
-}
-
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
 
 function projectShortName(cwd: string): string {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
@@ -29,7 +22,7 @@ function ruleRow(cwd: string, rule: PermissionRule) {
   return html`
     <div class="perm-rule" data-cwd="${cwd}" data-rule="${rule.raw}">
       <span class="perm-rule__label"><strong>${rule.toolName}</strong> ${patternHtml}</span>
-      <button class="perm-rule__rm" data-act="remove" title="Remove rule">Remove</button>
+      <button class="perm-rule__rm" data-act="remove" title="Remove rule"><i class="ph ph-trash"></i></button>
     </div>
   `;
 }
@@ -48,11 +41,7 @@ function template(rulesByCwd: Record<string, PermissionRule[]>) {
   const entries = Object.entries(rulesByCwd);
   return html`
     <div class="view view-settings-permissions">
-      <div class="view-header">
-        <button class="icon-btn back-to-settings" title="Back">←</button>
-        <h2>Permissions</h2>
-        <div style="width:32px"></div>
-      </div>
+      ${settingsHeader("Permissions")}
       <div class="view-body">
         <div class="kit-section">
           <p class="perm-hint">
@@ -78,9 +67,6 @@ export async function renderPermissionsView(root: HTMLElement): Promise<() => vo
 
   function rerender() {
     render(template(loadAllRules(settings)), root);
-
-    const backBtn = root.querySelector<HTMLButtonElement>(".back-to-settings");
-    if (backBtn) backBtn.onclick = () => g().navigateTo("settings");
 
     root.querySelectorAll<HTMLButtonElement>('[data-act="remove"]').forEach((btn) => {
       btn.onclick = async () => {

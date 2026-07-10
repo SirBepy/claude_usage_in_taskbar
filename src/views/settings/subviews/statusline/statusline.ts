@@ -12,16 +12,10 @@ import {
 import { toolLabel, toolSummary } from "../../../../shared/chat/tool-meta";
 import { escapeHtml } from "../../../../shared/escape-html";
 import { type Pos, insertChip, moveChip, removeAt, addRow, trimRows, moveRow } from "./statusline-dnd";
+import { settingsHeader } from "../../ui";
 import "../../settings.css";
 import "./statusline.css";
 import "../../../sessions/session-statusbar.css";
-
-interface LegacyGlobals {
-  navigateTo(name: string): Promise<void>;
-}
-function g(): LegacyGlobals {
-  return window as unknown as LegacyGlobals;
-}
 
 interface ChipDisplay { icon: string; sample: string; tooltip: string; }
 
@@ -58,11 +52,7 @@ function paletteChipsFor(section: SectionKey): ChipType[] {
 // makes the next `render(html``, root)` on navigate-away throw.
 const shell = () => html`
   <div class="view view-settings-statusline">
-    <div class="view-header">
-      <button class="icon-btn back-to-settings" title="Back">←</button>
-      <h2>Statusline</h2>
-      <div style="width:32px"></div>
-    </div>
+    ${settingsHeader("Statusline")}
     <div class="view-body">
       <div class="kit-section sl-section">
         <div class="kit-section-title">Preview &amp; layout</div>
@@ -249,8 +239,6 @@ export async function renderStatuslineView(root: HTMLElement): Promise<() => voi
   }
 
   // ── static wiring ──────────────────────────────────────────────────────────
-  root.querySelector<HTMLButtonElement>(".back-to-settings")!.onclick = () => g().navigateTo("settings");
-
   hideZeroBox.addEventListener("change", () => {
     hideZero = hideZeroBox.checked;
     void saveStatuslineHideZero(hideZero);

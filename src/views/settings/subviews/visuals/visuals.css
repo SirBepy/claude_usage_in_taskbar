@@ -1,4 +1,0 @@
-/* Visuals subview - no subview-specific styles yet. Shared widget rules
- * (.kit-section, .kit-row, .kit-toggle, .btn-secondary, input[type=color],
- * input[type=number], select) live in the kit; the info tooltip
- * (.info-wrap/.info-icon/.info-tooltip) stays claude_usage's in widgets.css. */
