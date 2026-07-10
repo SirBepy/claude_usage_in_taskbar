@@ -31,6 +31,11 @@ pub struct Session {
     /// spawn time - see `daemon::lifecycle::spawn_session`). Always set: a
     /// chat requires a registry account, there is no no-account spawn path.
     pub account_id: String,
+    /// Text of the most recent turn sent into this session. Kept so that a
+    /// turn rejected by a rate limit before it produced any output can be
+    /// rescheduled verbatim rather than as a vague "continue". Empty until the
+    /// first send. std `Mutex`: only ever held across a `String` clone.
+    pub last_prompt: std::sync::Mutex<String>,
 }
 
 impl Session {
@@ -57,6 +62,7 @@ impl Session {
             mcp_config_path,
             hook_settings_path,
             account_id,
+            last_prompt: std::sync::Mutex::new(String::new()),
         })
     }
 }

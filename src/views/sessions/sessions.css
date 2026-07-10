@@ -62,6 +62,10 @@
   --st-waiting-glow:      var(--chat-state-waiting-glow);
   --st-rate-limited:      #ef4444;
   --st-rate-limited-glow: rgba(239, 68, 68, 0.35);
+  /* Blocked-state chrome (banner wash, borders). Same hue as the row dot and
+     hourglass above, so a blocked chat reads as one colour everywhere. */
+  --st-rate-limited-wash: rgba(239, 68, 68, 0.10);
+  --st-rate-limited-line: rgba(239, 68, 68, 0.35);
   --st-attention:     var(--chat-state-needs-input);
   --st-attention-glow:var(--chat-state-needs-input-glow);
   --st-external:      var(--chat-state-external);
@@ -245,6 +249,19 @@
 .sessions-list li.is-external .session-row-subtitle {
   font-style: italic;
   opacity: 0.85;
+}
+
+/* Thin blocked stripe, layered on top of whatever else the row shows (e.g.
+   the hourglass icon from statusIndicator) rather than replacing it - this
+   project's convention is grey out / mark, never hide. */
+.sessions-list li.is-rate-limited::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--st-rate-limited);
 }
 
 .session-title {
@@ -463,6 +480,10 @@
   overflow: hidden;
   background: var(--color-background);
   position: relative;
+}
+
+.session-pane.is-rate-limited {
+  border-left: 2px solid var(--st-rate-limited);
 }
 
 .view-sessions.drag-over::after {
@@ -904,7 +925,11 @@
   background: rgba(251, 191, 36, 0.4);
 }
 
-/* ── Global rate-limit banner (top of the Chats window) ─────────────────── */
+/* ── Global rate-limit banners (top of the Chats window; one per exhausted
+   account) ───────────────────────────────────────────────────────────────
+   Red always means "blocked" (this project's needs-input/error hue); the
+   account colour (--acc, set inline per banner) only disambiguates WHICH
+   account, on the icon. */
 .rate-limit-banner-host[hidden] {
   display: none;
 }
@@ -914,15 +939,16 @@
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: rgba(239, 68, 68, 0.1);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--st-rate-limited-wash);
+  border-bottom: 1px solid var(--st-rate-limited-line);
+  border-left: 3px solid var(--st-rate-limited);
   color: var(--color-text);
   box-sizing: border-box;
 }
 
 .rate-limit-banner .rlb-icon {
   font-size: 1.4rem;
-  color: #ef4444;
+  color: var(--acc, var(--st-rate-limited));
   flex-shrink: 0;
 }
 
@@ -945,24 +971,46 @@
 .rate-limit-banner .rlb-countdown {
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
-  color: #ef4444;
+  color: var(--st-rate-limited);
   font-weight: 600;
 }
 
-.rate-limit-banner .rlb-auto {
+.rate-limit-banner .rlb-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  user-select: none;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-.rate-limit-banner .rlb-auto input {
+.rate-limit-banner .rlb-move,
+.rate-limit-banner .rlb-schedule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--st-rate-limited) 12%, transparent);
+  border: 1px solid var(--st-rate-limited-line);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
   cursor: pointer;
-  accent-color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.rate-limit-banner .rlb-move:hover,
+.rate-limit-banner .rlb-schedule:hover {
+  background: color-mix(in srgb, var(--st-rate-limited) 22%, transparent);
+}
+
+.rate-limit-banner .rlb-move:active,
+.rate-limit-banner .rlb-schedule:active {
+  background: color-mix(in srgb, var(--st-rate-limited) 30%, transparent);
+}
+
+.rate-limit-banner .rlb-move:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 

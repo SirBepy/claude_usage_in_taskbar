@@ -23,12 +23,35 @@ struct SessionIdOnly {
     session_id: String,
 }
 
+/// Debug-only: see the `simulate_rate_limit` RPC.
+#[cfg(debug_assertions)]
+#[derive(Debug, Deserialize)]
+struct SimulateRateLimitParams {
+    session_id: String,
+    /// Seconds from now until the fake window resets. Defaults to 120, long
+    /// enough to inspect the banner and short enough to watch the resume fire.
+    #[serde(default)]
+    resets_in_secs: Option<i64>,
+    /// `five_hour` (default) | `seven_day` | `weekly`.
+    #[serde(default)]
+    kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MoveSessionParams {
+    session_id: String,
+    target_account_id: String,
+}
+
 pub(super) fn err_to_rpc(e: LifecycleError) -> RpcError {
     use LifecycleError::*;
     match e {
-        InvalidConfig(_, _) | CwdMissing(_) | NoAccounts | AccountNotFound(_) | AccountDrift(_) => {
-            RpcError::invalid_params(e.to_string())
-        }
+        InvalidConfig(_, _)
+        | CwdMissing(_)
+        | NoAccounts
+        | NoDefault
+        | AccountNotFound(_)
+        | AccountDrift(_) => RpcError::invalid_params(e.to_string()),
         NotFound(_) => RpcError {
             code: -32004,
             message: e.to_string(),
@@ -134,6 +157,128 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 crate::sessions::persistence::save_snapshot_default(&state.registry);
                 Ok(json!({"ok": true}))
+            }
+        });
+    }
+    {
+        let map = map.clone();
+        let state = state.clone();
+        router.register("move_session_to_account", move |params, _ctx| {
+            let map = map.clone();
+            let state = state.clone();
+            async move {
+                let p: MoveSessionParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let old = state.registry.get(&p.session_id).ok_or_else(|| {
+                    RpcError::invalid_params(format!("session {} not found", p.session_id))
+                })?;
+                if old.account_id.as_deref() == Some(p.target_account_id.as_str()) {
+                    return Err(RpcError::invalid_params(format!(
+                        "session {} is already on account {}",
+                        p.session_id, p.target_account_id
+                    )));
+                }
+                let cwd = old.cwd.clone();
+                let model = if old.model.is_empty() { "opus".to_string() } else { old.model.clone() };
+                let effort = if old.effort.is_empty() { "high".to_string() } else { old.effort.clone() };
+
+                // Reclaim the pending rate-limit resume queued for the old session,
+                // if any - its prompt is what should continue on the new account.
+                // handle_rate_limit_rejection dedupes to at most one such resume per
+                // session, so the first match is the only match.
+                let pending_resume = crate::sessions::scheduled_items::list()
+                    .into_iter()
+                    .find(|item| {
+                        matches!(item.status, crate::sessions::scheduled_items::ScheduledStatus::Pending)
+                            && matches!(
+                                &item.kind,
+                                crate::sessions::scheduled_items::ScheduledKind::Message { session_id, .. }
+                                    if session_id == &p.session_id
+                            )
+                    });
+                let prompt = if let Some(item) = pending_resume {
+                    crate::sessions::scheduled_items::delete(&item.id);
+                    item.prompt
+                } else {
+                    "Continue from where you left off.".to_string()
+                };
+
+                let session = lifecycle::spawn_session(&state, StartSessionParams {
+                    cwd: cwd.clone(),
+                    model: model.clone(),
+                    effort: effort.clone(),
+                    resume_id: Some(p.session_id.clone()),
+                    remote: false,
+                    account_id: Some(p.target_account_id.clone()),
+                    fork: true,
+                }).await.map_err(err_to_rpc)?;
+                let new_id = session.session_id.clone();
+                let account_id = session.account_id.clone();
+                let now = chrono::Utc::now().to_rfc3339();
+                let (project_id, created_new) = {
+                    let mut snap = state.settings.snapshot();
+                    crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
+                };
+                if created_new {
+                    state.notifier.publish("project_created", json!({
+                        "project_id": project_id,
+                        "cwd": cwd.to_string_lossy(),
+                        "now": now,
+                    }));
+                }
+                state.registry.upsert_interactive(&new_id, &cwd, &project_id, &now);
+                state.registry.set_model_effort(&new_id, &model, &effort);
+                state.registry.set_account(&new_id, &account_id);
+                crate::sessions::chat_config::record(&new_id, &model, &effort);
+                crate::sessions::chat_config::set_account(&new_id, &account_id);
+                state.registry.set_awaiting(&new_id, None);
+
+                lifecycle::send_message(&session, &prompt).await.map_err(err_to_rpc)?;
+                state.registry.set_busy(&new_id, true);
+
+                // Retire the old session. A rate-limited session's `claude -p` child
+                // has usually already exited, so a NotFound error here is expected
+                // and not surfaced.
+                let _ = lifecycle::end_session(&map, &p.session_id).await;
+                state.registry.mark_ended(&p.session_id, EndReason::Moved, &now);
+
+                state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
+                state.notifier.publish("scheduled_items_changed", json!({"items": crate::sessions::scheduled_items::list()}));
+                crate::sessions::persistence::save_snapshot_default(&state.registry);
+                Ok(json!({"session_id": new_id}))
+            }
+        });
+    }
+    // Debug builds only: drive the whole rate-limit flow without waiting hours
+    // for a real window to run out. Feeds `handle_rate_limit_rejection` the same
+    // payload shape `chat/parser.rs` builds from the CLI's `rate_limit_event`,
+    // so the blocked state, the banner, and the staggered scheduled resume all
+    // come from the production path, not a test-only branch.
+    #[cfg(debug_assertions)]
+    {
+        let map = map.clone();
+        let state = state.clone();
+        router.register("simulate_rate_limit", move |params, _ctx| {
+            let map = map.clone();
+            let state = state.clone();
+            async move {
+                let p: SimulateRateLimitParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+                let session = map
+                    .get(&p.session_id)
+                    .ok_or_else(|| err_to_rpc(LifecycleError::NotFound(p.session_id.clone())))?
+                    .clone();
+                let resets_at = chrono::Utc::now().timestamp() + p.resets_in_secs.unwrap_or(120);
+                let kind = p.kind.unwrap_or_else(|| "five_hour".to_string());
+                let body = json!({
+                    "status": "rejected",
+                    "rateLimitType": kind,
+                    "resetsAt": resets_at,
+                    "utilization": 100.0,
+                })
+                .to_string();
+                lifecycle::handle_rate_limit_rejection(&state, &session, &body, false);
+                Ok(json!({"resets_at": resets_at, "rate_limit_type": kind}))
             }
         });
     }

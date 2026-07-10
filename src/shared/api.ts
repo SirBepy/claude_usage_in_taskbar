@@ -439,6 +439,11 @@ export const api = {
     try { return await invoke<InstanceTokenStats>("instance_token_stats", { sessionId }); }
     catch (e) { console.error("instance_token_stats failed", e); return { tokens: 0, turns: 0 }; }
   },
+  /** Forks a rate-limited session's transcript onto a different (non-exhausted)
+   * account, sends its pending resume prompt immediately, ends the old session,
+   * and drops its scheduled resume. Resolves with the NEW session id. */
+  moveSessionToAccount: (sessionId: string, targetAccountId: string): Promise<string> =>
+    invoke<string>("move_session_to_account", { sessionId, targetAccountId }),
 
   // --- Remote access (Settings > Remote access) ---
   setRemoteAccessEnabled: (enabled: boolean): Promise<void> =>

@@ -55,6 +55,19 @@
   gap: 8px;
 }
 
+/* Inline confirmation shown after the blocked-composer path schedules a
+ * message for the account's usage reset (see Composer.showNotice). Hidden by
+ * default; auto-hides itself a few seconds after showing. */
+.composer-notice {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  padding: 2px 2px 0;
+}
+
+.composer-notice[hidden] {
+  display: none;
+}
+
 /* Input wrap holds the highlight backdrop + the transparent-text textarea on
  * top of it, glyph-for-glyph aligned. The surface/rounding lives on the wrap
  * so the textarea can be transparent and let the colored backdrop show. */

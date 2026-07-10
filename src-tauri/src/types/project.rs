@@ -122,6 +122,16 @@ pub struct Instance {
     /// identity instead - see `docs/multi-account/02-chat-routing.md` step 5.
     #[serde(default)]
     pub account_id: Option<String>,
+    /// Unix seconds at which this session's account leaves its rate-limit
+    /// window, set when the CLI rejects a turn. Never cleared on a timer:
+    /// every consumer treats it as live only while `now < resets_at`, so an
+    /// unattended app expires the state without needing a turn to run.
+    #[serde(default)]
+    pub rate_limited_resets_at: Option<i64>,
+    /// Which window was hit: `five_hour` | `seven_day` | `weekly`. Paired with
+    /// `rate_limited_resets_at`; meaningless on its own.
+    #[serde(default)]
+    pub rate_limited_type: Option<String>,
 }
 
 /// Shape served to the webview. Same as `Instance` for now; kept as a
@@ -238,6 +248,8 @@ mod tests {
             autopilot: false,
             turn_gen: 0,
             account_id: None,
+            rate_limited_resets_at: None,
+            rate_limited_type: None,
         };
         let raw = serde_json::to_string(&i).unwrap();
         let back: Instance = serde_json::from_str(&raw).unwrap();

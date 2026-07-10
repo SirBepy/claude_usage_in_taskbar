@@ -47,6 +47,13 @@ pub struct StartSessionParams {
     /// picker itself when "default" is selected) relies on.
     #[serde(default)]
     pub account_id: Option<String>,
+    /// Fork `resume_id`'s transcript into a fresh session id instead of
+    /// resuming it in place. Used by `move_session_to_account` so a chat can
+    /// continue on a different account without ever rebinding an existing
+    /// session id, which would break the one-account-per-session invariant.
+    /// Requires `resume_id`; ignored otherwise.
+    #[serde(default)]
+    pub fork: bool,
 }
 
 #[derive(Debug, Error)]
@@ -65,6 +72,8 @@ pub enum LifecycleError {
     CwdMissing(PathBuf),
     #[error("no accounts registered - add an account before starting a chat")]
     NoAccounts,
+    #[error("no default account set - pick one in Settings > Accounts")]
+    NoDefault,
     #[error("account {0} not found in the registry")]
     AccountNotFound(String),
     #[error("account drift: {0}")]
@@ -95,6 +104,7 @@ pub async fn spawn_session(
     )
     .map_err(|e| match e {
         crate::accounts::AccountResolveError::NoAccounts => LifecycleError::NoAccounts,
+        crate::accounts::AccountResolveError::NoDefault => LifecycleError::NoDefault,
         crate::accounts::AccountResolveError::NotFound(id) => LifecycleError::AccountNotFound(id),
     })?;
     // Pre-spawn drift guard (step 3b): refuse if the profile dir's CLI
@@ -120,10 +130,13 @@ pub async fn spawn_session(
     // resume reuses the existing id via `--resume`. No stdout capture needed,
     // so spawn_session never blocks (claude withholds its init line until the
     // first user message arrives, which the app sends only AFTER this returns).
-    let session_id = params
-        .resume_id
-        .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    // A fork lands on a fresh id even though it resumes an existing one, so it
+    // can never collide with the source session in `map`, in the mcp/hook
+    // config paths (both keyed on session id), or in the registry.
+    let session_id = match (&params.resume_id, params.fork) {
+        (Some(_), true) | (None, _) => uuid::Uuid::new_v4().to_string(),
+        (Some(id), false) => id.clone(),
+    };
     if map.contains_key(&session_id) {
         return Err(LifecycleError::AlreadyExists(session_id));
     }
@@ -138,6 +151,7 @@ pub async fn spawn_session(
         &params.model,
         &params.effort,
         params.remote,
+        params.fork,
     ));
     if let Some(ref mcp_path) = mcp_config_path {
         cmd.arg("--permission-prompt-tool")
@@ -297,6 +311,20 @@ pub async fn spawn_session(
                                     } else {
                                         (None, None)
                                     };
+                                // The account ran out of quota mid-turn. Mark it
+                                // blocked and queue the resume before the event
+                                // is published, so the webview's first sight of
+                                // the rejection already has the state behind it.
+                                if let ChatEvent::Notification { ref kind, ref body } = ev {
+                                    if kind == "rate_limit" {
+                                        handle_rate_limit_rejection(
+                                            &state_for_pump,
+                                            &pump_session,
+                                            body,
+                                            saw_stream_turn,
+                                        );
+                                    }
+                                }
                                 if log::log_enabled!(log::Level::Debug) {
                                     let variant = serde_json::to_value(&ev)
                                         .ok()
@@ -324,6 +352,15 @@ pub async fn spawn_session(
                                                 "awaiting": awaiting.as_deref(),
                                             }),
                                         );
+                                    }
+                                    // A turn ran to completion on this account, so
+                                    // whatever window we had recorded is over.
+                                    // Hygiene only: every consumer already treats
+                                    // a past `resets_at` as unblocked.
+                                    if saw_stream_turn {
+                                        state_for_pump
+                                            .registry
+                                            .clear_rate_limit_for_account(&pump_session.account_id);
                                     }
                                     saw_stream_turn = false;
                                     state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
@@ -411,7 +448,102 @@ pub async fn spawn_session(
     Ok(session)
 }
 
+/// The CLI rejected a turn because the account is out of quota. Two effects:
+///
+/// 1. Mark EVERY live session on that account blocked. One account's window
+///    blocks all of its chats at once, even the idle ones, and the UI has to
+///    say so before the user types into a chat that cannot answer.
+/// 2. Queue a resume for THIS session only. It is the one whose turn died
+///    mid-flight; the account's other sessions are merely unable to start, and
+///    have no interrupted work to replay.
+///
+/// The resume is a real persisted `ScheduledItem`, not an in-process timer, so
+/// it survives an app restart and shows up in the schedule view where the user
+/// can see, edit, or cancel it.
+pub(crate) fn handle_rate_limit_rejection(
+    state: &Arc<DaemonState>,
+    session: &Arc<Session>,
+    body: &str,
+    saw_stream_turn: bool,
+) {
+    let Ok(info) = serde_json::from_str::<serde_json::Value>(body) else {
+        log::warn!("daemon: rate_limit body was not JSON: {body}");
+        return;
+    };
+    let Some(resets_at) = info.get("resetsAt").and_then(|v| v.as_i64()) else {
+        log::warn!("daemon: rate_limit body has no resetsAt: {body}");
+        return;
+    };
+    let window = info.get("rateLimitType").and_then(|v| v.as_str()).unwrap_or("five_hour");
+    let blocked = state
+        .registry
+        .set_rate_limited_for_account(&session.account_id, resets_at, window);
+    log::info!(
+        "daemon: account {} rate limited ({window}) until {resets_at}; {} session(s) blocked",
+        session.account_id,
+        blocked.len()
+    );
+
+    // Replay the exact prompt when the turn died before producing anything.
+    // Once output has streamed, resending the prompt would redo finished work,
+    // so nudge instead. Either way it must read sensibly in the schedule view.
+    let prompt = if saw_stream_turn {
+        "Continue from where you left off.".to_string()
+    } else {
+        session
+            .last_prompt
+            .lock()
+            .ok()
+            .map(|p| p.clone())
+            .filter(|p| !p.trim().is_empty())
+            .unwrap_or_else(|| "Continue from where you left off.".to_string())
+    };
+
+    // A second rejection for the same session (user retried, got blocked again)
+    // must not leave two resumes queued for one chat.
+    for existing in crate::sessions::scheduled_items::list() {
+        let is_pending_resume_for_this = matches!(
+            &existing.kind,
+            crate::sessions::scheduled_items::ScheduledKind::Message { session_id, .. }
+                if session_id == &session.session_id
+        ) && matches!(
+            existing.status,
+            crate::sessions::scheduled_items::ScheduledStatus::Pending
+        );
+        if is_pending_resume_for_this {
+            crate::sessions::scheduled_items::delete(&existing.id);
+        }
+    }
+
+    let fire_at =
+        crate::daemon::schedule::next_stagger_slot(state, Some(&session.account_id), resets_at);
+    let item = crate::sessions::scheduled_items::ScheduledItem::new(
+        crate::sessions::scheduled_items::ScheduledKind::Message {
+            session_id: session.session_id.clone(),
+            cwd: session.cwd.to_string_lossy().to_string(),
+        },
+        prompt,
+        fire_at.to_rfc3339(),
+        None,
+    );
+    crate::sessions::scheduled_items::upsert(item);
+
+    state.notifier.publish(
+        "instances_changed",
+        serde_json::json!({"instances": state.registry.list()}),
+    );
+    state.notifier.publish(
+        "scheduled_items_changed",
+        serde_json::json!({"items": crate::sessions::scheduled_items::list()}),
+    );
+}
+
 pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), LifecycleError> {
+    // Remember the prompt: if this turn is rejected by a rate limit before
+    // producing any output, the scheduled resume replays exactly this text.
+    if let Ok(mut lp) = session.last_prompt.lock() {
+        *lp = text.to_string();
+    }
     let msg = serde_json::json!({
         "type": "user",
         "message": {
@@ -512,12 +644,44 @@ mod tests {
         DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()))
     }
 
+    /// A fork resumes one id and lands on another, so it must pass BOTH
+    /// `--resume <old>` and `--session-id <new>` alongside `--fork-session`.
+    /// Pinning the new id is what lets the daemon know it before spawning,
+    /// instead of blocking on stdout to discover it.
+    #[test]
+    fn fork_passes_resume_and_a_distinct_pinned_session_id() {
+        let args = base_claude_args(Some("old-id"), "new-id", "opus", "high", false, true);
+        let r = args.iter().position(|a| a == "--resume").expect("--resume");
+        assert_eq!(args.get(r + 1).map(String::as_str), Some("old-id"));
+        assert!(args.iter().any(|a| a == "--fork-session"), "fork must pass --fork-session: {args:?}");
+        let s = args.iter().position(|a| a == "--session-id").expect("--session-id");
+        assert_eq!(args.get(s + 1).map(String::as_str), Some("new-id"));
+    }
+
+    /// Without `fork`, a resume keeps today's shape exactly: `--resume <id>`
+    /// and no `--session-id`. Guards against the fork flag leaking into the
+    /// ordinary respawn path, which would silently mint a new id per turn.
+    #[test]
+    fn plain_resume_is_unchanged_by_the_fork_flag() {
+        let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high", false, false);
+        assert!(!args.iter().any(|a| a == "--fork-session"), "{args:?}");
+        assert!(!args.iter().any(|a| a == "--session-id"), "{args:?}");
+    }
+
+    #[test]
+    fn rate_limited_sentinel_round_trips() {
+        use crate::daemon::schedule::parse_rate_limited as parse;
+        assert_eq!(parse("RATE_LIMITED:1800000000"), Some(1_800_000_000));
+        assert_eq!(parse("sent"), None);
+        assert_eq!(parse("RATE_LIMITED:not-a-number"), None);
+    }
+
     #[test]
     fn new_session_uses_session_id_not_resume() {
         // Root-cause guard: a brand-new session must use `--session-id <uuid>`,
         // NOT `--resume <uuid>`. claude rejects `--resume` of an unknown id
         // ("No conversation found with session ID") and exits.
-        let args = base_claude_args(None, "new-uuid", "opus", "high", false);
+        let args = base_claude_args(None, "new-uuid", "opus", "high", false, false);
         assert!(
             !args.iter().any(|a| a == "--resume"),
             "new session must not pass --resume: {args:?}"
@@ -531,7 +695,7 @@ mod tests {
 
     #[test]
     fn resume_session_uses_resume_not_session_id() {
-        let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high", false);
+        let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high", false, false);
         assert!(
             !args.iter().any(|a| a == "--session-id"),
             "resume must not pass --session-id: {args:?}"
@@ -545,7 +709,7 @@ mod tests {
 
     #[test]
     fn base_args_always_carry_model_and_effort() {
-        let args = base_claude_args(None, "new-uuid", "sonnet", "medium", false);
+        let args = base_claude_args(None, "new-uuid", "sonnet", "medium", false, false);
         let m = args.iter().position(|a| a == "--model").expect("--model");
         assert_eq!(args.get(m + 1).map(String::as_str), Some("sonnet"));
         let e = args.iter().position(|a| a == "--effort").expect("--effort");
@@ -556,7 +720,7 @@ mod tests {
     fn base_args_carry_turn_status_prompt() {
         // The status marker instruction must ride on every spawn so Claude
         // self-reports done-vs-question; the sidebar icon depends on it.
-        let args = base_claude_args(None, "new-uuid", "opus", "high", false);
+        let args = base_claude_args(None, "new-uuid", "opus", "high", false, false);
         let p = args
             .iter()
             .position(|a| a == "--append-system-prompt")
@@ -579,6 +743,7 @@ mod tests {
                 resume_id: None,
                 remote: false,
                 account_id: None,
+                fork: false,
             },
         )
         .await;
@@ -601,6 +766,7 @@ mod tests {
                 resume_id: None,
                 remote: false,
                 account_id: None,
+                fork: false,
             },
         )
         .await;
@@ -619,6 +785,7 @@ mod tests {
                 resume_id: None,
                 remote: false,
                 account_id: None,
+                fork: false,
             },
         )
         .await;
@@ -638,6 +805,7 @@ mod tests {
                 resume_id: None,
                 remote: false,
                 account_id: None,
+                fork: false,
             },
         )
         .await;

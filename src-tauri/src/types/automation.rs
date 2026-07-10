@@ -17,6 +17,10 @@ pub enum EndReason {
     ProcessGone,
     ChildExit,
     Manual,
+    /// Forked onto another account by `move_session_to_account`. The successor
+    /// session carries the full transcript under a fresh id; this record stays
+    /// only as the History entry for the pre-move stretch.
+    Moved,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, ts_rs::TS)]

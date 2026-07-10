@@ -26,10 +26,18 @@ pub struct RegisterInput {
 
 pub struct Registry {
     inner: Mutex<HashMap<String, Instance>>,
+    /// `account_id` -> (reset unix secs, window kind). Kept alongside the
+    /// instances rather than only on them, so a session spawned *after* the
+    /// rejection is born blocked instead of looking healthy until it tries a
+    /// turn and gets rejected itself. Entries are never swept on a timer:
+    /// a past `resets_at` reads as "not blocked" everywhere.
+    rate_limits: Mutex<HashMap<String, (i64, String)>>,
 }
 
 impl Registry {
-    pub fn new() -> Self { Self { inner: Mutex::new(HashMap::new()) } }
+    pub fn new() -> Self {
+        Self { inner: Mutex::new(HashMap::new()), rate_limits: Mutex::new(HashMap::new()) }
+    }
 
     /// Inserts or updates an instance. Returns `(project_id, created_new)`.
     /// `project_id` is resolved via `settings::upsert_project_for_cwd`.
@@ -69,6 +77,8 @@ impl Registry {
             autopilot: false,
             turn_gen: 0,
             account_id: None,
+            rate_limited_resets_at: None,
+            rate_limited_type: None,
         };
         guard.insert(input.session_id, instance);
         (project_id, true)
@@ -123,6 +133,8 @@ impl Registry {
             autopilot: false,
             turn_gen: 0,
             account_id: None,
+            rate_limited_resets_at: None,
+            rate_limited_type: None,
         };
         guard.insert(session_id.to_string(), instance);
         project_id
@@ -167,6 +179,8 @@ impl Registry {
             autopilot: false,
             turn_gen: 0,
             account_id: None,
+            rate_limited_resets_at: None,
+            rate_limited_type: None,
         };
         guard.insert(session_id.to_string(), instance);
     }
@@ -250,12 +264,68 @@ impl Registry {
     }
 
     /// Set the registry account this session was spawned under. Returns true
-    /// if the entry was found.
+    /// if the entry was found. Also stamps the account's current rate-limit
+    /// window onto the instance, so a chat started while the account is
+    /// exhausted shows as blocked immediately rather than after its own
+    /// rejected turn.
     pub fn set_account(&self, session_id: &str, account_id: &str) -> bool {
+        let limits = self.rate_limits.lock().unwrap();
+        let stamp = limits.get(account_id).cloned();
+        drop(limits);
         let mut guard = self.inner.lock().unwrap();
         let Some(i) = guard.get_mut(session_id) else { return false };
         i.account_id = Some(account_id.to_string());
+        if let Some((resets_at, kind)) = stamp {
+            i.rate_limited_resets_at = Some(resets_at);
+            i.rate_limited_type = Some(kind);
+        }
         true
+    }
+
+    /// Record that `account_id` is rate limited until `resets_at` (unix secs),
+    /// and stamp every live instance on that account. One account's window
+    /// blocks all of its sessions at once, which is why this is account-keyed
+    /// rather than session-keyed. Returns the session ids that were marked,
+    /// in a stable order, so the caller can schedule one resume per session.
+    pub fn set_rate_limited_for_account(
+        &self,
+        account_id: &str,
+        resets_at: i64,
+        kind: &str,
+    ) -> Vec<String> {
+        self.rate_limits
+            .lock()
+            .unwrap()
+            .insert(account_id.to_string(), (resets_at, kind.to_string()));
+        let mut guard = self.inner.lock().unwrap();
+        let mut marked: Vec<String> = guard
+            .values_mut()
+            .filter(|i| i.ended_at.is_none() && i.account_id.as_deref() == Some(account_id))
+            .map(|i| {
+                i.rate_limited_resets_at = Some(resets_at);
+                i.rate_limited_type = Some(kind.to_string());
+                i.session_id.clone()
+            })
+            .collect();
+        marked.sort();
+        marked
+    }
+
+    /// Hygiene only: a turn completed on this account, so whatever window we
+    /// recorded is demonstrably over. Correctness never depends on this being
+    /// called, because every consumer already treats a past `resets_at` as
+    /// unblocked.
+    pub fn clear_rate_limit_for_account(&self, account_id: &str) {
+        if self.rate_limits.lock().unwrap().remove(account_id).is_none() {
+            return;
+        }
+        let mut guard = self.inner.lock().unwrap();
+        for i in guard.values_mut() {
+            if i.account_id.as_deref() == Some(account_id) {
+                i.rate_limited_resets_at = None;
+                i.rate_limited_type = None;
+            }
+        }
     }
 
     /// Convert an Interactive session to External so the terminal owns it after
@@ -628,6 +698,79 @@ mod tests {
         assert!(!registry.set_kind("ext-1", InstanceKind::Automated, true));
         // Kind must not have been downgraded.
         assert_eq!(registry.get("ext-1").unwrap().kind, InstanceKind::Automated);
+    }
+
+    #[test]
+    fn rate_limit_marks_only_the_matching_account() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        for sid in ["a1", "a2", "b1"] {
+            registry.record_interactive_session(sid, Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        }
+        registry.set_account("a1", "acct-a");
+        registry.set_account("a2", "acct-a");
+        registry.set_account("b1", "acct-b");
+
+        let marked = registry.set_rate_limited_for_account("acct-a", 1_800_000_000, "five_hour");
+
+        assert_eq!(marked, vec!["a1".to_string(), "a2".to_string()]);
+        for sid in ["a1", "a2"] {
+            let i = registry.get(sid).unwrap();
+            assert_eq!(i.rate_limited_resets_at, Some(1_800_000_000));
+            assert_eq!(i.rate_limited_type.as_deref(), Some("five_hour"));
+        }
+        let b = registry.get("b1").unwrap();
+        assert_eq!(b.rate_limited_resets_at, None, "other accounts must be untouched");
+    }
+
+    #[test]
+    fn rate_limit_does_not_mark_ended_sessions() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("live", Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        registry.record_interactive_session("dead", Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        registry.set_account("live", "acct-a");
+        registry.set_account("dead", "acct-a");
+        registry.mark_ended("dead", EndReason::Manual, "2026-07-07T01:00:00Z");
+
+        let marked = registry.set_rate_limited_for_account("acct-a", 1_800_000_000, "five_hour");
+
+        assert_eq!(marked, vec!["live".to_string()]);
+        assert_eq!(registry.get("dead").unwrap().rate_limited_resets_at, None);
+    }
+
+    /// A chat started while its account is already exhausted must be born
+    /// blocked, not look healthy until its own first turn is rejected.
+    #[test]
+    fn set_account_seeds_an_active_rate_limit() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.set_rate_limited_for_account("acct-a", 1_800_000_000, "seven_day");
+        registry.record_interactive_session("fresh", Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        assert_eq!(registry.get("fresh").unwrap().rate_limited_resets_at, None);
+
+        registry.set_account("fresh", "acct-a");
+
+        let i = registry.get("fresh").unwrap();
+        assert_eq!(i.rate_limited_resets_at, Some(1_800_000_000));
+        assert_eq!(i.rate_limited_type.as_deref(), Some("seven_day"));
+    }
+
+    #[test]
+    fn clearing_a_rate_limit_unblocks_that_accounts_sessions() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("a1", Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        registry.set_account("a1", "acct-a");
+        registry.set_rate_limited_for_account("acct-a", 1_800_000_000, "five_hour");
+
+        registry.clear_rate_limit_for_account("acct-a");
+
+        assert_eq!(registry.get("a1").unwrap().rate_limited_resets_at, None);
+        // And the seed is gone, so a later session is not born blocked.
+        registry.record_interactive_session("a2", Path::new("/tmp/x"), &settings, "2026-07-07T00:00:00Z");
+        registry.set_account("a2", "acct-a");
+        assert_eq!(registry.get("a2").unwrap().rate_limited_resets_at, None);
     }
 
     #[test]

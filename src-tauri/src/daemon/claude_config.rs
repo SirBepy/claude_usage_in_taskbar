@@ -126,10 +126,16 @@ pub(crate) fn daemon_hook_port() -> u16 {
 /// - new session  -> `--session-id <our-uuid>` (claude creates a new
 ///   conversation using exactly that id; verified the id round-trips).
 /// - resume        -> `--resume <existing-id>`.
+/// - fork (resume  -> `--resume <old-id> --fork-session --session-id <new-uuid>`,
+///   onto another     which replays the old transcript into a brand-new id.
+///   account)         `--session-id` pins that id, so it is still known up
+///                    front. Verified against the installed CLI.
 /// Either way `session_id` is known up front, so the daemon never has to block
 /// reading stdout to discover it (claude does not emit its `system`/init line
 /// until it receives the first user message, which would otherwise deadlock).
-pub(crate) fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str, remote: bool) -> Vec<String> {
+///
+/// `fork` is only meaningful with `resume_id`; it is ignored for a new session.
+pub(crate) fn base_claude_args(resume_id: Option<&str>, session_id: &str, model: &str, effort: &str, remote: bool, fork: bool) -> Vec<String> {
     let mut args = vec![
         "-p".to_string(),
         "--input-format=stream-json".to_string(),
@@ -137,12 +143,25 @@ pub(crate) fn base_claude_args(resume_id: Option<&str>, session_id: &str, model:
         "--verbose".to_string(),
         "--include-partial-messages".to_string(),
     ];
-    if resume_id.is_some() {
-        args.push("--resume".to_string());
-    } else {
-        args.push("--session-id".to_string());
+    match resume_id {
+        // Fork: the id we resume from and the id we land on are different.
+        Some(old) if fork => {
+            args.push("--resume".to_string());
+            args.push(old.to_string());
+            args.push("--fork-session".to_string());
+            args.push("--session-id".to_string());
+            args.push(session_id.to_string());
+        }
+        // Plain resume: `session_id` IS `resume_id`.
+        Some(_) => {
+            args.push("--resume".to_string());
+            args.push(session_id.to_string());
+        }
+        None => {
+            args.push("--session-id".to_string());
+            args.push(session_id.to_string());
+        }
     }
-    args.push(session_id.to_string());
     args.push("--model".to_string());
     args.push(model.to_string());
     args.push("--effort".to_string());

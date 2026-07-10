@@ -18,9 +18,8 @@ import { sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
 import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu } from "./sidebar";
 import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
-import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
+import { rateLimitBanner, isBlocked } from "../../shared/chat/rate-limit-banner";
 import { sessionEvents } from "../../shared/chat/event-store";
-import type { ContentBlock, ChatEvent } from "../../types/ipc.generated";
 import {
   initWhenDone,
   subscribeWhenDone,
@@ -151,21 +150,38 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     replayPendingPrompt(sid);
   });
 
-  // Mount the global rate-limit banner (top of the Chats window) and wire its
-  // auto-continue to re-send "continue" to each interrupted chat on reset.
+  // Mount the global rate-limit banner (top of the Chats window; also mounted
+  // independently in the detached session-chats window, same module). The
+  // daemon is the sole source of truth for blocked state now - it marks
+  // Instance.rate_limited_resets_at, schedules the resume itself, and
+  // publishes instances_changed. The banner is purely a reflection of that,
+  // re-rendered from state.sessions on every refresh below.
   const rlHost = root.querySelector<HTMLElement>("#rate-limit-banner-host");
   if (rlHost) rateLimitBanner.mount(rlHost);
-  sessionEvents.setRateLimitHandler((sid, body) => rateLimitBanner.report(sid, body));
-  rateLimitBanner.setSendContinue((sid) => {
-    const sess = state.sessions.find((s) => s.session_id === sid);
-    const blocks: ContentBlock[] = [{ type: "text", text: "continue" }];
-    sessionEvents.pushSynthetic(sid, {
-      type: "user_message",
-      content: blocks,
-      timestamp: BigInt(Date.now()),
-    } as ChatEvent);
-    void invoke<void>("send_message", { sessionId: sid, cwd: String(sess?.cwd ?? "."), blocks })
-      .catch((err) => console.error("[rate-limit] auto-continue send failed", sid, err));
+  rateLimitBanner.setSelectedSessionGetter(() => state.selectedId);
+  rateLimitBanner.setOnMoved((newId) => {
+    void (async () => {
+      await refreshSessions();
+      if (state.mountId !== myMount) return;
+      renderSidebar(listEl);
+      rateLimitBanner.update(state.sessions);
+      await selectSession(newId, pane);
+    })();
+  });
+  // The rate_limit notification is a live stream event for the one session
+  // that got rejected; the daemon's own instances_changed broadcast (which
+  // marks EVERY session on the account) arrives separately and can lag (see
+  // project_daemon_notifier_broadcast_lossy) - proactively refresh here so
+  // the block shows instantly instead of waiting for that broadcast. The
+  // rate_limit JSON itself is intercepted by event-store's deliver() before
+  // it can reach the transcript; this handler never needs its body.
+  sessionEvents.setRateLimitHandler(() => {
+    void (async () => {
+      await refreshSessions();
+      if (state.mountId !== myMount) return;
+      renderSidebar(listEl);
+      rateLimitBanner.update(state.sessions);
+    })();
   });
 
   if (consumePendingOpenPicker()) {
@@ -230,6 +246,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     renderSidebar(listEl);
     refreshPaneEmptyState(pane);
     updateThinkingBar();
+    rateLimitBanner.update(state.sessions);
   }
 
   // Queued-chat / restore-selection flow. MUST NOT abort the mount: the click
@@ -293,6 +310,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
           if (state.mountId !== myMount) return;
           renderSidebar(listEl);
           updateThinkingBar();
+          rateLimitBanner.update(state.sessions);
           // If the initial mount's session restore failed (cached_instances was empty
           // at that point), try again now that the daemon is connected.
           if (!state.selectedId && !state.pendingNewSession) {
@@ -355,6 +373,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
       renderSidebar(listEl);
       updateThinkingBar();
+      rateLimitBanner.update(state.sessions);
       // If the initial mount's session restore failed (daemon not yet connected),
       // restore now on the first instances-changed that populates the list.
       if (!state.selectedId && !state.pendingNewSession) {
@@ -376,6 +395,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
             if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
           }
           updateHeaderAvatarStatus(pane, sess);
+          pane.classList.toggle("is-rate-limited", isBlocked(sess));
+          state.composer?.refreshBlockedState();
         }
       }
       // If the previously-selected session vanished (e.g. takeover renamed it,
@@ -685,6 +706,8 @@ export async function renderDetachedSession(
             if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
           }
           updateHeaderAvatarStatus(pane, sess);
+          pane.classList.toggle("is-rate-limited", isBlocked(sess));
+          state.composer?.refreshBlockedState();
         }
       }
     });

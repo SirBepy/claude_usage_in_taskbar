@@ -22,6 +22,47 @@ const SLEEP_CHUNK_SECS: u64 = 15;
 /// Fallback grace window when `Settings.schedule_grace_secs` is unset.
 const DEFAULT_GRACE_SECS: i64 = 3600;
 
+/// Breathing room after the reported reset before the first resume fires.
+/// `resetsAt` from the CLI has been observed to be optimistic, and a turn sent
+/// at the exact boundary can be rejected again.
+const RESUME_DELAY_SECS: i64 = 60;
+/// Spacing between successive resumes on the SAME account. Without it, N
+/// blocked chats all fire in the tick right after the reset and immediately
+/// re-exhaust the window they just waited out.
+const RESUME_STAGGER_SECS: i64 = 45;
+/// `fire_message` returns `Err("RATE_LIMITED:<unix secs>")` when the account is
+/// still inside its window at fire time. `compute_fired` turns that into a
+/// requeue instead of a terminal `Failed`, because the item is not broken, it
+/// is early.
+const RATE_LIMITED_PREFIX: &str = "RATE_LIMITED:";
+
+/// When should the next resume on `account_id` fire, given the account leaves
+/// its window at `resets_at` (unix secs)? Slots are `resets_at + 60s`, then
+/// +45s per already-pending resume on that same account, so a fan-out of
+/// blocked chats resumes in single file rather than as a thundering herd.
+///
+/// Counts only `Pending` `Message` items, so an item currently being fired
+/// (status `Firing`, i.e. the one asking) never counts itself.
+pub fn next_stagger_slot(
+    state: &Arc<DaemonState>,
+    account_id: Option<&str>,
+    resets_at: i64,
+) -> DateTime<Utc> {
+    let ordinal = scheduled_items::list()
+        .iter()
+        .filter(|it| matches!(it.status, ScheduledStatus::Pending))
+        .filter_map(|it| match &it.kind {
+            ScheduledKind::Message { session_id, .. } => Some(session_id.clone()),
+            ScheduledKind::NewChat { .. } => None,
+        })
+        .filter(|sid| {
+            state.registry.get(sid).and_then(|i| i.account_id).as_deref() == account_id
+        })
+        .count() as i64;
+    let ts = resets_at + RESUME_DELAY_SECS + ordinal * RESUME_STAGGER_SECS;
+    DateTime::from_timestamp(ts, 0).unwrap_or_else(Utc::now)
+}
+
 /// Spawn the scheduler tick loop. Call once at daemon startup, alongside the
 /// other background loops in `daemon::run_daemon_main` (e.g. `detector_task::spawn`).
 pub fn spawn(state: Arc<DaemonState>) {
@@ -175,6 +216,21 @@ fn compute_missed(mut item: ScheduledItem, now: DateTime<Utc>) -> ScheduledItem 
 /// scheduled-items store directly - the caller persists the returned item.
 async fn compute_fired(state: &Arc<DaemonState>, mut item: ScheduledItem, now: DateTime<Utc>) -> ScheduledItem {
     let outcome = fire_kind(state, &item).await;
+    // Still inside the account's window: not a failure, just early. Push the
+    // item to the next free stagger slot and leave it Pending. `last_fired_at`
+    // stays untouched so the schedule view doesn't claim we tried to send.
+    if let Some(resets_at) = outcome.as_ref().err().and_then(|e| parse_rate_limited(e)) {
+        let account_id = match &item.kind {
+            ScheduledKind::Message { session_id, .. } => {
+                state.registry.get(session_id).and_then(|i| i.account_id)
+            }
+            ScheduledKind::NewChat { account_id, .. } => account_id.clone(),
+        };
+        item.fire_at = next_stagger_slot(state, account_id.as_deref(), resets_at).to_rfc3339();
+        item.status = ScheduledStatus::Pending;
+        item.last_result = Some("waiting: account still rate limited".to_string());
+        return item;
+    }
     item.last_fired_at = Some(now.to_rfc3339());
     item.last_result = Some(match &outcome {
         Ok(()) => "sent".to_string(),
@@ -190,6 +246,11 @@ async fn compute_fired(state: &Arc<DaemonState>, mut item: ScheduledItem, now: D
         };
     }
     item
+}
+
+/// `Some(resets_at)` if `reason` is the requeue sentinel from `fire_message`.
+pub(crate) fn parse_rate_limited(reason: &str) -> Option<i64> {
+    reason.strip_prefix(RATE_LIMITED_PREFIX)?.parse().ok()
 }
 
 async fn fire_kind(state: &Arc<DaemonState>, item: &ScheduledItem) -> Result<(), String> {
@@ -213,6 +274,18 @@ async fn fire_message(
     cwd: &str,
     prompt: &str,
 ) -> Result<(), String> {
+    // The account may still be blocked even though this item came due: a
+    // seven-day window can outlast the five-hour reset we scheduled against.
+    // Bail with the requeue sentinel rather than spending the turn to learn
+    // that the hard way.
+    if let Some(resets_at) = state
+        .registry
+        .get(session_id)
+        .and_then(|i| i.rate_limited_resets_at)
+        .filter(|ts| *ts > Utc::now().timestamp())
+    {
+        return Err(format!("{RATE_LIMITED_PREFIX}{resets_at}"));
+    }
     let session = match state.sessions.get(session_id).map(|s| s.clone()) {
         Some(s) => s,
         None => respawn_for_message(state, session_id, cwd).await?,
@@ -249,6 +322,7 @@ async fn respawn_for_message(
         resume_id: Some(session_id.to_string()),
         remote: false,
         account_id,
+        fork: false,
     };
     lifecycle::spawn_session(state, params).await.map_err(err_to_string)
 }
@@ -275,6 +349,7 @@ async fn fire_new_chat(
         resume_id: None,
         remote: false,
         account_id: account_id.map(|s| s.to_string()),
+        fork: false,
     };
     let session = lifecycle::spawn_session(state, params).await.map_err(err_to_string)?;
     let sid = session.session_id.clone();

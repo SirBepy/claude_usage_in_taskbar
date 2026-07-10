@@ -262,6 +262,51 @@ pub async fn takeover_manual(
     client.takeover_manual(manual_pid, &model, &effort).await.map_err(|e| e.to_string())
 }
 
+/// Move a chat session to a different account: forks its transcript onto a
+/// fresh session id spawned under `target_account_id`, replays the pending
+/// rate-limit resume (or a generic continuation prompt) into it, then retires
+/// the old session. Returns the new session_id; the frontend rebinds the chat
+/// pane to it.
+#[tauri::command]
+pub async fn move_session_to_account(
+    session_id: String,
+    target_account_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+    client
+        .move_session_to_account(&session_id, &target_account_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Debug builds only: fake a usage-limit rejection on `session_id` so the
+/// blocked banner, the red chat state, and the staggered scheduled resume can
+/// all be exercised without waiting for a real window to run out. Everything
+/// downstream of the injection runs through the production path.
+///
+/// From the webview devtools console:
+/// `__TAURI__.core.invoke("simulate_rate_limit", { sessionId: "<id>", resetsInSecs: 120 })`
+#[tauri::command]
+pub async fn simulate_rate_limit(
+    session_id: String,
+    resets_in_secs: Option<i64>,
+    kind: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let guard = state.daemon_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| "daemon client not connected".to_string())?;
+    client
+        .simulate_rate_limit(
+            &session_id,
+            resets_in_secs.unwrap_or(120),
+            kind.as_deref().unwrap_or("five_hour"),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Resolve model+effort for takeover from settings.extra:
 /// 1. projectLastChoice[cwd_path] -> {model, effort}
 /// 2. effortPresets[].name == "Normal" -> {model, effort}

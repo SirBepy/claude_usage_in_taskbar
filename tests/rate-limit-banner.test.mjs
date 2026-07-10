@@ -1,101 +1,232 @@
-// Tests for the global rate-limit banner controller: it activates only on
-// "rejected" rate-limit events, tracks every interrupted session, runs a
-// countdown, and on reset sends "continue" to each interrupted chat when
-// auto-continue is on (and to none when it's off).
+// @vitest-environment jsdom
+//
+// Tests for the rate-limit banner controller. The daemon is the sole source
+// of truth for "blocked" now (Instance.rate_limited_resets_at /
+// rate_limited_type); this module only reflects that, one banner per
+// exhausted account, and offers "Continue on <other account>" (forks the
+// session via api.moveSessionToAccount) and "View in Schedule" (navigates).
+// No frontend timer ever sends a turn on its own any more.
+//
+// isBlocked() reads the real Date.now() (it's the same formula every other
+// consumer inlines - sidebar.ts, active-session.ts, composer's isBlocked
+// wiring), so these tests fake the system clock rather than injecting a
+// `now` dependency, keeping every time-based check (isBlocked, countdown,
+// clock labels) consistent with a single faked "now".
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { JSDOM } from "jsdom";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { RateLimitBanner } = await import("../src/shared/chat/rate-limit-banner.ts");
+const listAccounts = vi.fn();
+const moveSessionToAccount = vi.fn();
+vi.mock("../src/shared/api.ts", () => ({
+  api: { listAccounts: (...a) => listAccounts(...a), moveSessionToAccount: (...a) => moveSessionToAccount(...a) },
+}));
+
+const showToast = vi.fn();
+vi.mock("../src/shared/toast.ts", () => ({ showToast: (...a) => showToast(...a) }));
+
+const showView = vi.fn();
+vi.mock("../src/shared/navigation.ts", () => ({ showView: (...a) => showView(...a) }));
+
+const { RateLimitBanner, isBlocked, formatClockLabel, capitalize } = await import(
+  "../src/shared/chat/rate-limit-banner.ts"
+);
+
+/** Flushes pending microtasks so the async accounts-cache load settles. */
+async function flush() {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
+
+const PERSONAL = { id: "acc-personal", label: "personal", colour: "#9d7dfc", icon: "user" };
+const FIBO = { id: "acc-fibo", label: "fibo", colour: "#3ecf8e", icon: "buildings" };
+
+// Fixed "now" for every test: 2026-01-01T12:00:00.000Z.
+const NOW_MS = Date.UTC(2026, 0, 1, 12, 0, 0);
+const NOW_SEC = Math.floor(NOW_MS / 1000);
+
+function instance(overrides = {}) {
+  return {
+    session_id: "s1",
+    account_id: FIBO.id,
+    rate_limited_resets_at: null,
+    rate_limited_type: null,
+    started_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
 
 let host;
 beforeEach(() => {
-  const dom = new JSDOM("<!doctype html><html><body><div id='host'></div></body></html>");
-  globalThis.document = dom.window.document;
-  globalThis.HTMLElement = dom.window.HTMLElement;
-  host = dom.window.document.getElementById("host");
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW_MS);
+  document.body.innerHTML = "<div id='host'></div>";
+  host = document.getElementById("host");
+  listAccounts.mockReset().mockResolvedValue([PERSONAL, FIBO]);
+  moveSessionToAccount.mockReset();
+  showToast.mockReset();
+  showView.mockReset();
 });
 
-function rejected({ resetsAt = 1000, rateLimitType = "five_hour" } = {}) {
-  return JSON.stringify({ status: "rejected", rateLimitType, resetsAt });
-}
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("isBlocked", () => {
+  it("false when rate_limited_resets_at is null", () => {
+    expect(isBlocked(instance({ rate_limited_resets_at: null }))).toBe(false);
+  });
+
+  it("true when resets_at is in the future", () => {
+    expect(isBlocked(instance({ rate_limited_resets_at: BigInt(NOW_SEC + 3600) }))).toBe(true);
+  });
+
+  it("false when resets_at is in the past", () => {
+    expect(isBlocked(instance({ rate_limited_resets_at: BigInt(NOW_SEC - 3600) }))).toBe(false);
+  });
+});
+
+describe("capitalize", () => {
+  it("title-cases the first letter only", () => {
+    expect(capitalize("fibo")).toBe("Fibo");
+    expect(capitalize("")).toBe("");
+  });
+});
 
 describe("RateLimitBanner", () => {
-  it("ignores non-rejected payloads", () => {
+  it("renders nothing when no account is blocked", async () => {
     const b = new RateLimitBanner();
     b.mount(host);
-    b.report("s1", JSON.stringify({ status: "allowed_warning", rateLimitType: "five_hour", resetsAt: 1000 }));
-    expect(b.state.active).toBe(false);
+    await flush();
+    b.update([instance({ rate_limited_resets_at: null })]);
     expect(host.hidden).toBe(true);
+    expect(host.querySelectorAll(".rate-limit-banner").length).toBe(0);
   });
 
-  it("activates on a rejection and names the limit + reset time", () => {
-    let nowMs = 100 * 1000; // well before reset
-    const b = new RateLimitBanner({ now: () => nowMs });
+  it("renders one banner for a blocked account, naming the account + window", async () => {
+    const resetsAtSec = NOW_SEC + 2 * 3600 + 14 * 60; // now + 2h14m
+    const b = new RateLimitBanner();
     b.mount(host);
-    b.report("s1", rejected({ resetsAt: 1000, rateLimitType: "five_hour" }));
+    await flush();
+    b.update([instance({ account_id: FIBO.id, rate_limited_resets_at: BigInt(resetsAtSec), rate_limited_type: "five_hour" })]);
 
-    expect(b.state.active).toBe(true);
-    expect(b.state.interrupted).toEqual(["s1"]);
     expect(host.hidden).toBe(false);
-    expect(host.querySelector(".rlb-title").textContent).toBe("5-hour limit reached");
-    expect(host.querySelector(".rlb-countdown").textContent).toMatch(/remaining/);
+    const card = host.querySelector(".rate-limit-banner");
+    expect(card).toBeTruthy();
+    expect(card.querySelector(".rlb-title").textContent).toBe("Fibo hit its 5-hour limit");
+    expect(card.querySelector(".rlb-time").textContent).toBe(`Resets ${formatClockLabel(resetsAtSec * 1000)}`);
+    expect(card.querySelector(".rlb-countdown").textContent).toBe("in 2h 14m");
+    expect(card.querySelector(".rlb-icon").className).toContain("ph-buildings");
   });
 
-  it("maps weekly rateLimitType label", () => {
-    const b = new RateLimitBanner({ now: () => 0 });
+  it("maps seven_day/weekly to the 'weekly' label", async () => {
+    const b = new RateLimitBanner();
     b.mount(host);
-    b.report("s1", rejected({ rateLimitType: "seven_day" }));
-    expect(host.querySelector(".rlb-title").textContent).toBe("Weekly limit reached");
+    await flush();
+    b.update([instance({ rate_limited_resets_at: BigInt(NOW_SEC + 3600), rate_limited_type: "seven_day" })]);
+    expect(host.querySelector(".rlb-title").textContent).toBe("Fibo hit its weekly limit");
   });
 
-  it("tracks multiple interrupted sessions under one banner", () => {
-    const b = new RateLimitBanner({ now: () => 0 });
+  it("appends '· N chats affected' only when more than one blocked chat shares the account", async () => {
+    const b = new RateLimitBanner();
     b.mount(host);
-    b.report("s1", rejected());
-    b.report("s2", rejected());
-    b.report("s1", rejected()); // dup session -> still one entry
-    expect(b.state.interrupted.sort()).toEqual(["s1", "s2"]);
+    await flush();
+    b.update([
+      instance({ session_id: "s1", rate_limited_resets_at: BigInt(NOW_SEC + 3600) }),
+      instance({ session_id: "s2", rate_limited_resets_at: BigInt(NOW_SEC + 3600) }),
+    ]);
+    expect(host.querySelector(".rlb-time").textContent).toMatch(/· 2 chats affected$/);
   });
 
-  it("on reset with auto-continue ON, sends 'continue' to every interrupted session", () => {
-    let nowMs = 100 * 1000;
-    const sent = [];
-    const b = new RateLimitBanner({ now: () => nowMs, sendContinue: (id) => sent.push(id) });
+  it("shows an enabled 'Continue on <other>' when the other account is not blocked", async () => {
+    const b = new RateLimitBanner();
     b.mount(host);
-    b.report("s1", rejected({ resetsAt: 1000 }));
-    b.report("s2", rejected({ resetsAt: 1000 }));
+    await flush();
+    b.update([instance({ account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600) })]);
+    const btn = host.querySelector(".rlb-move");
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toContain("Continue on Personal");
+  });
 
-    // Before reset: nothing fires, banner stays.
-    nowMs = 999 * 1000;
-    b.tick();
-    expect(sent).toEqual([]);
-    expect(b.state.active).toBe(true);
+  it("disables 'Continue on <other>' (with a title, not hidden) when both accounts are blocked", async () => {
+    const b = new RateLimitBanner();
+    b.mount(host);
+    await flush();
+    b.update([
+      instance({ session_id: "s1", account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600) }),
+      instance({ session_id: "s2", account_id: PERSONAL.id, rate_limited_resets_at: BigInt(NOW_SEC + 7200) }),
+    ]);
+    for (const btn of host.querySelectorAll(".rlb-move")) {
+      expect(btn.disabled).toBe(true);
+      expect(btn.title).toMatch(/is also at its limit until/);
+    }
+  });
 
-    // At/after reset: continue fires for each, banner clears.
-    nowMs = 1000 * 1000;
-    b.tick();
-    expect(sent.sort()).toEqual(["s1", "s2"]);
-    expect(b.state.active).toBe(false);
+  it("clicking 'Continue on <other>' moves the selected blocked session and selects the result", async () => {
+    moveSessionToAccount.mockResolvedValue("new-session-id");
+    const b = new RateLimitBanner();
+    b.mount(host);
+    await flush();
+    const onMoved = vi.fn();
+    b.setOnMoved(onMoved);
+    b.setSelectedSessionGetter(() => "s2");
+    b.update([
+      instance({ session_id: "s1", account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600), started_at: "2026-01-01T00:00:00Z" }),
+      instance({ session_id: "s2", account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600), started_at: "2026-01-02T00:00:00Z" }),
+    ]);
+
+    host.querySelector(".rlb-move").click();
+    await flush();
+
+    expect(moveSessionToAccount).toHaveBeenCalledWith("s2", PERSONAL.id);
+    expect(showToast).toHaveBeenCalledWith("Moved to Personal, continuing there.");
+    expect(onMoved).toHaveBeenCalledWith("new-session-id");
+  });
+
+  it("falls back to the most-recently-started blocked session when none is selected", async () => {
+    moveSessionToAccount.mockResolvedValue("new-session-id");
+    const b = new RateLimitBanner();
+    b.mount(host);
+    await flush();
+    b.setSelectedSessionGetter(() => null);
+    b.update([
+      instance({ session_id: "older", account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600), started_at: "2026-01-01T00:00:00Z" }),
+      instance({ session_id: "newer", account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600), started_at: "2026-01-02T00:00:00Z" }),
+    ]);
+
+    host.querySelector(".rlb-move").click();
+    await flush();
+
+    expect(moveSessionToAccount).toHaveBeenCalledWith("newer", PERSONAL.id);
+  });
+
+  it("'View in Schedule' navigates via showView('schedule')", async () => {
+    const b = new RateLimitBanner();
+    b.mount(host);
+    await flush();
+    b.update([instance({ rate_limited_resets_at: BigInt(NOW_SEC + 3600) })]);
+    host.querySelector(".rlb-schedule").click();
+    expect(showView).toHaveBeenCalledWith("schedule");
+  });
+
+  it("renders one banner per exhausted account when both are blocked", async () => {
+    const b = new RateLimitBanner();
+    b.mount(host);
+    await flush();
+    b.update([
+      instance({ session_id: "s1", account_id: FIBO.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600) }),
+      instance({ session_id: "s2", account_id: PERSONAL.id, rate_limited_resets_at: BigInt(NOW_SEC + 3600) }),
+    ]);
+    expect(host.querySelectorAll(".rate-limit-banner").length).toBe(2);
+  });
+
+  it("clears itself once the account's reset time passes (no clear-event needed)", async () => {
+    const b = new RateLimitBanner();
+    b.mount(host);
+    await flush();
+    b.update([instance({ rate_limited_resets_at: BigInt(NOW_SEC + 10) })]);
+    expect(host.hidden).toBe(false);
+
+    vi.setSystemTime(NOW_MS + 20_000); // past the 10s reset
+    b.update([instance({ rate_limited_resets_at: BigInt(NOW_SEC + 10) })]);
     expect(host.hidden).toBe(true);
-  });
-
-  it("on reset with auto-continue OFF, sends nothing and just clears", () => {
-    let nowMs = 100 * 1000;
-    const sent = [];
-    const b = new RateLimitBanner({ now: () => nowMs, sendContinue: (id) => sent.push(id) });
-    b.mount(host);
-    b.report("s1", rejected({ resetsAt: 1000 }));
-
-    // Uncheck the auto-continue box.
-    const cb = host.querySelector(".rlb-auto-cb");
-    cb.checked = false;
-    cb.dispatchEvent(new globalThis.document.defaultView.Event("change"));
-    expect(b.state.autoContinue).toBe(false);
-
-    nowMs = 1000 * 1000;
-    b.tick();
-    expect(sent).toEqual([]);
-    expect(b.state.active).toBe(false);
   });
 });

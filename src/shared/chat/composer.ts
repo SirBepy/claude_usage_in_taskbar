@@ -50,6 +50,12 @@ export interface ComposerOptions {
   /** True while the active session's turn is in flight. When busy, Enter stages
    * the message (via onStage) instead of sending it. */
   isBusy?: () => boolean;
+  /** Non-null while the active session's account is out of usage (a rate-limit
+   * rejection blocked it). The composer stays enabled: a send schedules the
+   * draft for `resetsAtIso` (the daemon's own reset+60s delay) instead of
+   * sending immediately. `placeholder`, if given, replaces the textarea's
+   * idle placeholder text (e.g. naming the account and raw reset time). */
+  isBlocked?: () => { resetsAtIso: string; resetsAtLabel: string; placeholder?: string } | null;
   /** Stage the built blocks as a held message (only called while busy). */
   onStage?: (blocks: ContentBlock[]) => void;
   /** True when a held set exists for the active session. When not busy but
@@ -82,6 +88,8 @@ export class Composer {
   private disabled = false;
   private textarea: HTMLTextAreaElement | null = null;
   private highlightEl: HTMLElement | null = null;
+  private noticeEl: HTMLElement | null = null;
+  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
   private attachmentsEl: HTMLElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private scheduleBtn: HTMLButtonElement | null = null;
@@ -147,6 +155,10 @@ export class Composer {
 
   destroy(): void {
     document.removeEventListener("keydown", this._globalKeydown);
+    if (this.noticeTimer) {
+      clearTimeout(this.noticeTimer);
+      this.noticeTimer = null;
+    }
     this.cv.destroy();
     this.popup?.destroy();
     this.popup = null;
@@ -225,12 +237,37 @@ export class Composer {
     else clearAttachmentsMeta(this.sessionId);
   }
 
+  /** Idle placeholder text. Blocked (rate-limited but still enabled) beats the
+   * default copy; read-only beats blocked (a read-only pane can't be blocked
+   * in a way that matters to the user). */
+  private computePlaceholder(): string {
+    if (this.disabled) return "Read-only - click Take over to interact";
+    const blocked = this.opts.isBlocked?.();
+    if (blocked?.placeholder) return blocked.placeholder;
+    return this.isMobileViewport()
+      ? "Type a message. Tap send to send."
+      : "Type a message. Shift+Enter for newline. Paste images.";
+  }
+
+  /** Re-check isBlocked() and refresh the idle placeholder without a full
+   * re-render. Called by the chat pane whenever instances-changed lands, so
+   * the composer reflects a block/reset that happened while it was mounted. */
+  refreshBlockedState(): void {
+    if (this.textarea) this.textarea.placeholder = this.computePlaceholder();
+  }
+
+  private showNotice(text: string): void {
+    if (!this.noticeEl) return;
+    this.noticeEl.textContent = text;
+    this.noticeEl.hidden = false;
+    if (this.noticeTimer) clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => {
+      if (this.noticeEl) this.noticeEl.hidden = true;
+    }, 4000);
+  }
+
   private render(): void {
-    const placeholder = this.disabled
-      ? "Read-only - click Take over to interact"
-      : this.isMobileViewport()
-        ? "Type a message. Tap send to send."
-        : "Type a message. Shift+Enter for newline. Paste images.";
+    const placeholder = this.computePlaceholder();
     this.root.innerHTML = `
       <div class="composer-attachments"></div>
       <div class="composer-row">
@@ -256,10 +293,12 @@ export class Composer {
           </div>
         </div>
       </div>
+      <div class="composer-notice" hidden></div>
       <input type="file" class="composer-file-input" accept="image/*,application/pdf,text/plain,.log,.md,.csv,.json" multiple hidden>
     `;
     this.textarea = this.root.querySelector<HTMLTextAreaElement>(".composer-textarea");
     this.highlightEl = this.root.querySelector<HTMLElement>(".composer-highlight");
+    this.noticeEl = this.root.querySelector<HTMLElement>(".composer-notice");
     this.attachmentsEl = this.root.querySelector<HTMLElement>(".composer-attachments");
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
     this.scheduleBtn = this.root.querySelector<HTMLButtonElement>(".composer-send-chevron");
@@ -597,6 +636,27 @@ export class Composer {
       }
       this.clearComposer();
       this.sending = false;
+      return;
+    }
+
+    // Account is out of usage: schedule the draft for the reset instead of
+    // sending (or staging) it now. Skips the schedule-picker popover - the
+    // fire time is dictated by the daemon's own reset+60s delay, not a
+    // user-picked time. Builtins above still run immediately.
+    const blocked = this.opts.isBlocked?.();
+    if (blocked) {
+      if (empty) return;
+      this.sending = true;
+      const blocks = this.buildBlocks(text);
+      this.clearComposer();
+      try {
+        await this.opts.onSchedule?.(blocks, blocked.resetsAtIso, null);
+        this.showNotice(`Scheduled for ${blocked.resetsAtLabel}.`);
+      } catch (err) {
+        console.error("[Composer] blocked-schedule failed", err);
+      } finally {
+        this.sending = false;
+      }
       return;
     }
 

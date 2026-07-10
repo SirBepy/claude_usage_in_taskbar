@@ -23,7 +23,7 @@ import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
 import { reconcileList, loadAnimEnabled } from "./sidebar-anim";
 import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
-import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
+import { isBlocked } from "../../shared/chat/rate-limit-banner";
 import { setRerenderCallback } from "./sidebar-ctx-menu";
 import { drainChipHtml, leadingVisual, draftLeadingVisual } from "./sidebar-row-visuals";
 export { closeCtxMenu, openDraftCtxMenu, openCtxMenu } from "./sidebar-ctx-menu";
@@ -176,7 +176,7 @@ export function renderSidebar(listEl: HTMLElement): void {
   ]);
   const style = loadStateStyle();
   const sort = loadSort();
-  const rateLimited = rateLimitBanner.interruptedSet;
+  const rateLimited = new Set(state.sessions.filter(isBlocked).map((s) => s.session_id));
 
   // Load hidden set and prune stale IDs
   const hidden = loadHiddenSessions();
@@ -327,7 +327,7 @@ export function renderSidebar(listEl: HTMLElement): void {
         }
         entries.push({
           key: `s:${s.session_id}`,
-          html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""}">
+          html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""} ${rateLimited.has(s.session_id) ? "is-rate-limited" : ""}">
             ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
             <div class="session-row-text">
               <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>

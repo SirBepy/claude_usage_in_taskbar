@@ -44,7 +44,7 @@ import { watchCloseLifecycle } from "./close-finalize";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import { SessionHeader } from "./session-header";
 import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
-import { rateLimitBanner } from "../../shared/chat/rate-limit-banner";
+import { isBlocked, formatClockLabel, capitalize, getCachedAccount } from "../../shared/chat/rate-limit-banner";
 import { openModelEffortModal } from "./model-effort-modal";
 import { registerCta } from "../../shared/chat/cta-registry";
 import { completeHandoff } from "./handoff";
@@ -68,7 +68,8 @@ export function headerStatusClass(sess: Instance): string {
     ...state.questionSessions,
     ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),
   ]);
-  return statusDotClass(sess, unread, attention, question, rateLimitBanner.interruptedSet);
+  const rateLimited = new Set(state.sessions.filter(isBlocked).map((s) => s.session_id));
+  return statusDotClass(sess, unread, attention, question, rateLimited);
 }
 
 /** Swap the header avatar's status ring class without re-rendering the whole
@@ -228,6 +229,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     return;
   }
   const readOnly = sess.kind === "external" || sess.kind === "automated";
+  pane.classList.toggle("is-rate-limited", isBlocked(sess));
   const headerCharId = characterForSession(sess);
   const headerIconUrl = headerCharId ? characterIconUrl(headerCharId) : null;
   const headerStatus = headerStatusClass(sess);
@@ -491,6 +493,18 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       // While busy, Enter stages instead of sends; when not busy but a held set
       // exists, a normal send bundles it with the draft as one message.
       isBusy: () => isCurrentSessionBusy(),
+      isBlocked: () => {
+        const inst = state.sessions.find((s) => s.session_id === sessionId);
+        if (!inst || !isBlocked(inst)) return null;
+        const resetsAtMs = Number(inst.rate_limited_resets_at) * 1000;
+        const delayedMs = resetsAtMs + 60_000;
+        const accLabel = capitalize(getCachedAccount(inst.account_id)?.label ?? "This account");
+        return {
+          resetsAtIso: new Date(delayedMs).toISOString(),
+          resetsAtLabel: formatClockLabel(delayedMs),
+          placeholder: `${accLabel} is out of usage until ${formatClockLabel(resetsAtMs)}. Your message will be sent when it resets.`,
+        };
+      },
       onStage: (blocks) => state.heldMessages?.stage(blocks),
       hasHeld: () => !!state.heldMessages?.hasItemsForActive(),
       flushHeldWithDraft: (draftBlocks) => { void state.heldMessages?.flushHeldWithDraft(draftBlocks); },

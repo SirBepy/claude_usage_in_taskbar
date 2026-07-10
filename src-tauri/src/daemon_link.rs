@@ -406,6 +406,8 @@ mod tests {
             autopilot: false,
             turn_gen: 0,
             account_id: None,
+            rate_limited_resets_at: None,
+            rate_limited_type: None,
         }
     }
 

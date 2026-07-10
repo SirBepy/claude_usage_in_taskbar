@@ -351,6 +351,45 @@ impl PersistentClient {
         Ok(())
     }
 
+    /// Debug builds only: inject a synthetic rate-limit rejection into
+    /// `session_id`, driving the real blocked-state + scheduled-resume path.
+    /// The daemon rejects this method in release builds.
+    pub async fn simulate_rate_limit(
+        &self,
+        session_id: &str,
+        resets_in_secs: i64,
+        kind: &str,
+    ) -> Result<(), ClientError> {
+        self.call("simulate_rate_limit", json!({
+            "session_id": session_id,
+            "resets_in_secs": resets_in_secs,
+            "kind": kind,
+        }))
+        .await?;
+        Ok(())
+    }
+
+    /// Fork `session_id`'s transcript onto `target_account_id`: spawns a new
+    /// session id resumed from the old one on the new account, replays the
+    /// pending rate-limit resume prompt (if any) into it, then retires the
+    /// old session. Returns the new session_id.
+    pub async fn move_session_to_account(
+        &self,
+        session_id: &str,
+        target_account_id: &str,
+    ) -> Result<String, ClientError> {
+        let res = self
+            .call("move_session_to_account", json!({
+                "session_id": session_id,
+                "target_account_id": target_account_id,
+            }))
+            .await?;
+        res.get("session_id")
+            .and_then(Value::as_str)
+            .map(|s| s.to_string())
+            .ok_or_else(|| ClientError::Rpc { code: -32000, message: "move_session_to_account: no session_id in result".into() })
+    }
+
     pub async fn mark_session_ended(&self, session_id: &str) -> Result<(), ClientError> {
         self.call("mark_session_ended", json!({"session_id": session_id})).await?;
         Ok(())
