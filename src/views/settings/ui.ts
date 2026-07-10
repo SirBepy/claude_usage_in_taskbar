@@ -80,7 +80,7 @@ export interface ToggleRowOpts {
  * the label gets an inline info icon reusing the `.info-wrap`/`.info-icon`/
  * `.info-tooltip` classes from src/styles/widgets.css. Those classes only
  * supply the box/positioning styling - the hover-position JS (see
- * `wireInfoTooltips` in subviews/visuals/visuals.ts) still has to be wired by
+ * `wireInfoTooltips` in subviews/appearance/appearance.ts) still has to be wired by
  * the caller against the rendered root; centralizing that wiring is left to a
  * later task.
  */
@@ -116,10 +116,9 @@ export function toggleRow(opts: ToggleRowOpts): TemplateResult {
 // <select> (confirmed via DOM probe - the list renders as a bare marker
 // comment with zero rows). The native innerHTML parser handles <select>/
 // <option> correctly, so call sites that render a <select> per repeated item
-// (root Data cards, presets rows, notifications selects, visuals color rows)
-// build a plain string and assign it via `.innerHTML` instead of a lit
-// `.map()`. See settings.ts (dataCardHtml) and presets.ts (rowHtml) for the
-// existing pattern this supersedes.
+// (System data cards, Chat defaults preset rows, Notifications selects,
+// Appearance color rows) build a plain string and assign it via `.innerHTML`
+// instead of a lit `.map()`.
 
 export interface SelectOption {
   value: string;
@@ -150,9 +149,4 @@ export function selectHtml(opts: SelectHtmlOpts): string {
     })
     .join("");
   return `<select${idAttr}${classAttr}${datasetAttrs}>${optionsHtml}</select>`;
-}
-
-/** A full `kit-row` string (label + select) built with `selectHtml`, for innerHTML injection. */
-export function selectRowHtml(label: string, select: SelectHtmlOpts): string {
-  return `<div class="kit-row"><span class="kit-row-label">${escapeHtml(label)}</span>${selectHtml(select)}</div>`;
 }
