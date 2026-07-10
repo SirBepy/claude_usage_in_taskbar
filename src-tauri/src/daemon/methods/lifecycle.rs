@@ -137,6 +137,10 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                     .map_err(|e| RpcError::invalid_params(e.to_string()))?;
                 lifecycle::cancel_turn(&map, &p.session_id).await.map_err(err_to_rpc)?;
                 state.registry.set_busy(&p.session_id, false);
+                // The interrupted turn's verdict (an AUQ's "question", a prior
+                // turn's "waiting") is dead with the cancel - clear it so the
+                // sidebar doesn't keep flagging a question nobody is asking.
+                state.registry.set_awaiting(&p.session_id, None);
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 Ok(json!({"ok": true}))
             }

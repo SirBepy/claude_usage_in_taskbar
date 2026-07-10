@@ -194,6 +194,22 @@ impl Registry {
         }
     }
 
+    /// Set `awaiting` only if `turn_gen` still matches `gen`. Mirrors
+    /// `set_busy_false_if_gen`: a cancelled/interrupted turn's late result line
+    /// must not stamp its stale status ("question"/"waiting") onto a newer turn
+    /// that already cleared `awaiting` and set `busy=true`. Returns true if
+    /// applied.
+    pub fn set_awaiting_if_gen(&self, session_id: &str, awaiting: Option<String>, gen: u64) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            if i.turn_gen == gen {
+                i.awaiting = awaiting;
+                return true;
+            }
+        }
+        false
+    }
+
     /// Set the autopilot-active flag. `true` = /autopilot running; `false` = finished.
     /// No-op if session is unknown.
     pub fn set_autopilot(&self, session_id: &str, active: bool) {
@@ -565,6 +581,46 @@ mod tests {
         assert!(!cleared);
         assert_eq!(registry.get("s").unwrap().busy, true, "new turn's busy must survive");
         assert_eq!(registry.get("s").unwrap().turn_gen, 2);
+    }
+
+    #[test]
+    fn set_awaiting_if_gen_applies_on_match() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s", Path::new("/tmp/x"), &settings, "2026-07-11T00:00:00Z");
+        registry.set_busy("s", true); // gen -> 1
+        let gen = registry.current_turn_gen("s");
+        assert!(registry.set_awaiting_if_gen("s", Some("done".into()), gen));
+        assert_eq!(registry.get("s").unwrap().awaiting.as_deref(), Some("done"));
+    }
+
+    /// The exact "Input needed while busy" race: turn 1 is cancelled, a new
+    /// turn starts (awaiting cleared, busy=true, gen bumped), then turn 1's
+    /// late result line tries to write awaiting="question". The stale write
+    /// must be rejected so the new turn keeps rendering In Progress.
+    #[test]
+    fn set_awaiting_if_gen_rejects_stale_interrupted_turn() {
+        let registry = Registry::new();
+        let settings = fresh_settings();
+        registry.record_interactive_session("s", Path::new("/tmp/x"), &settings, "2026-07-11T00:00:00Z");
+        registry.set_busy("s", true); // turn 1, gen -> 1
+        let stale_gen = registry.current_turn_gen("s");
+        // Cancel + new send: awaiting cleared, busy re-set (gen -> 2).
+        registry.set_busy("s", false);
+        registry.set_awaiting("s", None);
+        registry.set_busy("s", true);
+        // Turn 1's late result arrives with its captured gen.
+        let applied = registry.set_awaiting_if_gen("s", Some("question".into()), stale_gen);
+        assert!(!applied, "stale turn must not stamp awaiting onto the new turn");
+        let i = registry.get("s").unwrap();
+        assert!(i.awaiting.is_none(), "new turn's cleared awaiting must survive");
+        assert!(i.busy);
+    }
+
+    #[test]
+    fn set_awaiting_if_gen_unknown_session_is_noop() {
+        let registry = Registry::new();
+        assert!(!registry.set_awaiting_if_gen("ghost", Some("done".into()), 0));
     }
 
     #[test]

@@ -175,15 +175,18 @@ impl ParserContext {
     }
 }
 
-/// Returns the last `<cc-status:done|question|waiting>` marker found in `text`,
-/// or `None` if no marker is present. "waiting" = Claude finished its part but
-/// is parked on an external process (CI / a long command) it will resume on.
+/// Returns the last `<cc-status:done|question|waiting|working>` marker found in
+/// `text`, or `None` if no marker is present. "waiting" = Claude finished its
+/// part but is parked on an external process (CI / a long command) it will
+/// resume on. "working" = Claude dispatched its own background subagents/tasks
+/// that will re-invoke it - still in progress from the user's perspective.
 fn detect_awaiting(text: &str) -> Option<String> {
     let lower = text.to_lowercase();
     [
         (lower.rfind("<cc-status:question>"), "question"),
         (lower.rfind("<cc-status:done>"), "done"),
         (lower.rfind("<cc-status:waiting>"), "waiting"),
+        (lower.rfind("<cc-status:working>"), "working"),
     ]
     .into_iter()
     .filter_map(|(pos, label)| pos.map(|p| (p, label)))
@@ -1002,6 +1005,20 @@ mod tests {
         let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
         match usage {
             Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("waiting")),
+            _ => panic!("expected TurnUsage"),
+        }
+    }
+
+    #[test]
+    fn result_line_detects_working_awaiting() {
+        // "working" = own background subagents/tasks still running; the sidebar
+        // must show In Progress, not the parked "Waiting" tier.
+        let mut ctx = ParserContext::new_live();
+        let line = r#"{"type":"result","subtype":"success","result":"3 review agents running in the background. <cc-status:working>","total_cost_usd":0.0,"duration_ms":100,"usage":{"input_tokens":10,"output_tokens":5},"timestamp":1}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        let usage = events.iter().find(|e| matches!(e, ChatEvent::TurnUsage { .. }));
+        match usage {
+            Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("working")),
             _ => panic!("expected TurnUsage"),
         }
     }

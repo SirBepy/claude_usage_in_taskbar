@@ -59,7 +59,6 @@ describe("sidebar empty states", () => {
     vi.useFakeTimers();
     state.sessions = [];
     state.parkedDrafts = [];
-    state.questionSessions = new Set();
     state.filter = "";
     state.selectedId = null;
     state.pendingNewSession = null;

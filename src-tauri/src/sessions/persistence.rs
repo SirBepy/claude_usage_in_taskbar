@@ -35,6 +35,12 @@ pub struct PersistedInteractive {
     /// so snapshots written before milestone 02 still load (as `None`).
     #[serde(default)]
     pub account_id: Option<String>,
+    /// Last self-reported turn status ("done" / "question" / "waiting" /
+    /// "working"). Persisted so a daemon restart doesn't silently reset every
+    /// backgrounded chat's sidebar state to "Done". `#[serde(default)]` for
+    /// pre-existing snapshots.
+    #[serde(default)]
+    pub awaiting: Option<String>,
 }
 
 /// Best-effort write of every live Interactive entry to `path`. Failures
@@ -68,6 +74,7 @@ pub fn save_snapshot(registry: &Registry, path: &Path) {
             effort: i.effort,
             started_at: i.started_at,
             account_id: i.account_id,
+            awaiting: i.awaiting,
         })
         .collect();
     if snapshot.is_empty() && load_snapshot(path).len() > 1 {
@@ -142,6 +149,9 @@ pub fn populate_registry(registry: &Registry, sessions: Vec<PersistedInteractive
         if let Some(account_id) = &s.account_id {
             registry.set_account(&s.session_id, account_id);
         }
+        if s.awaiting.is_some() {
+            registry.set_awaiting(&s.session_id, s.awaiting.clone());
+        }
         // A /close rename written since the last save lives in the transcript,
         // so a fresh override beats everything; then the AI milestone title (so
         // a chat that re-titled itself keeps that name across a restart); then
@@ -199,6 +209,7 @@ mod tests {
             effort: String::new(),
             started_at: "2026-05-13T00:00:00Z".into(),
             account_id: None,
+            awaiting: None,
         }];
         let added = populate_registry(&registry, sessions);
         assert_eq!(added, 0);
@@ -223,6 +234,47 @@ mod tests {
         let registry2 = Registry::new();
         populate_registry(&registry2, loaded);
         assert_eq!(registry2.get("sess-1").unwrap().account_id.as_deref(), Some("acct-work"));
+    }
+
+    /// Regression: a daemon restart used to wipe every backgrounded chat's
+    /// self-reported status ("question"/"waiting") back to "Done" because the
+    /// snapshot never carried `awaiting`.
+    #[test]
+    fn awaiting_persists_through_snapshot_roundtrip() {
+        let registry = Registry::new();
+        let tmp = TempDir::new().unwrap();
+        let cwd = tmp.path().to_path_buf();
+        let path = tmp.path().join("snap.json");
+
+        registry.upsert_interactive("sess-q", &cwd, "proj-x", "2026-07-11T00:00:00Z");
+        registry.set_awaiting("sess-q", Some("question".into()));
+
+        save_snapshot(&registry, &path);
+        let loaded = load_snapshot(&path);
+        assert_eq!(loaded[0].awaiting.as_deref(), Some("question"));
+
+        let registry2 = Registry::new();
+        populate_registry(&registry2, loaded);
+        assert_eq!(
+            registry2.get("sess-q").unwrap().awaiting.as_deref(),
+            Some("question"),
+            "restored session must keep its Input-needed state across a daemon restart"
+        );
+    }
+
+    /// Old snapshots (no `awaiting` key) must still load, as None.
+    #[test]
+    fn snapshot_without_awaiting_field_loads_as_none() {
+        let tmp = TempDir::new().unwrap();
+        let cwd = tmp.path().to_string_lossy().replace('\\', "\\\\");
+        let path = tmp.path().join("snap.json");
+        let json = format!(
+            r#"[{{"session_id":"old","cwd":"{cwd}","project_id":"p","name":null,"model":"opus","effort":"high","started_at":"2026-07-01T00:00:00Z"}}]"#
+        );
+        std::fs::write(&path, json).unwrap();
+        let loaded = load_snapshot(&path);
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].awaiting.is_none());
     }
 
     #[test]

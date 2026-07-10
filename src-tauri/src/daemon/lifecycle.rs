@@ -228,6 +228,11 @@ pub async fn spawn_session(
         // a stale result line from an interrupted turn from clearing the
         // busy=true that a new send_message set in the meantime.
         let mut pump_turn_gen: u64 = 0;
+        // Daemon-side /close teardown detector. The webview used to be the ONLY
+        // thing that acted on the /close skill's sentinels; an app reload while
+        // the close turn ran meant the session was never marked ended and got
+        // resurrected from the snapshot on the next start. See close_watch.rs.
+        let mut close_watch = crate::daemon::close_watch::CloseWatch::new();
         // Coalescing (ai_todo streaming-render O(n^2) fix): parser.rs re-clones
         // the FULL accumulated text into every content_block_delta snapshot, so
         // a long reply otherwise broadcasts - and re-serializes across
@@ -273,6 +278,15 @@ pub async fn spawn_session(
                                 // so forwarding these spams "Session started" each turn.
                                 if matches!(ev, ChatEvent::SessionStarted { .. }) {
                                     continue;
+                                }
+                                // Feed assistant text (streaming snapshots are cumulative;
+                                // finalized result text too) to the /close detector.
+                                if let ChatEvent::AssistantMessage { ref content, .. } = ev {
+                                    for block in content {
+                                        if let crate::types::chat::ContentBlock::Text { text } = block {
+                                            close_watch.observe_text(text);
+                                        }
+                                    }
                                 }
                                 // A streaming AssistantMessage marks the current turn as
                                 // live (not a replayed history line from --resume).
@@ -362,11 +376,51 @@ pub async fn spawn_session(
                                             .registry
                                             .clear_rate_limit_for_account(&pump_session.account_id);
                                     }
+                                    let live_turn = saw_stream_turn;
                                     saw_stream_turn = false;
-                                    state_for_pump.registry.set_awaiting(&pump_session.session_id, awaiting);
+                                    // Only a LIVE turn's result may update the self-reported
+                                    // status, and only if no newer turn started meanwhile
+                                    // (gen guard, mirroring set_busy_false_if_gen). Without
+                                    // both gates, a replayed history result line on --resume
+                                    // or a cancelled turn's late result stamps a stale
+                                    // "question"/"waiting" over the current turn's state -
+                                    // the "Input needed while busy" bug.
+                                    if live_turn {
+                                        state_for_pump.registry.set_awaiting_if_gen(
+                                            &pump_session.session_id,
+                                            awaiting,
+                                            pump_turn_gen,
+                                        );
+                                    }
                                     state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
                                     if let Some(active) = turn_autopilot_changed {
                                         state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
+                                    }
+                                    // /close teardown, daemon-authoritative: both sentinels
+                                    // seen within this turn means the skill confirmed the
+                                    // close. Mark ended here so the teardown survives any
+                                    // webview reload; the frontend's clear_session finalize
+                                    // is now belt-and-suspenders (mark_ended is idempotent).
+                                    let close_confirmed = close_watch.close_confirmed();
+                                    if close_confirmed {
+                                        let now = chrono::Utc::now().to_rfc3339();
+                                        if state_for_pump.registry.mark_ended(
+                                            &pump_session.session_id,
+                                            crate::types::EndReason::Manual,
+                                            &now,
+                                        ) {
+                                            log::info!(
+                                                "daemon: session {} /close confirmed by markers; marked ended",
+                                                pump_session.session_id
+                                            );
+                                        }
+                                    }
+                                    close_watch.reset();
+                                    // Persist at turn end so a daemon restart keeps each
+                                    // backgrounded chat's last status instead of wiping it
+                                    // to "Done" (and so a marker-confirmed close sticks).
+                                    if live_turn || close_confirmed {
+                                        crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
                                     }
                                     state_for_pump.notifier.publish(
                                         "instances_changed",
@@ -418,6 +472,24 @@ pub async fn spawn_session(
         if is_interactive {
             // Clear busy in case the process exited mid-turn without a result line.
             state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
+            // /close's Phase 6 kills the terminal tree ~800ms after emitting
+            // <cc-close:done>, which can take the `claude -p` child down BEFORE
+            // its result line flushes - so the confirmed close must also be
+            // honored on EOF, not just at TurnUsage.
+            if close_watch.close_confirmed() {
+                let now = chrono::Utc::now().to_rfc3339();
+                if state_for_pump.registry.mark_ended(
+                    &pump_session.session_id,
+                    crate::types::EndReason::Manual,
+                    &now,
+                ) {
+                    log::info!(
+                        "daemon: session {} /close confirmed by markers (EOF, no result line); marked ended",
+                        pump_session.session_id
+                    );
+                }
+                crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
+            }
         } else {
             let now = chrono::Utc::now().to_rfc3339();
             state_for_pump.registry.mark_ended(&pump_session.session_id, crate::types::EndReason::ProcessGone, &now);

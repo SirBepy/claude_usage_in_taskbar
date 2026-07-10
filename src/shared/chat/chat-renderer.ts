@@ -126,7 +126,7 @@ export class ChatRenderer {
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
   public onToolTally: ((t: ToolTally) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
-  public onStatusUpdate: ((status: "done" | "question" | "waiting" | null) => void) | null = null;
+  public onStatusUpdate: ((status: "done" | "question" | "waiting" | "working" | null) => void) | null = null;
   public onProgressUpdate: ((n: number, m: number) => void) | null = null;
   public onSendText: ((text: string) => void) | null = null;
   /** Fired when a next-ai-prompt skill turn completes. Active-session wires this to show the pickup CTA. */
@@ -135,7 +135,7 @@ export class ChatRenderer {
   public onHandoffReady: (() => void) | null = null;
   /** Set by chat-event-handler when a Skill tool_use for "next-ai-prompt" is seen in a live turn. */
   _nextAiPromptPending = false;
-  turnStatus: "done" | "question" | "waiting" | null = null;
+  turnStatus: "done" | "question" | "waiting" | "working" | null = null;
   // True only while bulkLoadEvents replays HISTORY on open. During replay the
   // per-event onActivityUpdate / onFileEditsChanged callbacks are suppressed so
   // the header changes-badge doesn't visibly count up and the thinking bar
@@ -144,7 +144,7 @@ export class ChatRenderer {
   hydrating = false;
   paginator: ChatPaginator;
 
-  setTurnStatus(s: "done" | "question" | "waiting" | null): void {
+  setTurnStatus(s: "done" | "question" | "waiting" | "working" | null): void {
     if (this.turnStatus === s) return;
     this.turnStatus = s;
     this.onStatusUpdate?.(s);

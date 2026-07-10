@@ -71,6 +71,10 @@ const _ensuredSessionIds = new Set<string>();
 const SETUP_STALL_MS = 15_000;
 let _setupStallTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Poll-fallback timer for the lossy instances-changed broadcast (see the
+ * setInterval at the listener registration site). Cleared in teardownState. */
+let instancesPollTimer: ReturnType<typeof setInterval> | null = null;
+
 /**
  * Re-render the pane's empty state (the centered "Setting up..." /
  * "Select or create a session" block) to match the current daemon state.
@@ -329,7 +333,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       refreshPaneEmptyState(pane);
     });
 
-    state.unlistenInstances = await ev.listen("instances-changed", async () => {
+    const syncInstances = async (): Promise<void> => {
       if (state.mountId !== myMount) return;
       // refreshSessions() replaces state.sessions with only the LIVE ones
       // (sidebar.ts's isLive filters out ended_at) — snapshot the ids we
@@ -431,7 +435,21 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
           }
         }
       }
-    });
+    };
+    state.unlistenInstances = await ev.listen("instances-changed", () => { void syncInstances(); });
+    // Poll fallback: the daemon->app notifier is lossy under pipe backpressure
+    // (the permission-prompt path has its own poll for the same reason). A
+    // dropped instances_changed frame used to freeze a row's busy/awaiting at
+    // its last-known value until some unrelated session event happened to
+    // fire another broadcast. This low-frequency full resync heals any
+    // dropped frame within 15s. Skipped while a previous poll-triggered sync
+    // is still in flight.
+    let pollInFlight = false;
+    instancesPollTimer = setInterval(() => {
+      if (pollInFlight || state.mountId !== myMount) return;
+      pollInFlight = true;
+      void syncInstances().finally(() => { pollInFlight = false; });
+    }, 15_000);
   }
 
   // Wire +New
@@ -633,6 +651,10 @@ function teardownState(): void {
   if (state.unlistenInstances) {
     try { state.unlistenInstances(); } catch { /* ignore */ }
     state.unlistenInstances = null;
+  }
+  if (instancesPollTimer !== null) {
+    clearInterval(instancesPollTimer);
+    instancesPollTimer = null;
   }
   if (state.renderer) {
     state.renderer.detach();

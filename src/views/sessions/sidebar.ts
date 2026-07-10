@@ -8,6 +8,7 @@ import {
   statusIndicator,
   sortSessions,
   sessionSegment,
+  deriveQuestionSet,
   loadUnreadSet,
   saveUnreadSet,
   loadSort,
@@ -122,7 +123,7 @@ export async function refreshSessions(): Promise<boolean> {
     // while it wasn't selected — is safe.
     const active = next.find(s => s.session_id === state.selectedId);
     if (active && !active.busy && state.heldMessages?.hasItemsForActive()) {
-      const isQuestion = active.awaiting === "question" || state.questionSessions.has(active.session_id);
+      const isQuestion = active.awaiting === "question";
       state.heldMessages.onCompletion(active.session_id, isQuestion);
     }
 
@@ -136,7 +137,7 @@ export async function refreshSessions(): Promise<boolean> {
     for (const s of next) {
       if (s.session_id === state.selectedId || s.busy) continue;
       if (!state.heldMessages?.hasItemsFor(s.session_id)) continue;
-      const isQuestion = s.awaiting === "question" || state.questionSessions.has(s.session_id);
+      const isQuestion = s.awaiting === "question";
       if (isQuestion) continue;
       const sid = s.session_id;
       const cwd = s.cwd;
@@ -169,11 +170,9 @@ export function renderSidebar(listEl: HTMLElement): void {
   // its row with the attention alarm (backgrounded parked prompts still badge).
   const attention = pendingPromptSessionIds();
   if (state.selectedId) attention.delete(state.selectedId);
-  // Union: renderer-detected (opened sessions) + registry-backed (all sessions incl. background).
-  const question = new Set<string>([
-    ...state.questionSessions,
-    ...state.sessions.filter(s => s.awaiting === "question").map(s => s.session_id),
-  ]);
+  // Registry-backed only (see deriveQuestionSet): one source of truth for the
+  // question flag, covering background sessions too.
+  const question = deriveQuestionSet(state.sessions);
   const style = loadStateStyle();
   const sort = loadSort();
   const rateLimited = new Set(state.sessions.filter(isBlocked).map((s) => s.session_id));

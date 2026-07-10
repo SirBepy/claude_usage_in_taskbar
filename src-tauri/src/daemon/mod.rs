@@ -5,6 +5,7 @@ pub mod broadcast;
 pub mod channel_adopt;
 pub mod claude_config;
 pub mod channels;
+pub mod close_watch;
 pub mod detector_task;
 pub mod device_registry;
 pub mod frame;

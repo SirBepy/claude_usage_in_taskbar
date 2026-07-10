@@ -7,27 +7,29 @@ import { blocksToText } from "./content-blocks";
 
 // Turn-status marker injected via `--append-system-prompt` (see
 // daemon/lifecycle.rs). Claude ends each reply with `<cc-status:done>`,
-// `<cc-status:question>`, or `<cc-status:waiting>` (parked on an external
-// process it will resume on). The app reads it for the sidebar state and must
-// never display it. STATUS_TOKEN_RE matches a complete marker anywhere;
+// `<cc-status:question>`, `<cc-status:waiting>` (parked on an external
+// process it will resume on), or `<cc-status:working>` (own background
+// subagents/tasks still running). The app reads it for the sidebar state and
+// must never display it. STATUS_TOKEN_RE matches a complete marker anywhere;
 // STATUS_TAIL_RE matches an incomplete trailing fragment (a streamed prefix of
 // the marker) so the token never flashes mid-stream. The tail pattern is the
-// literal "<cc-status:done|question|waiting>" with every position optional,
-// anchored to end-of-text, with a mandatory leading "<c" to avoid eating a lone
-// trailing "<".
-const STATUS_TOKEN_RE = /<cc-status:(?:done|question|waiting)>/gi;
-const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?|w(?:a(?:i(?:t(?:i(?:n(?:g)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
+// literal "<cc-status:done|question|waiting|working>" with every position
+// optional, anchored to end-of-text, with a mandatory leading "<c" to avoid
+// eating a lone trailing "<". "waiting" and "working" share the "w" prefix,
+// hence the nested alternation under "w".
+const STATUS_TOKEN_RE = /<cc-status:(?:done|question|waiting|working)>/gi;
+const STATUS_TAIL_RE = /<c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s(?::(?:d(?:o(?:n(?:e)?)?)?|q(?:u(?:e(?:s(?:t(?:i(?:o(?:n)?)?)?)?)?)?)?|w(?:a(?:i(?:t(?:i(?:n(?:g)?)?)?)?)?|o(?:r(?:k(?:i(?:n(?:g)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
 // Some model invocations emit XML-style `<cc-status>done</cc-status>` instead
 // of the colon form; handle both so neither variant leaks into rendered text.
-const STATUS_XML_TOKEN_RE = /<cc-status>(?:done|question|waiting)<\/cc-status>/gi;
+const STATUS_XML_TOKEN_RE = /<cc-status>(?:done|question|waiting|working)<\/cc-status>/gi;
 const STATUS_XML_TAIL_RE = /<cc-status>[\s\S]*$/i;
 
 // Malformed hybrid: colon-opened but XML-closed, e.g. <cc-status:question</cc-status>.
 // Observed in the wild from some model invocations. Standalone tail pattern
 // (not an extension of STATUS_TAIL_RE) since the existing nested-optional
 // chain can't absorb a literal embedded "<" partway through.
-const STATUS_HYBRID_TOKEN_RE = /<cc-status:(?:done|question|waiting)<\/cc-status>/gi;
-const STATUS_HYBRID_TAIL_RE = /<cc-status:(?:done|question|waiting)?<(?:\/(?:c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s)?)?)?)?)?)?)?)?)?)?\s*$/i;
+const STATUS_HYBRID_TOKEN_RE = /<cc-status:(?:done|question|waiting|working)<\/cc-status>/gi;
+const STATUS_HYBRID_TAIL_RE = /<cc-status:(?:done|question|waiting|working)?<(?:\/(?:c(?:c(?:-(?:s(?:t(?:a(?:t(?:u(?:s)?)?)?)?)?)?)?)?)?)?\s*$/i;
 
 // Autopilot marker emitted by the /autopilot skill to signal on/off state.
 // The app reads it to toggle the sidebar badge; it must never display in chat.
@@ -149,16 +151,16 @@ export function detectHandoffToken(text: string): boolean {
 
 /** Last status marker in `text`, or null if none. Handles both colon form
  *  (`<cc-status:done>`) and XML form (`<cc-status>done</cc-status>`). */
-export function detectStatusToken(text: string): "done" | "question" | "waiting" | null {
-  const colon = [...text.matchAll(/<cc-status:(done|question|waiting)>/gi)];
-  const xml = [...text.matchAll(/<cc-status>(done|question|waiting)<\/cc-status>/gi)];
+export function detectStatusToken(text: string): "done" | "question" | "waiting" | "working" | null {
+  const colon = [...text.matchAll(/<cc-status:(done|question|waiting|working)>/gi)];
+  const xml = [...text.matchAll(/<cc-status>(done|question|waiting|working)<\/cc-status>/gi)];
   // Group index [1] is shared across colon/xml/hybrid by construction (each
   // pattern has exactly one capture group at position 1, the status word).
   // A future 4th variant must preserve this or the merge below breaks silently.
-  const hybrid = [...text.matchAll(/<cc-status:(done|question|waiting)<\/cc-status>/gi)];
+  const hybrid = [...text.matchAll(/<cc-status:(done|question|waiting|working)<\/cc-status>/gi)];
   const all = [...colon, ...xml, ...hybrid].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
   if (all.length === 0) return null;
-  return all[all.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting";
+  return all[all.length - 1]![1]!.toLowerCase() as "done" | "question" | "waiting" | "working";
 }
 
 /** Last progress marker in `text`, or null if none. Returns { n, m } where n

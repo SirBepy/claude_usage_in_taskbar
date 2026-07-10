@@ -66,10 +66,6 @@ export interface SessionsState {
   changesPanel: ChangesPanel | null;
   prevBusyMap: Map<string, boolean>;
   sortedSessionIds: string[];
-  /** Sessions whose last finished turn self-reported `<cc-status:question>`
-   * (Claude is waiting on the user). Drives the red sidebar flag. Populated
-   * from the active renderer's onStatusUpdate; in-memory only. */
-  questionSessions: Set<string>;
   /** Latest global sleep/shutdown-when-done protocol state, hydrated on mount
    * via get_when_done_state and kept fresh by the `when-done-state` event.
    * Null until first hydration. In-memory only (the daemon owns the truth). */
@@ -107,7 +103,6 @@ export function createInitialState(mountId: number): SessionsState {
     changesPanel: null,
     prevBusyMap: new Map(),
     sortedSessionIds: [],
-    questionSessions: new Set(),
     whenDone: null,
     daemonConnected: null,
     daemonSetupStalled: false,

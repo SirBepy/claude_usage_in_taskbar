@@ -5,6 +5,10 @@ import {
   statusPriority,
   stateTooltip,
   sortSessions,
+  sessionSegment,
+  statusDotClass,
+  statusIndicator,
+  deriveQuestionSet,
 } from "../src/views/sessions/sessions-helpers.ts";
 
 function makeInstance(overrides = {}) {
@@ -91,6 +95,141 @@ describe("statusPriority", () => {
   });
   it("external wins over busy", () => {
     expect(statusPriority(makeInstance({ kind: "external", busy: true }), unread, noAttention, noQuestion)).toBe(6);
+  });
+});
+
+// The question set is derived from ONE source: the registry's `awaiting`
+// field. The old second source (a frontend set fed by the open chat's marker
+// detection) is gone - these tests pin the derivation and the full display
+// matrix so the sidebar can't silently regress into contradictory states.
+describe("deriveQuestionSet", () => {
+  it("includes only sessions with awaiting === 'question'", () => {
+    const sessions = [
+      makeInstance({ session_id: "q1", awaiting: "question" }),
+      makeInstance({ session_id: "d1", awaiting: "done" }),
+      makeInstance({ session_id: "w1", awaiting: "waiting" }),
+      makeInstance({ session_id: "wk1", awaiting: "working" }),
+      makeInstance({ session_id: "n1" }),
+    ];
+    expect([...deriveQuestionSet(sessions)]).toEqual(["q1"]);
+  });
+  it("empty input gives an empty set", () => {
+    expect(deriveQuestionSet([]).size).toBe(0);
+  });
+});
+
+describe("statusPriority - awaiting/busy interaction matrix", () => {
+  const none = new Set();
+
+  it("awaiting 'working' (background subagents running) is Working, not Waiting", () => {
+    expect(statusPriority(makeInstance({ busy: false, awaiting: "working" }), none, none, none)).toBe(2);
+  });
+  it("busy with a leftover awaiting 'waiting' is still Working", () => {
+    // A new turn started before the daemon cleared the old verdict: busy wins.
+    expect(statusPriority(makeInstance({ busy: true, awaiting: "waiting" }), none, none, none)).toBe(2);
+  });
+  it("busy with a leftover awaiting 'done' is still Working", () => {
+    expect(statusPriority(makeInstance({ busy: true, awaiting: "done" }), none, none, none)).toBe(2);
+  });
+  it("busy + awaiting 'question' (AUQ mid-turn) surfaces as Question", () => {
+    const i = makeInstance({ session_id: "auq", busy: true, awaiting: "question" });
+    const question = deriveQuestionSet([i]);
+    expect(statusPriority(i, none, none, question)).toBe(1);
+  });
+  it("idle + awaiting 'question' surfaces as Question", () => {
+    const i = makeInstance({ session_id: "q", busy: false, awaiting: "question" });
+    expect(statusPriority(i, none, none, deriveQuestionSet([i]))).toBe(1);
+  });
+});
+
+describe("sessionSegment", () => {
+  const none = new Set();
+  const seg = (i, opts = {}) =>
+    sessionSegment(
+      i,
+      opts.unread ?? none,
+      opts.attention ?? none,
+      opts.question ?? deriveQuestionSet([i]),
+      opts.closing ?? none,
+      opts.rateLimited ?? none,
+    );
+
+  it("closing overrides everything", () => {
+    const i = makeInstance({ session_id: "c", busy: true, awaiting: "question" });
+    expect(seg(i, { closing: new Set(["c"]) })).toBe(3);
+  });
+  it("rate-limited (and not closing) is Waiting for Reset", () => {
+    const i = makeInstance({ session_id: "r" });
+    expect(seg(i, { rateLimited: new Set(["r"]) })).toBe(4);
+  });
+  it("busy is In Progress", () => {
+    expect(seg(makeInstance({ busy: true }))).toBe(2);
+  });
+  it("awaiting 'working' is In Progress, NOT Waiting", () => {
+    expect(seg(makeInstance({ busy: false, awaiting: "working" }))).toBe(2);
+  });
+  it("awaiting 'waiting' is the Waiting segment", () => {
+    expect(seg(makeInstance({ busy: false, awaiting: "waiting" }))).toBe(5);
+  });
+  it("awaiting 'question' is Input Needed", () => {
+    expect(seg(makeInstance({ session_id: "q", busy: false, awaiting: "question" }))).toBe(0);
+  });
+  it("busy + awaiting 'question' (AUQ mid-turn) is Input Needed", () => {
+    expect(seg(makeInstance({ session_id: "auq", busy: true, awaiting: "question" }))).toBe(0);
+  });
+  it("idle with awaiting 'done' is Done", () => {
+    expect(seg(makeInstance({ busy: false, awaiting: "done" }))).toBe(1);
+  });
+  it("idle with no verdict is Done", () => {
+    expect(seg(makeInstance({ busy: false }))).toBe(1);
+  });
+});
+
+describe("statusDotClass", () => {
+  const none = new Set();
+  const cls = (i, question = deriveQuestionSet([i])) => statusDotClass(i, none, none, question);
+
+  it("busy -> st-working", () => {
+    expect(cls(makeInstance({ busy: true }))).toBe("st-working");
+  });
+  it("awaiting 'working' -> st-working (spinner, not hourglass)", () => {
+    expect(cls(makeInstance({ awaiting: "working" }))).toBe("st-working");
+  });
+  it("awaiting 'question' -> st-question", () => {
+    expect(cls(makeInstance({ session_id: "q", awaiting: "question" }))).toBe("st-question");
+  });
+  it("awaiting 'waiting' -> st-waiting", () => {
+    expect(cls(makeInstance({ awaiting: "waiting" }))).toBe("st-waiting");
+  });
+  it("idle read -> st-your-turn", () => {
+    expect(cls(makeInstance({ awaiting: "done" }))).toBe("st-your-turn");
+  });
+  it("busy + awaiting 'question' (AUQ mid-turn) -> st-question", () => {
+    // The question class must win over the busy spinner so the row keeps
+    // flagging until the daemon clears awaiting on answer.
+    expect(cls(makeInstance({ session_id: "auq", busy: true, awaiting: "question" }))).toBe("st-question");
+  });
+});
+
+describe("statusIndicator (icons mode)", () => {
+  const none = new Set();
+  const esc = (s) => s;
+  const icon = (i) => statusIndicator(i, none, none, deriveQuestionSet([i]), "icons", esc);
+
+  it("busy renders the spinner", () => {
+    expect(icon(makeInstance({ busy: true }))).toContain("ph-spinner");
+  });
+  it("awaiting 'working' renders the spinner too", () => {
+    expect(icon(makeInstance({ awaiting: "working" }))).toContain("ph-spinner");
+  });
+  it("awaiting 'question' renders the question icon", () => {
+    expect(icon(makeInstance({ session_id: "q", awaiting: "question" }))).toContain("ph-chat-circle-dots");
+  });
+  it("awaiting 'waiting' renders the hourglass", () => {
+    expect(icon(makeInstance({ awaiting: "waiting" }))).toContain("ph-hourglass-medium");
+  });
+  it("idle read renders the calm check", () => {
+    expect(icon(makeInstance({}))).toContain("ph-check");
   });
 });
 

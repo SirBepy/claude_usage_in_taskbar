@@ -230,6 +230,23 @@ describe("status marker", () => {
     expect(html).not.toContain("cc-status");
     expect(html).toContain("Watching the build");
   });
+  it("detects and strips the working marker (background subagents running)", () => {
+    expect(detectStatusToken("3 agents fanned out. <cc-status:working>")).toBe("working");
+    const html = renderBlocks([{ type: "text", text: "3 agents fanned out.\n<cc-status:working>" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("3 agents fanned out");
+  });
+  it("never leaks a partial working marker mid-stream", () => {
+    // "wo" diverges from "waiting" after the shared "w" - the tail regex must
+    // absorb both branches.
+    const html = renderBlocks([{ type: "text", text: "Fanning out.\n<cc-status:work" }]);
+    expect(html).not.toContain("cc-status");
+    expect(html).toContain("Fanning out");
+  });
+  it("detects XML-form and hybrid working markers", () => {
+    expect(detectStatusToken("done for now <cc-status>working</cc-status>")).toBe("working");
+    expect(detectStatusToken("done for now <cc-status:working</cc-status>")).toBe("working");
+  });
   it("strips a malformed hybrid marker (colon-opened, XML-closed) and detects it", () => {
     const html = renderBlocks([{ type: "text", text: "All done here.\n<cc-status:question</cc-status>" }]);
     expect(html).not.toContain("cc-status");

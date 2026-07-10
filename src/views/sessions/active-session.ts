@@ -20,6 +20,7 @@ import {
   saveUnreadSet,
   paneEmptyStateHtml,
   statusDotClass,
+  deriveQuestionSet,
 } from "./sessions-helpers";
 import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
@@ -65,10 +66,9 @@ export function headerStatusClass(sess: Instance): string {
   // row. Backgrounded chats with parked prompts still badge.
   const attention = pendingPromptSessionIds();
   if (state.selectedId) attention.delete(state.selectedId);
-  const question = new Set<string>([
-    ...state.questionSessions,
-    ...state.sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id),
-  ]);
+  // Registry-backed only (see deriveQuestionSet): the same single source the
+  // sidebar rows read, so header ring and row can never disagree.
+  const question = deriveQuestionSet(state.sessions);
   const rateLimited = new Set(state.sessions.filter(isBlocked).map((s) => s.session_id));
   return statusDotClass(sess, unread, attention, question, rateLimited);
 }
@@ -381,29 +381,13 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       if (state.selectedId !== sessionId) return;
       completeHandoff(sessionId);
     };
-    // Track Claude's self-reported turn status for this session so the sidebar
-    // shows a red "answer me" flag for questions and a calm icon otherwise.
-    // Suppresses sidebar re-renders during history replay (loadFromStore).
-    // onStatusUpdate fires for every historical cc-status marker; intermediate
-    // question→done transitions cause spurious FLIP animation that makes rows
-    // appear to reorder and snap back. questionSessions is still updated
-    // correctly throughout; the final renderSidebar below captures the result.
-    let historyLoaded = false;
-    renderer.onStatusUpdate = (status) => {
-      if (state.renderer !== renderer) return;
-      if (status === "question") state.questionSessions.add(sessionId);
-      else state.questionSessions.delete(sessionId);
-      if (!historyLoaded) return;
-      const root = document.querySelector<HTMLElement>(".view-sessions");
-      const listEl = root?.querySelector<HTMLElement>("#sessions-list");
-      if (listEl) renderSidebar(listEl);
-      // Sync header avatar border immediately — don't wait for instances-changed.
-      const sess = state.sessions.find(s => s.session_id === sessionId);
-      if (sess) updateHeaderAvatarStatus(pane, sess);
-      // work_finished / question_asked sounds are fired by the daemon-link
-      // (notifications::rules::fire) which already resolves the character slot
-      // and respects mute settings. Playing here too causes a double sound.
-    };
+    // NOTE: the sidebar/header question flag is NOT derived here anymore. The
+    // renderer's marker detection only ever ran for the OPEN chat, so it went
+    // stale the moment a session was backgrounded (a later turn's "done" never
+    // cleared an old "question", and vice versa), and it fired on intermediate
+    // markers mid-turn. The registry's `awaiting` (set by the daemon from the
+    // result line, gen-guarded) is the single source of truth now - see
+    // deriveQuestionSet in sessions-helpers.ts.
     header.onChangesClick = () => panel.toggle();
     // Expose the panel toggle through the state seam so view-more-menu and
     // sidebar-ctx-menu can offer "View changes" for the active session.
@@ -430,15 +414,13 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     } finally {
       overlay?.remove();
     }
-    historyLoaded = true;
     // Self-heal against the lossy daemon->app notifier: a turn that completed
     // while this session was backgrounded may be missing from the cache even
     // though the sidebar marked it "done". Re-read the transcript tail and paint
     // anything the live channel dropped. Fire-and-forget so reopen stays instant;
     // recovered events arrive via the live subscriber path.
     void sessionEvents.reconcileLatest(sessionId, sess.cwd ? String(sess.cwd) : undefined);
-    // Sync sidebar once after replay: questionSessions is now populated but no
-    // renderSidebar fired during replay (suppressed to avoid FLIP flicker).
+    // Sync sidebar once after replay (no per-event re-renders fired during it).
     const rootEl = document.querySelector<HTMLElement>(".view-sessions");
     const listAfterLoad = rootEl?.querySelector<HTMLElement>("#sessions-list");
     if (listAfterLoad) renderSidebar(listAfterLoad);
@@ -592,7 +574,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       // notice the held set is flushable — check right away.
       if (!isCurrentSessionBusy() && state.heldMessages.hasItemsForActive()) {
         const freshSess = state.sessions.find((s) => s.session_id === sessionId);
-        const isQuestion = freshSess?.awaiting === "question" || state.questionSessions.has(sessionId);
+        const isQuestion = freshSess?.awaiting === "question";
         state.heldMessages.onCompletion(sessionId, isQuestion);
       }
     }

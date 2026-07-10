@@ -40,18 +40,36 @@ export function paneEmptyStateHtml(connected: boolean | null, stalled: boolean):
   return `<div class="session-empty session-empty--setup"><i class="ph ph-spinner"></i><span>Setting up...</span></div>`;
 }
 
+/**
+ * Single source of truth for "Claude asked a question" per session: the
+ * registry's `awaiting` field, set by the daemon from the turn's result-line
+ * marker and (durably, mid-turn) by the AskUserQuestion hook. The old second
+ * source - a frontend in-memory set fed by the active renderer's marker
+ * detection - could only ever update whichever chat was open, so backgrounded
+ * chats kept stale "Input needed" flags (or missed real ones) until reopened.
+ * Every consumer (sidebar rows, header avatar ring, held-message flush gate)
+ * derives from this ONE helper so they can never disagree.
+ */
+export function deriveQuestionSet(sessions: Instance[]): Set<string> {
+  return new Set(sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id));
+}
+
 /** 0=NeedsPermission, 1=Question, 2=Working, 3=Waiting(external process),
  * 4=Done(unread), 5=YourTurn, 6=External/Automated.
  * Question (Claude is waiting on the user) sorts above Working so idle-blocked
  * agents surface first for triage. Waiting (parked on a CI run / long command)
  * sorts just below Working and is its OWN tier - it used to share Working's
  * bucket, which hid the distinction between "actively running" and "blocked on
- * a script". */
+ * a script". `awaiting === "working"` (own background subagents/tasks still
+ * running, will self-resume) is Working, NOT Waiting: from the user's
+ * perspective the chat is still in progress. */
 export function statusPriority(i: Instance, unread: Set<string>, attention: Set<string>, question: Set<string>): number {
   if (attention.has(i.session_id)) return 0;
   if (i.kind === "external" || i.kind === "automated") return 6;
   if (i.busy && i.awaiting !== "question") return 2;
   if (question.has(i.session_id)) return 1;
+  // Background subagents/tasks of this session still running: still working.
+  if (i.awaiting === "working") return 2;
   // Parked on an external process (CI / long command): its own status tier.
   if (i.awaiting === "waiting") return 3;
   if (unread.has(i.session_id)) return 4;
@@ -64,6 +82,7 @@ export function stateTooltip(i: Instance, unread: Set<string>, attention: Set<st
   if (i.kind === "automated") return "Automated session (remote-controlled)";
   if (i.busy && i.awaiting !== "question") return "Claude is running";
   if (question.has(i.session_id)) return "Claude asked a question - click to answer";
+  if (i.awaiting === "working") return "Working in the background (subagents / tasks running)";
   if (i.awaiting === "waiting") return "Waiting on an external process (CI / a long command)";
   if (rateLimited.has(i.session_id)) return "Usage limit reached - will auto-resume on reset";
   if (unread.has(i.session_id)) return "Claude responded - click to read";
@@ -231,6 +250,7 @@ export function statusDotClass(
   if (i.kind === "external" || i.kind === "automated") return "st-external";
   if (i.busy && i.awaiting !== "question") return "st-working";
   if (question.has(i.session_id)) return "st-question";
+  if (i.awaiting === "working") return "st-working";
   if (i.awaiting === "waiting") return "st-waiting";
   if (rateLimited.has(i.session_id)) return "st-rate-limited";
   if (unread.has(i.session_id)) return "st-done";
@@ -270,6 +290,9 @@ export function statusIndicator(
   }
   if (isQuestion) {
     return `<i class="session-state-icon ph ph-chat-circle-dots s-question" title="${tooltip}"></i>`;
+  }
+  if (i.awaiting === "working") {
+    return `<i class="session-state-icon ph ph-spinner s-working spinning" title="${tooltip}"></i>`;
   }
   if (i.awaiting === "waiting") {
     return `<i class="session-state-icon ph ph-hourglass-medium s-waiting" title="${tooltip}"></i>`;
