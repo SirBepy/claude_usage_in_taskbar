@@ -40,6 +40,15 @@ pub struct PersistedInteractive {
 /// Best-effort write of every live Interactive entry to `path`. Failures
 /// are logged, never propagated: a chat turn must not crash because the
 /// snapshot file is read-only or full.
+///
+/// Guards against wiping the snapshot: a legitimate close removes ONE session
+/// per call, so the count only ever drops by 1 per save. A save that would
+/// jump straight from several entries to zero means the in-memory registry
+/// itself is anomalously empty (e.g. a startup race, or a bug reordering the
+/// restore-from-disk step) rather than the user actually closing every chat
+/// at once — refuse that write and keep the on-disk history intact. Only
+/// blocks the many-to-zero case; a single lingering chat can still close
+/// normally down to zero.
 pub fn save_snapshot(registry: &Registry, path: &Path) {
     let snapshot: Vec<PersistedInteractive> = registry
         .list()
@@ -61,6 +70,14 @@ pub fn save_snapshot(registry: &Registry, path: &Path) {
             account_id: i.account_id,
         })
         .collect();
+    if snapshot.is_empty() && load_snapshot(path).len() > 1 {
+        log::warn!(
+            "persist sessions: refusing to overwrite non-empty snapshot at {} with an empty one; \
+             registry looks unexpectedly empty, leaving the on-disk history untouched",
+            path.display()
+        );
+        return;
+    }
     let json = match serde_json::to_string_pretty(&snapshot) {
         Ok(s) => s,
         Err(e) => {
@@ -223,5 +240,49 @@ mod tests {
         let loaded = load_snapshot(&path);
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].session_id, "live");
+    }
+
+    /// Regression for the incident where an unexpectedly-empty registry (a
+    /// startup race, a bug) overwrote a healthy multi-session snapshot with
+    /// `[]`, permanently losing every previously-known chat.
+    #[test]
+    fn save_refuses_to_wipe_a_populated_snapshot() {
+        let registry = Registry::new();
+        let tmp = TempDir::new().unwrap();
+        let cwd = tmp.path().to_path_buf();
+        let path = tmp.path().join("snap.json");
+
+        registry.upsert_interactive("s1", &cwd, "p", "2026-07-10T00:00:00Z");
+        registry.upsert_interactive("s2", &cwd, "p", "2026-07-10T00:00:00Z");
+        registry.upsert_interactive("s3", &cwd, "p", "2026-07-10T00:00:00Z");
+        save_snapshot(&registry, &path);
+        assert_eq!(load_snapshot(&path).len(), 3);
+
+        // A second, unrelated, anomalously-empty registry tries to save over it.
+        let empty_registry = Registry::new();
+        save_snapshot(&empty_registry, &path);
+
+        // The original 3 entries must survive untouched.
+        let loaded = load_snapshot(&path);
+        assert_eq!(loaded.len(), 3, "empty save over a populated file must be refused");
+    }
+
+    /// The guard must not block the legitimate case: closing the single
+    /// remaining chat really does mean the snapshot should go to empty.
+    #[test]
+    fn save_allows_wiping_down_from_a_single_entry() {
+        let registry = Registry::new();
+        let tmp = TempDir::new().unwrap();
+        let cwd = tmp.path().to_path_buf();
+        let path = tmp.path().join("snap.json");
+
+        registry.upsert_interactive("only", &cwd, "p", "2026-07-10T00:00:00Z");
+        save_snapshot(&registry, &path);
+        assert_eq!(load_snapshot(&path).len(), 1);
+
+        registry.mark_ended("only", crate::types::EndReason::Manual, "2026-07-10T01:00:00Z");
+        save_snapshot(&registry, &path);
+
+        assert_eq!(load_snapshot(&path).len(), 0, "closing the last chat must still persist as empty");
     }
 }
