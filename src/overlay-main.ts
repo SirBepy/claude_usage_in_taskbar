@@ -16,8 +16,8 @@
 //     switch; that gap is pre-existing, not something this split changes).
 //   - No initBoot() (that's the multi-view router's boot sequence), so
 //     settings are fetched once here directly - without it, overlay.ts's
-//     valueColor(...,"overlay") call would never see colorMode/paceColors/
-//     colorThresholds/colorApplyTo and readOverlayOpacity would always fall
+//     valueColor(...,"overlay") call would never see paceColors/paceBand/
+//     colorApplyTo and readOverlayOpacity would always fall
 //     back to its default (ai_todo: multi-account overlay settings bug).
 //   - No router/sidemenu/back-button/permission-modal/external-link wiring -
 //     this window has none of that UI, so none of it is imported here.

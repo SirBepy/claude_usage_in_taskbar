@@ -114,34 +114,6 @@ function hydrateTheme(): void {
 
 // ── Usage colors / overlay / interface (ported from subviews/visuals/visuals.ts) ──
 
-function createColorRow(min = 0, color = "#ffffff"): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "kit-row color-row";
-  row.innerHTML = `
-    <div class="color-row-fields">
-      <input type="number" class="color-min" value="${min}" min="0" max="100">
-      <span class="color-pct-label">%</span>
-      <input type="color" class="color-val" value="${color}">
-    </div>
-    <button class="btn-secondary remove-color-btn">Remove</button>
-  `;
-  const removeBtn = row.querySelector<HTMLButtonElement>(".remove-color-btn");
-  if (removeBtn) removeBtn.onclick = () => { row.remove(); saveSettings(); };
-  row.querySelector(".color-min")?.addEventListener("change", saveSettings);
-  row.querySelector(".color-val")?.addEventListener("change", saveSettings);
-  return row;
-}
-
-function updateColorModeVisibility(): void {
-  const colorMode = $("colorMode") as HTMLSelectElement | null;
-  const thresholdSection = $("thresholdSection");
-  const paceSection = $("paceSection");
-  if (!colorMode || !thresholdSection || !paceSection) return;
-  const isPace = colorMode.value === "pace";
-  thresholdSection.style.display = isPace ? "none" : "block";
-  paceSection.style.display = isPace ? "block" : "none";
-}
-
 function wireInfoTooltips(root: HTMLElement | Document): void {
   for (const wrap of root.querySelectorAll<HTMLElement>(".info-wrap")) {
     const icon = wrap.querySelector<HTMLElement>(".info-icon");
@@ -168,22 +140,18 @@ async function hydrateUsageColorsAndInterface(): Promise<void> {
   const s = getSettings();
   const colorApplyDashboard = $("colorApplyDashboard") as HTMLInputElement | null;
   const colorApplyOverlay = $("colorApplyOverlay") as HTMLInputElement | null;
-  const colorContainer = $("colorContainer");
-  const colorMode = $("colorMode") as HTMLSelectElement | null;
   const paceBand = $("paceBand") as HTMLInputElement | null;
   const paceColorUnder = $("paceColorUnder") as HTMLInputElement | null;
   const paceColorNearSafe = $("paceColorNearSafe") as HTMLInputElement | null;
   const paceColorNearOver = $("paceColorNearOver") as HTMLInputElement | null;
   const paceColorOver = $("paceColorOver") as HTMLInputElement | null;
-  const addColorBtn = $("addColorBtn") as HTMLButtonElement | null;
   if (!colorApplyDashboard || !colorApplyOverlay) return;
-  if (!colorContainer || !colorMode || !paceBand || !addColorBtn) return;
+  if (!paceBand) return;
   if (!paceColorUnder || !paceColorNearSafe || !paceColorNearOver || !paceColorOver) return;
 
   const cat = (s.colorApplyTo as Record<string, boolean | undefined>) || {};
   colorApplyDashboard.checked = cat.dashboard !== false;
   colorApplyOverlay.checked = cat.overlay !== false;
-  colorMode.value = (s.colorMode as string) || "pace";
   paceBand.value = String(s.paceBand ?? 10);
   const pc = (s.paceColors as Record<string, string | undefined>) || {};
   paceColorUnder.value = pc.under || "#27ae60";
@@ -191,27 +159,14 @@ async function hydrateUsageColorsAndInterface(): Promise<void> {
   paceColorNearOver.value = pc.nearOver || "#e67e22";
   paceColorOver.value = pc.over || "#e74c3c";
 
-  const DEFAULT_THRESHOLDS = [
-    { min: 0,  color: "#27ae60" },
-    { min: 50, color: "#e67e22" },
-    { min: 80, color: "#e74c3c" },
-  ];
-  const thresholds = (s.colorThresholds && s.colorThresholds.length) ? s.colorThresholds : DEFAULT_THRESHOLDS;
-  colorContainer.innerHTML = "";
-  thresholds.forEach((t) => colorContainer.appendChild(createColorRow(t.min, t.color)));
-
-  updateColorModeVisibility();
-
   for (const el of [colorApplyDashboard, colorApplyOverlay]) {
     el.addEventListener("change", saveSettings);
   }
-  colorMode.addEventListener("change", () => { updateColorModeVisibility(); saveSettings(); });
   paceBand.addEventListener("change", saveSettings);
   paceColorUnder.addEventListener("change", saveSettings);
   paceColorNearSafe.addEventListener("change", saveSettings);
   paceColorNearOver.addEventListener("change", saveSettings);
   paceColorOver.addEventListener("change", saveSettings);
-  addColorBtn.onclick = () => { colorContainer.appendChild(createColorRow(0, "#9d7dfc")); saveSettings(); };
 
   wireInfoTooltips(document.getElementById("app") || document);
 
@@ -295,18 +250,7 @@ function template() {
 
         <div class="kit-section">
           <div class="kit-section-title">Usage colors</div>
-          <div class="kit-row">
-            <span class="kit-row-label"><span class="info-wrap">Color Mode<i class="ph ph-info info-icon"></i><span class="info-tooltip">Threshold: colors change at fixed percentages you define. Safe Pace: colors based on whether you're ahead or behind a steady usage rate</span></span></span>
-            <select id="colorMode">
-              <option value="pace">Safe Pace</option>
-              <option value="threshold">Threshold</option>
-            </select>
-          </div>
-          <div id="thresholdSection">
-            <div id="colorContainer"></div>
-            <button class="btn-secondary" id="addColorBtn" style="margin-top: 10px; width: 100%; font-size: 0.8rem;">+ Add Color Threshold</button>
-          </div>
-          <div id="paceSection" style="display:none">
+          <div id="paceSection">
             <div class="kit-row">
               <span class="kit-row-label"><span class="info-wrap">Band %<i class="ph ph-info info-icon"></i><span class="info-tooltip">How close to the safe pace line before the color changes (e.g. 10% means within 10 points)</span></span></span>
               <input type="number" id="paceBand" value="10" min="0" max="50" style="width:60px">

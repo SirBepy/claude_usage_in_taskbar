@@ -2,7 +2,7 @@
 // Rewired from the deleted src/modules/formatters.js — vitest imports TS directly.
 
 import { describe, it, expect } from "vitest";
-import { pctColor, getThresholdColor, getPaceColor, fmtPct, valueColor } from "../src/shared/formatters.ts";
+import { pctColor, getPaceColor, fmtPct, valueColor } from "../src/shared/formatters.ts";
 import { hourToMs } from "../src/shared/time.ts";
 
 describe("pctColor", () => {
@@ -35,24 +35,6 @@ describe("fmtPct", () => {
   });
 });
 
-describe("getThresholdColor", () => {
-  const thresholds = [
-    { min: 0, color: "green" },
-    { min: 50, color: "orange" },
-    { min: 80, color: "red" },
-  ];
-  it("picks highest matching threshold", () => {
-    expect(getThresholdColor(10, thresholds)).toBe("green");
-    expect(getThresholdColor(55, thresholds)).toBe("orange");
-    expect(getThresholdColor(95, thresholds)).toBe("red");
-  });
-  it("returns null when inputs empty", () => {
-    expect(getThresholdColor(null, thresholds)).toBeNull();
-    expect(getThresholdColor(50, [])).toBeNull();
-    expect(getThresholdColor(50, null)).toBeNull();
-  });
-});
-
 describe("getPaceColor", () => {
   // With paceBand 10 and safePace 50:
   //   pct <  40  → under
@@ -76,10 +58,9 @@ describe("getPaceColor", () => {
 });
 
 // Multi-account milestone 07: colorApplyTo gained an "overlay" target,
-// consumed by src/views/overlay/overlay.ts. Lockstep partner to the Rust
-// `ColorApplyTo.overlay` field in src-tauri/src/tray/threshold.rs.
+// consumed by src/views/overlay/overlay.ts.
 describe("valueColor overlay target", () => {
-  const settings = { colorMode: "pace", paceBand: 10 };
+  const settings = { paceBand: 10 };
   it("colors the overlay by pace when colorApplyTo.overlay is unset (default on)", () => {
     const c = valueColor(30, 50, settings, "overlay");
     expect(c).not.toBe("var(--text)");

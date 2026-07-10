@@ -115,18 +115,6 @@ export interface ColorThreshold {
   color: string;
 }
 
-export function getThresholdColor(
-  value: number | null | undefined,
-  thresholds: ColorThreshold[] | undefined,
-): string | null {
-  if (value == null || !thresholds || thresholds.length === 0) return null;
-  const sorted = [...thresholds].sort((a, b) => b.min - a.min);
-  for (const t of sorted) {
-    if (value >= t.min) return t.color;
-  }
-  return null;
-}
-
 export interface PaceColorSettings {
   paceBand?: number;
   paceColors?: { under?: string; nearSafe?: string; nearOver?: string; over?: string };
@@ -143,7 +131,6 @@ export function getPaceColor(pct: number, safePace: number, settings: PaceColorS
 
 export interface ValueColorSettings extends PaceColorSettings {
   colorApplyTo?: Record<string, boolean | undefined>;
-  colorMode?: "threshold" | "pace";
   colorThresholds?: ColorThreshold[];
 }
 
@@ -172,9 +159,8 @@ export function valueColor(
   target: string = "dashboard",
 ): string {
   if (settings.colorApplyTo?.[target] === false) return "var(--text)";
-  if (settings.colorMode === "pace" && safePace != null) {
+  if (safePace != null) {
     return getPaceColor(pct, safePace, settings);
   }
-  const c = getThresholdColor(pct, settings.colorThresholds);
-  return c || pctColor(pct);
+  return pctColor(pct);
 }

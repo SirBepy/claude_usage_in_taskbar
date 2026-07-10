@@ -7,11 +7,6 @@ use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum ColorMode { Threshold, Pace }
-impl Default for ColorMode { fn default() -> Self { Self::Pace } }
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
 pub enum NotifMode { Sound, Voice }
 impl Default for NotifMode { fn default() -> Self { Self::Sound } }
 
@@ -19,64 +14,18 @@ impl Default for NotifMode { fn default() -> Self { Self::Sound } }
 pub struct ColorStop { pub min: u32, pub color: String }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PaceColors {
-    pub under: String,
-    pub near_safe: String,
-    pub near_over: String,
-    pub over: String,
-}
-impl Default for PaceColors {
-    fn default() -> Self {
-        Self {
-            under: "#27ae60".into(),
-            near_safe: "#f1c40f".into(),
-            near_over: "#e67e22".into(),
-            over: "#e74c3c".into(),
-        }
-    }
-}
-
-/// What still reads these colors: the Dashboard and floating multi-account
-/// overlay window (`src/shared/formatters.ts` `valueColor()`), plus the
-/// `ThresholdCrossed` notification (`scheduler.rs`, via `color_thresholds`
-/// alone — colors themselves aren't used there). The tray icon glyph and its
-/// tooltip no longer render at all, so `icon`/`number`/`tooltip` targets were
-/// removed.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ColorApplyTo {
-    pub dashboard: bool,
-    /// Multi-account milestone 07: colours the floating overlay window's
-    /// usage numbers (`src/views/overlay/overlay.ts`, `valueColor(..,
-    /// "overlay")`).
-    pub overlay: bool,
-}
-impl Default for ColorApplyTo {
-    fn default() -> Self {
-        Self { dashboard: true, overlay: true }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct IconSettings {
-    pub color_mode: ColorMode,
     pub color_thresholds: Vec<ColorStop>,
-    pub pace_band: f32,
-    pub pace_colors: PaceColors,
-    pub apply_color_to: ColorApplyTo,
 }
 
 impl Default for IconSettings {
     fn default() -> Self {
         Self {
-            color_mode: ColorMode::default(),
             color_thresholds: vec![
                 ColorStop { min: 0,  color: "#27ae60".into() },
                 ColorStop { min: 50, color: "#e67e22".into() },
                 ColorStop { min: 80, color: "#e74c3c".into() },
             ],
-            pace_band: 10.0,
-            pace_colors: PaceColors::default(),
-            apply_color_to: ColorApplyTo::default(),
         }
     }
 }
@@ -126,7 +75,6 @@ impl Default for NotificationsConfig {
 // -- TryFrom impls ------------------------------------------------------------
 
 fn val_str(v: Option<&Value>) -> Option<&str> { v.and_then(|x| x.as_str()) }
-fn val_f64(v: Option<&Value>) -> Option<f64>  { v.and_then(|x| x.as_f64()) }
 fn val_bool(v: Option<&Value>) -> Option<bool> { v.and_then(|x| x.as_bool()) }
 
 fn parse_enum<T: Default>(raw: Option<&Value>, map: &[(&str, T)]) -> T where T: Copy {
@@ -149,39 +97,12 @@ fn parse_color_stops(raw: Option<&Value>) -> Vec<ColorStop> {
     out
 }
 
-fn parse_pace_colors(raw: Option<&Value>) -> PaceColors {
-    let mut pc = PaceColors::default();
-    if let Some(m) = raw.and_then(|x| x.as_object()) {
-        if let Some(c) = m.get("under").and_then(|v| v.as_str())     { pc.under = c.into(); }
-        if let Some(c) = m.get("nearSafe").and_then(|v| v.as_str())  { pc.near_safe = c.into(); }
-        if let Some(c) = m.get("nearOver").and_then(|v| v.as_str())  { pc.near_over = c.into(); }
-        if let Some(c) = m.get("over").and_then(|v| v.as_str())      { pc.over = c.into(); }
-    }
-    pc
-}
-
-fn parse_apply_to(raw: Option<&Value>) -> ColorApplyTo {
-    let mut a = ColorApplyTo::default();
-    if let Some(m) = raw.and_then(|x| x.as_object()) {
-        if let Some(v) = m.get("dashboard").and_then(|v| v.as_bool()) { a.dashboard = v; }
-        if let Some(v) = m.get("overlay").and_then(|v| v.as_bool())   { a.overlay = v; }
-    }
-    a
-}
-
 impl TryFrom<&Settings> for IconSettings {
     type Error = std::convert::Infallible;
     fn try_from(s: &Settings) -> Result<Self, Self::Error> {
         let e = &s.extra;
         Ok(IconSettings {
-            color_mode: parse_enum(e.get("colorMode"), &[
-                ("threshold", ColorMode::Threshold),
-                ("pace", ColorMode::Pace),
-            ]),
             color_thresholds: parse_color_stops(e.get("colorThresholds")),
-            pace_band: val_f64(e.get("paceBand")).unwrap_or(10.0) as f32,
-            pace_colors: parse_pace_colors(e.get("paceColors")),
-            apply_color_to: parse_apply_to(e.get("colorApplyTo")),
         })
     }
 }
@@ -239,19 +160,12 @@ mod tests {
     fn icon_settings_defaults_when_extra_empty() {
         let s = Settings::default();
         let icon = IconSettings::try_from(&s).unwrap();
-        assert_eq!(icon.color_mode, ColorMode::Pace);
-        assert!(icon.apply_color_to.dashboard);
-        assert!(icon.apply_color_to.overlay);
+        assert_eq!(icon.color_thresholds, IconSettings::default().color_thresholds);
     }
 
     #[test]
-    fn icon_settings_parses_dashboard_dropdown_values() {
+    fn icon_settings_parses_and_sorts_color_thresholds() {
         let s = settings_with(json!({
-            "colorMode": "pace",
-            "paceBand": 15,
-            "paceColors": {"under": "#11ff00", "nearSafe": "#ffff00",
-                           "nearOver": "#ff9900", "over": "#ff0000"},
-            "colorApplyTo": {"dashboard": true, "overlay": false},
             "colorThresholds": [
                 {"min": 0, "color": "#27ae60"},
                 {"min": 80, "color": "#e74c3c"},
@@ -259,11 +173,6 @@ mod tests {
             ]
         }));
         let icon = IconSettings::try_from(&s).unwrap();
-        assert_eq!(icon.color_mode, ColorMode::Pace);
-        assert_eq!(icon.pace_band, 15.0);
-        assert_eq!(icon.pace_colors.under, "#11ff00");
-        assert!(icon.apply_color_to.dashboard);
-        assert!(!icon.apply_color_to.overlay);
         // thresholds sorted asc by min
         let mins: Vec<u32> = icon.color_thresholds.iter().map(|t| t.min).collect();
         assert_eq!(mins, vec![0, 50, 80]);

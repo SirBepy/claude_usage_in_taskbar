@@ -135,7 +135,6 @@ export function saveSettings(): void {
       const pct = parseFloat(el.value);
       return Number.isFinite(pct) ? pct / 100 : prevOpacity;
     })(),
-    colorMode: valOr("colorMode", (prev.colorMode as string) || "pace") as "threshold" | "pace",
     paceBand: parseInt(valOr("paceBand", String(prev.paceBand ?? 10)), 10) || 10,
     paceColors: {
       under: valOr("paceColorUnder", prevPace.under || "#27ae60"),
