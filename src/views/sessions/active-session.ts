@@ -74,8 +74,8 @@ export function headerStatusClass(sess: Instance): string {
 }
 
 /** Swap the header avatar's status ring class without re-rendering the whole
- * header. Called from both instances-changed and onStatusUpdate so the border
- * stays in sync with the sidebar regardless of which event arrives first. */
+ * header. Called from instances-changed so the border stays in sync with the
+ * sidebar. */
 export function updateHeaderAvatarStatus(pane: HTMLElement, sess: Instance): void {
   const heroEl = pane.querySelector<HTMLElement>(".session-header-avatar");
   if (!heroEl) return;

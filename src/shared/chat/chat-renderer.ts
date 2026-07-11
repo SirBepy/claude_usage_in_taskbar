@@ -126,7 +126,6 @@ export class ChatRenderer {
   public onFileEditsChanged: ((edits: FileEditView[]) => void) | null = null;
   public onToolTally: ((t: ToolTally) => void) | null = null;
   public onActivityUpdate: ((activity: string | null) => void) | null = null;
-  public onStatusUpdate: ((status: "done" | "question" | "waiting" | "working" | null) => void) | null = null;
   public onProgressUpdate: ((n: number, m: number) => void) | null = null;
   public onSendText: ((text: string) => void) | null = null;
   /** Fired when a next-ai-prompt skill turn completes. Active-session wires this to show the pickup CTA. */
@@ -147,7 +146,6 @@ export class ChatRenderer {
   setTurnStatus(s: "done" | "question" | "waiting" | "working" | null): void {
     if (this.turnStatus === s) return;
     this.turnStatus = s;
-    this.onStatusUpdate?.(s);
     if (s !== null && this._nextAiPromptPending && !this.hydrating) {
       this._nextAiPromptPending = false;
       this.onNextAiPromptDone?.();
