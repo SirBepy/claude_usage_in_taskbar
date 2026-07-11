@@ -25,6 +25,12 @@ pub use wizard::WizardSession;
 pub enum AccountResolveError {
     #[error("no accounts registered - add an account before starting a chat")]
     NoAccounts,
+    /// Registry is populated but the caller named no account and no
+    /// `default_account_id` is set. Distinct from [`Self::NoAccounts`]: the
+    /// user has accounts, they just haven't said which one an unattributed
+    /// spawn should use.
+    #[error("no default account set - pick one in Settings > Accounts")]
+    NoDefault,
     #[error("account {0} not found in the registry")]
     NotFound(String),
 }
@@ -53,7 +59,7 @@ fn pick_account(
     }
     let want = account_id
         .or(default_account_id)
-        .ok_or(AccountResolveError::NoAccounts)?;
+        .ok_or(AccountResolveError::NoDefault)?;
     accounts
         .iter()
         .find(|a| a.id == want)
@@ -109,10 +115,10 @@ mod tests {
     }
 
     #[test]
-    fn pick_account_no_id_and_no_default_is_no_accounts() {
+    fn pick_account_no_id_and_no_default_is_no_default() {
         let accounts = vec![acct("a")];
         let err = pick_account(&accounts, None, None).unwrap_err();
-        assert_eq!(err, AccountResolveError::NoAccounts);
+        assert_eq!(err, AccountResolveError::NoDefault);
     }
 
     #[test]
