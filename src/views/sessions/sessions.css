@@ -565,6 +565,30 @@
   font-size: 1.8rem;
 }
 
+/* Chat-open stall error (ai_todo 226): painted into .session-messages by the
+   selectSession watchdog when the backend doesn't answer within 8s. */
+.chat-load-stalled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-load-retry {
+  background: transparent;
+  border: 1px solid var(--chat-state-needs-input);
+  color: var(--chat-state-needs-input);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-load-retry:hover {
+  background: color-mix(in srgb, var(--chat-state-needs-input) 15%, transparent);
+}
+
 .session-pending-hint {
   margin: auto;
   text-align: center;

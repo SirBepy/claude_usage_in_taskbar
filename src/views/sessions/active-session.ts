@@ -295,6 +295,37 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   ].join("");
   pane.insertBefore(header.el, pane.firstChild);
 
+  // Stall guard (ai_todo 226): the awaits below normally settle in ms, but a
+  // wedged backend (2026-07-11 incident) left this header floating over a
+  // blank pane forever with no feedback. Ring only after 150ms so cache-hit
+  // reopens don't flash; error + Retry if nothing settles within 8s.
+  const messagesHost = pane.querySelector<HTMLElement>(".session-messages");
+  let loadSettled = false;
+  const ringTimer = window.setTimeout(() => {
+    if (!loadSettled && messagesHost) showChatLoadingOverlay(messagesHost);
+  }, 150);
+  const stallTimer = window.setTimeout(() => {
+    if (loadSettled || state.mountId !== myMount || state.selectedId !== sessionId) return;
+    if (!messagesHost) return;
+    messagesHost.querySelector(".chat-loading-overlay")?.remove();
+    messagesHost.innerHTML =
+      `<div class="session-empty session-empty--stalled chat-load-stalled">` +
+      `<i class="ph ph-warning"></i>` +
+      `<div>This chat isn't loading - the backend didn't respond.</div>` +
+      `<button type="button" class="chat-load-retry">Retry</button>` +
+      `</div>`;
+    messagesHost.querySelector<HTMLButtonElement>(".chat-load-retry")?.addEventListener("click", () => {
+      setActiveSession(null);
+      void selectSession(sessionId, pane);
+    });
+  }, 8000);
+  const settleLoad = () => {
+    loadSettled = true;
+    window.clearTimeout(ringTimer);
+    window.clearTimeout(stallTimer);
+    messagesHost?.querySelector(".chat-loading-overlay")?.remove();
+  };
+
   pane.querySelector<HTMLButtonElement>(".thinking-pause-btn")?.addEventListener("click", () => {
     void invoke<void>("cancel_turn", { sessionId: sess.session_id }).catch(err => console.error("[sessions] cancel_turn failed", err));
   });
@@ -395,6 +426,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     await renderer.attach(sessionId);
     // Bail if a newer mount or selectSession superseded us during await.
     if (state.mountId !== myMount || state.selectedId !== sessionId) {
+      settleLoad();
       renderer.detach();
       return;
     }
@@ -406,12 +438,15 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     try {
       await renderer.loadFromStore(sess.cwd ? String(sess.cwd) : undefined);
       if (state.mountId !== myMount || state.selectedId !== sessionId) {
+        settleLoad();
         renderer.detach();
         return;
       }
     } catch {
       /* tolerate absence */
     } finally {
+      // Also clears the stall watchdog + 150ms ring timer.
+      settleLoad();
       overlay?.remove();
     }
     // Self-heal against the lossy daemon->app notifier: a turn that completed
