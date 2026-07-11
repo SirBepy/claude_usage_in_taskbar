@@ -81,11 +81,27 @@ where
                 };
                 match msg {
                     Message::Request(req) => {
-                        let resp = router.dispatch(req, ctx.clone()).await;
-                        let v: Value = serde_json::to_value(resp).map_err(FrameError::from)?;
-                        if let Err(e) = write_frame(&mut stream, &v).await {
-                            break Err(e);
-                        }
+                        // Dispatch concurrently and route the response through the
+                        // same outbound queue notifications use, so the write half
+                        // keeps a single owner. Awaiting dispatch inline here
+                        // head-of-line blocked the whole connection: one slow
+                        // handler (start_session spawning claude.exe, a heavy
+                        // send_message) stalled every other RPC and all
+                        // notifications on this connection for seconds. Handlers
+                        // already run concurrently across connections, so this
+                        // adds no new concurrency class.
+                        let router = router.clone();
+                        let req_ctx = ctx.clone();
+                        let out = ctx.outbound.clone();
+                        tokio::spawn(async move {
+                            let resp = router.dispatch(req, req_ctx).await;
+                            match serde_json::to_value(resp) {
+                                // Send fails only when the connection is already
+                                // gone; the response has nowhere to go either way.
+                                Ok(v) => { let _ = out.send(v).await; }
+                                Err(e) => log::warn!("daemon: response serialize failed: {e}"),
+                            }
+                        });
                     }
                     Message::Notification(_) | Message::Response(_) => {
                         // Inbound notifications + stray responses are ignored.
