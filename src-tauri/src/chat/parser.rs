@@ -6,6 +6,26 @@
 use crate::types::chat::{ChatEvent, ContentBlock};
 use serde_json::Value;
 
+/// Extract an event's `timestamp` as an epoch value the frontend can format.
+///
+/// Two producers write this field differently: the live `stream-json` output
+/// carries a numeric epoch (what the tests use), while the persisted transcript
+/// JSONL stores an RFC3339 string (e.g. "2026-07-11T09:34:05.750Z"). Numbers
+/// pass through unchanged; strings parse to epoch millis (always > 1e10, so the
+/// frontend's seconds-vs-millis heuristic treats them as milliseconds). Without
+/// the string arm, `as_i64()` returned `None` for every history line and the
+/// per-message hover timestamps silently disappeared. Returns 0 when the field
+/// is absent or unparseable.
+fn event_timestamp(v: &Value) -> i64 {
+    match v.get("timestamp") {
+        Some(Value::Number(n)) => n.as_i64().unwrap_or(0),
+        Some(Value::String(s)) => chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| dt.timestamp_millis())
+            .unwrap_or(0),
+        _ => 0,
+    }
+}
+
 pub struct ParserContext {
     buf: Vec<u8>,
     /// Accumulator for the current text content_block being assembled from
@@ -90,7 +110,7 @@ impl ParserContext {
         }
         let event = v.get("event")?;
         let event_type = event.get("type").and_then(|t| t.as_str())?;
-        let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+        let ts = event_timestamp(&v);
 
         match event_type {
             "content_block_start" => {
@@ -135,7 +155,7 @@ impl ParserContext {
         if v.get("type").and_then(|t| t.as_str())? != "result" {
             return None;
         }
-        let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+        let ts = event_timestamp(&v);
         let mut events = Vec::new();
 
         let result_text = v.get("result").and_then(|s| s.as_str()).unwrap_or("");
@@ -247,7 +267,7 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         Ok(v) => v,
         Err(_) => return vec![],
     };
-    let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+    let ts = event_timestamp(&v);
     let Some(ty) = v.get("type").and_then(|t| t.as_str()) else { return vec![]; };
     match ty {
         // The init `system` line is what carries the session_id we care about.
@@ -466,7 +486,7 @@ fn tool_use_events(content_val: &Value, ts: i64, parent_tool_use_id: Option<Stri
 /// the UI can later nest subagent calls under their parent Task.
 fn tool_use_from_assistant_line(line: &str) -> Vec<ChatEvent> {
     let Ok(v) = serde_json::from_str::<Value>(line) else { return vec![]; };
-    let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+    let ts = event_timestamp(&v);
     let parent_tool_use_id = v.get("parent_tool_use_id").and_then(|x| x.as_str()).map(String::from);
     let Some(content) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
     tool_use_events(content, ts, parent_tool_use_id)
@@ -715,6 +735,23 @@ mod tests {
                     _ => panic!("expected text block"),
                 }
                 assert!(!is_meta, "a plain typed message must not be flagged is_meta");
+            }
+            _ => panic!("expected UserMessage"),
+        }
+    }
+
+    #[test]
+    fn parses_rfc3339_string_timestamp() {
+        // The persisted transcript JSONL writes `timestamp` as an RFC3339 string
+        // (not the numeric epoch the live stream uses). It must parse to epoch
+        // millis, else hover timestamps on history messages silently vanish.
+        let mut ctx = ParserContext::new();
+        let line = r#"{"type":"user","message":{"role":"user","content":"hi"},"timestamp":"2021-01-01T00:00:00.000Z"}"#;
+        let events = ctx.feed(format!("{}\n", line).as_bytes());
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ChatEvent::UserMessage { timestamp, .. } => {
+                assert_eq!(*timestamp, 1_609_459_200_000, "RFC3339 string -> epoch millis");
             }
             _ => panic!("expected UserMessage"),
         }

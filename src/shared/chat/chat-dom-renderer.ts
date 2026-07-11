@@ -379,10 +379,13 @@ export function buildMessageEl(m: RenderedMessage): HTMLElement {
   const wrap = document.createElement("div");
   wrap.innerHTML = renderMessage(m);
   const el = wrap.firstElementChild as HTMLElement;
-  if (m.ts) {
-    const ms = m.ts < 1e10 ? m.ts * 1000 : m.ts;
-    el.dataset.ts = new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
+  // Hover-timestamp label. History lines carry a real epoch (parsed from the
+  // transcript's RFC3339 string backend-side); live `-p` stream events carry
+  // ts=0, so approximate those with the render moment (≈ arrival). Display-only:
+  // we deliberately don't write back to m.ts, which stays 0 for live so the
+  // turn-span/duration logic keeps using duration_ms instead of a wall span.
+  const ms = m.ts ? (m.ts < 1e10 ? m.ts * 1000 : m.ts) : Date.now();
+  el.dataset.ts = new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (el.querySelector(".attachment-chip[data-attachment-path]")) {
     void hydrateAttachments(el);
   }
