@@ -6,8 +6,7 @@ import { invoke } from "../../shared/ipc";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { state } from "./state";
 import { projectName } from "./sessions-helpers";
-import { readLastChoice } from "../../shared/effort-presets";
-import { getSettings } from "../../shared/state";
+import { openModelEffortModal } from "./model-effort-modal";
 import type { ContentBlock, ChatEvent } from "../../types/ipc.generated";
 
 export const HANDOFF_PROMPT = `Please write a session handoff file for the next AI session.
@@ -54,20 +53,15 @@ export async function triggerHandoff(sessionId: string, cwd: string): Promise<vo
   await invoke<void>("send_message", { sessionId, cwd, blocks });
 }
 
-/** Open a new chat in the same project with the continuation prompt pre-filled.
- *  Called by active-session when onHandoffReady fires. */
-export function completeHandoff(sessionId: string): void {
+/** Open the new-chat modal (character / model / effort / account picker) in the
+ *  same project, then launch a new chat with the continuation prompt pre-filled
+ *  once the user confirms. Called by active-session when onHandoffReady fires.
+ *  Mirrors the "pickup" CTA flow so handoff and pickup behave identically. */
+export async function completeHandoff(sessionId: string): Promise<void> {
   const sess = state.sessions.find(s => s.session_id === sessionId);
   if (!sess) return;
   const project = { path: String(sess.cwd ?? ""), name: projectName(sess) };
-  const settings = getSettings();
-  const last = readLastChoice(settings, project.path);
-  const config = {
-    model: last?.model ?? "sonnet",
-    effort: last?.effort ?? "normal",
-    remote: true as const,
-    autoAccept: false as const,
-    initialMessage: CONTINUATION_PROMPT,
-  };
-  state.launchNewChatCallback?.(project, config);
+  const config = await openModelEffortModal(project.path, project.name);
+  if (!config) return;
+  state.launchNewChatCallback?.(project, { ...config, initialMessage: CONTINUATION_PROMPT });
 }

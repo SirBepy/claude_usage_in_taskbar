@@ -410,7 +410,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     renderer.onHandoffReady = () => {
       if (state.renderer !== renderer) return;
       if (state.selectedId !== sessionId) return;
-      completeHandoff(sessionId);
+      void completeHandoff(sessionId);
     };
     // NOTE: the sidebar/header question flag is NOT derived here anymore. The
     // renderer's marker detection only ever ran for the OPEN chat, so it went
