@@ -59,8 +59,16 @@ pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {
 
         let router_clone = router.clone();
         tokio::spawn(async move {
-            if let Err(e) = serve_connection(connected, router_clone).await {
-                match e {
+            let pid_str = peer_pid.map_or_else(|| "unknown".to_string(), |p| p.to_string());
+            log::debug!("daemon: client pid {pid_str} connected");
+            match serve_connection(connected, router_clone).await {
+                // 2026-07-11 incident follow-up: the app kept seeing "early eof"
+                // pipe drops with nothing in this log to pair them with, because
+                // clean closes were silent. Log every close with the peer pid so
+                // the next recurring-drop investigation can tell WHO disconnected
+                // (or was disconnected) and how often.
+                Ok(()) => log::info!("daemon: client pid {pid_str} disconnected"),
+                Err(e) => match e {
                     // A garbage frame length means the client wrote bytes that
                     // are not length-prefixed. The classic case is raw,
                     // newline-delimited JSON: the first 4 bytes ("{\"..") decode
@@ -75,14 +83,13 @@ pub async fn accept_loop(pipe_name: &str, router: Router) -> io::Result<()> {
                     // to keep the daemon log clean.
                     FrameError::TooLarge(len) => {
                         log::debug!(
-                            "daemon: dropped unframed/garbage frame (len {len}) from pid {}",
-                            peer_pid.map_or_else(|| "unknown".to_string(), |p| p.to_string())
+                            "daemon: dropped unframed/garbage frame (len {len}) from pid {pid_str}"
                         );
                     }
                     other => {
-                        log::warn!("daemon: connection ended with error: {other}");
+                        log::warn!("daemon: connection ended with error: {other} (pid {pid_str})");
                     }
-                }
+                },
             }
         });
     }

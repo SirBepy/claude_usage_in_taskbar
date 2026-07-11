@@ -37,8 +37,12 @@ pub async fn accept_loop(socket_path: &std::path::Path, router: Router) -> io::R
             Ok((stream, _addr)) => {
                 let router_clone = router.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = serve_connection(stream, router_clone).await {
-                        log::warn!("daemon: connection ended with error: {e}");
+                    // Log clean closes too (parity with the Windows transport):
+                    // silent disconnects made the 2026-07-11 pipe-drop incident
+                    // undiagnosable from this side.
+                    match serve_connection(stream, router_clone).await {
+                        Ok(()) => log::info!("daemon: client disconnected"),
+                        Err(e) => log::warn!("daemon: connection ended with error: {e}"),
                     }
                 });
             }
