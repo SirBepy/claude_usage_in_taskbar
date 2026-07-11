@@ -41,6 +41,10 @@ function tauriWindow(): TauriWindowApi | null {
 
 /** Release speed (physical px/ms) at or above which a drag counts as a flick. */
 const FLICK_SPEED = 0.35;
+/** Pointer travel (physical px) before a press counts as a drag rather than a
+ * click. Now that the whole panel is the drag surface (no dedicated grip), this
+ * keeps a click-to-open-dashboard from being swallowed by tiny cursor jitter. */
+const DRAG_THRESHOLD = 5;
 /** How long the fly-to-corner animation runs. */
 const SNAP_MS = 380;
 /** Inset from the screen edges when parking in a corner (logical-ish px, scaled). */
@@ -51,13 +55,25 @@ const TASKBAR_MARGIN = 48;
 interface Sample { t: number; x: number; y: number }
 
 /**
- * Wire drag + flick onto `surface` (the card-stack element). Returns a cleanup
- * that removes every listener. No-op (returns a bare cleanup) when the Tauri
- * window API is unavailable (e.g. running the view in a plain browser).
+ * Wire drag + flick onto `surface` (the whole overlay panel). Returns a cleanup
+ * that removes every listener. `onClick`, if given, fires on a press that never
+ * crossed the drag threshold (a plain click), receiving the original
+ * pointerdown target — the surface takes pointer capture on press, so the
+ * native `click` event can't be relied on to reach the pressed child. No-op
+ * (returns a bare cleanup) when the Tauri window API is unavailable (e.g.
+ * running the view in a plain browser).
  */
-export function initOverlayDrag(surface: HTMLElement): () => void {
+export function initOverlayDrag(surface: HTMLElement, onClick?: (target: EventTarget | null) => void): () => void {
   const maybeApi = tauriWindow();
-  if (!maybeApi) return () => {};
+  if (!maybeApi) {
+    // Still support click-to-open in a plain browser (no window API to drag).
+    if (onClick) {
+      const click = (e: MouseEvent): void => onClick(e.target);
+      surface.addEventListener("click", click);
+      return () => surface.removeEventListener("click", click);
+    }
+    return () => {};
+  }
   // Typed non-null so the nested drag closures see it as present (TS won't
   // carry the early-return narrowing into closures created later).
   const w: TauriWindowApi = maybeApi;
@@ -70,11 +86,13 @@ export function initOverlayDrag(surface: HTMLElement): () => void {
   let startPtr = { x: 0, y: 0 };
   let cur = { x: 0, y: 0 };
   let samples: Sample[] = [];
+  let downTarget: EventTarget | null = null;
 
   async function onDown(e: PointerEvent): Promise<void> {
     if (e.button !== 0) return;
     dragging = true;
     moved = false;
+    downTarget = e.target;
     try { surface.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     scale = await appWin.scaleFactor();
     const pos = await appWin.outerPosition();
@@ -89,9 +107,12 @@ export function initOverlayDrag(surface: HTMLElement): () => void {
     if (!dragging) return;
     const px = e.screenX * scale;
     const py = e.screenY * scale;
+    // Until the pointer clears the threshold, treat the press as a potential
+    // click and don't move the window at all.
+    if (!moved && Math.hypot(px - startPtr.x, py - startPtr.y) < DRAG_THRESHOLD) return;
+    moved = true;
     const nx = Math.round(startWin.x + (px - startPtr.x));
     const ny = Math.round(startWin.y + (py - startPtr.y));
-    if (nx !== cur.x || ny !== cur.y) moved = true;
     cur = { x: nx, y: ny };
     void appWin.setPosition(new w.PhysicalPosition(nx, ny));
     samples.push({ t: e.timeStamp, x: px, y: py });
@@ -103,7 +124,7 @@ export function initOverlayDrag(surface: HTMLElement): () => void {
     dragging = false;
     try { surface.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     document.body.classList.remove("oc-dragging");
-    if (!moved) return; // a plain click, not a drag
+    if (!moved) { onClick?.(downTarget); return; } // a plain click, not a drag
 
     const last = samples[samples.length - 1];
     const first = samples[0];
@@ -201,72 +222,28 @@ const MIN_WIDTH_CSS = 40;
 const MIN_HEIGHT_CSS = 24;
 
 /**
- * Resize the native overlay window to hug its actual rendered content, so the
+ * Resize the native overlay window to hug the panel's rendered box, so the
  * transparent window is never bigger than it needs to be (an oversized
- * transparent window still eats clicks meant for whatever is behind it).
- * Both width and height track content now — there's no more fixed-width
- * constant; a lone dial and a five-account row both get exactly the width
- * they render at. `extraEls` are additional elements to union into the
- * measurement (e.g. a hover popup) — see attachOverlayHoverResize below,
- * which is how the dial's hover popup, itself `position: absolute` and therefore
- * invisible to `contentEl`'s own bounding box, still gets included so it
- * isn't clipped by the window's edge while it's showing. Safe no-op outside
- * Tauri.
+ * transparent window still eats clicks meant for whatever's behind it). Width
+ * and height both track content — a lone dial and a five-account row each get
+ * exactly the size they render at.
+ *
+ * The panel sits at the window's top-left origin and its padding is sized so
+ * the hover info circle always fits inside its border box (see overlay.css) —
+ * so a plain setSize to the panel's width/height covers everything and the
+ * window never has to move or grow on hover (which is what used to make it
+ * stutter and wander). Called only on (re)render, not on hover. Safe no-op
+ * outside Tauri.
  */
-export async function resizeOverlayToContent(
-  contentEl: HTMLElement,
-  extraEls: readonly (HTMLElement | null | undefined)[] = [],
-): Promise<void> {
+export async function resizeOverlayToContent(contentEl: HTMLElement): Promise<void> {
   const wapi = tauriWindow();
   if (!wapi) return;
-  // Use the panel's distance-to-viewport edge, not just its own size, so any
-  // top/left offset (margin/padding) is included and can't clip content.
   const rect = contentEl.getBoundingClientRect();
-  let right = rect.right;
-  let bottom = rect.bottom;
-  for (const el of extraEls) {
-    if (!el) continue;
-    const r = el.getBoundingClientRect();
-    right = Math.max(right, r.right);
-    bottom = Math.max(bottom, r.bottom);
-  }
-  const w = Math.max(MIN_WIDTH_CSS, Math.ceil(right));
-  const h = Math.max(MIN_HEIGHT_CSS, Math.ceil(bottom));
+  const w = Math.max(MIN_WIDTH_CSS, Math.ceil(rect.right));
+  const h = Math.max(MIN_HEIGHT_CSS, Math.ceil(rect.bottom));
   try {
     await wapi.getCurrentWindow().setSize(new wapi.LogicalSize(w, h));
   } catch (err) {
     console.error("overlay: resize-to-content failed", err);
   }
-}
-
-/**
- * Wire up hover-triggered resizing so an open dial popup (or its nested
- * session tooltip) — both `position: absolute`, so neither inflates
- * `panelEl`'s own bounding box — still grows the window enough to render
- * without the native window edge clipping it, then shrinks back to the tight
- * dial-row size once nothing is hovered. Debounced past the popup's own CSS
- * fade-in (see overlay.css `.oc-pop`/`.oc-pop-tt` transitions) so the
- * measurement reads the popup's final, opened geometry. Returns a cleanup.
- */
-export function attachOverlayHoverResize(rowsEl: HTMLElement, panelEl: HTMLElement): () => void {
-  let timer: number | null = null;
-  const sync = (): void => {
-    if (timer != null) window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      const pop = panelEl.querySelector<HTMLElement>(".oc-cell:hover .oc-pop");
-      const tip = panelEl.querySelector<HTMLElement>(".oc-pop-row:hover .oc-pop-tt");
-      void resizeOverlayToContent(panelEl, [pop, tip]);
-    }, 140);
-  };
-  // pointerenter/pointerleave don't bubble, but they do fire during the
-  // capture phase on ancestors as the event travels down to its target, so a
-  // single capture-phase listener here still delegates across every cell/row
-  // without per-element listeners that would need re-wiring on every refresh.
-  rowsEl.addEventListener("pointerenter", sync, true);
-  rowsEl.addEventListener("pointerleave", sync, true);
-  return () => {
-    rowsEl.removeEventListener("pointerenter", sync, true);
-    rowsEl.removeEventListener("pointerleave", sync, true);
-    if (timer != null) window.clearTimeout(timer);
-  };
 }

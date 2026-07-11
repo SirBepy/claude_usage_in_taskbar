@@ -135,6 +135,12 @@ export function saveSettings(): void {
       const pct = parseFloat(el.value);
       return Number.isFinite(pct) ? pct / 100 : prevOpacity;
     })(),
+    overlayBackgroundStyle: (() => {
+      const el = byId<HTMLSelectElement>("overlayBackgroundStyle");
+      const prevStyle = prev.overlayBackgroundStyle === "card" ? "card" : "circles";
+      if (!el) return prevStyle;
+      return el.value === "card" ? "card" : "circles";
+    })(),
     paceBand: parseInt(valOr("paceBand", String(prev.paceBand ?? 10)), 10) || 10,
     paceColors: {
       under: valOr("paceColorUnder", prevPace.under || "#27ae60"),

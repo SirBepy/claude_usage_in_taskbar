@@ -27,6 +27,9 @@ export interface SettingsShape {
   paceBand?: number;
   paceColors?: { under?: string; nearSafe?: string; nearOver?: string; over?: string };
   audioOutputDevice?: string | null;
+  /** Floating overlay backing style: per-dial circular discs ("circles",
+   * default) or one shared rounded card behind the row ("card"). */
+  overlayBackgroundStyle?: "circles" | "card";
   /** Dashboard widget layout (multi-account milestone 05) - ordered
    * `{id, enabled}` entries. Untyped passthrough (see dashboard-widget-logic.ts
    * for the shape); absence is the trigger for the one-time `pinnedCards`

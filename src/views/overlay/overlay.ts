@@ -4,11 +4,10 @@
 // src-tauri/src/ipc/overlay_window.rs::toggle_overlay_window), toggled by a
 // tray left-click. One dial per account: the OUTER thick ring is the 5h
 // session window, the INNER thin ring is the 7d weekly window, and the
-// account icon sits dimmed/neutral in the centre (colour is entirely pace
-// status now, so it can't also carry the account identity — the icon does
-// that instead). Hovering a dial surfaces a popup with both windows'
-// current%/safe% and, per row, a small tooltip with the time-left/reset
-// clock for that window.
+// account-coloured icon sits in the centre (identity), on a per-dial disc
+// (circles mode) or a shared row card (card mode). Hovering a dial fades out
+// its graph + icon and shows an info circle in its place: the account name and
+// both windows' current%/safe%.
 
 import { escapeHtml } from "../../shared/escape-html";
 import "./overlay.css";
@@ -19,7 +18,7 @@ import { getSettings, setSettings } from "../../shared/state";
 import type { SettingsShape } from "../../shared/state";
 import { buildOverlayRows } from "./overlay-logic";
 import type { OverlayMetric, OverlayRow } from "./overlay-logic";
-import { initOverlayDrag, resizeOverlayToContent, attachOverlayHoverResize } from "./overlay-drag";
+import { initOverlayDrag, resizeOverlayToContent } from "./overlay-drag";
 
 const DEFAULT_OVERLAY_OPACITY = 0.72;
 const REFRESH_INTERVAL_MS = 30_000;
@@ -31,6 +30,35 @@ const OUTER_W = 4.5;
 const INNER_R = 12;
 const INNER_W = 3;
 const TRACK_COLOR = "var(--color-surface-alt, #262637)";
+// Filled backing disc behind each dial (circles mode). Gives contrast on light
+// desktops where the fully-transparent window was hard to read, while staying
+// subtle on dark ones (its fill honours the overlay-opacity slider — see
+// .oc-disc in overlay.css). Sized to sit a `DISC_PAD` gap OUTSIDE the outer
+// ring so the graph is padded within the disc rather than touching its rim.
+const DISC_PAD = 4;
+const DISC_R = OUTER_R + OUTER_W / 2 + DISC_PAD;
+// Small breathing gap around the rings in card mode, where the shared row card
+// (not a per-dial disc) is the backing — so dials sit compactly in the card
+// rather than floating in the disc's padding.
+const CARD_MARGIN = 2;
+
+/** Uniform scale from viewBox units to rendered px. >1 enlarges the whole dial
+ * (rings + disc + icon together). Kept a touch bigger than 1:1 so the resting
+ * circles and the (now smaller) hover info circle are close in size. */
+const DIAL_SCALE = 1.2;
+
+/** The ring maths all draw around centre (22,22) inside a 44-unit box. Widening
+ * the viewBox symmetrically with a negative origin keeps the centre at (22,22)
+ * (so none of the seg/ring code changes) while making room around the rings —
+ * the margin differs by mode (large in circles mode to become the disc's
+ * padding, small in card mode). The rendered px is that unit-box scaled by
+ * DIAL_SCALE, so the graph keeps its proportions and just renders larger. */
+function dialGeometry(showDisc: boolean): { viewBox: string; sizeCss: string } {
+  const margin = showDisc ? DISC_PAD : CARD_MARGIN;
+  const size = 44 + 2 * margin;
+  const px = Math.round(size * DIAL_SCALE);
+  return { viewBox: `${-margin} ${-margin} ${size} ${size}`, sizeCss: `width:${px}px;height:${px}px` };
+}
 
 /** One arc's dasharray + rotation, matching the mockup's `arc()`. */
 function arcGeometry(r: number, startPct: number, lenPct: number): { dash: string; rot: string } {
@@ -89,47 +117,45 @@ function ringSvg(r: number, w: number, metric: OverlayMetric, settings: ValueCol
   return ring(r, w, cur, safe, metricColor(metric, settings));
 }
 
-function dialHtml(row: OverlayRow, settings: ValueColorSettings): string {
+function dialHtml(row: OverlayRow, settings: ValueColorSettings, showDisc: boolean): string {
   const outer = ringSvg(OUTER_R, OUTER_W, row.session, settings);
   const inner = ringSvg(INNER_R, INNER_W, row.weekly, settings);
   const icon = escapeHtml(row.icon);
-  return `<div class="oc-dial"><svg viewBox="0 0 44 44">${outer}${inner}</svg><div class="oc-ic"><i class="ph ph-${icon}"></i></div></div>`;
+  // Centre icon carries the account's own colour (identity); the rings carry
+  // pace status. Falls back to the CSS neutral when an account has no colour.
+  const iconColor = row.colour ? ` style="color:${escapeHtml(row.colour)}"` : "";
+  // Circles mode draws a per-dial backing disc; card mode omits it (the shared
+  // row card is the backing instead — see .oc-dial-row.oc-card in overlay.css).
+  const disc = showDisc ? `<circle class="oc-disc" cx="22" cy="22" r="${DISC_R}"/>` : "";
+  const { viewBox, sizeCss } = dialGeometry(showDisc);
+  return `<div class="oc-dial" style="${sizeCss}"><svg viewBox="${viewBox}" style="${sizeCss}">${disc}${outer}${inner}</svg><div class="oc-ic"${iconColor}><i class="ph ph-${icon}"></i></div></div>`;
 }
 
-/** One `5h`/`7d` row inside the popup: current%/safe% plus a session
- * tooltip (window name, time-left, absolute reset clock) on hover. Omitted
- * when there's no data for that metric yet. */
-function popupMetricRow(label: string, windowName: string, metric: OverlayMetric, settings: ValueColorSettings): string {
+/** One `<cur>%/<safe>%` line inside the hover info circle, the current %
+ * tinted by pace colour. Shows `--` when there's no data yet. */
+function infoMetricLine(metric: OverlayMetric, settings: ValueColorSettings): string {
   const color = metricColor(metric, settings);
   const curText = metric.pct != null ? `${metric.pct}%` : "--";
-  const safeText = metric.safePct != null ? ` / ${metric.safePct}%` : "";
-  const tooltip =
-    metric.pct != null && metric.resetRelative
-      ? `<div class="oc-pop-tt">
-          <div class="oc-tt-l1" style="color:${escapeHtml(color)}">${escapeHtml(windowName)}</div>
-          <div class="oc-tt-l2">${escapeHtml(metric.resetRelative)}</div>
-          ${metric.resetAbs ? `<div class="oc-tt-l3">resets ${escapeHtml(metric.resetAbs)}</div>` : ""}
-        </div>`
-      : "";
-  return `<div class="oc-pop-row">
-    <span class="oc-pop-k">${escapeHtml(label)}</span>
-    <span class="oc-pop-val"><b style="color:${escapeHtml(color)}">${curText}</b><span class="oc-pop-safe">${escapeHtml(safeText)}</span></span>
-    ${tooltip}
+  const safeText = metric.safePct != null ? `/${metric.safePct}%` : "";
+  return `<div class="oc-info-row"><b style="color:${escapeHtml(color)}">${curText}</b><span class="oc-info-safe">${escapeHtml(safeText)}</span></div>`;
+}
+
+/** Hover content shown INSIDE the circle in place of the graph: the account
+ * name plus the session/weekly current%/safe% lines (top = session, bottom =
+ * weekly). Fades in (and the dial graph fades out) on cell hover — see .oc-info
+ * in overlay.css. */
+function infoHtml(row: OverlayRow, settings: ValueColorSettings): string {
+  return `<div class="oc-info">
+    <div class="oc-info-nm">${escapeHtml(row.label)}</div>
+    ${infoMetricLine(row.session, settings)}
+    ${infoMetricLine(row.weekly, settings)}
   </div>`;
 }
 
-function popupHtml(row: OverlayRow, settings: ValueColorSettings): string {
-  return `<div class="oc-pop">
-    <div class="oc-pop-nm"><i class="ph ph-${escapeHtml(row.icon)}"></i>${escapeHtml(row.label)}</div>
-    ${popupMetricRow("5h", "5h session", row.session, settings)}
-    ${popupMetricRow("7d", "7d window", row.weekly, settings)}
-  </div>`;
-}
-
-function cellHtml(row: OverlayRow, settings: ValueColorSettings): string {
+function cellHtml(row: OverlayRow, settings: ValueColorSettings, showDisc: boolean): string {
   return `<div class="oc-cell" data-acc-id="${escapeHtml(row.id)}">
-    ${popupHtml(row, settings)}
-    ${dialHtml(row, settings)}
+    ${dialHtml(row, settings, showDisc)}
+    ${infoHtml(row, settings)}
   </div>`;
 }
 
@@ -137,6 +163,12 @@ function readOverlayOpacity(settings: SettingsShape): number {
   const raw = settings["overlayOpacity"];
   const n = typeof raw === "number" ? raw : DEFAULT_OVERLAY_OPACITY;
   return Math.max(0, Math.min(1, n));
+}
+
+/** Overlay backing style: per-dial circular discs ("circles", default) or one
+ * shared rounded card behind the whole row ("card"). */
+function readBackgroundStyle(settings: SettingsShape): "circles" | "card" {
+  return settings["overlayBackgroundStyle"] === "card" ? "card" : "circles";
 }
 
 /** Mirror the user's chosen theme/mode onto this window's <html>. The overlay
@@ -153,59 +185,40 @@ function applyOverlayTheme(settings: SettingsShape): void {
   el.dataset.mode = isLight ? "light" : "dark";
 }
 
-/**
- * Flip a hovered popup row's session tooltip to open toward the panel's own
- * centre instead of always opening the same direction (the mockup's static
- * demo always opened left, because that demo's dial was permanently docked
- * at the right edge of its canvas — the real overlay is draggable to any
- * corner, so "inward" has to be measured, not assumed). Measured against this
- * webview's own viewport (which — since the window is now sized tight to its
- * content — closely tracks the panel's own bounds) rather than the physical
- * monitor, so it needs no async Tauri monitor lookup.
- */
-function attachTooltipSideFlip(rowsEl: HTMLElement): () => void {
-  const onOver = (e: Event): void => {
-    const row = (e.target as HTMLElement).closest<HTMLElement>(".oc-pop-row");
-    if (!row) return;
-    const openRight = row.getBoundingClientRect().left < window.innerWidth / 2;
-    row.classList.toggle("oc-tt-right", openRight);
-  };
-  rowsEl.addEventListener("pointerover", onOver);
-  return () => rowsEl.removeEventListener("pointerover", onOver);
-}
-
 export async function renderOverlay(root: HTMLElement): Promise<() => void> {
-  // Transparency is driven purely by the per-popup hover reveal (see
-  // overlay.css): off-hover the dials carry no background so the whole window
-  // reads straight through to the desktop. Deliberately NOT a whole-body
-  // `opacity` dim - setting `opacity` on the root of a transparent WebView2
-  // window forces the body onto its own compositing layer with a black
+  // Off-hover the dials carry only their (semi-transparent) backing disc/card
+  // so the window reads mostly through to the desktop. Deliberately NOT a
+  // whole-body `opacity` dim - setting `opacity` on the root of a transparent
+  // WebView2 window forces the body onto its own compositing layer with a black
   // backing, so the panel goes *darker* instead of see-through (the exact bug
-  // this used to have). Card backgrounds use rgba/color-mix instead, which
-  // composite correctly over the transparent window.
+  // this used to have). Backgrounds use rgba/color-mix instead, which composite
+  // correctly over the transparent window.
 
-  // Transparent panel: a top drag grip + a horizontal row of account dials,
-  // window sized to hug that row (see overlay.css + overlay-drag.ts).
-  // Dragging is only via the grip; clicking a dial opens the dashboard for
-  // that account.
+  // Transparent panel: just a horizontal row of account dials, window sized to
+  // hug that row (see overlay.css + overlay-drag.ts). The WHOLE panel is the
+  // drag surface now (no separate grip) — press-and-move drags/flicks it, a
+  // plain click (no movement past a small threshold) opens the dashboard for
+  // the clicked account instead.
   root.innerHTML = `<div id="ocPanel">
-    <div class="oc-grip" id="ocGrip" title="drag to move — flick toward a corner to snap"><i class="ph ph-dots-six"></i></div>
     <div id="ocRows" class="oc-dial-row"><div class="oc-empty">Loading…</div></div>
   </div>`;
   const panelEl = root.querySelector<HTMLElement>("#ocPanel");
-  const gripEl = root.querySelector<HTMLElement>("#ocGrip");
   const rowsEl = root.querySelector<HTMLElement>("#ocRows");
 
   function syncSize(): void {
     if (panelEl) requestAnimationFrame(() => void resizeOverlayToContent(panelEl));
   }
 
-  // Click a dial (or its popup) → surface the dashboard focused on that account.
-  rowsEl?.addEventListener("click", (e) => {
-    const cell = (e.target as HTMLElement).closest<HTMLElement>(".oc-cell[data-acc-id]");
+  // Click (a press that didn't turn into a drag) on a dial → surface the
+  // dashboard focused + highlighted on that account. Routed through the drag
+  // handler's pointerup rather than a native `click` listener: the whole panel
+  // is the drag surface and takes pointer capture on press, which would
+  // redirect the synthesized click away from the dial's cell.
+  const openClickedAccount = (target: EventTarget | null): void => {
+    const cell = (target as HTMLElement | null)?.closest<HTMLElement>(".oc-cell[data-acc-id]");
     const id = cell?.dataset["accId"];
     if (id) void api.openDashboardAccount(id);
-  });
+  };
 
   async function refresh(): Promise<void> {
     const settings = getSettings();
@@ -218,15 +231,15 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
       syncSize();
       return;
     }
+    const cardMode = readBackgroundStyle(settings) === "card";
+    rowsEl.classList.toggle("oc-card", cardMode);
     const rows = buildOverlayRows(accounts, usageMap);
-    rowsEl.innerHTML = rows.map((r) => cellHtml(r, settings)).join("");
+    rowsEl.innerHTML = rows.map((r) => cellHtml(r, settings, !cardMode)).join("");
     syncSize();
   }
 
   await refresh();
-  const cleanupDrag = gripEl ? initOverlayDrag(gripEl) : () => {};
-  const cleanupHoverResize = rowsEl && panelEl ? attachOverlayHoverResize(rowsEl, panelEl) : () => {};
-  const cleanupTooltipFlip = rowsEl ? attachTooltipSideFlip(rowsEl) : () => {};
+  const cleanupDrag = panelEl ? initOverlayDrag(panelEl, openClickedAccount) : () => {};
   const unlistenHistory = api.onHistoryUpdated(() => void refresh());
   // The overlay window skips initBoot(), so it has no other subscription to
   // settings changes made elsewhere (e.g. Settings > Visuals color rules) -
@@ -251,8 +264,6 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
     try { unlistenHistory(); } catch { /* ignore */ }
     if (unlistenSettings) { try { unlistenSettings(); } catch { /* ignore */ } }
     try { cleanupDrag(); } catch { /* ignore */ }
-    try { cleanupHoverResize(); } catch { /* ignore */ }
-    try { cleanupTooltipFlip(); } catch { /* ignore */ }
     window.clearInterval(timer);
   };
 }

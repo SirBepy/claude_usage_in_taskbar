@@ -197,6 +197,12 @@ async function hydrateUsageColorsAndInterface(): Promise<void> {
     hideInMeetingSwitch.addEventListener("change", saveSettings);
   }
 
+  const overlayBackgroundStyle = $("overlayBackgroundStyle") as HTMLSelectElement | null;
+  if (overlayBackgroundStyle) {
+    overlayBackgroundStyle.value = s.overlayBackgroundStyle === "card" ? "card" : "circles";
+    overlayBackgroundStyle.addEventListener("change", saveSettings);
+  }
+
   const overlayOpacity = $("overlayOpacity") as HTMLInputElement | null;
   const overlayOpacityValue = $("overlayOpacityValue");
   if (overlayOpacity) {
@@ -279,6 +285,13 @@ function template() {
 
         <div class="kit-section">
           <div class="kit-section-title">Overlay</div>
+          <div class="kit-row">
+            <span class="kit-row-label"><span class="info-wrap">Background style<i class="ph ph-info info-icon"></i><span class="info-tooltip">Circles: each account dial sits on its own round backing. Card: one shared rounded card behind the whole row.</span></span></span>
+            <select id="overlayBackgroundStyle">
+              <option value="circles">Circles</option>
+              <option value="card">Shared card</option>
+            </select>
+          </div>
           <div class="kit-row">
             <span class="kit-row-label"><span class="info-wrap">Overlay Opacity<i class="ph ph-info info-icon"></i><span class="info-tooltip">How opaque each account card's background becomes when you hover it - off-hover the overlay is fully transparent to the desktop</span></span></span>
             <div style="display:flex;align-items:center;gap:8px;flex:1;max-width:220px">

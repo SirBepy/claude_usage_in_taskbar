@@ -8,14 +8,22 @@
  * there's no wrapper background and no oversized transparent area to eat
  * clicks.
  *
- * Layout: a top drag grip (the only grab surface) above a horizontal row of
- * account dials — one per account, outer thick ring = 5h session, inner thin
- * ring = 7d weekly, dimmed account icon in the centre. Dials are transparent
- * until hovered; hovering one lays a popup (name + both windows'
- * current%/safe%) centred over it, and hovering a value row inside the popup
- * shows that window's session tooltip. Clicking a dial opens the dashboard
- * for that account. */
+ * Layout: a horizontal row of account dials — one per account, outer thick
+ * ring = 5h session, inner thin ring = 7d weekly, account-coloured icon in the
+ * centre, on a per-dial backing disc (circles mode) or a shared row card (card
+ * mode). The whole panel is the drag surface (no grip); a plain click opens the
+ * dashboard. Hovering a dial fades out its graph + icon and shows an info circle
+ * in its place (account name + both windows' current%/safe%). */
 
+/* Every layer of this window must paint NOTHING at rest so the desktop shows
+ * straight through — only the dials (and, on hover, a popup) are ever visible.
+ * overlay.css is loaded ONLY in the overlay window (see overlay-main.ts), so
+ * targeting the bare `html`/`#app` here is safe and can't leak into the main
+ * app. The bare `html` rule matters: overlay.html's <html> has no
+ * `overlay-window-mode` class, and if any UA/kit rule ever painted the root
+ * element its background would propagate to the window canvas and defeat the
+ * native `transparent(true)`. */
+html,
 html.overlay-window-mode,
 body.overlay-window-mode {
   background: transparent !important;
@@ -27,6 +35,7 @@ body.overlay-window-mode {
 body.overlay-window-mode #app {
   height: auto;
   min-height: 0;
+  background: transparent !important;
 }
 
 #ocPanel {
@@ -35,124 +44,107 @@ body.overlay-window-mode #app {
   align-items: center;
   width: fit-content;
   color: var(--color-text, #e8e8f0);
-}
-
-/* Drag grip: the only grab surface (dragging dials is off — clicks open the
- * dashboard instead). Flick from here toward a corner to snap. Kept minimal
- * (no fixed width/side margins) so it never forces the tight window wider
- * than the dial row beneath it. */
-.oc-grip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: fit-content;
-  height: 14px;
-  margin: 2px auto 0;
-  padding: 0 8px;
-  border-radius: 6px;
-  color: var(--color-text-muted, #8a8aa0);
-  font-size: 14px;
-  line-height: 1;
+  /* The whole panel is the drag surface now (no dedicated grip) — see
+   * overlay.ts/overlay-drag.ts. A plain click still opens the dashboard. */
   cursor: grab;
-  opacity: 0.4;
-  transition: opacity 0.15s, background 0.15s;
 }
-.oc-grip:hover { opacity: 0.9; background: rgba(255, 255, 255, 0.06); }
-body.oc-dragging .oc-grip { cursor: grabbing; opacity: 0.9; }
+body.oc-dragging #ocPanel { cursor: grabbing; }
 
-.oc-dial-row { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px 6px; }
+/* Padding is sized so the hover info circle (larger than a dial, centred on it)
+ * always fits inside the window — that lets the window stay a FIXED size and
+ * never reposition/resize on hover (which is what made it stutter + wander). */
+.oc-dial-row { display: flex; align-items: flex-start; gap: 6px; padding: 13px; }
+
+/* Card mode: one shared rounded card behind the whole dial row instead of a
+ * per-dial disc (which circles mode uses). Same tint as .oc-disc and honours
+ * the overlay-opacity slider, so it stays transparent-friendly. */
+.oc-dial-row.oc-card {
+  background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border, #2e2e40) var(--overlay-opacity, 72%), transparent);
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
 
 /* One account = one dial + its (hover-revealed) popup, both anchored to this
  * cell so the popup can centre itself over just this dial. */
 .oc-cell { position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
 
-.oc-dial { position: relative; width: 52px; height: 52px; cursor: help; }
+.oc-dial { position: relative; width: 52px; height: 52px; }
 .oc-dial svg { display: block; width: 52px; height: 52px; }
-/* Centre icon: dimmed/neutral, never the account colour — colour is entirely
- * pace status on the rings now, so it can't also disambiguate accounts; the
- * icon does that instead. */
+/* Backing disc behind the rings + icon (see DISC_R in overlay.ts). Same tint
+ * as the old panel surface and honours the overlay-opacity slider, so the dial
+ * is legible over a light desktop without making the window opaque again. */
+.oc-disc {
+  fill: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
+}
+/* Centre icon: tinted with the account's own colour (set inline in dialHtml)
+ * so each dial is identifiable at a glance. The rings still carry pace status;
+ * the icon carries account identity. Full opacity so the colour reads true. */
 .oc-ic {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--color-text, #e8e8f0);
-  opacity: 0.82;
 }
 
-/* Hover popup: name + 5h/7d rows, centred over the dial it belongs to. */
-.oc-pop {
+/* Hover info: on hover the dial's graph + icon fade out and this circle fades
+ * in over it, showing the account name and the 5h/7d current%/safe% lines. It's
+ * a circle centred on the dial and a bit larger than it, so the numbers are
+ * legible; the tight transparent window is grown to fit it by
+ * attachOverlayHoverResize/resizeOverlayToContent. */
+/* Hover crossfade easing/timing, shared by the dial (graph) fading out and the
+ * info circle fading in, so the two halves stay in lockstep. A gentle decelerate
+ * curve + small scale on each side reads as one circle morphing, not two things
+ * blinking. */
+.oc-dial {
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.oc-cell:hover .oc-dial { opacity: 0; transform: scale(0.9); }
+
+.oc-info {
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%) scale(0.94);
+  transform: translate(-50%, -50%) scale(0.85);
   z-index: 8;
-  width: 148px;
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 10px;
   background: color-mix(in srgb, var(--color-surface, #1f1f2c) var(--overlay-opacity, 72%), transparent);
-  border: 1px solid var(--color-border, #2e2e40);
-  border-radius: 11px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--color-border, #2e2e40) var(--overlay-opacity, 72%), transparent);
+  /* No box-shadow: the info circle sits only ~3px inside the (fixed, tight)
+   * window edge, so any real blur radius gets clipped by the window rectangle
+   * and reveals its hard edge. The 1px border carries the definition instead. */
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s, transform 0.12s;
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.oc-cell:hover .oc-pop {
+.oc-cell:hover .oc-info {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
-  pointer-events: auto;
 }
 
-.oc-pop-nm { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; margin-bottom: 7px; }
-.oc-pop-nm i { font-size: 12px; color: var(--color-text-muted, #8a8aa0); }
-
-.oc-pop-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 12px;
-  padding: 2px 0;
-  cursor: help;
+.oc-info-nm {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 10px;
+  margin-bottom: 2px;
 }
-.oc-pop-k { font-size: 9px; color: var(--color-text-muted, #8a8aa0); text-transform: uppercase; letter-spacing: 0.04em; }
-.oc-pop-val { font-variant-numeric: tabular-nums; }
-.oc-pop-val b { font-weight: 700; }
-.oc-pop-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.6; font-size: 10.5px; }
-
-/* Session tooltip for one 5h/7d row: window name, time-left, absolute reset
- * clock. Opens left by default (mockup default); .oc-tt-right flips it to
- * open right instead — set at hover-time (overlay.ts::attachTooltipSideFlip)
- * from which half of the panel the row sits in, so it always opens toward
- * the panel's own centre and never runs off the (content-tight) window's
- * edge. */
-.oc-pop-tt {
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%) translateX(-8px);
-  z-index: 9;
-  background: #08070d;
-  border: 1px solid var(--color-border, #2e2e40);
-  border-radius: 7px;
-  padding: 6px 9px;
-  width: 116px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s;
-}
-.oc-pop-row:hover .oc-pop-tt { opacity: 1; }
-.oc-pop-row.oc-tt-right .oc-pop-tt {
-  right: auto;
-  left: 100%;
-  transform: translateY(-50%) translateX(8px);
-}
-.oc-tt-l1 { font-weight: 700; font-size: 11px; }
-.oc-tt-l2 { font-size: 11px; }
-.oc-tt-l3 { font-size: 10.5px; color: var(--color-text-muted, #8a8aa0); }
+.oc-info-row { display: flex; align-items: baseline; justify-content: center; gap: 1px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.oc-info-row b { font-weight: 700; }
+.oc-info-safe { color: var(--color-text-muted, #8a8aa0); opacity: 0.7; }
 
 /* Placeholder (loading / no accounts): give it a card look so it's legible
  * against the transparent window instead of floating text. */
