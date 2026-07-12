@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys, pathlib
 import pytest
@@ -28,7 +29,11 @@ class FakeEngine:
 @pytest.mark.asyncio
 async def test_start_audio_stop_emits_ready_partial_final(monkeypatch):
     monkeypatch.setattr(server, "StreamingEngine", FakeEngine)
-    async with websockets.serve(server.make_handler("/tmp"), "127.0.0.1", 0) as s:
+    # Resolved future standing in for the model load: FakeEngine ignores the asr,
+    # and the real model is never loaded here.
+    asr_future = asyncio.get_running_loop().create_future()
+    asr_future.set_result(None)
+    async with websockets.serve(server.make_handler("/tmp", asr_future), "127.0.0.1", 0) as s:
         port = s.sockets[0].getsockname()[1]
         async with websockets.connect(f"ws://127.0.0.1:{port}") as ws:
             assert json.loads(await ws.recv())["type"] == "ready"

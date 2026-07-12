@@ -66,15 +66,26 @@ from vocab import load_vocab, load_corrections, apply_corrections
 _MIN_ITER_SAMPLES = 16000  # 1 s at 16 kHz
 
 
+def build_asr(model_size="large-v3-turbo", lang="en"):
+    """Load the Whisper model onto the GPU. This is the expensive, multi-second
+    step (FasterWhisperASR.load_model hardcodes device="cuda",
+    compute_type="float16"; modelsize is auto-downloaded on first use). Build it
+    ONCE at process startup and share the result across StreamingEngine
+    instances - previously each new connection reloaded the model, adding the
+    stall to every mic click."""
+    asr = FasterWhisperASR(lan=lang, modelsize=model_size)
+    # Skip silent / non-speech frames so Whisper never sees silence and
+    # hallucinates closed-caption boilerplate.
+    asr.use_vad()
+    return asr
+
+
 class StreamingEngine:
-    def __init__(self, app_data, model_size="large-v3-turbo", lang="en"):
+    def __init__(self, app_data, model_size="large-v3-turbo", lang="en", asr=None):
         self.app_data = app_data
-        # FasterWhisperASR.load_model hardcodes device="cuda", compute_type="float16";
-        # modelsize="large-v3" is auto-downloaded by faster-whisper on first use.
-        self.asr = FasterWhisperASR(lan=lang, modelsize=model_size)
-        # Skip silent / non-speech frames so Whisper never sees silence and
-        # hallucinates closed-caption boilerplate.
-        self.asr.use_vad()
+        # Reuse a pre-loaded (shared) model when given one; only pay the GPU load
+        # cost here when called standalone without a warmed asr.
+        self.asr = asr if asr is not None else build_asr(model_size, lang)
         self._hotwords = load_vocab(app_data)
         if self._hotwords:
             self.asr.transcribe_kargs["hotwords"] = self._hotwords

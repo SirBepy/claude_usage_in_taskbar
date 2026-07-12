@@ -3,12 +3,18 @@
 # {"cmd": "start"|"stop"|"reload_vocab"|"shutdown"}. Emits JSON results.
 import argparse, asyncio, concurrent.futures, json, pathlib, sys
 import websockets
-from engine import StreamingEngine
+from engine import StreamingEngine, build_asr
 
 
-def make_handler(app_data):
+def make_handler(app_data, asr_future):
     async def handle(ws):
-        eng = StreamingEngine(app_data=pathlib.Path(app_data))
+        # Wait on the process-wide model load (kicked off in _main). Awaiting the
+        # shared future here - rather than loading per connection - means the
+        # model is loaded exactly once and every later connect resolves instantly.
+        # Gating "ready" on it also lets the port bind immediately while a slow
+        # first-ever download is absorbed by the browser's ready-wait.
+        asr = await asr_future
+        eng = StreamingEngine(app_data=pathlib.Path(app_data), asr=asr)
         # Single-worker executor: Whisper inference is blocking; running it in a
         # thread keeps the asyncio loop free to receive new audio frames instead
         # of letting them pile up in the OS buffer (the root cause of 10-15 s lag).
@@ -43,8 +49,15 @@ def make_handler(app_data):
 
 
 async def _main(app_data, port):
+    # Kick off the model load in the background so the port binds immediately
+    # (the daemon relay only retries its connect for ~10 s). The first connect -
+    # normally the chat-open warm-up - awaits this and pays the load; every later
+    # connect reuses the resolved asr and gets "ready" almost instantly.
+    asr_future = asyncio.ensure_future(
+        asyncio.get_running_loop().run_in_executor(None, build_asr)
+    )
     # max_size=None: binary audio frames must not hit the default 1 MiB cap.
-    async with websockets.serve(make_handler(app_data), "127.0.0.1", port, max_size=None):
+    async with websockets.serve(make_handler(app_data, asr_future), "127.0.0.1", port, max_size=None):
         print(f"stt-sidecar listening on 127.0.0.1:{port}", flush=True)
         await asyncio.Future()  # run forever
 
