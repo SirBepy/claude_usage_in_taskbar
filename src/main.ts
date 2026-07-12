@@ -46,6 +46,7 @@ import { renderSidebar } from "./views/sessions/sidebar";
 import { installExternalLinkInterceptor } from "./shared/external-links";
 import { invoke } from "./shared/ipc";
 import { sessionEvents } from "./shared/chat/event-store";
+import { openModelEffortModal } from "./views/sessions/model-effort-modal";
 import { askConfirm } from "./shared/confirm";
 import type { ChatEvent, NewsPost, ScheduledItem } from "./types/ipc.generated";
 
@@ -92,6 +93,16 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__injectQuestion = (payload: unknown): void => {
     void window.__TAURI__?.event?.emit?.("question-requested", payload);
   };
+
+  // New-chat modal e2e seam (ai_todo 241): open the model/effort/account modal
+  // directly so the view-harness can assert the account picker + "Start session"
+  // gating WITHOUT driving the full pickProject flow. The account list comes from
+  // the mocked list_accounts command, exactly as it would from the daemon on the
+  // phone - so this exercises the frontend half of the mobile account-sharing fix.
+  (window as unknown as Record<string, unknown>).__openNewChatModal = (
+    projectPath?: string,
+    projectName?: string,
+  ): Promise<unknown> => openModelEffortModal(projectPath ?? "C:/test/proj", projectName ?? "Test Project");
 }
 
 registerView("dashboard", renderDashboard);
