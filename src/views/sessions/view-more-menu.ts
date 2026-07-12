@@ -30,6 +30,7 @@ import {
 } from "./chat-menu";
 import { loadHiddenSessions } from "./sessions-helpers";
 import { isAutoAccept } from "./permission-modal";
+import { invoke } from "../../shared/ipc";
 
 let _viewMenu: HTMLElement | null = null;
 let _viewMenuCleanup: (() => void) | null = null;
@@ -119,6 +120,20 @@ function openViewMoreMenu(btn: HTMLButtonElement): void {
     if (newBtn) menu.appendChild(newBtn);
     if (histBtn) menu.appendChild(histBtn);
   }
+
+  // Scheduled: opens the standalone calendar window (open_schedule_window
+  // builds/focuses the `session-schedule` window). Works from either window
+  // since it's a plain backend command, not an in-window route.
+  const schedBtn = document.createElement("button");
+  schedBtn.className = "smore-item";
+  schedBtn.innerHTML = `<i class="ph ph-calendar-dots"></i><span>Scheduled</span>`;
+  schedBtn.addEventListener("click", () => {
+    void invoke("open_schedule_window").catch((err) =>
+      console.error("[view-more] open_schedule_window failed", err),
+    );
+    closeViewMoreMenu();
+  });
+  menu.appendChild(schedBtn);
 
   // ── When done ▸ submenu parent ─────────────────────────────────────────────
   const whenDoneParent = document.createElement("button");

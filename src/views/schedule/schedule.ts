@@ -1,8 +1,8 @@
 import { html, render } from "lit-html";
 import { openSidemenu } from "../../shared/sidemenu";
+import { showView } from "../../shared/navigation";
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
-import { showView } from "../../shared/navigation";
 import { askConfirm } from "../../shared/confirm";
 import { cwdToProjectName } from "../sessions/sessions-helpers";
 import "./schedule.css";
@@ -13,26 +13,69 @@ import type {
   Instance,
 } from "../../types/ipc.generated";
 
+// ── Calendar Schedule view ───────────────────────────────────────────────────
+//
+// Month grid + per-day agenda. Replaces the old flat list. Recurring items are
+// expanded client-side onto every occurrence within the visible grid (the
+// backend only stores the *next* fire_at + the recurrence rule), so a daily
+// message shows on every day, a weekly one on its weekdays, etc. Clicking an
+// agenda item navigates to the chat it targets (open_chats_for_session, which
+// resumes a closed chat). Rendered both as a route in the dashboard and, more
+// usefully, standalone in the `session-schedule` window.
+
+type DotStatus = "upcoming" | "firing" | "sent" | "failed" | "missed" | "external";
+
+/** One placement of an item on a specific calendar day. */
+interface Occurrence {
+  /** yyyy-mm-dd local key for the day this lands on. */
+  dayKey: string;
+  /** epoch millis of the exact local instant (for sorting within a day). */
+  time: number;
+  status: DotStatus;
+  /** Underlying scheduled item, or null for an external Task-Scheduler job. */
+  item: ScheduledItem | null;
+  external?: ExternalScheduledJob;
+  /** True when this occurrence is a projected future repeat (hollow ring). */
+  recurring: boolean;
+}
+
 interface ScheduleState {
   mountId: number;
   items: ScheduledItem[];
   external: ExternalScheduledJob[];
-  /** session_id -> chat title (Instance.name), for resolving Message targets. */
+  /** session_id -> chat title (Instance.name), for live-vs-history + labels. */
   titles: Map<string, string>;
+  loading: boolean;
+  /** First of the visible month (local). */
+  viewYear: number;
+  viewMonth: number; // 0-based
+  /** Selected day key (yyyy-mm-dd) whose agenda is shown, or null. */
+  selectedKey: string | null;
   /** id of the row currently showing its inline reschedule datetime picker. */
   reschedulingId: string | null;
-  loading: boolean;
 }
 
-let state: ScheduleState = {
-  mountId: 0,
-  items: [],
-  external: [],
-  titles: new Map(),
-  reschedulingId: null,
-  loading: true,
-};
+function todayKey(): string {
+  return dayKeyOf(new Date());
+}
+
+const now0 = new Date();
+let state: ScheduleState = freshState(0);
 let nextMountId = 1;
+
+function freshState(mountId: number): ScheduleState {
+  return {
+    mountId,
+    items: [],
+    external: [],
+    titles: new Map(),
+    loading: true,
+    viewYear: now0.getFullYear(),
+    viewMonth: now0.getMonth(),
+    selectedKey: todayKey(),
+    reschedulingId: null,
+  };
+}
 
 async function fetchAll(): Promise<void> {
   try {
@@ -54,16 +97,17 @@ async function fetchAll(): Promise<void> {
   }
 }
 
-// ── formatting helpers ──────────────────────────────────────────────────────
+// ── date helpers ─────────────────────────────────────────────────────────────
 
-function truncate(s: string, n: number): string {
-  const t = s.trim();
-  return t.length > n ? `${t.slice(0, n).trimEnd()}…` : t;
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
-function localTimeFromIso(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
+function dayKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function localTime(d: Date): string {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -74,41 +118,161 @@ function dateFromHumanTime(humanTime: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function dayBucket(d: Date): string {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfTomorrow = new Date(startOfToday.getTime() + 86400_000);
-  const startOfDayAfter = new Date(startOfToday.getTime() + 2 * 86400_000);
-  if (d >= startOfToday && d < startOfTomorrow) return "Today";
-  if (d >= startOfTomorrow && d < startOfDayAfter) return "Tomorrow";
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
+// ── recurrence expansion (mirror of scheduled_items.rs next_occurrence) ───────
+
+function parseHhmm(s: string): [number, number] {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return [0, 0];
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return [0, 0];
+  return [h, mi];
+}
+
+/** Next local occurrence strictly after `after`, per rule. Mirrors the Rust. */
+function nextOccurrence(after: Date, rec: Recurrence): Date {
+  const [hour, minute] = parseHhmm(rec.time);
+  const atTime = (base: Date): Date => new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, minute, 0, 0);
+
+  if (rec.rule.type === "daily") {
+    const today = atTime(after);
+    if (today > after) return today;
+    const t = new Date(after);
+    t.setDate(t.getDate() + 1);
+    return atTime(t);
+  }
+  if (rec.rule.type === "weekly") {
+    const weekdays = rec.rule.weekdays; // 0=Mon..6=Sun
+    if (!weekdays.length) {
+      const t = new Date(after);
+      t.setDate(t.getDate() + 1);
+      return atTime(t);
+    }
+    for (let offset = 0; offset <= 7; offset++) {
+      const d = new Date(after);
+      d.setDate(d.getDate() + offset);
+      const dow = (d.getDay() + 6) % 7; // JS Sun=0 -> Mon=0
+      if (!weekdays.includes(dow)) continue;
+      const cand = atTime(d);
+      if (cand > after) return cand;
+    }
+    const t = new Date(after);
+    t.setDate(t.getDate() + 7);
+    return atTime(t);
+  }
+  // every_n_days
+  const n = Math.max(1, rec.rule.n);
+  const today = atTime(after);
+  if (today > after) return today;
+  const t = new Date(after);
+  t.setDate(t.getDate() + n);
+  return atTime(t);
+}
+
+/** All occurrence instants of a recurring item within [start, end] (inclusive
+ * day range), starting from its stored next fire_at. Capped to avoid runaway. */
+function expandRecurrence(fireAt: Date, rec: Recurrence, end: Date): Date[] {
+  const out: Date[] = [];
+  let cur = fireAt;
+  let guard = 0;
+  while (cur <= end && guard < 500) {
+    out.push(new Date(cur));
+    cur = nextOccurrence(cur, rec);
+    guard++;
+  }
+  return out;
+}
+
+// ── build occurrences for the visible grid ───────────────────────────────────
+
+/** The 6-week grid range (Mon-start) covering the visible month. */
+function gridRange(year: number, month: number): { start: Date; end: Date; cells: Date[] } {
+  const first = new Date(year, month, 1);
+  const lead = (first.getDay() + 6) % 7; // Mon=0
+  const start = new Date(year, month, 1 - lead);
+  const cells: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    cells.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  }
+  const last = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 41);
+  const end = new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59);
+  return { start, end, cells };
+}
+
+function isPastStatus(t: ScheduledItem["status"]["type"]): boolean {
+  return t === "sent" || t === "failed" || t === "missed";
+}
+
+function buildOccurrences(rangeEnd: Date): Map<string, Occurrence[]> {
+  const byDay = new Map<string, Occurrence[]>();
+  const push = (occ: Occurrence) => {
+    const arr = byDay.get(occ.dayKey);
+    if (arr) arr.push(occ);
+    else byDay.set(occ.dayKey, [occ]);
+  };
+
+  for (const item of state.items) {
+    const st = item.status.type;
+    if (isPastStatus(st)) {
+      // Past: place on when it actually fired (fall back to fire_at).
+      const when = new Date(item.last_fired_at || item.fire_at);
+      if (isNaN(when.getTime())) continue;
+      push({ dayKey: dayKeyOf(when), time: when.getTime(), status: st as DotStatus, item, recurring: false });
+      continue;
+    }
+    // Pending / firing (upcoming).
+    const base = new Date(item.fire_at);
+    if (isNaN(base.getTime())) continue;
+    const instants = item.recurrence
+      ? expandRecurrence(base, item.recurrence, rangeEnd)
+      : [base];
+    for (const inst of instants) {
+      const isBase = inst.getTime() === base.getTime();
+      push({
+        dayKey: dayKeyOf(inst),
+        time: inst.getTime(),
+        // Only the concrete next fire can be mid-"firing"; projected repeats are upcoming.
+        status: st === "firing" && isBase ? "firing" : "upcoming",
+        item,
+        recurring: !!item.recurrence,
+      });
+    }
+  }
+
+  for (const job of state.external) {
+    const d = job.fire_at ? dateFromHumanTime(job.fire_at) : null;
+    if (!d) continue;
+    push({ dayKey: dayKeyOf(d), time: d.getTime(), status: "external", item: null, external: job, recurring: false });
+  }
+
+  return byDay;
+}
+
+// ── labels ───────────────────────────────────────────────────────────────────
+
+function truncate(s: string, n: number): string {
+  const t = s.trim();
+  return t.length > n ? `${t.slice(0, n).trimEnd()}…` : t;
 }
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DOW_HEAD = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 function recurrenceBadge(rec: Recurrence | null): string {
   if (!rec) return "";
-  let label: string;
+  let label = "";
   switch (rec.rule.type) {
-    case "daily":
-      label = "daily";
-      break;
-    case "weekly":
-      label = `weekly ${rec.rule.weekdays.map((w) => WEEKDAY_LABELS[w] ?? "?").join(" ")}`;
-      break;
-    case "every_n_days":
-      label = `every ${rec.rule.n}d`;
-      break;
-    default:
-      label = "";
+    case "daily": label = "daily"; break;
+    case "weekly": label = `weekly ${rec.rule.weekdays.map((w) => WEEKDAY_LABELS[w] ?? "?").join(" ")}`; break;
+    case "every_n_days": label = `every ${rec.rule.n}d`; break;
   }
-  return label ? `<span class="schedule-badge schedule-badge--recurrence"><i class="ph ph-repeat"></i>${escapeHtml(label)}</span>` : "";
+  return label
+    ? `<span class="schedule-badge schedule-badge--recurrence"><i class="ph ph-repeat"></i>${escapeHtml(label)}</span>`
+    : "";
 }
 
 function kindIconClass(item: ScheduledItem): string {
@@ -124,150 +288,126 @@ function targetLabel(item: ScheduledItem): string {
   return truncate(item.prompt, 60);
 }
 
-function statusPill(item: ScheduledItem): string {
-  switch (item.status.type) {
-    case "pending":
-      return `<span class="schedule-status-pill schedule-status-pill--pending">Pending</span>`;
-    case "firing":
-      return `<span class="schedule-status-pill schedule-status-pill--firing">Firing&hellip;</span>`;
-    case "sent":
-      return `<span class="schedule-status-pill schedule-status-pill--sent">Sent</span>`;
-    case "failed":
-      return `<span class="schedule-status-pill schedule-status-pill--failed">Failed</span>`;
-    case "missed":
-      return `<span class="schedule-status-pill schedule-status-pill--missed">Missed</span>`;
-    default:
-      return "";
-  }
+/** Resolve the session id (and live/history mode) an item's chat opens as, or
+ * null when there's nothing to open yet (an un-fired New chat has no session). */
+function navTarget(item: ScheduledItem): { sessionId: string; mode: string } | null {
+  let sessionId: string | null = null;
+  if (item.kind.type === "message") sessionId = item.kind.session_id;
+  else sessionId = item.last_session_id ?? null; // new_chat: set once it fires
+  if (!sessionId) return null;
+  const mode = state.titles.has(sessionId) ? "live" : "history";
+  return { sessionId, mode };
 }
 
-function failureReason(item: ScheduledItem): string {
-  if (item.status.type === "failed") return item.status.reason;
-  return item.last_result || "";
+function statusPill(status: DotStatus, item: ScheduledItem | null): string {
+  const map: Record<DotStatus, [string, string]> = {
+    upcoming: ["pending", "Upcoming"],
+    firing: ["firing", "Firing…"],
+    sent: ["sent", "Sent"],
+    failed: ["failed", "Failed"],
+    missed: ["missed", "Missed"],
+    external: ["external", "Task Scheduler"],
+  };
+  // A projected recurring upcoming keeps the "Upcoming" label; a concrete
+  // pending item is also "Upcoming" here (calendar doesn't split the two).
+  const [cls, label] = map[status];
+  void item;
+  return `<span class="schedule-status-pill schedule-status-pill--${cls}">${label}</span>`;
 }
 
-/** Value for an `<input type="datetime-local">` seeded from an item's current
- * `fire_at` (UTC RFC3339), converted to the local wall-clock the input wants:
- * "yyyy-MM-ddTHH:mm". Falls back to "now" if `fire_at` is unparsable. */
 function datetimeLocalValue(iso: string): string {
   const d = new Date(iso);
   const base = isNaN(d.getTime()) ? new Date() : d;
-  const pad = (n: number) => String(n).padStart(2, "0");
   return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`;
 }
 
-// ── row rendering ────────────────────────────────────────────────────────────
+// ── rendering ────────────────────────────────────────────────────────────────
 
-function attentionRowHtml(item: ScheduledItem): string {
-  const danger = item.status.type === "failed";
-  const reason = failureReason(item);
-  const rescheduleOpen = state.reschedulingId === item.id;
-  return `
-    <li class="schedule-row schedule-row--attn ${danger ? "schedule-row--danger" : "schedule-row--warn"}" data-id="${escapeHtml(item.id)}">
-      <i class="ph ${kindIconClass(item)} schedule-row-icon"></i>
-      <div class="schedule-row-main">
-        <div class="schedule-row-title">${escapeHtml(targetLabel(item))}</div>
-        <div class="schedule-row-meta">
-          ${statusPill(item)}
-          <span class="schedule-time">${escapeHtml(localTimeFromIso(item.fire_at))}</span>
-          ${recurrenceBadge(item.recurrence)}
-          ${reason ? `<span class="schedule-reason">${escapeHtml(reason)}</span>` : ""}
-        </div>
-      </div>
-      <div class="schedule-row-actions">
-        <button class="icon-btn" data-action="fire-now" data-id="${escapeHtml(item.id)}" title="Fire now"><i class="ph ph-play"></i></button>
-        <button class="icon-btn" data-action="reschedule-toggle" data-id="${escapeHtml(item.id)}" title="Reschedule"><i class="ph ph-calendar-plus"></i></button>
-        <button class="icon-btn" data-action="delete" data-id="${escapeHtml(item.id)}" title="Delete"><i class="ph ph-trash"></i></button>
-      </div>
-      ${rescheduleOpen ? `
-        <div class="schedule-reschedule-inline">
-          <input type="datetime-local" data-reschedule-input="${escapeHtml(item.id)}" value="${datetimeLocalValue(item.fire_at)}">
-          <button class="btn-primary" data-action="reschedule-confirm" data-id="${escapeHtml(item.id)}">Set</button>
-          <button class="btn-secondary" data-action="reschedule-cancel" data-id="${escapeHtml(item.id)}">Cancel</button>
-        </div>
-      ` : ""}
-    </li>
-  `;
+function dotClass(occ: Occurrence): string {
+  if (occ.recurring && (occ.status === "upcoming" || occ.status === "firing")) return "dot dot--recurring";
+  return `dot dot--${occ.status}`;
 }
 
-function upcomingItemRowHtml(item: ScheduledItem): string {
-  // A Firing item is mid-send (claimed by the tick loop or "fire now" but not
-  // yet resolved to Sent/Failed) - show it read-only, no actions, since the
-  // fire is already in flight and can't be canceled or rescheduled from here.
-  const firing = item.status.type === "firing";
-  return `
-    <li class="schedule-row" data-id="${escapeHtml(item.id)}">
-      <i class="ph ${kindIconClass(item)} schedule-row-icon"></i>
-      <div class="schedule-row-main">
-        <div class="schedule-row-title">${escapeHtml(targetLabel(item))}</div>
-        <div class="schedule-row-meta">
-          ${firing ? statusPill(item) : ""}
-          <span class="schedule-time">${escapeHtml(localTimeFromIso(item.fire_at))}</span>
-          ${recurrenceBadge(item.recurrence)}
-        </div>
-      </div>
-      ${firing ? "" : `
-      <div class="schedule-row-actions">
-        <button class="icon-btn" data-action="fire-now" data-id="${escapeHtml(item.id)}" title="Fire now"><i class="ph ph-play"></i></button>
-        <button class="icon-btn" data-action="delete" data-id="${escapeHtml(item.id)}" title="Delete"><i class="ph ph-trash"></i></button>
-      </div>`}
-    </li>
-  `;
+function renderGrid(byDay: Map<string, Occurrence[]>, cells: Date[]): string {
+  const tKey = todayKey();
+  const head = DOW_HEAD.map((d) => `<div class="cal-dow">${d}</div>`).join("");
+  const cellHtml = cells.map((d) => {
+    const key = dayKeyOf(d);
+    const inMonth = d.getMonth() === state.viewMonth;
+    const occs = (byDay.get(key) || []).slice().sort((a, b) => a.time - b.time);
+    const dots = occs.slice(0, 4).map((o) => `<span class="${dotClass(o)}"></span>`).join("");
+    const more = occs.length > 4 ? `<span class="cal-more">+${occs.length - 4}</span>` : "";
+    const cls = [
+      "cal-cell",
+      inMonth ? "" : "other",
+      key === tKey ? "today" : "",
+      key === state.selectedKey ? "selected" : "",
+    ].filter(Boolean).join(" ");
+    return `<div class="${cls}" data-day="${key}">
+      <span class="cal-daynum">${d.getDate()}</span>
+      <div class="cal-dots">${dots}${more}</div>
+    </div>`;
+  }).join("");
+  return `<div class="cal-grid">${head}${cellHtml}</div>`;
 }
 
-function upcomingExternalRowHtml(job: ExternalScheduledJob): string {
-  return `
-    <li class="schedule-row schedule-row--external" data-external-id="${escapeHtml(job.id)}">
-      <i class="ph ph-clock-countdown schedule-row-icon"></i>
-      <div class="schedule-row-main">
-        <div class="schedule-row-title">${escapeHtml(job.label)}${job.cwd ? ` &mdash; ${escapeHtml(cwdToProjectName(job.cwd))}` : ""}</div>
-        <div class="schedule-row-meta">
-          <span class="schedule-time">${job.fire_at ? escapeHtml((dateFromHumanTime(job.fire_at) ?? new Date()).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })) : ""}</span>
-          <span class="schedule-badge schedule-badge--source"><i class="ph ph-windows-logo"></i>Task Scheduler</span>
-        </div>
+function agendaRowHtml(occ: Occurrence): string {
+  const timeStr = localTime(new Date(occ.time));
+  if (!occ.item && occ.external) {
+    const job = occ.external;
+    return `<li class="agenda-row agenda-row--external">
+      <span class="agenda-time">${escapeHtml(timeStr)}</span>
+      <i class="ph ph-clock-countdown agenda-icon"></i>
+      <div class="agenda-main">
+        <div class="agenda-name">${escapeHtml(job.label)}${job.cwd ? ` &mdash; ${escapeHtml(cwdToProjectName(job.cwd))}` : ""}</div>
+        <div class="agenda-meta">${statusPill("external", null)}</div>
       </div>
-    </li>
-  `;
-}
-
-function pastRowHtml(item: ScheduledItem): string {
-  const reason = failureReason(item);
-  let deltaHtml = "";
-  if (item.last_fired_at) {
-    const scheduled = new Date(item.fire_at).getTime();
-    const actual = new Date(item.last_fired_at).getTime();
-    if (!isNaN(scheduled) && !isNaN(actual)) {
-      const deltaSecs = Math.round((actual - scheduled) / 1000);
-      if (deltaSecs > 5) {
-        const mins = Math.round(deltaSecs / 60);
-        deltaHtml = `<span class="schedule-delta">${mins >= 1 ? `${mins}m late` : `${deltaSecs}s late`}</span>`;
-      }
-    }
+    </li>`;
   }
-  return `
-    <li class="schedule-row schedule-row--past" data-id="${escapeHtml(item.id)}">
-      <i class="ph ${kindIconClass(item)} schedule-row-icon"></i>
-      <div class="schedule-row-main">
-        <div class="schedule-row-title">${escapeHtml(targetLabel(item))}</div>
-        <div class="schedule-row-meta">
-          ${statusPill(item)}
-          <span class="schedule-time">${item.last_fired_at ? escapeHtml(localTimeFromIso(item.last_fired_at)) : ""}</span>
-          ${deltaHtml}
-          ${reason ? `<span class="schedule-reason">${escapeHtml(reason)}</span>` : ""}
-        </div>
+  const item = occ.item!;
+  const nav = navTarget(item);
+  const rescheduleOpen = state.reschedulingId === item.id;
+  const isFailed = item.status.type === "failed";
+  const reason = item.status.type === "failed"
+    ? item.status.reason
+    : (occ.status === "failed" ? item.last_result || "" : "");
+  const canFire = occ.status === "upcoming" || occ.status === "firing" || occ.status === "failed";
+  const showDelete = occ.status !== "firing";
+  return `<li class="agenda-row ${nav ? "agenda-row--nav" : ""}" data-id="${escapeHtml(item.id)}" ${nav ? `data-nav-session="${escapeHtml(nav.sessionId)}" data-nav-mode="${nav.mode}"` : ""}>
+    <span class="agenda-time">${escapeHtml(timeStr)}</span>
+    <i class="ph ${kindIconClass(item)} agenda-icon"></i>
+    <div class="agenda-main">
+      <div class="agenda-name">${escapeHtml(targetLabel(item))}</div>
+      <div class="agenda-meta">
+        ${statusPill(occ.status, item)}
+        ${recurrenceBadge(item.recurrence)}
+        ${reason ? `<span class="schedule-reason">${escapeHtml(reason)}</span>` : ""}
       </div>
-      <div class="schedule-row-actions">
-        ${item.status.type === "failed" ? `<button class="icon-btn" data-action="fire-now" data-id="${escapeHtml(item.id)}" title="Retry"><i class="ph ph-arrow-clockwise"></i></button>` : ""}
-      </div>
-    </li>
-  `;
+    </div>
+    <div class="agenda-actions">
+      ${canFire ? `<button class="icon-btn" data-action="fire-now" data-id="${escapeHtml(item.id)}" title="${isFailed ? "Retry" : "Fire now"}"><i class="ph ${isFailed ? "ph-arrow-clockwise" : "ph-play"}"></i></button>` : ""}
+      ${occ.status === "upcoming" ? `<button class="icon-btn" data-action="reschedule-toggle" data-id="${escapeHtml(item.id)}" title="Reschedule"><i class="ph ph-calendar-plus"></i></button>` : ""}
+      ${showDelete ? `<button class="icon-btn" data-action="delete" data-id="${escapeHtml(item.id)}" title="Delete"><i class="ph ph-trash"></i></button>` : ""}
+      ${nav ? `<i class="ph ph-caret-right agenda-chevron"></i>` : ""}
+    </div>
+    ${rescheduleOpen ? `
+      <div class="schedule-reschedule-inline">
+        <input type="datetime-local" data-reschedule-input="${escapeHtml(item.id)}" value="${datetimeLocalValue(item.fire_at)}">
+        <button class="btn-primary" data-action="reschedule-confirm" data-id="${escapeHtml(item.id)}">Set</button>
+        <button class="btn-secondary" data-action="reschedule-cancel" data-id="${escapeHtml(item.id)}">Cancel</button>
+      </div>` : ""}
+  </li>`;
 }
 
-// ── section assembly ────────────────────────────────────────────────────────
-
-interface UpcomingEntry {
-  time: number;
-  html: string;
+function agendaTitle(key: string | null): string {
+  if (!key) return "Select a day";
+  const parts = key.split("-");
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  const dt = new Date(y, m - 1, d);
+  const dayName = dt.toLocaleDateString(undefined, { weekday: "long" });
+  return `${dayName}, ${MONTH_NAMES[m - 1]} ${d}`;
 }
 
 function renderBody(): string {
@@ -275,97 +415,42 @@ function renderBody(): string {
     return `<div class="schedule-loading"><span class="schedule-spinner"></span>Loading schedule&hellip;</div>`;
   }
 
-  const needsAttention = state.items.filter((i) => i.status.type === "missed" || i.status.type === "failed");
-  // Firing items are listed under Upcoming too (read-only, no actions - see
-  // upcomingItemRowHtml), not as a separate section - they're mid-send, not
-  // something needing the user's attention.
-  const pending = state.items.filter((i) => i.status.type === "pending" || i.status.type === "firing");
-  const past = state.items
-    .filter((i) => i.status.type === "sent" || i.status.type === "failed" || i.status.type === "missed")
-    .sort((a, b) => {
-      const ta = a.last_fired_at ? new Date(a.last_fired_at).getTime() : new Date(a.created_at).getTime();
-      const tb = b.last_fired_at ? new Date(b.last_fired_at).getTime() : new Date(b.created_at).getTime();
-      return tb - ta;
-    });
+  const { end, cells } = gridRange(state.viewYear, state.viewMonth);
+  const byDay = buildOccurrences(end);
 
-  const isEmpty = state.items.length === 0 && state.external.length === 0;
+  const selectedOccs = state.selectedKey
+    ? (byDay.get(state.selectedKey) || []).slice().sort((a, b) => a.time - b.time)
+    : [];
 
-  const sections: string[] = [];
+  const agenda = selectedOccs.length
+    ? `<ul class="agenda-list">${selectedOccs.map(agendaRowHtml).join("")}</ul>`
+    : `<div class="agenda-empty">Nothing scheduled this day</div>`;
 
-  if (needsAttention.length > 0) {
-    sections.push(`
-      <section class="schedule-section schedule-section--attn">
-        <h3 class="schedule-section-title"><i class="ph ph-warning-circle"></i>Needs attention</h3>
-        <ul class="schedule-list">${needsAttention.map(attentionRowHtml).join("")}</ul>
-      </section>
-    `);
-  }
+  const subCount = selectedOccs.length ? `${selectedOccs.length} item${selectedOccs.length > 1 ? "s" : ""}` : "";
 
-  if (isEmpty) {
-    sections.push(`
-      <div class="schedule-empty">
-        <i class="ph ph-alarm"></i>
-        <p>Nothing scheduled yet.</p>
-        <p class="schedule-empty-hint">Scheduling lives in the chat composer &mdash; open the Send &#9662; menu to schedule a message or a new chat.</p>
+  return `
+    <div class="cal-head">
+      <button class="cal-nav" data-cal="prev" title="Previous month">&lsaquo;</button>
+      <div class="cal-month">${MONTH_NAMES[state.viewMonth]} ${state.viewYear}</div>
+      <button class="cal-nav" data-cal="next" title="Next month">&rsaquo;</button>
+      <button class="cal-today" data-cal="today">Today</button>
+    </div>
+    ${renderGrid(byDay, cells)}
+    <div class="cal-legend">
+      <span><span class="dot dot--upcoming"></span>Upcoming</span>
+      <span><span class="dot dot--sent"></span>Sent</span>
+      <span><span class="dot dot--missed"></span>Missed</span>
+      <span><span class="dot dot--failed"></span>Failed</span>
+      <span><span class="dot dot--recurring"></span>Recurring</span>
+    </div>
+    <div class="agenda">
+      <div class="agenda-head">
+        <div class="agenda-title">${escapeHtml(agendaTitle(state.selectedKey))}</div>
+        <div class="agenda-sub">${subCount}</div>
       </div>
-    `);
-  } else {
-    const entries: UpcomingEntry[] = [];
-    for (const item of pending) {
-      const t = new Date(item.fire_at).getTime();
-      entries.push({ time: isNaN(t) ? Number.MAX_SAFE_INTEGER : t, html: upcomingItemRowHtml(item) });
-    }
-    for (const job of state.external) {
-      const d = job.fire_at ? dateFromHumanTime(job.fire_at) : null;
-      entries.push({ time: d ? d.getTime() : Number.MAX_SAFE_INTEGER, html: upcomingExternalRowHtml(job) });
-    }
-    entries.sort((a, b) => a.time - b.time);
-
-    const grouped: string[] = [];
-    let lastBucket = "";
-    let bucketCount = 0;
-    const bucketRows: string[] = [];
-    const flush = () => {
-      if (!lastBucket) return;
-      grouped.push(`<li class="schedule-day-sep"><span>${escapeHtml(lastBucket)}</span><span class="schedule-count-chip">${bucketCount}</span></li>`);
-      grouped.push(...bucketRows);
-      bucketRows.length = 0;
-    };
-    for (const entry of entries) {
-      const bucket = entry.time === Number.MAX_SAFE_INTEGER ? "Unscheduled" : dayBucket(new Date(entry.time));
-      if (bucket !== lastBucket) {
-        flush();
-        lastBucket = bucket;
-        bucketCount = 0;
-      }
-      bucketCount++;
-      bucketRows.push(entry.html);
-    }
-    flush();
-
-    sections.push(`
-      <section class="schedule-section">
-        <h3 class="schedule-section-title"><i class="ph ph-calendar-check"></i>Upcoming</h3>
-        <ul class="schedule-list">${grouped.length ? grouped.join("") : `<li class="schedule-empty-row">Nothing upcoming</li>`}</ul>
-      </section>
-    `);
-
-    sections.push(`
-      <details class="schedule-section schedule-section--past">
-        <summary class="schedule-section-title"><i class="ph ph-clock-counter-clockwise"></i>Past (${past.length})</summary>
-        <ul class="schedule-list">${past.length ? past.map(pastRowHtml).join("") : `<li class="schedule-empty-row">No past items</li>`}</ul>
-      </details>
-    `);
-  }
-
-  sections.push(`
-    <section class="schedule-section schedule-section--cloud">
-      <h3 class="schedule-section-title"><i class="ph ph-cloud"></i>Cloud cron jobs</h3>
-      <p class="schedule-muted">No data path to claude.ai cron jobs yet.</p>
-    </section>
-  `);
-
-  return sections.join("");
+      ${agenda}
+    </div>
+  `;
 }
 
 // ── mount ────────────────────────────────────────────────────────────────────
@@ -376,16 +461,13 @@ async function reload(bodyEl: HTMLElement, myMount: number): Promise<void> {
   bodyEl.innerHTML = renderBody();
 }
 
+function rerender(bodyEl: HTMLElement): void {
+  bodyEl.innerHTML = renderBody();
+}
+
 export async function renderScheduleView(root: HTMLElement): Promise<() => void> {
   const myMount = nextMountId++;
-  state = {
-    mountId: myMount,
-    items: [],
-    external: [],
-    titles: new Map(),
-    reschedulingId: null,
-    loading: true,
-  };
+  state = freshState(myMount);
 
   render(template(), root);
   const bodyEl = root.querySelector<HTMLElement>("#schedule-body");
@@ -397,12 +479,48 @@ export async function renderScheduleView(root: HTMLElement): Promise<() => void>
   await reload(bodyEl, myMount);
 
   bodyEl.addEventListener("click", (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-action]");
-    if (!btn) return;
-    const action = btn.dataset.action;
-    const id = btn.dataset.id;
-    if (!action || !id) return;
-    void handleAction(action, id, bodyEl, myMount);
+    const target = e.target as HTMLElement;
+
+    // Month nav.
+    const cal = target.closest<HTMLElement>("[data-cal]");
+    if (cal) {
+      const which = cal.dataset.cal;
+      if (which === "prev") stepMonth(-1);
+      else if (which === "next") stepMonth(1);
+      else if (which === "today") { state.viewYear = new Date().getFullYear(); state.viewMonth = new Date().getMonth(); state.selectedKey = todayKey(); }
+      rerender(bodyEl);
+      return;
+    }
+
+    // Day cell selection.
+    const cell = target.closest<HTMLElement>(".cal-cell[data-day]");
+    if (cell && !cell.classList.contains("other")) {
+      state.selectedKey = cell.dataset.day!;
+      state.reschedulingId = null;
+      rerender(bodyEl);
+      return;
+    }
+
+    // Row action buttons (fire/delete/reschedule).
+    const btn = target.closest<HTMLButtonElement>("button[data-action]");
+    if (btn) {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if (action && id) void handleAction(action, id, bodyEl, myMount);
+      return;
+    }
+
+    // Row body click -> navigate to the chat.
+    const row = target.closest<HTMLElement>(".agenda-row--nav");
+    if (row) {
+      const sessionId = row.dataset.navSession;
+      const mode = row.dataset.navMode || "history";
+      if (sessionId) {
+        void invoke("open_chats_for_session", { sessionId, mode }).catch((err) =>
+          console.error("[schedule] open_chats_for_session failed", err),
+        );
+      }
+    }
   });
 
   let unlistenScheduled: (() => void) | null = null;
@@ -417,6 +535,15 @@ export async function renderScheduleView(root: HTMLElement): Promise<() => void>
   return () => {
     unlistenScheduled?.();
   };
+}
+
+function stepMonth(delta: number): void {
+  let m = state.viewMonth + delta;
+  let y = state.viewYear;
+  if (m < 0) { m = 11; y--; }
+  else if (m > 11) { m = 0; y++; }
+  state.viewMonth = m;
+  state.viewYear = y;
 }
 
 async function handleAction(action: string, id: string, bodyEl: HTMLElement, myMount: number): Promise<void> {
@@ -443,12 +570,12 @@ async function handleAction(action: string, id: string, bodyEl: HTMLElement, myM
     }
     case "reschedule-toggle": {
       state.reschedulingId = state.reschedulingId === id ? null : id;
-      bodyEl.innerHTML = renderBody();
+      rerender(bodyEl);
       break;
     }
     case "reschedule-cancel": {
       state.reschedulingId = null;
-      bodyEl.innerHTML = renderBody();
+      rerender(bodyEl);
       break;
     }
     case "reschedule-confirm": {
@@ -459,11 +586,7 @@ async function handleAction(action: string, id: string, bodyEl: HTMLElement, myM
       if (isNaN(local.getTime())) return;
       const item = state.items.find((i) => i.id === id);
       if (!item) return;
-      const updated: ScheduledItem = {
-        ...item,
-        fire_at: local.toISOString(),
-        status: { type: "pending" },
-      };
+      const updated: ScheduledItem = { ...item, fire_at: local.toISOString(), status: { type: "pending" } };
       try {
         await invoke("schedule_update", { item: updated });
       } catch (err) {
@@ -481,7 +604,7 @@ async function handleAction(action: string, id: string, bodyEl: HTMLElement, myM
 function template() {
   return html`
     <div class="view view-schedule">
-      <div class="view-header">
+      <div class="view-header schedule-view-header">
         <button
           class="icon-btn burger"
           title="Menu"

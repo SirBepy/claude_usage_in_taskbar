@@ -211,6 +211,47 @@ fn build_chats_window(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Build the schedule window (label `session-schedule`). Mirrors
+/// `build_chats_window`: built hidden, shown + focused only after the page
+/// finishes loading (via `on_page_load`) to avoid the white flash while
+/// WebView2 initialises.
+fn build_schedule_window(app: &AppHandle) -> Result<(), String> {
+    use std::sync::atomic::AtomicBool;
+    use tauri::webview::PageLoadEvent;
+    let shown = Arc::new(AtomicBool::new(false));
+    let window = tauri::WebviewWindowBuilder::new(
+        app,
+        "session-schedule",
+        tauri::WebviewUrl::App("index.html?schedulewindow=1#schedule".into()),
+    )
+    .title("Schedule")
+    .inner_size(480.0, 760.0)
+    .min_inner_size(380.0, 520.0)
+    .resizable(true)
+    .visible(false)
+    .on_page_load(move |w, payload| {
+        if payload.event() == PageLoadEvent::Finished && !shown.swap(true, Ordering::SeqCst) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    })
+    .build()
+    .map_err(|e| e.to_string())?;
+    attach_hide_to_tray(&window);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_schedule_window(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("session-schedule") {
+        let _ = existing.show();
+        let _ = existing.unminimize();
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    build_schedule_window(&app)
+}
+
 #[tauri::command]
 pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("session-chats") {

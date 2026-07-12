@@ -169,6 +169,16 @@ if (new URLSearchParams(window.location.search).get("chatswindow") === "1") {
   document.getElementById("sidemenuBackdrop")?.remove();
 }
 
+// Standalone Schedule window: backend opens a new window at
+// `index.html?schedulewindow=1#schedule`. Render the calendar solo (no router,
+// no sidemenu, no boot) - it's single-purpose, like the detached-session window.
+const isScheduleWindow = new URLSearchParams(window.location.search).get("schedulewindow") === "1";
+if (isScheduleWindow) {
+  document.body.classList.add("schedule-window-mode");
+  document.getElementById("sidemenu")?.remove();
+  document.getElementById("sidemenuBackdrop")?.remove();
+}
+
 // Browser-only token gate: shows a full-screen form when no bearer token is
 // stored. Complete NO-OP inside the Tauri webview (window.__TAURI__ present).
 // Halt boot when the gate rendered its form so no commands are sent without auth.
@@ -182,6 +192,12 @@ if (!await ensureRemoteToken()) {
   document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
   void renderDetachedSession(app, detachedSessionId);
   // Skip mountRouter + sidemenu wiring; this window is single-purpose.
+} else if (isScheduleWindow) {
+  // Solo calendar render. Hide the static legacy views and mount the schedule
+  // view straight into #app; no router, no boot (this window only shows the
+  // calendar and cross-navigates to the Chats window on item click).
+  document.querySelectorAll<HTMLElement>("body > .view").forEach((el) => el.classList.add("hidden"));
+  void renderScheduleView(app);
 } else {
   mountRouter(app);
   initBoot();
@@ -264,6 +280,16 @@ if (!await ensureRemoteToken()) {
   document.querySelectorAll<HTMLElement>(".sidemenu-nav-item").forEach((item) => {
     item.onclick = () => {
       const view = item.dataset.view;
+      // Schedule now lives in its own window (the calendar). Open that instead
+      // of routing in-place; fall back to the in-app route in the browser/remote
+      // build where there's no separate-window concept.
+      if (view === "schedule" && window.__TAURI__) {
+        void invoke("open_schedule_window").catch((err) =>
+          console.error("[nav] open_schedule_window failed", err),
+        );
+        closeSidemenu();
+        return;
+      }
       if (view) showView(view);
       closeSidemenu();
     };
