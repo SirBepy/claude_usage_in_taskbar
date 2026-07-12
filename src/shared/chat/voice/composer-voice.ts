@@ -44,7 +44,7 @@ export class ComposerVoice {
     this.applyState();
   }
 
-  async toggle(insertPos: number): Promise<void> {
+  private ensureController(): VoiceController {
     if (!this.controller) {
       this.controller = new VoiceController({
         onPartial: (t) => this.onPartial(t),
@@ -53,13 +53,32 @@ export class ComposerVoice {
         onStateChange: (s) => this.onStateChange(s),
       });
     }
-    if (this.controller.isRecording) {
-      await this.controller.stop();
+    return this.controller;
+  }
+
+  async toggle(insertPos: number): Promise<void> {
+    const c = this.ensureController();
+    if (c.isRecording) {
+      await c.stop();
       return;
     }
     this.commitPos = insertPos;
     this.volatileLen = 0;
-    await this.controller.start();
+    await c.start();
+  }
+
+  /** Push-to-talk press: start recording at the caret. No-op if already live. */
+  async startForPtt(insertPos: number): Promise<void> {
+    const c = this.ensureController();
+    if (c.isRecording) return;
+    this.commitPos = insertPos;
+    this.volatileLen = 0;
+    await c.start();
+  }
+
+  /** Push-to-talk release: stop if we're recording. */
+  async stopForPtt(): Promise<void> {
+    if (this.controller?.isRecording) await this.controller.stop();
   }
 
   reset(): void {

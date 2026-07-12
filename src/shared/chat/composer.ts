@@ -7,6 +7,8 @@ import { invoke } from "../ipc";
 import type { ContentBlock, Recurrence } from "../../types/ipc.generated";
 import { mimeToIcon } from "./attachment-hydrator";
 import { openSchedulePicker } from "./schedule-picker";
+import { openComposerMenu, type ComposerMenuItem } from "./composer-menu";
+import { getPttBinding, keyMatches, mouseMatches } from "./voice/push-to-talk";
 import { CaretSuggestPopup } from "./caret-popup/popup";
 import { SlashProvider } from "./caret-popup/providers/slash";
 import { FileProvider } from "./caret-popup/providers/file";
@@ -102,8 +104,9 @@ export class Composer {
   private lastKeyAt = 0;
   private cv: ComposerVoice;
   private micBtn: HTMLButtonElement | null = null;
-  private attachBtn: HTMLButtonElement | null = null;
   private fileInput: HTMLInputElement | null = null;
+  // Push-to-talk: true while the bound key/mouse-button is held down.
+  private _pttActive = false;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -126,6 +129,46 @@ export class Composer {
     e.preventDefault();
   };
 
+  // ── Push-to-talk (desktop only) ────────────────────────────────────────────
+  // Hold the bound key / mouse side-button to record, release to stop. Bound at
+  // event time via getPttBinding() so a Settings change takes effect live. The
+  // binding is suppressed (preventDefault) while held so a printable key doesn't
+  // also type; mouse handlers run in capture phase to beat webview back/forward.
+  private _pttKeydown = (e: KeyboardEvent): void => {
+    if (this.disabled || this.isMobileViewport()) return;
+    if (!keyMatches(getPttBinding(), e)) return;
+    e.preventDefault();
+    if (this._pttActive || e.repeat) return;
+    this._pttActive = true;
+    void this.cv.startForPtt(this.currentInsertPos());
+  };
+  private _pttKeyup = (e: KeyboardEvent): void => {
+    if (!this._pttActive || !keyMatches(getPttBinding(), e)) return;
+    e.preventDefault();
+    this._pttActive = false;
+    void this.cv.stopForPtt();
+  };
+  private _pttMousedown = (e: MouseEvent): void => {
+    if (this.disabled || this.isMobileViewport()) return;
+    if (!mouseMatches(getPttBinding(), e)) return;
+    e.preventDefault();
+    if (this._pttActive) return;
+    this._pttActive = true;
+    void this.cv.startForPtt(this.currentInsertPos());
+  };
+  private _pttMouseup = (e: MouseEvent): void => {
+    if (!this._pttActive || !mouseMatches(getPttBinding(), e)) return;
+    e.preventDefault();
+    this._pttActive = false;
+    void this.cv.stopForPtt();
+  };
+  // Losing window focus mid-hold would strand the recorder (no keyup arrives).
+  private _pttBlur = (): void => {
+    if (!this._pttActive) return;
+    this._pttActive = false;
+    void this.cv.stopForPtt();
+  };
+
   constructor(root: HTMLElement, opts: ComposerOptions) {
     this.root = root;
     this.opts = opts;
@@ -145,6 +188,11 @@ export class Composer {
     this.file.start(opts.projectDir ?? null);
     this.render();
     document.addEventListener("keydown", this._globalKeydown);
+    document.addEventListener("keydown", this._pttKeydown);
+    document.addEventListener("keyup", this._pttKeyup);
+    document.addEventListener("mousedown", this._pttMousedown, true);
+    document.addEventListener("mouseup", this._pttMouseup, true);
+    window.addEventListener("blur", this._pttBlur);
     _composerInstanceCount++;
     if (_composerInstanceCount > 1) {
       console.warn(
@@ -155,6 +203,15 @@ export class Composer {
 
   destroy(): void {
     document.removeEventListener("keydown", this._globalKeydown);
+    document.removeEventListener("keydown", this._pttKeydown);
+    document.removeEventListener("keyup", this._pttKeyup);
+    document.removeEventListener("mousedown", this._pttMousedown, true);
+    document.removeEventListener("mouseup", this._pttMouseup, true);
+    window.removeEventListener("blur", this._pttBlur);
+    if (this._pttActive) {
+      this._pttActive = false;
+      void this.cv.stopForPtt();
+    }
     if (this.noticeTimer) {
       clearTimeout(this.noticeTimer);
       this.noticeTimer = null;
@@ -276,9 +333,6 @@ export class Composer {
           <textarea class="composer-textarea" rows="1" placeholder="${placeholder}" ${this.disabled ? "disabled" : ""}></textarea>
         </div>
         <div class="composer-actions">
-          <button class="composer-attach icon-btn" ${this.disabled ? "disabled" : ""} title="Attach image or file">
-            <i class="ph ph-paperclip"></i>
-          </button>
           <button class="composer-mic icon-btn" ${this.disabled ? "disabled" : ""} title="Voice dictation (tap to start/stop)">
             <i class="ph ph-microphone"></i>
           </button>
@@ -286,10 +340,9 @@ export class Composer {
             <button class="composer-send icon-btn" ${this.disabled ? "disabled" : ""} title="Send">
               <i class="ph ph-paper-plane-right"></i>
             </button>
-            ${this.opts.onSchedule ? `
-            <button class="composer-send-chevron icon-btn" ${this.disabled ? "disabled" : ""} title="Schedule message">
+            <button class="composer-send-chevron icon-btn" ${this.disabled ? "disabled" : ""} title="More actions">
               <i class="ph ph-caret-down"></i>
-            </button>` : ""}
+            </button>
           </div>
         </div>
       </div>
@@ -303,7 +356,6 @@ export class Composer {
     this.sendBtn = this.root.querySelector<HTMLButtonElement>(".composer-send");
     this.scheduleBtn = this.root.querySelector<HTMLButtonElement>(".composer-send-chevron");
     this.micBtn = this.root.querySelector<HTMLButtonElement>(".composer-mic");
-    this.attachBtn = this.root.querySelector<HTMLButtonElement>(".composer-attach");
     this.fileInput = this.root.querySelector<HTMLInputElement>(".composer-file-input");
     // The popup div was inside root.innerHTML, so it's gone after the swap.
     // Rebuild it on every render and keep the provider's cache.
@@ -333,21 +385,8 @@ export class Composer {
       this.sendBtn?.addEventListener("click", () => void this.send());
       this.scheduleBtn?.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (this.disabled || this.isDraftEmpty() || !this.scheduleBtn) return;
-        openSchedulePicker({
-          anchor: this.scheduleBtn,
-          onConfirm: (result) => {
-            const text = (this.textarea?.value ?? "").trim();
-            const blocks = this.buildBlocks(text);
-            this.clearComposer();
-            void this.opts.onSchedule?.(blocks, result.fireAtUtcIso, result.recurrence);
-          },
-        });
-      });
-      this.attachBtn?.addEventListener("click", () => {
-        if (!this.fileInput) return;
-        this.fileInput.value = "";
-        this.fileInput.click();
+        if (this.disabled || !this.scheduleBtn) return;
+        this.openActionsMenu(this.scheduleBtn);
       });
       this.fileInput?.addEventListener("change", () => {
         const files = this.fileInput?.files;
@@ -388,7 +427,9 @@ export class Composer {
   /** Chevron is disabled while read-only or the draft (text + attachments +
    * pasted blocks) is empty — mirrors isDraftEmpty()'s definition of "empty". */
   private updateScheduleBtnState(): void {
-    if (this.scheduleBtn) this.scheduleBtn.disabled = this.disabled || this.isDraftEmpty();
+    // The chevron now opens the actions menu (voice/attach are available even
+    // with an empty draft), so it's only disabled when the composer is read-only.
+    if (this.scheduleBtn) this.scheduleBtn.disabled = this.disabled;
   }
 
   private autoResize(): void {
@@ -431,6 +472,57 @@ export class Composer {
   /** Mobile = the same 768px breakpoint the sessions layout uses to switch to
    *  single-pane mode. On a soft keyboard there is no easy Shift+Enter, so a
    *  bare Enter must insert a newline (the send button sends instead). */
+  private currentInsertPos(): number {
+    return this.textarea?.selectionStart ?? this.textarea?.value.length ?? 0;
+  }
+
+  /** Build + open the split-send chevron menu. Desktop: Voice + Schedule.
+   *  Mobile: Attach (voice is the on-screen mic there) + Schedule. Schedule only
+   *  appears with content to schedule. */
+  private openActionsMenu(anchor: HTMLElement): void {
+    const items: ComposerMenuItem[] = [];
+    if (this.isMobileViewport()) {
+      items.push({
+        icon: "image",
+        label: "Attach image",
+        run: () => {
+          if (!this.fileInput) return;
+          this.fileInput.value = "";
+          this.fileInput.click();
+        },
+      });
+    } else {
+      // Re-warm on menu open so Voice is hot by the time it's clicked, even if
+      // the sidecar idle-shut-down since the chat opened. Throttled inside warm().
+      this.cv.warm();
+      items.push({
+        icon: "microphone",
+        label: "Voice dictation",
+        run: () => {
+          this.textarea?.focus();
+          void this.cv.toggle(this.currentInsertPos());
+        },
+      });
+    }
+    if (this.opts.onSchedule && !this.isDraftEmpty()) {
+      items.push({ icon: "clock", label: "Schedule message", run: () => this.openSchedule(anchor) });
+    }
+    openComposerMenu(anchor, items);
+  }
+
+  private openSchedule(anchor: HTMLElement): void {
+    if (this.isDraftEmpty()) return;
+    openSchedulePicker({
+      anchor,
+      onConfirm: (result) => {
+        const text = (this.textarea?.value ?? "").trim();
+        const blocks = this.buildBlocks(text);
+        this.clearComposer();
+        void this.opts.onSchedule?.(blocks, result.fireAtUtcIso, result.recurrence);
+      },
+    });
+  }
+
   private isMobileViewport(): boolean {
     return (
       typeof window !== "undefined" &&

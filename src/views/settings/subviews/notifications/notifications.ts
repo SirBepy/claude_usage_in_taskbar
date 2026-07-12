@@ -13,6 +13,13 @@ import { isRemote } from "../../../../shared/transport";
 import { pushSupported, pushEnabledLocally, enablePush, disablePush } from "../../../../shared/push";
 import { populateAudioDevicePicker } from "../../../../../vendor/tauri_kit/frontend/audio/device-picker";
 import { listMics, getSelectedMic, setSelectedMic } from "../../../../shared/chat/voice/voice-devices";
+import {
+  getPttBinding,
+  setPttBinding,
+  formatPttBinding,
+  keyCodeLabel,
+  mouseButtonLabel,
+} from "../../../../shared/chat/voice/push-to-talk";
 import { settingsHeader, toggleRow } from "../../ui";
 import "./notifications.css";
 
@@ -274,6 +281,7 @@ async function hydrateNotifications(): Promise<void> {
 
   await populateDevicePicker();
   await populateMicPicker();
+  wirePttCapture();
 
   // Per-slot character-sound toggles. Each defaults ON when its key is absent.
   const slots = (s.characterSoundSlots as Record<string, boolean | undefined>) || {};
@@ -321,6 +329,57 @@ async function populateMicPicker(): Promise<void> {
 function onMicChange(e: Event): void {
   const sel = e.target as HTMLSelectElement;
   setSelectedMic(sel.value || null);
+}
+
+// Push-to-talk binding capture: click "Set", then the next key or mouse
+// side-button press becomes the hold-to-record binding. Left click is ignored
+// during capture so re-clicking the button just toggles capture off.
+function wirePttCapture(): void {
+  const btn = $("pttCaptureBtn") as HTMLButtonElement | null;
+  const clear = $("pttClearBtn") as HTMLButtonElement | null;
+  if (!btn) return;
+
+  let keyListener: ((e: KeyboardEvent) => void) | null = null;
+  let mouseListener: ((e: MouseEvent) => void) | null = null;
+
+  function refresh(): void {
+    const b = getPttBinding();
+    if (btn) btn.textContent = b ? formatPttBinding(b) : "Click to set";
+    if (clear) clear.style.display = b ? "" : "none";
+  }
+
+  function stop(): void {
+    if (keyListener) document.removeEventListener("keydown", keyListener, true);
+    if (mouseListener) document.removeEventListener("mousedown", mouseListener, true);
+    keyListener = null;
+    mouseListener = null;
+    refresh();
+  }
+
+  function start(): void {
+    if (keyListener) { stop(); return; } // already capturing -> cancel
+    if (btn) btn.textContent = "Press a key or mouse button… (Esc to cancel)";
+    keyListener = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.code === "Escape") { stop(); return; }
+      setPttBinding({ kind: "key", code: e.code, label: keyCodeLabel(e.code) });
+      stop();
+    };
+    mouseListener = (e: MouseEvent) => {
+      if (e.button === 0) return; // the activating left-click, not a binding
+      e.preventDefault();
+      e.stopPropagation();
+      setPttBinding({ kind: "mouse", button: e.button, label: mouseButtonLabel(e.button) });
+      stop();
+    };
+    document.addEventListener("keydown", keyListener, true);
+    document.addEventListener("mousedown", mouseListener, true);
+  }
+
+  btn.addEventListener("click", (e) => { e.stopPropagation(); start(); });
+  clear?.addEventListener("click", (e) => { e.stopPropagation(); setPttBinding(null); stop(); });
+  refresh();
 }
 
 // [checkbox id, settings key] for the six character-sound slot toggles.
@@ -504,6 +563,14 @@ function template() {
             </select>
           </div>
           <div class="settings-caption">Microphone used for voice input. Device labels appear after granting microphone permission.</div>
+          <div class="kit-row">
+            <span class="kit-row-label">Push-to-talk</span>
+            <div class="ptt-controls">
+              <button type="button" id="pttCaptureBtn" class="btn-secondary">Click to set</button>
+              <button type="button" id="pttClearBtn" class="btn-secondary ptt-clear" title="Clear binding"><i class="ph ph-x"></i></button>
+            </div>
+          </div>
+          <div class="settings-caption">Hold this button (while Conductor is focused) to record voice, release to stop. Click Set, then press a key or mouse side-button. Tip: pick a mouse side-button or a non-printing key so it doesn't type into the box.</div>
         </div>
 
         <div class="kit-section" id="characterSoundsSection">

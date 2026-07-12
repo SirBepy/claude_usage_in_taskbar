@@ -5,6 +5,16 @@
  * The rules below replace what used to be inline `style="..."` attributes on
  * the notifications.ts template (T3 of the settings rewrite). */
 
+.ptt-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ptt-controls #pttCaptureBtn {
+  min-width: 150px;
+}
+
 .push-status-caption {
   margin-top: 4px;
   font-size: 0.78rem;
