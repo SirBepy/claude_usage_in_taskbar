@@ -20,7 +20,7 @@ import {
   type SessionCounts,
   type StatusbarOptions,
 } from "./session-statusbar-helpers";
-import { DrainPopover, AiTodosPopover, EffortPopover, ModelPopover, BranchPopover, CommitsPopover, type BranchEntry, type CommitSync } from "./statusbar-popovers";
+import { DrainPopover, AiTodosPopover, ServersPopover, EffortPopover, ModelPopover, BranchPopover, CommitsPopover, type BranchEntry, type CommitSync } from "./statusbar-popovers";
 export {
   loadStatuslineRows,
   saveStatuslineRows,
@@ -80,6 +80,9 @@ export class SessionStatusbar {
   // Popover subsystems (each owns its own state, DOM, and event wiring).
   private drainPopover = new DrainPopover();
   private aiTodosPopover = new AiTodosPopover();
+  private serversPopover = new ServersPopover();
+  // Polls the server_supervisor for this project's running dev servers.
+  private serversTimer: ReturnType<typeof setInterval> | null = null;
   private effortPopover = new EffortPopover();
   private modelPopover = new ModelPopover();
   private branchPopover = new BranchPopover();
@@ -128,6 +131,18 @@ export class SessionStatusbar {
     if (this.hasChip("dirty")) void this.refreshDirty();
     if (this.hasChip("ai_todos") && this.cwd) void this.aiTodosPopover.refresh(this.cwd, () => this.render());
     if (this.wantsDrain()) void this.refreshDrain();
+    if (this.hasChip("servers") && this.cwd) this.startServersPoll();
+  }
+
+  /** Servers are external processes with no event stream, so poll on a light
+   *  interval; the popover only re-renders the bar when the list changes. */
+  private startServersPoll(): void {
+    const cwd = this.cwd;
+    if (!cwd) return;
+    void this.serversPopover.refresh(cwd, () => this.render());
+    this.serversTimer = setInterval(() => {
+      void this.serversPopover.refresh(cwd, () => this.render());
+    }, 8000);
   }
 
   private hasChip(type: string): boolean {
@@ -275,6 +290,7 @@ export class SessionStatusbar {
 
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
+    if (this.serversTimer) { clearInterval(this.serversTimer); this.serversTimer = null; }
     this.tally.destroy();
     this.closeChipPopovers();
   }
@@ -384,6 +400,7 @@ export class SessionStatusbar {
         return `<span class="sb-chip sb-clock${this.animClass("clock")}"><i class="ph ph-clock"></i><span class="sb-clock-text">${this.clockText()}</span></span>`;
       case "ai_todos": return this.aiTodosPopover.renderChip(this.cwd, (k) => this.animClass(k));
       case "drain": return this.drainPopover.renderChip((k) => this.animClass(k));
+      case "servers": return this.serversPopover.renderChip(this.cwd, (k) => this.animClass(k));
       case "separator":
         return `<span class="sb-separator" aria-hidden="true"></span>`;
       case "flex_separator":
@@ -513,6 +530,14 @@ export class SessionStatusbar {
       if (!wasOpen) this.drainPopover.open(anchor);
     });
 
+    this.container.querySelector<HTMLElement>(".sb-servers-btn")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const anchor = e.currentTarget as HTMLElement;
+      const wasOpen = this.serversPopover.isOpen;
+      this.closeChipPopovers();
+      if (!wasOpen) this.serversPopover.open(anchor);
+    });
+
     this.container.querySelector<HTMLElement>(".sb-branch-btn")?.addEventListener("click", async (e) => {
       e.stopPropagation();
       const anchor = e.currentTarget as HTMLElement;
@@ -539,6 +564,7 @@ export class SessionStatusbar {
     // rebuilds in place; static content just repositions.
     this.reanchorIfOpen(this.drainPopover, ".sb-drain-btn", (a) => this.drainPopover.open(a));
     this.reanchorIfOpen(this.aiTodosPopover, ".sb-ai-todos-btn", (a) => this.aiTodosPopover.open(a));
+    this.reanchorIfOpen(this.serversPopover, ".sb-servers-btn", (a) => this.serversPopover.open(a));
     this.reanchorIfOpen(this.branchPopover, ".sb-branch-btn", (a) => this.branchPopover.reanchor(a));
     this.reanchorIfOpen(this.commitsPopover, ".sb-commits-btn", (a) => this.commitsPopover.reanchor(a));
     this.reanchorIfOpen(this.effortPopover, ".sb-effort-btn", (a) => this.effortPopover.reanchor(a));
@@ -558,6 +584,7 @@ export class SessionStatusbar {
   private closeChipPopovers(): void {
     this.drainPopover.close();
     this.aiTodosPopover.close();
+    this.serversPopover.close();
     this.effortPopover.close();
     this.modelPopover.close();
     this.branchPopover.close();

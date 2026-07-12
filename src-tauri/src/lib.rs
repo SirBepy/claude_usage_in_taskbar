@@ -306,6 +306,7 @@ pub fn run() {
             ipc::context_status,
             ipc::count_ai_todos,
             ipc::list_ai_todos,
+            ipc::list_project_servers,
             ipc::respond_permission,
             ipc::respond_question,
             ipc::list_news,

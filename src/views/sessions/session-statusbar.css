@@ -301,6 +301,55 @@
   color: #fbbf24;
 }
 
+/* ── Servers chip + running-servers popover ──────────────────────────────── */
+
+/* Green "live" accent to read as an active broadcast. */
+.sb-chip.sb-servers { color: #34d399; border-color: rgba(52, 211, 153, 0.25); }
+
+.sb-servers-popover {
+  min-width: 240px;
+  max-width: 420px;
+  padding: 8px 0;
+}
+
+.sb-servers-popover-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  padding: 2px 12px 8px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sb-servers-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--color-text);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.sb-servers-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #34d399;
+}
+
+.sb-servers-row .sb-servers-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-servers-row .sb-servers-port {
+  font-family: 'Fira Code', monospace;
+  color: var(--color-text-muted);
+}
+
 /* ── Drain chip + per-message rundown popover ─────────────────────────────── */
 
 /* Base (under 50% share): teal, matching the healthy context chip. warn/danger

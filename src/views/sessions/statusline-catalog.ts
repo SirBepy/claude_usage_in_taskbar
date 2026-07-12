@@ -48,6 +48,7 @@ export const STATIC_CHIPS = {
   clock:          { section: "session", icon: "ph-clock",            sample: "14:32",      tooltip: "Current wall-clock time." },
   ai_todos:       { section: "session", icon: "ph-check-square",     sample: "3 todos",    tooltip: "AI todos in .for_bepy/ai_todos/. Click to view the list.", countLike: true },
   drain:          { section: "session", icon: "ph-drop",             sample: "50% · 12%w", tooltip: "Share of a 5h session this chat has drained (and weekly). Click for a per-message rundown." },
+  servers:        { section: "session", icon: "ph-broadcast",        sample: "1 live",     tooltip: "Dev servers running for this project via server_supervisor. Click to list them and open each in the browser.", countLike: true },
 
   separator:      { section: "layout",  icon: "ph-minus",            sample: "|",          tooltip: "Vertical divider line between chips." },
   flex_separator: { section: "layout",  icon: "ph-arrows-left-right", sample: "· · ·",    tooltip: "Flexible spacer: pushes chips after it to the right end." },
