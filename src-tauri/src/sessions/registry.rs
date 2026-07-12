@@ -32,11 +32,39 @@ pub struct Registry {
     /// turn and gets rejected itself. Entries are never swept on a timer:
     /// a past `resets_at` reads as "not blocked" everywhere.
     rate_limits: Mutex<HashMap<String, (i64, String)>>,
+    /// `session_id` -> live background-task count from the session's most
+    /// recent Stop hook (`background_tasks` in the payload - ground truth from
+    /// the CLI, unlike the self-reported `<cc-status:..>` marker). A side map,
+    /// not a field on `Instance`: internal to the daemon, never serialized to
+    /// the frontend. Consumed by the pump's result-line handler to override a
+    /// marker that claims "done" while the CLI says tasks are still running.
+    background_tasks: Mutex<HashMap<String, usize>>,
 }
 
 impl Registry {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(HashMap::new()), rate_limits: Mutex::new(HashMap::new()) }
+        Self {
+            inner: Mutex::new(HashMap::new()),
+            rate_limits: Mutex::new(HashMap::new()),
+            background_tasks: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Record the live background-task count the Stop hook reported for this
+    /// session's just-ended turn. Zero removes the entry.
+    pub fn set_background_tasks(&self, session_id: &str, count: usize) {
+        let mut guard = self.background_tasks.lock().unwrap();
+        if count == 0 {
+            guard.remove(session_id);
+        } else {
+            guard.insert(session_id.to_string(), count);
+        }
+    }
+
+    /// Background-task count from the session's most recent Stop hook.
+    /// Zero when the session never reported (or reported none).
+    pub fn background_tasks(&self, session_id: &str) -> usize {
+        self.background_tasks.lock().unwrap().get(session_id).copied().unwrap_or(0)
     }
 
     /// Inserts or updates an instance. Returns `(project_id, created_new)`.
@@ -615,6 +643,16 @@ mod tests {
         let i = registry.get("s").unwrap();
         assert!(i.awaiting.is_none(), "new turn's cleared awaiting must survive");
         assert!(i.busy);
+    }
+
+    #[test]
+    fn background_tasks_roundtrip_and_zero_clears() {
+        let registry = Registry::new();
+        assert_eq!(registry.background_tasks("s"), 0);
+        registry.set_background_tasks("s", 3);
+        assert_eq!(registry.background_tasks("s"), 3);
+        registry.set_background_tasks("s", 0);
+        assert_eq!(registry.background_tasks("s"), 0);
     }
 
     #[test]

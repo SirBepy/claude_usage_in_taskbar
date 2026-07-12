@@ -19,7 +19,7 @@ const LEGACY_MATCHER: &str = "aiusage-taskbar";
 /// Bump this when the shape of the entry we emit changes. Paired with
 /// `Settings::hook_install_version` so existing users get re-installed
 /// once on the next launch after an upgrade.
-pub const CURRENT_INSTALL_VERSION: u32 = 3;
+pub const CURRENT_INSTALL_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HookConfig {
@@ -85,8 +85,13 @@ fn is_ours(entry: &Value, endpoint: &str) -> bool {
 fn curl_command(port: u16, endpoint: &str) -> String {
     // Claude Code hooks run the command with the full JSON payload on
     // stdin. `curl --data-binary @-` streams stdin into the body.
+    // `--connect-timeout 2 --max-time 4` bounds the call so a wedged daemon
+    // can never hang every `claude` session on the machine at turn end, and
+    // `|| exit 0` keeps a daemon-down failure non-blocking. Response body is
+    // printed to stdout, so a `{"decision":"block",...}` answer from the
+    // daemon (Stop marker enforcement) is honored by the CLI.
     format!(
-        "curl -sS -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:{port}/hooks/{endpoint}"
+        "curl -s --connect-timeout 2 --max-time 4 -X POST --data-binary @- -H 'Content-Type: application/json' http://127.0.0.1:{port}/hooks/{endpoint} || exit 0"
     )
 }
 

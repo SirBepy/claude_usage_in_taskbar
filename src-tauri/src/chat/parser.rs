@@ -200,18 +200,37 @@ impl ParserContext {
 /// part but is parked on an external process (CI / a long command) it will
 /// resume on. "working" = Claude dispatched its own background subagents/tasks
 /// that will re-invoke it - still in progress from the user's perspective.
-fn detect_awaiting(text: &str) -> Option<String> {
+///
+/// Tolerant of the malformed variants some model invocations emit (mirrors
+/// `chat-classifiers.ts` on the frontend and `extract_cc_title` in
+/// `tokens/title.rs`): the XML form `<cc-status>done</cc-status>`, the hybrid
+/// colon-open/XML-close form `<cc-status:done</cc-status>`, mixed case, and
+/// stray whitespace around the label. A quoted instruction like
+/// `<cc-status:done|question|waiting|working>` never matches: the label must
+/// be followed directly by `>` or `<`.
+pub(crate) fn detect_awaiting(text: &str) -> Option<String> {
+    const OPEN: &str = "<cc-status";
+    const LABELS: [&str; 4] = ["question", "done", "waiting", "working"];
     let lower = text.to_lowercase();
-    [
-        (lower.rfind("<cc-status:question>"), "question"),
-        (lower.rfind("<cc-status:done>"), "done"),
-        (lower.rfind("<cc-status:waiting>"), "waiting"),
-        (lower.rfind("<cc-status:working>"), "working"),
-    ]
-    .into_iter()
-    .filter_map(|(pos, label)| pos.map(|p| (p, label)))
-    .max_by_key(|(p, _)| *p)
-    .map(|(_, label)| label.to_string())
+    let mut result = None;
+    let mut search = lower.as_str();
+    while let Some(i) = search.find(OPEN) {
+        let after = &search[i + OPEN.len()..];
+        // ':' opens the colon/hybrid forms, '>' the XML form.
+        if let Some(body) = after.strip_prefix(':').or_else(|| after.strip_prefix('>')) {
+            let body = body.trim_start();
+            for label in LABELS {
+                if let Some(rest) = body.strip_prefix(label) {
+                    if matches!(rest.trim_start().chars().next(), Some('>') | Some('<')) {
+                        result = Some(label.to_string());
+                    }
+                    break;
+                }
+            }
+        }
+        search = after;
+    }
+    result
 }
 
 /// Returns `Some(true)` if the last autopilot marker in `text` is `<cc-autopilot:on>`,
@@ -1058,6 +1077,39 @@ mod tests {
             Some(ChatEvent::TurnUsage { awaiting, .. }) => assert_eq!(awaiting.as_deref(), Some("working")),
             _ => panic!("expected TurnUsage"),
         }
+    }
+
+    #[test]
+    fn detect_awaiting_tolerates_xml_form() {
+        // Some model invocations emit the XML variant; the daemon parser must
+        // accept the same forms the frontend's chat-classifiers already strip.
+        assert_eq!(detect_awaiting("done\n<cc-status>done</cc-status>").as_deref(), Some("done"));
+        assert_eq!(detect_awaiting("<cc-status>question</cc-status>").as_deref(), Some("question"));
+    }
+
+    #[test]
+    fn detect_awaiting_tolerates_hybrid_form() {
+        // Colon open with an XML close: <cc-status:working</cc-status>.
+        assert_eq!(detect_awaiting("<cc-status:working</cc-status>").as_deref(), Some("working"));
+    }
+
+    #[test]
+    fn detect_awaiting_tolerates_case_and_whitespace() {
+        assert_eq!(detect_awaiting("<CC-Status: Done >").as_deref(), Some("done"));
+        assert_eq!(detect_awaiting("<cc-status:waiting >").as_deref(), Some("waiting"));
+    }
+
+    #[test]
+    fn detect_awaiting_ignores_quoted_instruction() {
+        // A response quoting the system-prompt syntax list must not register
+        // as a status: the label is followed by '|', not '>' or '<'.
+        assert!(detect_awaiting("end with <cc-status:done|question|waiting|working>").is_none());
+    }
+
+    #[test]
+    fn detect_awaiting_last_marker_wins_across_forms() {
+        let text = "<cc-status:done>\nlater...\n<cc-status>question</cc-status>";
+        assert_eq!(detect_awaiting(text).as_deref(), Some("question"));
     }
 
     #[test]
