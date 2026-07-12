@@ -34,24 +34,15 @@
   border-color: var(--color-border);
 }
 
+/* Roots on the shared `.sb-popover` shell (position/chrome/scroll); this class
+   only fixes the width so the dropdown is a stable size regardless of content
+   (long item text ellipsis-clips, full string on the hover title). */
 .sb-tally-popover {
-  position: fixed;
-  z-index: 500;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
   padding: 6px;
-  /* Fixed width so the dropdown is always the same size regardless of content;
-     long item text is clipped with an ellipsis (full string on hover title). */
   width: 320px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .sb-tally-list {
-  max-height: 280px;
-  overflow-y: auto;
-  /* Never a horizontal scrollbar - long rows ellipsis instead of scrolling. */
-  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;

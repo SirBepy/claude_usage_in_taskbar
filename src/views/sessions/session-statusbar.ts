@@ -100,6 +100,9 @@ export class SessionStatusbar {
     this.hideZero = opts.hideZero ?? true;
     this.container.className = "session-statusbar";
     this.tally = new ToolTallyRow(this.container);
+    // Opening a tool-chip popover dismisses the statusbar-owned popovers, so at
+    // most one popover is ever open.
+    this.tally.setBeforeOpen(() => this.closeChipPopovers());
 
     if (this.cwd) {
       const cached = gitInfoCache.get(this.cwd);
@@ -273,7 +276,7 @@ export class SessionStatusbar {
   destroy(): void {
     if (this.durationTimer) { clearInterval(this.durationTimer); this.durationTimer = null; }
     this.tally.destroy();
-    this.drainPopover.close();
+    this.closeChipPopovers();
   }
 
   private tickTimer(): void {
@@ -457,13 +460,8 @@ export class SessionStatusbar {
       return chips ? `<div class="sb-row">${chips}</div>` : "";
     }).filter(Boolean).join("");
 
-    const popoverModel = this.meta.model ?? this.sessionModel;
-
     this.container.innerHTML = `
       <div class="sb-rows">${rowsHtml || '<span class="sb-empty">No chips</span>'}</div>
-      ${this.effortPopover.html(this.effort)}
-      ${this.modelPopover.html(popoverModel)}
-      ${this.aiTodosPopover.html()}
     `;
 
     this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
@@ -479,40 +477,48 @@ export class SessionStatusbar {
 
     this.container.querySelector<HTMLElement>(".sb-model-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.modelPopover.isOpen = !this.modelPopover.isOpen;
-      this.effortPopover.isOpen = false;
-      this.aiTodosPopover.isOpen = false;
-      this.render();
+      const anchor = e.currentTarget as HTMLElement;
+      const wasOpen = this.modelPopover.isOpen;
+      this.closeChipPopovers();
+      if (!wasOpen) this.modelPopover.open(anchor, this.meta.model ?? this.sessionModel);
     });
 
     this.container.querySelector<HTMLElement>(".sb-effort-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.readOnlyEffort) return;
-      this.effortPopover.isOpen = !this.effortPopover.isOpen;
-      this.modelPopover.isOpen = false;
-      this.aiTodosPopover.isOpen = false;
-      this.render();
+      const anchor = e.currentTarget as HTMLElement;
+      const wasOpen = this.effortPopover.isOpen;
+      this.closeChipPopovers();
+      if (!wasOpen) this.effortPopover.open(anchor, {
+        effort: this.effort,
+        sessionId: this.sessionId,
+        onEffortChange: this.onEffortChange,
+        onCommit: (next) => { this.effort = next; this.effortPopover.close(); this.render(); },
+      });
     });
 
     this.container.querySelector<HTMLElement>(".sb-ai-todos-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.aiTodosPopover.isOpen = !this.aiTodosPopover.isOpen;
-      this.effortPopover.isOpen = false;
-      this.modelPopover.isOpen = false;
-      this.render();
+      const anchor = e.currentTarget as HTMLElement;
+      const wasOpen = this.aiTodosPopover.isOpen;
+      this.closeChipPopovers();
+      if (!wasOpen) this.aiTodosPopover.open(anchor);
     });
 
     this.container.querySelector<HTMLElement>(".sb-drain-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
       const anchor = e.currentTarget as HTMLElement;
-      this.drainPopover.toggle(anchor);
+      const wasOpen = this.drainPopover.isOpen;
+      this.closeChipPopovers();
+      if (!wasOpen) this.drainPopover.open(anchor);
     });
 
     this.container.querySelector<HTMLElement>(".sb-branch-btn")?.addEventListener("click", async (e) => {
       e.stopPropagation();
       const anchor = e.currentTarget as HTMLElement;
-      if (this.branchPopover.isOpen) { this.branchPopover.close(); return; }
-      if (!this.cwd) return;
+      const wasOpen = this.branchPopover.isOpen;
+      this.closeChipPopovers();
+      if (wasOpen || !this.cwd) return;
       const branches = await invoke<BranchEntry[]>("get_recent_branches", { cwd: this.cwd });
       this.branchPopover.open(anchor, branches);
     });
@@ -520,38 +526,42 @@ export class SessionStatusbar {
     this.container.querySelector<HTMLElement>(".sb-commits-btn")?.addEventListener("click", async (e) => {
       e.stopPropagation();
       const anchor = e.currentTarget as HTMLElement;
-      if (this.commitsPopover.isOpen) { this.commitsPopover.close(); return; }
-      if (!this.cwd) return;
+      const wasOpen = this.commitsPopover.isOpen;
+      this.closeChipPopovers();
+      if (wasOpen || !this.cwd) return;
       const sync = await invoke<CommitSync>("get_commit_sync", { cwd: this.cwd });
       this.commitsPopover.open(anchor, sync);
     });
 
-    this.effortPopover.wire(
-      this.container,
-      this.sessionId,
-      this.onEffortChange,
-      (next) => { this.effort = next; },
-      () => this.render(),
-    );
-    this.modelPopover.wire(this.container, () => this.render());
-    this.aiTodosPopover.wire(this.container, () => this.render());
+    // All popovers are body-appended and survive re-renders, but their anchor
+    // chip was just replaced. Re-anchor if open so a background refresh doesn't
+    // leave one bound to a detached node. Content that streams (drain, ai_todos)
+    // rebuilds in place; static content just repositions.
+    this.reanchorIfOpen(this.drainPopover, ".sb-drain-btn", (a) => this.drainPopover.open(a));
+    this.reanchorIfOpen(this.aiTodosPopover, ".sb-ai-todos-btn", (a) => this.aiTodosPopover.open(a));
+    this.reanchorIfOpen(this.branchPopover, ".sb-branch-btn", (a) => this.branchPopover.reanchor(a));
+    this.reanchorIfOpen(this.commitsPopover, ".sb-commits-btn", (a) => this.commitsPopover.reanchor(a));
+    this.reanchorIfOpen(this.effortPopover, ".sb-effort-btn", (a) => this.effortPopover.reanchor(a));
+    this.reanchorIfOpen(this.modelPopover, ".sb-model-btn", (a) => this.modelPopover.reanchor(a));
+  }
 
-    // The drain popover is body-appended and survives re-renders, but its anchor
-    // chip was just replaced. Re-anchor (rebuild + reposition) if it's open so a
-    // background refresh doesn't leave it bound to a detached node.
-    if (this.drainPopover.isOpen) {
-      const anchor = this.container.querySelector<HTMLElement>(".sb-drain-btn");
-      if (anchor) this.drainPopover.open(anchor);
-    }
-    if (this.branchPopover.isOpen) {
-      const anchor = this.container.querySelector<HTMLElement>(".sb-branch-btn");
-      if (anchor) this.branchPopover.reanchor(anchor);
-      else this.branchPopover.close();
-    }
-    if (this.commitsPopover.isOpen) {
-      const anchor = this.container.querySelector<HTMLElement>(".sb-commits-btn");
-      if (anchor) this.commitsPopover.reanchor(anchor);
-      else this.commitsPopover.close();
-    }
+  /** Re-anchor an open popover to its freshly-rendered chip, or close it if the
+   *  chip vanished. */
+  private reanchorIfOpen(pop: { isOpen: boolean; close: () => void }, sel: string, rebind: (anchor: HTMLElement) => void): void {
+    if (!pop.isOpen) return;
+    const anchor = this.container.querySelector<HTMLElement>(sel);
+    if (anchor) rebind(anchor);
+    else pop.close();
+  }
+
+  /** Dismiss every chip popover (both statusbar-owned and the tool-tally one). */
+  private closeChipPopovers(): void {
+    this.drainPopover.close();
+    this.aiTodosPopover.close();
+    this.effortPopover.close();
+    this.modelPopover.close();
+    this.branchPopover.close();
+    this.commitsPopover.close();
+    this.tally.closePopover();
   }
 }

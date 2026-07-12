@@ -200,18 +200,33 @@
   cursor: default;
 }
 
-.sb-effort-popover,
-.sb-model-popover {
-  position: absolute;
-  bottom: calc(100% + 2px);
-  right: 8px;
+/* ── Shared popover shell ──────────────────────────────────────────────────
+   Every statusline-chip popover roots on `.sb-popover`: one wrapper look, one
+   scroll model. Placement (below the chip, centered, window-clamped) and the
+   `max-height` that drives the scroll are set inline by PopoverShell; content
+   classes below only add width and inner padding/layout. */
+.sb-popover {
+  position: fixed;
+  z-index: 500;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.sb-popover::-webkit-scrollbar { width: 8px; }
+.sb-popover::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.sb-effort-popover,
+.sb-model-popover {
   min-width: 200px;
-  z-index: 50;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  padding: 10px 12px;
 }
 
 .sb-effort-popover-label,
@@ -254,19 +269,9 @@
 .sb-chip.sb-ai-todos-btn:hover { background: rgba(251, 191, 36, 0.1); border-color: rgba(251, 191, 36, 0.35); }
 
 .sb-ai-todos-popover {
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: 8px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 8px 0;
   min-width: 280px;
   max-width: 420px;
-  max-height: 320px;
-  overflow-y: auto;
-  z-index: 50;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  padding: 8px 0;
 }
 
 .sb-ai-todos-popover-header {
@@ -308,14 +313,8 @@
 .sb-chip.sb-drain-btn:hover { color: var(--color-text); background: rgba(255, 255, 255, 0.08); border-color: var(--color-border); }
 
 .sb-drain-popover {
-  position: fixed;
-  z-index: 500;
   width: 340px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
   padding: 10px 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .sb-drain-header {
@@ -357,9 +356,6 @@
 .sb-drain-secondary i { font-size: 0.85rem; opacity: 0.7; }
 
 .sb-drain-list {
-  max-height: 280px;
-  overflow-y: auto;
-  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -426,17 +422,10 @@
 .sb-chip.sb-commits-btn:hover { background: rgba(129, 140, 248, 0.1); border-color: rgba(129, 140, 248, 0.35); }
 
 .sb-git-popover {
-  position: fixed;
-  z-index: 500;
   min-width: 280px;
   max-width: 420px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   font-family: 'Fira Code', monospace;
   font-size: 0.75rem;
-  overflow: hidden;
 }
 
 .sb-git-pop-header {
@@ -455,8 +444,6 @@
 .sb-git-pop-header i { font-size: 0.85rem; }
 
 .sb-git-pop-list {
-  max-height: 260px;
-  overflow-y: auto;
   padding: 4px 0;
 }
 

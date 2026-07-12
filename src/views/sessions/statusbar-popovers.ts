@@ -1,7 +1,9 @@
 /**
- * The four inline popover subsystems extracted from session-statusbar.ts.
- * Each class owns its open/close state, HTML generation, DOM state, and
- * event-listener wiring. SessionStatusbar delegates to these.
+ * The six inline popover subsystems extracted from session-statusbar.ts.
+ * Each class owns its chip HTML, its popover HTML, and (where relevant) its data
+ * refresh; the shared PopoverShell owns every popover's DOM lifecycle, placement
+ * (below the chip, centered, window-clamped, scrollable) and dismissal, so they
+ * all look and behave the same. SessionStatusbar delegates to these.
  */
 
 import { escapeHtml } from "../../shared/escape-html";
@@ -10,16 +12,16 @@ import { EFFORTS } from "../../shared/effort-presets";
 import { formatTokenCount } from "../../shared/chat/turn-chips";
 import type { AiTodoEntry, ChatDrain } from "../../types/ipc.generated";
 import { drainCache } from "./session-statusbar-helpers";
+import { PopoverShell } from "./statusbar-popover-shell";
 
 // ─────────────────────────────────── Drain ─────────────────────────────────
 
 export class DrainPopover {
   drain: ChatDrain | null = null;
   private inflight = false;
-  private el: HTMLElement | null = null;
-  private cleanup: (() => void) | null = null;
+  private shell = new PopoverShell();
 
-  get isOpen(): boolean { return this.el !== null; }
+  get isOpen(): boolean { return this.shell.isOpen; }
 
   async refresh(sid: string, rerender: () => void, reanchor: () => void): Promise<void> {
     if (this.inflight) return;
@@ -30,7 +32,7 @@ export class DrainPopover {
         this.drain = d;
         drainCache.set(sid, d);
         rerender();
-        if (this.el) reanchor();
+        if (this.shell.isOpen) reanchor();
       }
     } catch { /* transient */ }
     finally { this.inflight = false; }
@@ -52,46 +54,15 @@ export class DrainPopover {
     return `<span class="sb-chip sb-drain sb-drain-btn${cls}${animClass("drain")}" role="button" tabindex="0" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><i class="ph ph-drop"></i>${five}% · ${week}%w</span>`;
   }
 
-  /** Body-appended, positioned off the drain chip anchor. Rebuilds in-place when called while open. */
+  /** Rebuilds in-place when called while open (background refresh / re-anchor). */
   open(anchor: HTMLElement): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.el?.remove();
-
-    const pop = document.createElement("div");
-    pop.className = "sb-drain-popover";
-    pop.innerHTML = this.buildHtml();
-    document.body.appendChild(pop);
-    this.el = pop;
-
-    const rect = anchor.getBoundingClientRect();
-    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
-    pop.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
-    const below = window.innerHeight - rect.bottom;
-    if (below >= pop.offsetHeight + 8 || below >= rect.top) {
-      pop.style.top = `${rect.bottom + 4}px`;
-    } else {
-      pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-    }
-
-    const onOutside = (e: MouseEvent) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
-        this.close();
-      }
-    };
-    setTimeout(() => document.addEventListener("click", onOutside), 0);
-    this.cleanup = () => document.removeEventListener("click", onOutside);
+    this.shell.open(anchor, this.buildHtml(), { className: "sb-drain-popover" });
   }
 
-  close(): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.el?.remove();
-    this.el = null;
-  }
+  close(): void { this.shell.close(); }
 
   toggle(anchor: HTMLElement): void {
-    if (this.el) this.close();
+    if (this.shell.isOpen) this.shell.close();
     else this.open(anchor);
   }
 
@@ -123,56 +94,22 @@ export class DrainPopover {
 export interface BranchEntry { name: string; current: boolean; short_sha: string | null; upstream: string | null; }
 
 export class BranchPopover {
-  private el: HTMLElement | null = null;
-  private cleanup: (() => void) | null = null;
+  private shell = new PopoverShell();
 
-  get isOpen(): boolean { return this.el !== null; }
+  get isOpen(): boolean { return this.shell.isOpen; }
 
   open(anchor: HTMLElement, branches: BranchEntry[]): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.el?.remove();
-    const pop = document.createElement("div");
-    pop.className = "sb-git-popover sb-branch-popover";
-    pop.innerHTML = this.buildHtml(branches);
-    document.body.appendChild(pop);
-    this.el = pop;
-    this.reposition(anchor);
-    const onOutside = (e: MouseEvent) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) this.close();
-    };
-    setTimeout(() => document.addEventListener("click", onOutside), 0);
-    this.cleanup = () => document.removeEventListener("click", onOutside);
+    this.shell.open(anchor, this.buildHtml(branches), { className: "sb-git-popover sb-branch-popover" });
   }
 
-  close(): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.el?.remove();
-    this.el = null;
-  }
+  close(): void { this.shell.close(); }
 
   toggle(anchor: HTMLElement, branches: BranchEntry[]): void {
-    if (this.el) this.close();
+    if (this.shell.isOpen) this.shell.close();
     else this.open(anchor, branches);
   }
 
-  reanchor(anchor: HTMLElement): void { this.reposition(anchor); }
-
-  private reposition(anchor: HTMLElement): void {
-    if (!this.el) return;
-    const rect = anchor.getBoundingClientRect();
-    const maxLeft = window.innerWidth - this.el.offsetWidth - 8;
-    this.el.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
-    const below = window.innerHeight - rect.bottom;
-    if (below >= this.el.offsetHeight + 8 || below >= rect.top) {
-      this.el.style.top = `${rect.bottom + 4}px`;
-      this.el.style.bottom = "";
-    } else {
-      this.el.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-      this.el.style.top = "";
-    }
-  }
+  reanchor(anchor: HTMLElement): void { this.shell.reanchor(anchor); }
 
   private buildHtml(branches: BranchEntry[]): string {
     const header = `<div class="sb-git-pop-header"><i class="ph ph-git-branch"></i>Recent branches</div>`;
@@ -193,56 +130,22 @@ export interface CommitEntry { short_sha: string; message: string; }
 export interface CommitSync { ahead: CommitEntry[]; behind: CommitEntry[]; has_upstream: boolean; }
 
 export class CommitsPopover {
-  private el: HTMLElement | null = null;
-  private cleanup: (() => void) | null = null;
+  private shell = new PopoverShell();
 
-  get isOpen(): boolean { return this.el !== null; }
+  get isOpen(): boolean { return this.shell.isOpen; }
 
   open(anchor: HTMLElement, sync: CommitSync): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.el?.remove();
-    const pop = document.createElement("div");
-    pop.className = "sb-git-popover sb-commits-popover";
-    pop.innerHTML = this.buildHtml(sync);
-    document.body.appendChild(pop);
-    this.el = pop;
-    this.reposition(anchor);
-    const onOutside = (e: MouseEvent) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) this.close();
-    };
-    setTimeout(() => document.addEventListener("click", onOutside), 0);
-    this.cleanup = () => document.removeEventListener("click", onOutside);
+    this.shell.open(anchor, this.buildHtml(sync), { className: "sb-git-popover sb-commits-popover" });
   }
 
-  close(): void {
-    this.cleanup?.();
-    this.cleanup = null;
-    this.el?.remove();
-    this.el = null;
-  }
+  close(): void { this.shell.close(); }
 
   toggle(anchor: HTMLElement, sync: CommitSync): void {
-    if (this.el) this.close();
+    if (this.shell.isOpen) this.shell.close();
     else this.open(anchor, sync);
   }
 
-  reanchor(anchor: HTMLElement): void { this.reposition(anchor); }
-
-  private reposition(anchor: HTMLElement): void {
-    if (!this.el) return;
-    const rect = anchor.getBoundingClientRect();
-    const maxLeft = window.innerWidth - this.el.offsetWidth - 8;
-    this.el.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
-    const below = window.innerHeight - rect.bottom;
-    if (below >= this.el.offsetHeight + 8 || below >= rect.top) {
-      this.el.style.top = `${rect.bottom + 4}px`;
-      this.el.style.bottom = "";
-    } else {
-      this.el.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-      this.el.style.top = "";
-    }
-  }
+  reanchor(anchor: HTMLElement): void { this.shell.reanchor(anchor); }
 
   private buildHtml(sync: CommitSync): string {
     if (!sync.has_upstream) {
@@ -272,9 +175,11 @@ export class CommitsPopover {
 // ─────────────────────────────── AI Todos ──────────────────────────────────
 
 export class AiTodosPopover {
-  isOpen = false;
   files: AiTodoEntry[] = [];
   loaded = false;
+  private shell = new PopoverShell();
+
+  get isOpen(): boolean { return this.shell.isOpen; }
 
   async refresh(cwd: string, rerender: () => void): Promise<void> {
     try {
@@ -295,117 +200,110 @@ export class AiTodosPopover {
     return `<span class="sb-chip sb-ai-todos sb-ai-todos-btn${animClass("ai_todos")}" role="button" tabindex="0" title="${n} AI todo${n === 1 ? "" : "s"} in .for_bepy/ai_todos"><i class="ph ph-check-square"></i>${n} todo${n === 1 ? "" : "s"}</span>`;
   }
 
-  html(): string {
-    if (!this.isOpen || this.files.length === 0) return "";
-    return `
-      <div class="sb-ai-todos-popover">
-        <div class="sb-ai-todos-popover-header">AI Todos (${this.files.length})</div>
-        <div class="sb-ai-todos-popover-list">
-          ${this.files.map((f) => `<div class="sb-ai-todos-popover-file" role="button" tabindex="0" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</div>`).join("")}
-        </div>
-      </div>
-    `;
+  /** Rebuilds in-place when called while open (re-anchor after a chip re-render
+   *  or a background list refresh). No-op when there are no todos. */
+  open(anchor: HTMLElement): void {
+    if (this.files.length === 0) { this.shell.close(); return; }
+    this.shell.open(anchor, this.buildHtml(), {
+      className: "sb-ai-todos-popover",
+      wire: (el) => {
+        el.querySelectorAll<HTMLElement>(".sb-ai-todos-popover-file").forEach((f) => {
+          f.addEventListener("click", () => {
+            const p = f.dataset.path;
+            if (p) void invoke<void>("open_in_editor", { path: p });
+          });
+        });
+      },
+    });
   }
 
-  wire(container: HTMLElement, rerender: () => void): void {
-    container.querySelectorAll<HTMLElement>(".sb-ai-todos-popover-file").forEach((el) => {
-      el.addEventListener("click", () => {
-        const p = el.dataset.path;
-        if (p) void invoke<void>("open_in_editor", { path: p });
-      });
-    });
-    if (!this.isOpen) return;
-    const close = (e: MouseEvent) => {
-      if (!container.contains(e.target as Node)) {
-        this.isOpen = false;
-        rerender();
-        document.removeEventListener("click", close);
-      }
-    };
-    setTimeout(() => document.addEventListener("click", close), 0);
+  close(): void { this.shell.close(); }
+
+  toggle(anchor: HTMLElement): void {
+    if (this.shell.isOpen) this.shell.close();
+    else this.open(anchor);
+  }
+
+  private buildHtml(): string {
+    return `
+      <div class="sb-ai-todos-popover-header">AI Todos (${this.files.length})</div>
+      <div class="sb-ai-todos-popover-list">
+        ${this.files.map((f) => `<div class="sb-ai-todos-popover-file" role="button" tabindex="0" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</div>`).join("")}
+      </div>
+    `;
   }
 }
 
 // ─────────────────────────────── Effort ────────────────────────────────────
 
-export class EffortPopover {
-  isOpen = false;
+export interface EffortOpenCtx {
+  effort: string;
+  sessionId: string | null;
+  onEffortChange: ((effort: string) => void) | null;
+  /** Persist + reflect the chosen effort, then close + re-render the chip. */
+  onCommit: (effort: string) => void;
+}
 
-  html(effort: string): string {
-    if (!this.isOpen) return "";
-    const effortIdx = Math.max(0, EFFORTS.indexOf(effort as typeof EFFORTS[number]));
-    return `
-      <div class="sb-effort-popover">
-        <div class="sb-effort-popover-label">Effort</div>
-        <input type="range" class="sb-effort-slider" min="0" max="${EFFORTS.length - 1}" step="1" value="${effortIdx}">
-        <div class="sb-effort-stops">
-          ${EFFORTS.map((e, i) => `<span class="sb-effort-stop${i === effortIdx ? " active" : ""}">${escapeHtml(e)}</span>`).join("")}
-        </div>
-      </div>
-    `;
+export class EffortPopover {
+  private shell = new PopoverShell();
+
+  get isOpen(): boolean { return this.shell.isOpen; }
+
+  open(anchor: HTMLElement, ctx: EffortOpenCtx): void {
+    this.shell.open(anchor, this.buildHtml(ctx.effort), {
+      className: "sb-effort-popover",
+      wire: (el) => {
+        const slider = el.querySelector<HTMLInputElement>(".sb-effort-slider");
+        slider?.addEventListener("change", () => {
+          const next = EFFORTS[Number(slider.value)];
+          if (!next) return;
+          if (ctx.onEffortChange) {
+            ctx.onEffortChange(next);
+            ctx.onCommit(next);
+            return;
+          }
+          if (!ctx.sessionId) return;
+          const sid = ctx.sessionId;
+          void invoke<void>("set_session_effort", { sessionId: sid, effort: next })
+            .then(() => ctx.onCommit(next))
+            .catch((err) => console.error("[statusbar] set_session_effort failed", err));
+        });
+      },
+    });
   }
 
-  wire(
-    container: HTMLElement,
-    sessionId: string | null,
-    onEffortChange: ((effort: string) => void) | null,
-    onSet: (effort: string) => void,
-    rerender: () => void,
-  ): void {
-    if (!this.isOpen) return;
-    const slider = container.querySelector<HTMLInputElement>(".sb-effort-slider");
-    slider?.addEventListener("change", () => {
-      const i = Number(slider.value);
-      const next = EFFORTS[i];
-      if (!next) return;
-      if (onEffortChange) {
-        onEffortChange(next);
-        onSet(next);
-        this.isOpen = false;
-        rerender();
-        return;
-      }
-      if (!sessionId) return;
-      const sid = sessionId;
-      void invoke<void>("set_session_effort", { sessionId: sid, effort: next })
-        .then(() => { onSet(next); this.isOpen = false; rerender(); })
-        .catch((err) => console.error("[statusbar] set_session_effort failed", err));
-    });
-    const close = (e: MouseEvent) => {
-      if (!container.contains(e.target as Node)) {
-        this.isOpen = false;
-        rerender();
-        document.removeEventListener("click", close);
-      }
-    };
-    setTimeout(() => document.addEventListener("click", close), 0);
+  close(): void { this.shell.close(); }
+
+  reanchor(anchor: HTMLElement): void { this.shell.reanchor(anchor); }
+
+  private buildHtml(effort: string): string {
+    const effortIdx = Math.max(0, EFFORTS.indexOf(effort as typeof EFFORTS[number]));
+    return `
+      <div class="sb-effort-popover-label">Effort</div>
+      <input type="range" class="sb-effort-slider" min="0" max="${EFFORTS.length - 1}" step="1" value="${effortIdx}">
+      <div class="sb-effort-stops">
+        ${EFFORTS.map((e, i) => `<span class="sb-effort-stop${i === effortIdx ? " active" : ""}">${escapeHtml(e)}</span>`).join("")}
+      </div>
+    `;
   }
 }
 
 // ─────────────────────────────── Model ─────────────────────────────────────
 
 export class ModelPopover {
-  isOpen = false;
+  private shell = new PopoverShell();
 
-  html(model: string | null): string {
-    if (!this.isOpen || !model) return "";
-    return `
-      <div class="sb-model-popover">
-        <div class="sb-model-popover-name">${escapeHtml(model)}</div>
-        <div class="sb-model-popover-hint">Locked for this session. Start a new session to change.</div>
-      </div>
-    `;
+  get isOpen(): boolean { return this.shell.isOpen; }
+
+  open(anchor: HTMLElement, model: string | null): void {
+    if (!model) { this.shell.close(); return; }
+    this.shell.open(anchor, `
+      <div class="sb-model-popover-name">${escapeHtml(model)}</div>
+      <div class="sb-model-popover-hint">Locked for this session. Start a new session to change.</div>
+    `, { className: "sb-model-popover" });
   }
 
-  wire(container: HTMLElement, rerender: () => void): void {
-    if (!this.isOpen) return;
-    const close = (e: MouseEvent) => {
-      if (!container.contains(e.target as Node)) {
-        this.isOpen = false;
-        rerender();
-        document.removeEventListener("click", close);
-      }
-    };
-    setTimeout(() => document.addEventListener("click", close), 0);
-  }
+  close(): void { this.shell.close(); }
+
+  reanchor(anchor: HTMLElement): void { this.shell.reanchor(anchor); }
 }

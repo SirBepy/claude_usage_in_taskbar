@@ -4,6 +4,7 @@ import { openLightbox } from "../../shared/chat/lightbox";
 import { openFileViewer } from "../../shared/chat/file-viewer";
 import { toolSummary, toolLabel, type ToolTally } from "../../shared/chat/tool-meta";
 import { CUSTOM_VIEW_TOOLS } from "../../shared/chat/tool-views";
+import { PopoverShell } from "./statusbar-popover-shell";
 import "./session-tally.css";
 
 // Cumulative tool tally row: one chip per tool type, each its OWN drill-down
@@ -18,11 +19,13 @@ import "./session-tally.css";
 export class ToolTallyRow {
   private container: HTMLElement;
   private toolTally: ToolTally = { byType: [] };
-  private tallyPopoverEl: HTMLElement | null = null;
-  private tallyPopoverCleanup: (() => void) | null = null;
+  private shell = new PopoverShell();
   // Which tool's popover is open (null = none); kept so updateToolTally can
   // rebuild it in place as more calls of that type stream in.
   private tallyOpenTool: string | null = null;
+  // Fired just before a tool popover opens, so the owner can dismiss its own
+  // (statusbar) popovers and keep one-at-a-time behaviour.
+  private beforeOpen: (() => void) | null = null;
   // Provider for the shared custom views (Read/File Changes/Skills/Questions),
   // backed by the chat renderer's messages. When set, custom-tool popovers reuse
   // the exact same markup as the in-chat chip panels instead of the generic
@@ -31,6 +34,17 @@ export class ToolTallyRow {
 
   constructor(container: HTMLElement) {
     this.container = container;
+  }
+
+  /** Register a callback fired right before a tool popover opens (used to close
+   *  the sibling statusbar popovers so only one popover is open at a time). */
+  setBeforeOpen(fn: () => void): void {
+    this.beforeOpen = fn;
+  }
+
+  /** Close the tool popover if open (public so the owner can dismiss it). */
+  closePopover(): void {
+    this.closeTallyPopover();
   }
 
   /** Wire the shared custom-view provider (the chat renderer's message-derived
@@ -69,7 +83,7 @@ export class ToolTallyRow {
   // it if its tool vanished).
   update(tally: ToolTally): void {
     this.toolTally = tally;
-    const openTool = this.tallyPopoverEl !== null ? this.tallyOpenTool : null;
+    const openTool = this.shell.isOpen ? this.tallyOpenTool : null;
     if (openTool && tally.byType.some((b) => b.tool === openTool)) {
       this.openToolPopover(openTool);
     } else {
@@ -82,53 +96,33 @@ export class ToolTallyRow {
   }
 
   private toggleToolPopover(tool: string): void {
-    if (this.tallyPopoverEl && this.tallyOpenTool === tool) this.closeTallyPopover();
+    if (this.shell.isOpen && this.tallyOpenTool === tool) this.closeTallyPopover();
     else this.openToolPopover(tool);
   }
 
   private closeTallyPopover(): void {
-    this.tallyPopoverCleanup?.();
-    this.tallyPopoverCleanup = null;
-    this.tallyPopoverEl?.remove();
-    this.tallyPopoverEl = null;
+    this.shell.close();
     this.tallyOpenTool = null;
   }
 
-  // Per-tool drill-down popover, anchored to that tool's chip. Mirrors
-  // openMoreMenu in active-session.ts: a body-appended fixed element positioned
-  // off the anchor, dismissed on outside click, cleaned up on close/destroy.
-  // Rebuilt in place (same tool) as more calls of that type stream in.
+  // Per-tool drill-down popover, anchored to that tool's chip. Uses the shared
+  // PopoverShell (below the chip, centered, window-clamped, scrollable) and is
+  // rebuilt in place (same tool) as more calls of that type stream in.
   private openToolPopover(tool: string): void {
     const anchor = [...this.container.querySelectorAll<HTMLElement>(".sb-tally-chip")]
       .find((c) => c.dataset.tool === tool);
     if (!anchor) return;
-    this.tallyPopoverCleanup?.();
-    this.tallyPopoverCleanup = null;
-    this.tallyPopoverEl?.remove();
+    this.beforeOpen?.();
     this.tallyOpenTool = tool;
 
-    const pop = document.createElement("div");
-    pop.className = "sb-tally-popover";
-    pop.innerHTML = `<div class="sb-tally-list">${this.renderToolItems(tool)}</div>`;
-    document.body.appendChild(pop);
-    this.tallyPopoverEl = pop;
+    this.shell.open(anchor, `<div class="sb-tally-list">${this.renderToolItems(tool)}</div>`, {
+      className: "sb-tally-popover",
+      wire: (pop) => this.wireItems(pop),
+    });
+  }
 
-    const rect = anchor.getBoundingClientRect();
-    // Clamp horizontally so the fixed-width dropdown never spills off either
-    // edge: left-align to the chip, but pull back when it would overflow the
-    // right side, and never go past an 8px left margin.
-    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
-    pop.style.left = `${Math.max(8, Math.min(rect.left, maxLeft))}px`;
-    // Open downward off the chip; only flip above when there isn't room below
-    // (and there's more room above) so it never clips off-screen.
-    const below = window.innerHeight - rect.bottom;
-    if (below >= pop.offsetHeight + 8 || below >= rect.top) {
-      pop.style.top = `${rect.bottom + 4}px`;
-    } else {
-      pop.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-    }
-
-    // File rows now open the in-app read-only file viewer (ai_todo 95 slice 1).
+  private wireItems(pop: HTMLElement): void {
+    // File rows open the in-app read-only file viewer (ai_todo 95 slice 1).
     // The external-editor jump is preserved via the "Open in VS Code" button in
     // the viewer header.
     pop.querySelectorAll<HTMLElement>(".sb-tally-file").forEach((row) => {
@@ -162,14 +156,6 @@ export class ToolTallyRow {
           .catch((err) => console.error("[statusbar] read_image_file failed", err));
       });
     });
-
-    const onOutside = (e: MouseEvent) => {
-      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
-        this.closeTallyPopover();
-      }
-    };
-    setTimeout(() => document.addEventListener("click", onOutside), 0);
-    this.tallyPopoverCleanup = () => document.removeEventListener("click", onOutside);
   }
 
   private renderToolItems(tool: string): string {
