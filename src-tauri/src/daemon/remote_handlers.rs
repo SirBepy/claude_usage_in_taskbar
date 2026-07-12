@@ -70,6 +70,11 @@ const SAFE_METHODS: &[&str] = &[
     "get_history",
     "get_token_history",
     "get_active_sessions",
+    // Read-only account registry so the phone's new-chat picker lists the same
+    // accounts as desktop (ai_todo 241). Read-only: no add/remove/logout/default
+    // mutators are exposed - the phone can pick an account to spawn under, not
+    // reconfigure the desktop's accounts.
+    "list_accounts",
     // Visual settings (theme, colors) so the phone mirrors the desktop appearance.
     // set_settings is deliberately NOT here (phone must not mutate desktop settings).
     "get_settings",
@@ -417,6 +422,7 @@ mod tests {
             "character_asset_url", "resolve_whitelist_characters", "list_projects",
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
+            "list_accounts",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }

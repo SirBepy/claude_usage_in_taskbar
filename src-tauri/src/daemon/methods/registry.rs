@@ -148,6 +148,19 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             async move { Ok(json!(crate::characters::list())) }
         });
     }
+    // Read-only account list, exposed over the remote-access API so the phone's
+    // new-chat account picker can list the same accounts as desktop. Without it
+    // the picker is empty and "Start session" stays permanently disabled, which
+    // is why chats couldn't be started from mobile at all (ai_todo 241).
+    // `accounts::load_registry()` reads the shared on-disk accounts.json - the
+    // SAME file the daemon already reads to resolve `start_session`'s account_id
+    // - so the daemon process serves it fine. Identical serde shape to the
+    // `list_accounts` Tauri command (frontend `Account[]`).
+    {
+        router.register("list_accounts", move |_params, _ctx| {
+            async move { Ok(json!(crate::accounts::load_registry())) }
+        });
+    }
     // Read-only project-groups list, mirroring the `list_project_groups` Tauri
     // command's JSON shape (frontend `ProjectGroup[]`). Reuses the same PURE
     // `build_groups` helper; inputs are sourced daemon-side: `projects` from the

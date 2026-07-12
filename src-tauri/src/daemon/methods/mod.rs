@@ -158,6 +158,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_accounts_dispatches_to_registered_handler() {
+        // Guards ai_todo 241: the phone's new-chat picker calls list_accounts
+        // over the remote API. If the daemon route is missing, dispatch returns
+        // method-not-found (-32601) and mobile can't start chats. Assert it
+        // resolves to a handler returning a JSON array (empty or not, depending
+        // on the machine's accounts.json - load_registry falls back to []).
+        let mut r = Router::new();
+        register_chat_registry(&mut r, dummy_state());
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "list_accounts".into(), params: None }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "list_accounts not registered? got {:?}", resp.error);
+        assert!(
+            resp.result.as_ref().map(serde_json::Value::is_array).unwrap_or(false),
+            "expected a JSON array, got {:?}", resp.result
+        );
+    }
+
+    #[tokio::test]
     async fn shutdown_daemon_returns_ok() {
         let mut r = Router::new();
         register(&mut r, dummy_state());

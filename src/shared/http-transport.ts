@@ -104,6 +104,8 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("list_pending_prompts", null);
       case "list_characters":
         return this.rpc<T>("list_characters", null);
+      case "list_accounts":
+        return this.rpc<T>("list_accounts", null);
       case "list_project_groups":
         return this.rpc<T>("list_project_groups", null);
       case "start_session": {
