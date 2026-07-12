@@ -206,7 +206,9 @@
       "Bash(CARGO_TARGET_DIR=src-tauri/target-export cargo build --manifest-path src-tauri/Cargo.toml --lib)",
       "PowerShell($c = Get-NetTCPConnection -LocalPort 27183 -State Listen -ErrorAction SilentlyContinue; if\\($c\\){ $own=$c.OwningProcess; $p=Get-Process -Id $own -ErrorAction SilentlyContinue; \"27183 Listen by PID $own \\($\\(if\\($p\\){$p.ProcessName}else{'<gone>'}\\)\\)\" } else { \"27183 NO LISTENER\" })",
       "Skill(claude-in-chrome)",
-      "PowerShell($p = @\\(1420,27183\\); foreach \\($x in $p\\) { $r = Test-NetConnection -ComputerName localhost -Port $x -WarningAction SilentlyContinue; \"$x listening=$\\($r.TcpTestSucceeded\\)\" })"
+      "PowerShell($p = @\\(1420,27183\\); foreach \\($x in $p\\) { $r = Test-NetConnection -ComputerName localhost -Port $x -WarningAction SilentlyContinue; \"$x listening=$\\($r.TcpTestSucceeded\\)\" })",
+      "Bash(pnpm exec *)",
+      "PowerShell(Test-NetConnection *)"
     ]
   }
 }
