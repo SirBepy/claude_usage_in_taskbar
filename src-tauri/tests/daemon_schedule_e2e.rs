@@ -9,11 +9,16 @@
 //! daemon instance (distinct named pipe + lockfile via `CC_DAEMON_INSTANCE`)
 //! exactly like `daemon_session_e2e.rs` - never the user's real daemon.
 //!
-//! CRITICAL: `scheduled-items.json` lives in the SHARED app-data dir
-//! (`dirs::data_dir()/claude-conductor/`) - the same file the user's real
-//! installation uses. Every item this file creates is deleted via a
-//! `Drop`-guard (`ScheduledItemGuard`) so cleanup runs even if an assertion
-//! panics partway through. Only the exact ids created here are ever touched.
+//! The scheduled-items store is instance-scoped like the daemon's lockfile
+//! and pipe: a daemon under `CC_DAEMON_INSTANCE=foo` reads and writes
+//! `<app-data>/scheduled-items-foo.json`, never the user's real
+//! `scheduled-items.json`. Without that scoping a test daemon and the user's
+//! live daemon race over one whole-file read-modify-write, and the live
+//! daemon can claim a test item and fire its prompt into a real chat. This
+//! test process has no `CC_DAEMON_INSTANCE` of its own, so it addresses each
+//! daemon's store explicitly via `scheduled_items::config_path_for`. Items
+//! are still removed by a `Drop`-guard (`ScheduledItemGuard`) so cleanup runs
+//! even if an assertion panics partway through.
 
 #![cfg(windows)]
 
@@ -58,6 +63,7 @@ impl Drop for ChildGuard {
 /// daemon connection itself is what broke.
 struct ScheduledItemGuard {
     id: String,
+    store: std::path::PathBuf,
 }
 
 impl Drop for ScheduledItemGuard {
@@ -65,9 +71,15 @@ impl Drop for ScheduledItemGuard {
         if self.id.is_empty() {
             return;
         }
-        let existed = scheduled_items::delete(&self.id);
+        let existed = scheduled_items::delete_at(&self.store, &self.id);
         eprintln!("cleanup: schedule_delete({}) existed={existed}", self.id);
     }
+}
+
+/// The instance-scoped `scheduled-items-<instance>.json` the daemon spawned
+/// under `instance` reads and writes.
+fn store_path(instance: &str) -> std::path::PathBuf {
+    scheduled_items::config_path_for(&format!("-{instance}")).expect("scheduled-items path")
 }
 
 /// Builds and spawns an isolated test daemon under `instance`, and returns a
@@ -79,6 +91,9 @@ async fn spawn_test_daemon(instance: &str) -> (ChildGuard, String) {
         let lock = app_data.join("claude-conductor").join(format!("daemon-{instance}.lock"));
         let _ = std::fs::remove_file(&lock);
     }
+    // A previous aborted run can leave items behind; the daemon sweeps stale
+    // `Firing` entries to `Failed` at startup, which would pollute this run.
+    let _ = std::fs::remove_file(store_path(instance));
 
     let build = Command::new("cargo")
         .args(["build", "--bin", "cc-conductor-daemon"])
@@ -141,6 +156,25 @@ async fn drain_for_reply(rx: &mut tokio::sync::mpsc::Receiver<serde_json::Value>
 
 const TINY_PROMPT: &str = "reply with the literal word OK and stop.";
 
+/// The registered account these tests spawn `claude` under. No spawn path may
+/// fall back to `~/.claude`, so an explicit id is required rather than leaning
+/// on whatever `default_account_id` the developer's machine happens to have
+/// set. Prefers the configured default, else the first registered account.
+/// `None` means an empty registry - the caller skips instead of failing, since
+/// there is nothing meaningful to test.
+fn test_account_id() -> Option<String> {
+    let accounts_path = claude_conductor_lib::settings::paths::accounts_file().ok()?;
+    let accounts = claude_conductor_lib::accounts::store::load(&accounts_path);
+    let default_id = claude_conductor_lib::settings::paths::settings_file()
+        .ok()
+        .and_then(|p| claude_conductor_lib::settings::load(&p).default_account_id);
+    let picked = default_id
+        .and_then(|id| accounts.iter().find(|a| a.id == id).cloned())
+        .or_else(|| accounts.first().cloned())?;
+    eprintln!("spawning under account {} ({})", picked.label, picked.id);
+    Some(picked.id)
+}
+
 /// Test 1: a scheduled `Message` item, due immediately, must be picked up by
 /// the daemon's autonomous ~30s tick loop (NOT `fire_now`) and delivered into
 /// the live session.
@@ -148,6 +182,10 @@ const TINY_PROMPT: &str = "reply with the literal word OK and stop.";
 #[ignore]
 async fn scheduled_message_fires_via_tick_loop() {
     const INSTANCE: &str = "test-schedule-msg";
+    let Some(account_id) = test_account_id() else {
+        eprintln!("SKIP: no accounts registered - add one before running this suite");
+        return;
+    };
     let (_daemon_guard, pipe_name) = spawn_test_daemon(INSTANCE).await;
 
     let client = PersistentClient::connect(&pipe_name).await.expect("connect");
@@ -155,10 +193,26 @@ async fn scheduled_message_fires_via_tick_loop() {
     let cwd = std::env::temp_dir();
     let cwd_str = cwd.to_string_lossy().to_string();
     let session_id = client
-        .start_session(&cwd_str, "haiku", "low", None, false, None)
+        .start_session(&cwd_str, "haiku", "low", None, false, Some(&account_id))
         .await
         .expect("start_session");
     eprintln!("started session {session_id}");
+
+    let mut rx = client.attach_session(&session_id).await.expect("attach");
+
+    // Drive one warm-up turn to completion FIRST. `start_session` marks the
+    // registry entry `busy = true` (daemon/methods/lifecycle.rs), and only a
+    // finished turn clears it - `claude` withholds all output until its first
+    // user message, so a never-messaged session stays busy indefinitely. The
+    // scheduler's busy guard would then defer this item on every tick until
+    // the grace window lapsed. A real session is idle by the time anyone
+    // schedules into it; reproduce that state rather than the unreachable one.
+    client.send_message(&session_id, TINY_PROMPT).await.expect("warm-up send");
+    let (warm_events, warm_reply) = drain_for_reply(&mut rx, Duration::from_secs(120)).await;
+    assert!(warm_reply, "warm-up turn never completed (events_seen={warm_events})");
+    // `turn_usage` is emitted as the turn's result line is handled; the pump
+    // clears `busy` around the same moment. Give it room to land.
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     // Due immediately (now), well within the default 3600s grace window, so
     // the tick loop claims and fires it rather than marking it Missed.
@@ -170,9 +224,8 @@ async fn scheduled_message_fires_via_tick_loop() {
         .expect("schedule_create");
     let item_id = created["id"].as_str().expect("created item has id").to_string();
     eprintln!("scheduled item {item_id} fire_at={fire_at}");
-    let _cleanup = ScheduledItemGuard { id: item_id.clone() };
-
-    let mut rx = client.attach_session(&session_id).await.expect("attach");
+    let store = store_path(INSTANCE);
+    let _cleanup = ScheduledItemGuard { id: item_id.clone(), store: store.clone() };
 
     // Do NOT call fire_now here - the point is to prove the autonomous tick
     // loop (TICK_SECS=30) delivers it on its own.
@@ -182,11 +235,11 @@ async fn scheduled_message_fires_via_tick_loop() {
 
     // finish_fire may land moments after the send goes out, so poll briefly
     // for the item to flip to Sent rather than reading it exactly once.
-    let mut final_status = scheduled_items::get(&item_id).map(|i| i.status);
+    let mut final_status = scheduled_items::get_at(&store, &item_id).map(|i| i.status);
     let poll_deadline = std::time::Instant::now() + Duration::from_secs(10);
     while !matches!(final_status, Some(ScheduledStatus::Sent)) && std::time::Instant::now() < poll_deadline {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        final_status = scheduled_items::get(&item_id).map(|i| i.status);
+        final_status = scheduled_items::get_at(&store, &item_id).map(|i| i.status);
     }
     eprintln!("final scheduled item status: {final_status:?}");
 
@@ -211,6 +264,10 @@ async fn scheduled_message_fires_via_tick_loop() {
 #[ignore]
 async fn fire_now_spawns_scheduled_new_chat() {
     const INSTANCE: &str = "test-schedule-newchat";
+    let Some(account_id) = test_account_id() else {
+        eprintln!("SKIP: no accounts registered - add one before running this suite");
+        return;
+    };
     let (_daemon_guard, pipe_name) = spawn_test_daemon(INSTANCE).await;
 
     let client = PersistentClient::connect(&pipe_name).await.expect("connect");
@@ -238,7 +295,7 @@ async fn fire_now_spawns_scheduled_new_chat() {
         "cwd": cwd_str,
         "model": "haiku",
         "effort": "low",
-        "account_id": null,
+        "account_id": account_id,
     });
     let created = client
         .schedule_create(kind, TINY_PROMPT, &fire_at, None)
@@ -246,7 +303,8 @@ async fn fire_now_spawns_scheduled_new_chat() {
         .expect("schedule_create");
     let item_id = created["id"].as_str().expect("created item has id").to_string();
     eprintln!("scheduled item {item_id} fire_at={fire_at} (far future)");
-    let _cleanup = ScheduledItemGuard { id: item_id.clone() };
+    let store = store_path(INSTANCE);
+    let _cleanup = ScheduledItemGuard { id: item_id.clone(), store: store.clone() };
 
     client.schedule_fire_now(&item_id).await.expect("schedule_fire_now");
 
@@ -273,7 +331,7 @@ async fn fire_now_spawns_scheduled_new_chat() {
     eprintln!("---- TEST 2 RESULT ----");
     eprintln!("events_seen: {events_seen}, saw_reply: {saw_reply}");
 
-    let final_status = scheduled_items::get(&item_id).map(|i| i.status);
+    let final_status = scheduled_items::get_at(&store, &item_id).map(|i| i.status);
     eprintln!("final scheduled item status: {final_status:?}");
 
     let _ = client.end_session(&new_session_id).await;

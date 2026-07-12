@@ -112,7 +112,24 @@ impl ScheduledItem {
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
 fn config_path() -> Option<PathBuf> {
-    crate::settings::paths::data_dir().ok().map(|d| d.join("scheduled-items.json"))
+    config_path_for(&crate::daemon::instance::instance_suffix())
+}
+
+/// Instance-scoped store path, like `paths::interactive_sessions_file()` and
+/// the daemon lockfile/pipe/hook-port. Empty `suffix` is the production
+/// instance (`scheduled-items.json`, unchanged).
+///
+/// `WRITE_LOCK` only serializes writers *within* one process, and every write
+/// is a whole-map read-modify-write, so two daemons sharing this file
+/// silently clobber each other's items. Production has exactly one daemon
+/// (the lockfile singleton) and the app only reads, so scoping costs nothing
+/// there - but an unscoped file let a test daemon and the user's real daemon
+/// race, up to and including the real daemon claiming a test item and firing
+/// its prompt into a live chat.
+pub fn config_path_for(suffix: &str) -> Option<PathBuf> {
+    crate::settings::paths::data_dir()
+        .ok()
+        .map(|d| d.join(format!("scheduled-items{suffix}.json")))
 }
 
 fn load_map(path: &Path) -> HashMap<String, ScheduledItem> {
@@ -150,7 +167,7 @@ pub fn get(id: &str) -> Option<ScheduledItem> {
     get_at(&path, id)
 }
 
-fn get_at(path: &Path, id: &str) -> Option<ScheduledItem> {
+pub fn get_at(path: &Path, id: &str) -> Option<ScheduledItem> {
     load_map(path).get(id).cloned()
 }
 
@@ -179,7 +196,7 @@ pub fn delete(id: &str) -> bool {
     delete_at(&path, id)
 }
 
-fn delete_at(path: &Path, id: &str) -> bool {
+pub fn delete_at(path: &Path, id: &str) -> bool {
     let mut map = load_map(path);
     let existed = map.remove(id).is_some();
     if existed {
