@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="void">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Overlay layout variants - design mockup</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --color-primary: #9d7dfc; --color-secondary: #6e8fff;
+    --color-background: #16151f; --color-surface: #1e1d2b; --color-surface-alt: #242334;
+    --color-text: #e2e0f0; --color-text-muted: #6b6990; --color-border: #2d2c44;
+    --color-success: #7af0c0; --color-danger: #e05252; --color-warn: #f0b95a;
+    --personal: #a78bfa; --fibo: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #0c0b12; color: var(--color-text); font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; line-height: 1.5; padding: 26px 22px 90px; display: flex; flex-direction: column; align-items: center; gap: 34px; }
+
+  .legend { width: 1180px; max-width: 100%; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .legend .title { font-size: 18px; font-weight: 700; } .legend .title small { color: var(--color-text-muted); font-weight: 500; font-size: 12px; }
+  .legend .spacer { flex: 1; }
+  .acc-key { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; } .acc-key .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend .safe-key { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; } .legend .safe-key .tickdemo { width: 2px; height: 12px; background: rgba(226,224,240,.9); border-radius: 1px; }
+
+  .board { width: 1180px; max-width: 100%; }
+  .board-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .board-h .num { width: 26px; height: 26px; border-radius: 7px; flex: none; background: var(--color-surface); border: 1px solid var(--color-border); display: grid; place-items: center; font-weight: 700; color: var(--color-primary); }
+  .board-h .t { font-size: 16px; font-weight: 700; } .board-h .d { color: var(--color-text-muted); font-size: 12.5px; }
+  .stage { background: #0f0e16; border: 1px solid var(--color-border); border-radius: 14px; padding: 22px; display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .note { font-size: 12px; color: var(--color-text-muted); line-height: 1.55; background: var(--color-surface); border: 1px dashed var(--color-border); border-radius: 8px; padding: 11px 13px; max-width: 300px; flex: 1 1 220px; }
+  .note b { color: var(--color-text); }
+
+  .desktop { width: 460px; height: 300px; border-radius: 12px; overflow: hidden; position: relative; background: radial-gradient(120% 120% at 20% 0%, #2a2740 0%, #14131d 55%, #0d0c14 100%); border: 1px solid var(--color-border); flex: none; }
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: rgba(20,19,29,.86); backdrop-filter: blur(8px); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .tb-ico { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-text-muted); font-size: 14px; } .tb-ico.app { background: color-mix(in srgb, var(--color-primary) 22%, transparent); color: var(--color-primary); } .taskbar .grow { flex: 1; }
+  .tray { display: flex; align-items: center; gap: 9px; color: var(--color-text-muted); font-size: 13px; } .tray-app { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 16%, transparent); }
+
+  /* shared: linear bar */
+  .bar { position: relative; height: 8px; border-radius: 4px; background: var(--color-surface-alt); }
+  .bar > span { display: block; height: 100%; border-radius: 4px; }
+  .bar > .tick { position: absolute; top: -2px; height: 12px; width: 2px; border-radius: 1px; background: rgba(226,224,240,.9); }
+  .nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; white-space: nowrap; }
+  .nums .cur { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .cur.ok { color: var(--color-text); } .cur.good { color: var(--color-success); } .cur.warn { color: var(--color-warn); } .cur.bad { color: var(--color-danger); }
+  .nums .safe { color: var(--color-text-muted); opacity: .6; font-size: 11px; }
+
+  /* ===== V1: current baseline, stacked full-width cards ===== */
+  .ov-card { position: absolute; background: color-mix(in srgb, var(--color-surface) 88%, transparent); border: 1px solid var(--color-border); border-radius: 10px; box-shadow: 0 18px 48px rgba(0,0,0,.6); padding: 8px; }
+  .ov-row { border-top: 3px solid var(--acc); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+  .ov-row:last-child { margin-bottom: 0; }
+  .ov-top { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; font-size: 12px; } .ov-top i { color: var(--acc); font-size: 14px; } .ov-top .nm { font-weight: 700; } .ov-top .grow { flex: 1; }
+  .ov-metric { display: grid; grid-template-columns: 20px 1fr 62px; align-items: center; gap: 7px; margin-top: 5px; }
+  .ov-k { font-size: 9.5px; color: var(--color-text-muted); text-transform: uppercase; }
+
+  /* V1 sizing */
+  .v1 { width: 210px; right: 12px; bottom: 48px; }
+
+  /* ===== V2: half-width, accounts side by side ===== */
+  .v2 { width: 300px; right: 12px; bottom: 48px; display: flex; gap: 6px; padding: 8px; }
+  .v2 .ov-col { flex: 1; min-width: 0; }
+  .v2 .ov-row { margin-bottom: 0; }
+  .v2 .ov-metric { grid-template-columns: 16px 1fr 40px; gap: 4px; }
+  .v2 .ov-top .nm { font-size: 11.5px; }
+  .v2 .nums .cur { font-size: 11px; } .v2 .nums .safe { font-size: 9.5px; }
+  .v2 .ov-k { font-size: 9px; }
+
+  /* ===== V3: stacked, circular rings instead of bars ===== */
+  .v3 { width: 190px; right: 12px; bottom: 48px; }
+  .ring-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-top: 3px solid var(--acc); border-radius: 8px; margin-bottom: 6px; }
+  .ring-row:last-child { margin-bottom: 0; }
+  .ring-nums { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+  .ring-nums .nm { font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 6px; } .ring-nums .nm i { color: var(--acc); }
+  .ring-line { display: flex; align-items: baseline; gap: 5px; font-size: 11px; }
+  .ring-line .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .ring-line .k { color: var(--color-text-muted); font-size: 9.5px; text-transform: uppercase; width: 16px; }
+
+  /* ===== V4: side by side + rings (max compact) ===== */
+  .v4 { width: 220px; right: 12px; bottom: 48px; display: flex; gap: 6px; padding: 8px; }
+  .v4 .ov-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; border-top: 3px solid var(--acc); border-radius: 8px; padding: 8px 4px; }
+  .v4 .nm { font-size: 11px; font-weight: 700; display: flex; align-items: center; gap: 4px; } .v4 .nm i { color: var(--acc); font-size: 12px; }
+  .v4 .microsplit { display: flex; gap: 8px; font-size: 10px; margin-top: 2px; }
+  .v4 .microsplit .m { display: flex; align-items: center; gap: 3px; }
+  .v4 .microsplit .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* ===== V5: tightened bar - narrower bar, tighter gap, no k-label (tooltip instead) ===== */
+  .v5 { width: 168px; right: 12px; bottom: 48px; }
+  .rb-row { padding: 7px 9px; border-top: 3px solid var(--acc); border-radius: 8px; margin-bottom: 5px; }
+  .rb-row:last-child { margin-bottom: 0; }
+  .rb-top { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; font-size: 12px; } .rb-top i { color: var(--acc); font-size: 13px; } .rb-top .nm { font-weight: 700; }
+  .rb-metric { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
+  .rb-bar-wrap { position: relative; cursor: help; }
+  .rb-bar { position: relative; width: 68px; height: 7px; border-radius: 4px; background: var(--color-surface-alt); }
+  .rb-bar > span { display: block; height: 100%; border-radius: 4px; }
+  .rb-bar > .tick { position: absolute; top: -2px; height: 11px; width: 2px; border-radius: 1px; background: rgba(226,224,240,.9); }
+  .rb-tip { position: absolute; bottom: 135%; left: 0; z-index: 5; background: #10101a; border: 1px solid var(--color-border); border-radius: 6px; padding: 4px 7px; font-size: 10.5px; color: var(--color-text); white-space: nowrap; opacity: 0; transform: translateY(3px); pointer-events: none; transition: opacity .12s, transform .12s; }
+  .rb-bar-wrap:hover .rb-tip { opacity: 1; transform: translateY(0); }
+  .rb-metric .nums { gap: 0; }
+  .rb-metric .nums .cur { font-size: 11.5px; } .rb-metric .nums .safe { font-size: 10px; }
+
+  /* ===== V6: compact ring rows - no boxed columns, one thin line per account ===== */
+  .v6 { width: 190px; right: 12px; bottom: 48px; }
+  .rc-row { display: flex; align-items: center; gap: 7px; padding: 5px 8px 5px 7px; border-left: 3px solid var(--acc); border-radius: 4px; margin-bottom: 4px; }
+  .rc-row:last-child { margin-bottom: 0; }
+  .rc-nm { display: flex; align-items: center; gap: 5px; font-weight: 700; font-size: 11.5px; flex: none; }
+  .rc-nm i { color: var(--acc); font-size: 12px; }
+  .rc-nums { display: flex; gap: 8px; margin-left: auto; }
+  .rc-num { display: flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: help; }
+  .rc-num .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+
+  /* ===== V7: icon inside the ring, no name label, strict grid alignment ===== */
+  .v7 { width: 190px; right: 12px; bottom: 48px; }
+  .rg-row { display: grid; grid-template-columns: 34px 62px 62px; align-items: center; column-gap: 8px; padding: 5px 8px; border-left: 3px solid var(--acc); border-radius: 4px; margin-bottom: 4px; }
+  .rg-row:last-child { margin-bottom: 0; }
+  .rg-ring-wrap { position: relative; width: 34px; height: 34px; cursor: help; }
+  .rg-ring-wrap i { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--acc); }
+  .rg-metric { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; line-height: 1.2; cursor: help; }
+  .rg-metric .cur { font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .rg-metric .safe { font-size: 9.5px; color: var(--color-text-muted); opacity: .65; }
+
+  /* ===== V8: V5's bars, but name text replaced by a plain icon badge (no ring) ===== */
+  .v8 { width: 168px; right: 12px; bottom: 48px; }
+  .v8-acct { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-left: 3px solid var(--acc); border-radius: 4px; margin-bottom: 4px; }
+  .v8-acct:last-child { margin-bottom: 0; }
+  .v8-badge { width: 24px; height: 24px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); font-size: 12px; cursor: help; }
+  .v8-metrics { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+</style>
+</head>
+<body>
+
+  <div class="legend">
+    <span class="title">Overlay layout variants <small>&middot; brainstorm &middot; theme-void dark</small></span>
+    <span class="spacer"></span>
+    <span class="acc-key"><span class="dot" style="background:var(--personal)"></span> personal</span>
+    <span class="acc-key"><span class="dot" style="background:var(--fibo)"></span> fibo</span>
+    <span class="safe-key"><span class="tickdemo"></span> = safe-pace tick</span>
+  </div>
+
+  <!-- ================= V1 baseline ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">1</span><span class="t">Current (baseline)</span><span class="d">Stacked full-width cards, linear bars. What's live today &mdash; for comparison.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v1">
+          <div class="ov-row" style="--acc:var(--personal)">
+            <div class="ov-top"><i class="ph ph-user"></i><span class="nm">personal</span><span class="grow"></span></div>
+            <div class="ov-metric"><span class="ov-k">5h</span><div class="bar"><span style="width:40%;background:var(--personal)"></span><i class="tick" style="left:52%"></i></div><span class="nums"><b class="cur ok">40%</b><span class="safe">/52%</span></span></div>
+            <div class="ov-metric"><span class="ov-k">7d</span><div class="bar"><span style="width:16%;background:var(--personal)"></span><i class="tick" style="left:68%"></i></div><span class="nums"><b class="cur good">16%</b><span class="safe">/68%</span></span></div>
+          </div>
+          <div class="ov-row" style="--acc:var(--fibo)">
+            <div class="ov-top"><i class="ph ph-buildings"></i><span class="nm">fibo</span><span class="grow"></span></div>
+            <div class="ov-metric"><span class="ov-k">5h</span><div class="bar"><span style="width:47%;background:var(--fibo)"></span><i class="tick" style="left:52%"></i></div><span class="nums"><b class="cur warn">47%</b><span class="safe">/52%</span></span></div>
+            <div class="ov-metric"><span class="ov-k">7d</span><div class="bar"><span style="width:15%;background:var(--fibo)"></span><i class="tick" style="left:8%"></i></div><span class="nums"><b class="cur bad">15%</b><span class="safe">/8%</span></span></div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Tall and narrow &mdash; grows downward as accounts are added. Reads clearly, but eats vertical space near the corner and every extra account pushes it further from the tray.</div>
+    </div>
+  </section>
+
+  <!-- ================= V2 side by side ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">2</span><span class="t">Side by side, half-width each</span><span class="d">Same linear bars, accounts as columns instead of stacked rows.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v2">
+          <div class="ov-col ov-row" style="--acc:var(--personal)">
+            <div class="ov-top"><i class="ph ph-user"></i><span class="nm">personal</span></div>
+            <div class="ov-metric"><span class="ov-k">5h</span><div class="bar"><span style="width:40%;background:var(--personal)"></span><i class="tick" style="left:52%"></i></div><span class="nums"><b class="cur ok">40</b><span class="safe">/52</span></span></div>
+            <div class="ov-metric"><span class="ov-k">7d</span><div class="bar"><span style="width:16%;background:var(--personal)"></span><i class="tick" style="left:68%"></i></div><span class="nums"><b class="cur good">16</b><span class="safe">/68</span></span></div>
+          </div>
+          <div class="ov-col ov-row" style="--acc:var(--fibo)">
+            <div class="ov-top"><i class="ph ph-buildings"></i><span class="nm">fibo</span></div>
+            <div class="ov-metric"><span class="ov-k">5h</span><div class="bar"><span style="width:47%;background:var(--fibo)"></span><i class="tick" style="left:52%"></i></div><span class="nums"><b class="cur warn">47</b><span class="safe">/52</span></span></div>
+            <div class="ov-metric"><span class="ov-k">7d</span><div class="bar"><span style="width:15%;background:var(--fibo)"></span><i class="tick" style="left:8%"></i></div><span class="nums"><b class="cur bad">15</b><span class="safe">/8</span></span></div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Half the height for 2 accounts &mdash; good when you have exactly 2-3. But bars get thin fast (each column is ~1/N the width), and a 3rd/4th account makes it wide instead of tall, which is worse near a screen edge/corner. Numbers had to drop the "%" to fit.</div>
+    </div>
+  </section>
+
+  <!-- ================= V3 circles stacked ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">3</span><span class="t">Circle instead of bar (stacked)</span><span class="d">One dual-ring dial per account &mdash; outer ring = 5h, inner ring = 7d. Apple-Activity-style.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v3">
+          <div class="ring-row" style="--acc:var(--personal)">
+            <svg width="44" height="44" viewBox="0 0 40 40">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--personal)" stroke-width="4" stroke-linecap="round" stroke-dasharray="40.2 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--personal)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="10.05 62.83" transform="rotate(-90 20 20)"/>
+              <line x1="20" y1="1" x2="20" y2="7" stroke="rgba(226,224,240,.9)" stroke-width="1.6" transform="rotate(187.2 20 20)"/>
+              <line x1="20" y1="7" x2="20" y2="13" stroke="rgba(226,224,240,.9)" stroke-width="1.6" transform="rotate(244.8 20 20)"/>
+            </svg>
+            <div class="ring-nums">
+              <div class="nm"><i class="ph ph-user"></i>personal</div>
+              <div class="ring-line"><span class="k">5h</span><b class="cur ok">40%</b><span class="safe">/52%</span></div>
+              <div class="ring-line"><span class="k">7d</span><b class="cur good">16%</b><span class="safe">/68%</span></div>
+            </div>
+          </div>
+          <div class="ring-row" style="--acc:var(--fibo)">
+            <svg width="44" height="44" viewBox="0 0 40 40">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--fibo)" stroke-width="4" stroke-linecap="round" stroke-dasharray="47.25 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--fibo)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="9.42 62.83" transform="rotate(-90 20 20)"/>
+              <line x1="20" y1="1" x2="20" y2="7" stroke="rgba(226,224,240,.9)" stroke-width="1.6" transform="rotate(187.2 20 20)"/>
+              <line x1="20" y1="7" x2="20" y2="13" stroke="rgba(226,224,240,.9)" stroke-width="1.6" transform="rotate(28.8 20 20)"/>
+            </svg>
+            <div class="ring-nums">
+              <div class="nm"><i class="ph ph-buildings"></i>fibo</div>
+              <div class="ring-line"><span class="k">5h</span><b class="cur warn">47%</b><span class="safe">/52%</span></div>
+              <div class="ring-line"><span class="k">7d</span><b class="cur bad">15%</b><span class="safe">/8%</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">More glanceable at a squint (fill amount reads instantly, like a battery/watch ring) and the safe-pace tick becomes a notch on the ring instead of a line on a bar. Downside: two ratios sharing one dial is harder to read precisely than two separate bars &mdash; you have to already know which ring is which, and reading "is inner ahead of outer" takes a beat longer than two stacked bars.</div>
+    </div>
+  </section>
+
+  <!-- ================= V4 side by side + circles ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">4</span><span class="t">Combo: side by side + rings</span><span class="d">Your two ideas together &mdash; most compact option, closest to a mac menu-bar widget (Stats/iStat Menus).</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v4">
+          <div class="ov-col" style="--acc:var(--personal)">
+            <svg width="40" height="40" viewBox="0 0 40 40">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--personal)" stroke-width="4" stroke-linecap="round" stroke-dasharray="40.2 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--personal)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="10.05 62.83" transform="rotate(-90 20 20)"/>
+            </svg>
+            <div class="nm"><i class="ph ph-user"></i>personal</div>
+            <div class="microsplit"><span class="m"><span class="dot" style="background:var(--personal)"></span>5h 40%</span></div>
+            <div class="microsplit"><span class="m"><span class="dot" style="background:var(--personal);opacity:.55"></span>7d 16%</span></div>
+          </div>
+          <div class="ov-col" style="--acc:var(--fibo)">
+            <svg width="40" height="40" viewBox="0 0 40 40">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--fibo)" stroke-width="4" stroke-linecap="round" stroke-dasharray="47.25 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="var(--fibo)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="9.42 62.83" transform="rotate(-90 20 20)"/>
+            </svg>
+            <div class="nm"><i class="ph ph-buildings"></i>fibo</div>
+            <div class="microsplit"><span class="m"><span class="dot" style="background:var(--fibo)"></span>5h 47%</span></div>
+            <div class="microsplit"><span class="m"><span class="dot" style="background:var(--fibo);opacity:.55"></span>7d 15%</span></div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Smallest footprint by far, stays roughly square no matter how wide the window gets. But it's the hardest to add to: a 4th account either wraps to a second row (back to being tall) or the circles shrink to fit, and the safe-pace tick has nowhere clean to sit at this size &mdash; probably drops it and leans on the hover tooltip instead.</div>
+    </div>
+  </section>
+
+  <!-- ================= V5 tightened bar ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">5</span><span class="t">Tightened current: narrower bar, no 5h/7d label</span><span class="d">Same linear-bar idea, but the bar is a fixed narrow width instead of stretching to fill, the gap to the numbers is cut, and the "5h"/"7d" column is gone &mdash; hover the bar for that.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v5">
+          <div class="rb-row" style="--acc:var(--personal)">
+            <div class="rb-top"><i class="ph ph-user"></i><span class="nm">personal</span></div>
+            <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:40%;background:var(--personal)"></span><i class="tick" style="left:52%"></i></div><div class="rb-tip">5h window &middot; resets 2h 10m</div></div><span class="nums"><b class="cur ok">40%</b><span class="safe">/52%</span></span></div>
+            <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:16%;background:var(--personal)"></span><i class="tick" style="left:68%"></i></div><div class="rb-tip">7d window &middot; resets 3d 4h</div></div><span class="nums"><b class="cur good">16%</b><span class="safe">/68%</span></span></div>
+          </div>
+          <div class="rb-row" style="--acc:var(--fibo)">
+            <div class="rb-top"><i class="ph ph-buildings"></i><span class="nm">fibo</span></div>
+            <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:47%;background:var(--fibo)"></span><i class="tick" style="left:52%"></i></div><div class="rb-tip">5h window &middot; resets 47m</div></div><span class="nums"><b class="cur warn">47%</b><span class="safe">/52%</span></span></div>
+            <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:15%;background:var(--fibo)"></span><i class="tick" style="left:8%"></i></div><div class="rb-tip">7d window &middot; resets 1d 6h</div></div><span class="nums"><b class="cur bad">15%</b><span class="safe">/8%</span></span></div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Card is ~168px wide here vs. ~210px in V1, purely by trimming the bar's flex-fill and the label column &mdash; no information lost, since hovering the bar now surfaces "5h/7d window &middot; resets in&hellip;" (folds the existing reset-time tooltip and the window label into one hover). <b>Hover a bar above to try it.</b></div>
+    </div>
+  </section>
+
+  <!-- ================= V6 compact ring rows ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">6</span><span class="t">Compact ring rows &mdash; refined V4</span><span class="d">Keeps the ring, drops V4's boxed per-account columns (which wasted vertical padding for name + ring + 2 number lines). One thin line per account instead; a 3rd/4th account just adds another line, no wrapping.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v6">
+          <div class="rc-row" style="--acc:var(--personal)">
+            <svg width="22" height="22" viewBox="0 0 40 40" style="flex:none">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="5"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--personal)" stroke-width="5" stroke-linecap="round" stroke-dasharray="40.2 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="9" fill="none" stroke="var(--color-surface-alt)" stroke-width="5"/>
+              <circle cx="20" cy="20" r="9" fill="none" stroke="var(--personal)" stroke-width="5" opacity="0.55" stroke-linecap="round" stroke-dasharray="9.05 56.5" transform="rotate(-90 20 20)"/>
+            </svg>
+            <span class="rc-nm"><i class="ph ph-user"></i>personal</span>
+            <span class="rc-nums">
+              <span class="rc-num" title="5h window &middot; 40%/52% safe pace &middot; resets 2h 10m"><span class="dot" style="background:var(--personal)"></span><span class="cur ok">40%</span></span>
+              <span class="rc-num" title="7d window &middot; 16%/68% safe pace &middot; resets 3d 4h"><span class="dot" style="background:var(--personal);opacity:.55"></span><span class="cur good">16%</span></span>
+            </span>
+          </div>
+          <div class="rc-row" style="--acc:var(--fibo)">
+            <svg width="22" height="22" viewBox="0 0 40 40" style="flex:none">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="5"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--fibo)" stroke-width="5" stroke-linecap="round" stroke-dasharray="47.25 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="9" fill="none" stroke="var(--color-surface-alt)" stroke-width="5"/>
+              <circle cx="20" cy="20" r="9" fill="none" stroke="var(--fibo)" stroke-width="5" opacity="0.55" stroke-linecap="round" stroke-dasharray="8.48 56.5" transform="rotate(-90 20 20)"/>
+            </svg>
+            <span class="rc-nm"><i class="ph ph-buildings"></i>fibo</span>
+            <span class="rc-nums">
+              <span class="rc-num" title="5h window &middot; 47%/52% safe pace &middot; resets 47m"><span class="dot" style="background:var(--fibo)"></span><span class="cur warn">47%</span></span>
+              <span class="rc-num" title="7d window &middot; 15%/8% safe pace &middot; resets 1d 6h"><span class="dot" style="background:var(--fibo);opacity:.55"></span><span class="cur bad">15%</span></span>
+            </span>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Ring is now just a tiny glanceable icon (dot = which ring: solid = 5h, faded = 7d, matching the ring's own opacity), name and both numbers share one line. ~190&times;70px total for 2 accounts &mdash; smaller than V1 and packs tighter than V4 since nothing wraps as accounts are added. Safe-pace and reset time move into the number's hover tooltip. <b>Hover a % above to try it.</b></div>
+    </div>
+  </section>
+
+  <!-- ================= V7 icon-in-ring, no label ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">7</span><span class="t">Icon inside the ring &mdash; no name label at all</span><span class="d">Drops the "personal"/"fibo" text entirely. The account icon sits centered in the ring; hover it for the name. Fixed grid columns (ring / 5h / 7d) instead of flex, so every row lines up exactly &mdash; that was V6's alignment problem. Both % and /safe% are back.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v7">
+          <div class="rg-row" style="--acc:var(--personal)">
+            <div class="rg-ring-wrap" title="personal">
+              <svg width="34" height="34" viewBox="0 0 40 40">
+                <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+                <circle cx="20" cy="20" r="9" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+                <circle cx="20" cy="20" r="16" fill="none" stroke="var(--personal)" stroke-width="4" stroke-linecap="round" stroke-dasharray="40.2 100.53" transform="rotate(-90 20 20)"/>
+                <circle cx="20" cy="20" r="9" fill="none" stroke="var(--personal)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="9.05 56.5" transform="rotate(-90 20 20)"/>
+              </svg>
+              <i class="ph ph-user"></i>
+            </div>
+            <div class="rg-metric" title="5h window &middot; resets 2h 10m"><span class="cur ok">40%</span><span class="safe">/52%</span></div>
+            <div class="rg-metric" title="7d window &middot; resets 3d 4h"><span class="cur good">16%</span><span class="safe">/68%</span></div>
+          </div>
+          <div class="rg-row" style="--acc:var(--fibo)">
+            <div class="rg-ring-wrap" title="fibo">
+              <svg width="34" height="34" viewBox="0 0 40 40">
+                <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+                <circle cx="20" cy="20" r="9" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+                <circle cx="20" cy="20" r="16" fill="none" stroke="var(--fibo)" stroke-width="4" stroke-linecap="round" stroke-dasharray="47.25 100.53" transform="rotate(-90 20 20)"/>
+                <circle cx="20" cy="20" r="9" fill="none" stroke="var(--fibo)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="8.48 56.5" transform="rotate(-90 20 20)"/>
+              </svg>
+              <i class="ph ph-buildings"></i>
+            </div>
+            <div class="rg-metric" title="5h window &middot; resets 47m"><span class="cur warn">47%</span><span class="safe">/52%</span></div>
+            <div class="rg-metric" title="7d window &middot; resets 1d 6h"><span class="cur bad">15%</span><span class="safe">/8%</span></div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Fixes all three complaints at once: dropping the name column is exactly what lets the grid be fixed-width, so 5h/7d line up perfectly across accounts regardless of name length. Order convention (5h always left column, 7d always right) does the labeling job "5h"/"7d" text used to do. <b>Hover the ring for the account name, hover a % for the window + reset time.</b></div>
+    </div>
+  </section>
+
+  <!-- ================= V8 icon badge + bars (no ring) ================= -->
+  <section class="board">
+    <div class="board-h"><span class="num">8</span><span class="t">Icon-tooltip idea, applied to bars instead of a ring</span><span class="d">V5's tightened bars (the one you were fine with), minus the name text row. Plain colored icon badge sits to the left, vertically centered across both bars &mdash; hover it for the account name. No ring, so no legibility problem at small size.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card v8">
+          <div class="v8-acct" style="--acc:var(--personal)">
+            <div class="v8-badge" title="personal"><i class="ph ph-user"></i></div>
+            <div class="v8-metrics">
+              <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:40%;background:var(--personal)"></span><i class="tick" style="left:52%"></i></div><div class="rb-tip">5h window &middot; resets 2h 10m</div></div><span class="nums"><b class="cur ok">40%</b><span class="safe">/52%</span></span></div>
+              <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:16%;background:var(--personal)"></span><i class="tick" style="left:68%"></i></div><div class="rb-tip">7d window &middot; resets 3d 4h</div></div><span class="nums"><b class="cur good">16%</b><span class="safe">/68%</span></span></div>
+            </div>
+          </div>
+          <div class="v8-acct" style="--acc:var(--fibo)">
+            <div class="v8-badge" title="fibo"><i class="ph ph-buildings"></i></div>
+            <div class="v8-metrics">
+              <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:47%;background:var(--fibo)"></span><i class="tick" style="left:52%"></i></div><div class="rb-tip">5h window &middot; resets 47m</div></div><span class="nums"><b class="cur warn">47%</b><span class="safe">/52%</span></span></div>
+              <div class="rb-metric"><div class="rb-bar-wrap"><div class="rb-bar"><span style="width:15%;background:var(--fibo)"></span><i class="tick" style="left:8%"></i></div><div class="rb-tip">7d window &middot; resets 1d 6h</div></div><span class="nums"><b class="cur bad">15%</b><span class="safe">/8%</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Same width as V5 (~168px) but a full text line shorter per account since the name row is gone &mdash; card height drops noticeably for 2+ accounts. Bars stay precise and legible (no ring-legibility risk), safe pace and % both still visible, icon hover gives the name. <b>Hover the badge or a bar to try it.</b></div>
+    </div>
+  </section>
+
+</body>
+</html>

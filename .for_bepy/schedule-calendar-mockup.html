@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Schedule · Calendar mockup</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --bg: #0e1524;
+    --surface: #16203a;
+    --surface-alt: #1a2540;
+    --border: #263352;
+    --text: #e6ecf7;
+    --muted: #8394b3;
+    --primary: #57b6c9;
+    --success: #7af0c0;
+    --warning: #e5a040;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  /* Simulate the narrow Chats window */
+  .win {
+    width: 465px; margin: 0 auto; min-height: 100vh;
+    background: var(--bg); border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+  }
+  .topbar {
+    height: 48px; display: flex; align-items: center; gap: 10px;
+    padding: 0 12px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #1a2036, #141b2e);
+  }
+  .topbar .title { flex: 1; text-align: center; font-weight: 600; font-size: 1.05rem; }
+  .topbar .icon-btn { color: var(--muted); background: none; border: none; cursor: pointer; font-size: 1.2rem; }
+
+  .body { padding: 12px 14px 24px; overflow-y: auto; }
+
+  /* ── Calendar header ── */
+  .cal-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .cal-month { flex: 1; font-size: 1rem; font-weight: 600; }
+  .cal-nav, .cal-today {
+    background: var(--surface-alt); border: 1px solid var(--border); color: var(--text);
+    border-radius: 7px; cursor: pointer; height: 30px;
+  }
+  .cal-nav { width: 30px; font-size: 1rem; display: grid; place-items: center; }
+  .cal-today { padding: 0 12px; font-size: 0.8rem; color: var(--muted); }
+
+  /* ── Month grid ── */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-dow {
+    text-align: center; font-size: 0.64rem; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted); padding: 2px 0 4px; font-weight: 600;
+  }
+  .cal-cell {
+    aspect-ratio: 1 / 1; border: 1px solid transparent; border-radius: 8px;
+    background: var(--surface); padding: 4px 5px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 3px; position: relative;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .cal-cell:hover { background: var(--surface-alt); }
+  .cal-cell.other { background: transparent; opacity: 0.32; cursor: default; }
+  .cal-cell.today { border-color: var(--primary); }
+  .cal-cell.selected { background: color-mix(in srgb, var(--primary) 22%, var(--surface)); border-color: var(--primary); }
+  .cal-daynum { font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .cal-cell.today .cal-daynum { color: var(--primary); font-weight: 700; }
+  .cal-dots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot--upcoming { background: var(--primary); }
+  .dot--sent { background: var(--success); }
+  .dot--missed { background: var(--warning); }
+  .dot--failed { background: var(--danger); }
+  /* recurring = hollow ring */
+  .dot--recurring { background: transparent; border: 1.5px solid var(--primary); width: 7px; height: 7px; }
+  .cal-more { font-size: 0.6rem; color: var(--muted); }
+
+  /* ── Legend ── */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 2px 4px; font-size: 0.68rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* ── Day agenda ── */
+  .agenda { margin-top: 14px; }
+  .agenda-head {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
+  }
+  .agenda-title { font-size: 0.9rem; font-weight: 600; }
+  .agenda-sub { font-size: 0.72rem; color: var(--muted); }
+  .agenda-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface-alt); }
+  .agenda-row {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .agenda-row:last-child { border-bottom: none; }
+  .agenda-row:hover { background: var(--surface); }
+  .agenda-time { font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums; width: 58px; flex-shrink: 0; }
+  .agenda-icon { color: var(--muted); flex-shrink: 0; }
+  .agenda-main { flex: 1; min-width: 0; }
+  .agenda-name { font-size: 0.84rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agenda-meta { display: flex; gap: 6px; align-items: center; margin-top: 3px; }
+  .pill { padding: 1px 7px; border-radius: 999px; font-size: 0.64rem; font-weight: 500; }
+  .pill--sent { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+  .pill--upcoming { background: color-mix(in srgb, var(--primary) 18%, transparent); color: var(--primary); }
+  .pill--missed { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+  .badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px; background: var(--border); color: var(--muted); font-size: 0.64rem; }
+  .agenda-empty { padding: 22px; text-align: center; color: var(--muted); font-style: italic; font-size: 0.82rem; }
+
+  /* ── Detail modal (click-through) ── */
+  .scrim { position: fixed; inset: 0; background: rgba(4,8,16,0.62); display: none; align-items: center; justify-content: center; padding: 20px; }
+  .scrim.open { display: flex; }
+  .detail { width: 430px; max-width: 100%; max-height: 82vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+  .detail-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .detail-head .name { flex: 1; font-weight: 600; font-size: 0.95rem; }
+  .detail-head .x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; }
+  .detail-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .turn-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 5px; display: flex; align-items: center; gap: 5px; }
+  .bubble { border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.45; white-space: pre-wrap; }
+  .bubble--you { background: color-mix(in srgb, var(--primary) 14%, var(--surface-alt)); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); }
+  .bubble--ai { background: var(--surface-alt); border: 1px solid var(--border); }
+  .bubble--ai .fade { color: var(--muted); }
+  .detail-foot { padding: 12px 16px 16px; display: flex; gap: 8px; }
+  .btn { flex: 1; height: 38px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); cursor: pointer; font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn--primary { background: var(--primary); color: #06232a; border-color: var(--primary); font-weight: 600; }
+  .hint { font-size: 0.72rem; color: var(--muted); padding: 0 16px 14px; }
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="topbar">
+    <button class="icon-btn"><i class="ph ph-arrow-left"></i></button>
+    <div class="title">Schedule</div>
+    <button class="icon-btn"><i class="ph ph-chats-circle"></i></button>
+  </div>
+  <div class="body">
+    <div class="cal-head">
+      <button class="cal-nav">‹</button>
+      <div class="cal-month" id="calMonth">July 2026</div>
+      <button class="cal-nav">›</button>
+      <button class="cal-today">Today</button>
+    </div>
+
+    <div class="cal-grid" id="calGrid"></div>
+
+    <div class="legend">
+      <span><span class="dot dot--upcoming"></span> Upcoming</span>
+      <span><span class="dot dot--sent"></span> Sent</span>
+      <span><span class="dot dot--missed"></span> Missed</span>
+      <span><span class="dot dot--recurring"></span> Recurring</span>
+    </div>
+
+    <div class="agenda">
+      <div class="agenda-head">
+        <div class="agenda-title" id="agendaTitle">Saturday, July 12</div>
+        <div class="agenda-sub" id="agendaSub"></div>
+      </div>
+      <ul class="agenda-list" id="agendaList"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- Click-through detail -->
+<div class="scrim" id="scrim">
+  <div class="detail">
+    <div class="detail-head">
+      <i class="ph ph-paper-plane-tilt" style="color:var(--muted)"></i>
+      <div class="name" id="dName">Continue from where you left off.</div>
+      <button class="x" id="dClose"><i class="ph ph-x"></i></button>
+    </div>
+    <div class="detail-body">
+      <div>
+        <div class="turn-label"><i class="ph ph-user"></i> You scheduled &amp; sent</div>
+        <div class="bubble bubble--you" id="dPrompt">Continue from where you left off.</div>
+      </div>
+      <div>
+        <div class="turn-label"><i class="ph ph-sparkle"></i> Claude replied</div>
+        <div class="bubble bubble--ai" id="dReply">Picking up from the overlay dial rework. I re-checked the hover-info wiring and the background-style setting persists correctly now. Next I'll verify the full-drag threshold on the circle <span class="fade">… (open chat for the rest)</span></div>
+      </div>
+    </div>
+    <div class="detail-foot">
+      <button class="btn btn--primary"><i class="ph ph-arrow-square-out"></i> Open chat</button>
+      <button class="btn"><i class="ph ph-arrow-clockwise"></i> Send again</button>
+    </div>
+    <div class="hint">Recurring items show every future occurrence on the calendar; the past ones stay so you can review what went out.</div>
+  </div>
+</div>
+
+<script>
+  // ── Sample data: keyed by ISO date, mirrors Joe's real Past list + some upcoming/recurring ──
+  const ICON = { message: "ph-paper-plane-tilt", new_chat: "ph-plus-circle" };
+  const items = {
+    "2026-07-12": [
+      { t: "01:45", name: "New chat: claude_usage_in_taskbar", kind: "new_chat", status: "sent" },
+      { t: "01:47", name: "hello there!", kind: "message", status: "sent" },
+      { t: "05:30", name: "I want you to /autopilot this 1. make the ui actually nice …", kind: "message", status: "sent" },
+      { t: "05:56", name: "New chat: odysseus", kind: "new_chat", status: "sent" },
+      { t: "06:55", name: "Do as many todos as you think you should /autopilot im …", kind: "message", status: "sent" },
+      { t: "10:21", name: "New chat: claude_usage_in_taskbar", kind: "new_chat", status: "sent" },
+      { t: "15:31", name: "Continue from where you left off.", kind: "message", status: "sent" },
+    ],
+    "2026-07-13": [
+      { t: "09:00", name: "Daily standup summary", kind: "message", status: "upcoming", recurring: "daily" },
+    ],
+    "2026-07-14": [
+      { t: "09:00", name: "Daily standup summary", kind: "message", status: "upcoming", recurring: "daily" },
+      { t: "18:30", name: "New chat: nightly cleanup sweep", kind: "new_chat", status: "upcoming", recurring: "every 2d" },
+    ],
+    "2026-07-15": [
+      { t: "09:00", name: "Daily standup summary", kind: "message", status: "upcoming", recurring: "daily" },
+    ],
+    "2026-07-16": [
+      { t: "09:00", name: "Daily standup summary", kind: "message", status: "upcoming", recurring: "daily" },
+      { t: "18:30", name: "New chat: nightly cleanup sweep", kind: "new_chat", status: "upcoming", recurring: "every 2d" },
+      { t: "20:00", name: "Weekly review kickoff", kind: "message", status: "upcoming", recurring: "weekly Th" },
+    ],
+    "2026-07-10": [
+      { t: "08:00", name: "Morning brief (missed — was busy)", kind: "message", status: "missed" },
+    ],
+  };
+
+  const MONTH = 6, YEAR = 2026; // July 2026 (0-indexed month)
+  const TODAY = "2026-07-12";
+  let selected = TODAY;
+
+  const DOW = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  function iso(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+
+  function renderGrid(){
+    const grid = document.getElementById("calGrid");
+    grid.innerHTML = "";
+    DOW.forEach(d => { const el = document.createElement("div"); el.className="cal-dow"; el.textContent=d; grid.appendChild(el); });
+
+    const first = new Date(YEAR, MONTH, 1);
+    // JS getDay: 0=Sun..6=Sat → convert to Mon=0
+    let lead = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(YEAR, MONTH+1, 0).getDate();
+    const prevDays = new Date(YEAR, MONTH, 0).getDate();
+
+    for (let i=0; i<lead; i++){
+      const el = document.createElement("div"); el.className="cal-cell other";
+      el.innerHTML = `<span class="cal-daynum">${prevDays - lead + 1 + i}</span>`;
+      grid.appendChild(el);
+    }
+    for (let d=1; d<=daysInMonth; d++){
+      const key = iso(YEAR, MONTH, d);
+      const el = document.createElement("div");
+      el.className = "cal-cell" + (key===TODAY?" today":"") + (key===selected?" selected":"");
+      const list = items[key] || [];
+      const dots = list.slice(0,4).map(it => {
+        const cls = it.recurring && it.status==="upcoming" ? "dot--recurring" : "dot--"+it.status;
+        return `<span class="dot ${cls}"></span>`;
+      }).join("");
+      const more = list.length>4 ? `<span class="cal-more">+${list.length-4}</span>` : "";
+      el.innerHTML = `<span class="cal-daynum">${d}</span><div class="cal-dots">${dots}${more}</div>`;
+      el.onclick = () => { selected = key; renderGrid(); renderAgenda(); };
+      grid.appendChild(el);
+    }
+  }
+
+  function renderAgenda(){
+    const [y,m,d] = selected.split("-").map(Number);
+    const dt = new Date(y, m-1, d);
+    const dayName = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][dt.getDay()];
+    document.getElementById("agendaTitle").textContent = `${dayName}, ${MONTHS[m-1]} ${d}`;
+    const list = (items[selected] || []).slice().sort((a,b)=>a.t.localeCompare(b.t));
+    document.getElementById("agendaSub").textContent = list.length ? `${list.length} item${list.length>1?"s":""}` : "";
+    const ul = document.getElementById("agendaList");
+    if (!list.length){ ul.innerHTML = `<div class="agenda-empty">Nothing scheduled this day</div>`; return; }
+    ul.innerHTML = list.map(it => {
+      const pill = `<span class="pill pill--${it.status}">${it.status}</span>`;
+      const rec = it.recurring ? `<span class="badge"><i class="ph ph-repeat"></i>${it.recurring}</span>` : "";
+      return `<li class="agenda-row" data-name="${it.name.replace(/"/g,'&quot;')}" data-status="${it.status}">
+        <span class="agenda-time">${it.t}</span>
+        <i class="ph ${ICON[it.kind]} agenda-icon"></i>
+        <div class="agenda-main">
+          <div class="agenda-name">${it.name}</div>
+          <div class="agenda-meta">${pill}${rec}</div>
+        </div>
+        <i class="ph ph-caret-right" style="color:var(--muted)"></i>
+      </li>`;
+    }).join("");
+    ul.querySelectorAll(".agenda-row").forEach(row => {
+      row.onclick = () => openDetail(row.dataset.name, row.dataset.status);
+    });
+  }
+
+  function openDetail(name, status){
+    document.getElementById("dName").textContent = name;
+    document.getElementById("dPrompt").textContent = name;
+    const reply = document.getElementById("dReply");
+    if (status === "sent"){
+      reply.parentElement.style.display = "";
+      document.querySelector(".detail-foot").children[0].style.display = "";
+    } else {
+      reply.parentElement.style.display = "none"; // upcoming/missed → no reply yet
+    }
+    document.getElementById("scrim").classList.add("open");
+  }
+  document.getElementById("dClose").onclick = () => document.getElementById("scrim").classList.remove("open");
+  document.getElementById("scrim").onclick = (e) => { if (e.target.id==="scrim") e.target.classList.remove("open"); };
+
+  renderGrid();
+  renderAgenda();
+</script>
+</body>
+</html>

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="void">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Overlay layout - fresh 2 versions + hover-reveal</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --color-primary: #9d7dfc; --color-secondary: #6e8fff;
+    --color-background: #16151f; --color-surface: #1e1d2b; --color-surface-alt: #242334;
+    --color-text: #e2e0f0; --color-text-muted: #6b6990; --color-border: #2d2c44;
+    --color-success: #7af0c0; --color-danger: #e05252; --color-warn: #f0b95a;
+    --personal: #a78bfa; --fibo: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #0c0b12; color: var(--color-text); font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; line-height: 1.5; padding: 26px 22px 90px; display: flex; flex-direction: column; align-items: center; gap: 34px; }
+
+  .legend { width: 1180px; max-width: 100%; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .legend .title { font-size: 18px; font-weight: 700; } .legend .title small { color: var(--color-text-muted); font-weight: 500; font-size: 12px; }
+  .legend .spacer { flex: 1; }
+  .acc-key { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; } .acc-key .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend .safe-key { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; } .legend .safe-key .tickdemo { width: 2px; height: 12px; background: rgba(226,224,240,.9); border-radius: 1px; }
+
+  .board { width: 1180px; max-width: 100%; }
+  .board-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .board-h .num { width: 26px; height: 26px; border-radius: 7px; flex: none; background: var(--color-surface); border: 1px solid var(--color-border); display: grid; place-items: center; font-weight: 700; color: var(--color-primary); }
+  .board-h .t { font-size: 16px; font-weight: 700; } .board-h .d { color: var(--color-text-muted); font-size: 12.5px; }
+  .stage { background: #0f0e16; border: 1px solid var(--color-border); border-radius: 14px; padding: 22px; display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .note { font-size: 12px; color: var(--color-text-muted); line-height: 1.55; background: var(--color-surface); border: 1px dashed var(--color-border); border-radius: 8px; padding: 11px 13px; max-width: 300px; flex: 1 1 220px; }
+  .note b { color: var(--color-text); }
+  .subcap { font-size: 11px; color: var(--color-text-muted); text-align: center; margin-top: 8px; letter-spacing: .02em; }
+
+  .desktop { width: 460px; height: 300px; border-radius: 12px; overflow: hidden; position: relative; background: radial-gradient(120% 120% at 20% 0%, #2a2740 0%, #14131d 55%, #0d0c14 100%); border: 1px solid var(--color-border); flex: none; }
+  .desktop.sm { width: 300px; }
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: rgba(20,19,29,.86); backdrop-filter: blur(8px); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .tb-ico { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-text-muted); font-size: 14px; } .tb-ico.app { background: color-mix(in srgb, var(--color-primary) 22%, transparent); color: var(--color-primary); } .taskbar .grow { flex: 1; }
+  .tray { display: flex; align-items: center; gap: 9px; color: var(--color-text-muted); font-size: 13px; } .tray-app { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 16%, transparent); }
+
+  .ov-card { position: absolute; right: 12px; bottom: 48px; background: color-mix(in srgb, var(--color-surface) 92%, transparent); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,.6); padding: 9px; }
+
+  /* shared number styling */
+  .nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .nums .cur { font-weight: 700; font-size: 12px; }
+  .cur.ok { color: var(--color-text); } .cur.good { color: var(--color-success); } .cur.warn { color: var(--color-warn); } .cur.bad { color: var(--color-danger); }
+  .nums .safe { color: var(--color-text-muted); opacity: .6; font-size: 10.5px; }
+  .badge { width: 26px; height: 26px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--acc) 20%, transparent); color: var(--acc); font-size: 13px; cursor: help; }
+
+  /* ===== A: BAR version (clean sheet, V5 baseline) ===== */
+  /* Fixed grid: [icon badge] [both bars+nums], badge vertically centered across the 2 rows. */
+  .A { width: 176px; }
+  .A-acct { display: grid; grid-template-columns: 26px 1fr; align-items: center; column-gap: 9px; padding: 7px 9px; border-radius: 9px; margin-bottom: 4px; background: color-mix(in srgb, var(--acc) 9%, transparent); }
+  .A-acct:last-child { margin-bottom: 0; }
+  .A-metrics { display: grid; grid-template-columns: 72px auto; align-items: center; row-gap: 6px; column-gap: 8px; }
+  .bar-wrap { position: relative; cursor: help; }
+  .bar { position: relative; width: 72px; height: 7px; border-radius: 4px; background: var(--color-surface-alt); }
+  .bar > span { display: block; height: 100%; border-radius: 4px; }
+  .bar > .tick { position: absolute; top: -2px; height: 11px; width: 2px; border-radius: 1px; background: rgba(226,224,240,.9); }
+  .tip { position: absolute; bottom: 145%; left: 0; z-index: 5; background: #10101a; border: 1px solid var(--color-border); border-radius: 6px; padding: 4px 7px; font-size: 10.5px; color: var(--color-text); white-space: nowrap; opacity: 0; transform: translateY(3px); pointer-events: none; transition: opacity .12s, transform .12s; }
+  .bar-wrap:hover .tip, .badge:hover + .tip { opacity: 1; transform: translateY(0); }
+
+  /* ===== B: CIRCLE version (clean sheet, bigger ring, icon OUTSIDE) ===== */
+  /* [icon badge] [big dual-ring 52px] [5h num / 7d num stacked]. Ring is the glance; numbers are precise. */
+  .B { width: 190px; }
+  .B-acct { display: grid; grid-template-columns: 26px 52px 1fr; align-items: center; column-gap: 10px; padding: 8px 10px; border-radius: 9px; margin-bottom: 4px; background: color-mix(in srgb, var(--acc) 9%, transparent); }
+  .B-acct:last-child { margin-bottom: 0; }
+  .B-ring { width: 52px; height: 52px; cursor: help; }
+  .B-nums { display: flex; flex-direction: column; gap: 4px; }
+  .B-line { display: flex; align-items: baseline; gap: 5px; cursor: help; }
+  .B-line .rk { width: 15px; font-size: 9px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .B-line .rk .swatch { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+
+  /* ===== C: HOVER-REVEAL (rest = sliver only, hover expands) ===== */
+  .C-card { position: absolute; right: 12px; bottom: 48px; background: color-mix(in srgb, var(--color-surface) 92%, transparent); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 18px 48px rgba(0,0,0,.6); padding: 8px; transition: padding .16s; }
+  /* resting slivers */
+  .C-rest { display: flex; flex-direction: column; gap: 6px; }
+  .C-sliver { display: flex; align-items: center; gap: 8px; }
+  .C-sliver .swatch { width: 22px; height: 8px; border-radius: 4px; background: var(--acc); flex: none; }
+  .C-sliver .mini { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--color-text); opacity: .0; transition: opacity .16s; }
+  .C-sliver .mini.show { opacity: 1; }
+  /* expanded panel: hidden at rest, revealed on hover */
+  .C-full { display: none; }
+  .C-card:hover .C-full, .C-card.forced .C-full { display: block; }
+  .C-card:hover .C-rest, .C-card.forced .C-rest { display: none; }
+  .C-full .A-acct { width: 176px; }
+</style>
+</head>
+<body>
+
+  <div class="legend">
+    <span class="title">Overlay - fresh 2 versions + hover-reveal <small>&middot; clean sheet &middot; theme-void dark</small></span>
+    <span class="spacer"></span>
+    <span class="acc-key"><span class="dot" style="background:var(--personal)"></span> personal</span>
+    <span class="acc-key"><span class="dot" style="background:var(--fibo)"></span> fibo</span>
+    <span class="safe-key"><span class="tickdemo"></span> = safe-pace tick</span>
+  </div>
+
+  <!-- ============ A: BAR ============ -->
+  <section class="board">
+    <div class="board-h"><span class="num">A</span><span class="t">Bar version</span><span class="d">V5 baseline tightened: icon badge left (hover = name), fixed grid so both bars line up across accounts, 5h on top / 7d below, %/safe% always visible, hover a bar for window + reset.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card A">
+          <div class="A-acct" style="--acc:var(--personal)">
+            <div class="badge" title="personal"><i class="ph ph-user"></i></div>
+            <div class="A-metrics">
+              <div class="bar-wrap"><div class="bar"><span style="width:40%;background:var(--personal)"></span><i class="tick" style="left:52%"></i></div><div class="tip">5h &middot; resets 2h 10m</div></div>
+              <span class="nums"><b class="cur ok">40%</b><span class="safe">/52%</span></span>
+              <div class="bar-wrap"><div class="bar"><span style="width:16%;background:var(--personal)"></span><i class="tick" style="left:68%"></i></div><div class="tip">7d &middot; resets 3d 4h</div></div>
+              <span class="nums"><b class="cur good">16%</b><span class="safe">/68%</span></span>
+            </div>
+          </div>
+          <div class="A-acct" style="--acc:var(--fibo)">
+            <div class="badge" title="fibo"><i class="ph ph-buildings"></i></div>
+            <div class="A-metrics">
+              <div class="bar-wrap"><div class="bar"><span style="width:47%;background:var(--fibo)"></span><i class="tick" style="left:52%"></i></div><div class="tip">5h &middot; resets 47m</div></div>
+              <span class="nums"><b class="cur warn">47%</b><span class="safe">/52%</span></span>
+              <div class="bar-wrap"><div class="bar"><span style="width:15%;background:var(--fibo)"></span><i class="tick" style="left:8%"></i></div><div class="tip">7d &middot; resets 1d 6h</div></div>
+              <span class="nums"><b class="cur bad">15%</b><span class="safe">/8%</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">~176px wide, ~86px tall for 2 accounts. Precise + no ring-legibility risk. Every extra account is one more compact block, bars never misalign (fixed grid). <b>Hover a bar or the badge above.</b></div>
+    </div>
+  </section>
+
+  <!-- ============ B: CIRCLE ============ -->
+  <section class="board">
+    <div class="board-h"><span class="num">B</span><span class="t">Circle version</span><span class="d">Clean-sheet ring: bigger dial (52px, not 34), icon moved OUTSIDE the ring (left badge) so nothing is crammed inside it, numbers to the right stay precise. Outer ring = 5h, inner = 7d, notch = safe pace.</span></div>
+    <div class="stage">
+      <div class="desktop">
+        <div class="ov-card B">
+          <div class="B-acct" style="--acc:var(--personal)">
+            <div class="badge" title="personal"><i class="ph ph-user"></i></div>
+            <svg class="B-ring" viewBox="0 0 40 40" title="5h outer / 7d inner">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="9.5" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--personal)" stroke-width="4" stroke-linecap="round" stroke-dasharray="40.2 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="9.5" fill="none" stroke="var(--personal)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="9.55 59.69" transform="rotate(-90 20 20)"/>
+              <line x1="20" y1="2.5" x2="20" y2="6" stroke="rgba(226,224,240,.95)" stroke-width="1.8" transform="rotate(187.2 20 20)"/>
+              <line x1="20" y1="9" x2="20" y2="12.5" stroke="rgba(226,224,240,.95)" stroke-width="1.8" transform="rotate(244.8 20 20)"/>
+            </svg>
+            <div class="B-nums">
+              <div class="B-line" title="5h window &middot; resets 2h 10m"><span class="rk"><span class="swatch" style="background:var(--personal)"></span>5h</span><span class="nums"><b class="cur ok">40%</b><span class="safe">/52%</span></span></div>
+              <div class="B-line" title="7d window &middot; resets 3d 4h"><span class="rk"><span class="swatch" style="background:var(--personal);opacity:.55"></span>7d</span><span class="nums"><b class="cur good">16%</b><span class="safe">/68%</span></span></div>
+            </div>
+          </div>
+          <div class="B-acct" style="--acc:var(--fibo)">
+            <div class="badge" title="fibo"><i class="ph ph-buildings"></i></div>
+            <svg class="B-ring" viewBox="0 0 40 40" title="5h outer / 7d inner">
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="9.5" fill="none" stroke="var(--color-surface-alt)" stroke-width="4"/>
+              <circle cx="20" cy="20" r="16" fill="none" stroke="var(--fibo)" stroke-width="4" stroke-linecap="round" stroke-dasharray="47.25 100.53" transform="rotate(-90 20 20)"/>
+              <circle cx="20" cy="20" r="9.5" fill="none" stroke="var(--fibo)" stroke-width="4" opacity="0.55" stroke-linecap="round" stroke-dasharray="8.95 59.69" transform="rotate(-90 20 20)"/>
+              <line x1="20" y1="2.5" x2="20" y2="6" stroke="rgba(226,224,240,.95)" stroke-width="1.8" transform="rotate(187.2 20 20)"/>
+              <line x1="20" y1="9" x2="20" y2="12.5" stroke="rgba(226,224,240,.95)" stroke-width="1.8" transform="rotate(28.8 20 20)"/>
+            </svg>
+            <div class="B-nums">
+              <div class="B-line" title="5h window &middot; resets 47m"><span class="rk"><span class="swatch" style="background:var(--fibo)"></span>5h</span><span class="nums"><b class="cur warn">47%</b><span class="safe">/52%</span></span></div>
+              <div class="B-line" title="7d window &middot; resets 1d 6h"><span class="rk"><span class="swatch" style="background:var(--fibo);opacity:.55"></span>7d</span><span class="nums"><b class="cur bad">15%</b><span class="safe">/8%</span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+      </div>
+      <div class="note">Fixes V7's scribble: icon is out of the ring, ring is 52px not 34px so both arcs read cleanly, notch marks safe pace. Ring gives the instant "how full" glance; the numbers beside it keep the precision a dial alone loses. ~190px wide.</div>
+    </div>
+  </section>
+
+  <!-- ============ C: HOVER-REVEAL ============ -->
+  <section class="board">
+    <div class="board-h"><span class="num">C</span><span class="t">Hover reveals everything</span><span class="d">At rest: only a colored sliver per account (Joe's idea). On hover: expands to the full bar layout. Two resting flavors shown - pure sliver vs. sliver + one worst-case % - to judge whether a glance still tells you anything.</span></div>
+    <div class="stage">
+      <!-- C1 rest: pure sliver -->
+      <div>
+        <div class="desktop sm">
+          <div class="C-card">
+            <div class="C-rest">
+              <div class="C-sliver" style="--acc:var(--personal)"><span class="swatch"></span></div>
+              <div class="C-sliver" style="--acc:var(--fibo)"><span class="swatch"></span></div>
+            </div>
+          </div>
+          <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+        </div>
+        <div class="subcap">C1 &middot; at rest (pure sliver, Joe's literal idea)</div>
+      </div>
+
+      <!-- C2 rest: sliver + worst % -->
+      <div>
+        <div class="desktop sm">
+          <div class="C-card">
+            <div class="C-rest">
+              <div class="C-sliver" style="--acc:var(--personal)"><span class="swatch"></span><span class="mini show ok">40%</span></div>
+              <div class="C-sliver" style="--acc:var(--fibo)"><span class="swatch"></span><span class="mini show warn">47%</span></div>
+            </div>
+          </div>
+          <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+        </div>
+        <div class="subcap">C2 &middot; at rest (sliver + worst-of-the-two %)</div>
+      </div>
+
+      <!-- C expanded (forced open to show the hover state) -->
+      <div>
+        <div class="desktop sm">
+          <div class="C-card forced">
+            <div class="C-full">
+              <div class="A-acct" style="--acc:var(--personal)">
+                <div class="badge" title="personal"><i class="ph ph-user"></i></div>
+                <div class="A-metrics">
+                  <div class="bar-wrap"><div class="bar"><span style="width:40%;background:var(--personal)"></span><i class="tick" style="left:52%"></i></div></div>
+                  <span class="nums"><b class="cur ok">40%</b><span class="safe">/52%</span></span>
+                  <div class="bar-wrap"><div class="bar"><span style="width:16%;background:var(--personal)"></span><i class="tick" style="left:68%"></i></div></div>
+                  <span class="nums"><b class="cur good">16%</b><span class="safe">/68%</span></span>
+                </div>
+              </div>
+              <div class="A-acct" style="--acc:var(--fibo)">
+                <div class="badge" title="fibo"><i class="ph ph-buildings"></i></div>
+                <div class="A-metrics">
+                  <div class="bar-wrap"><div class="bar"><span style="width:47%;background:var(--fibo)"></span><i class="tick" style="left:52%"></i></div></div>
+                  <span class="nums"><b class="cur warn">47%</b><span class="safe">/52%</span></span>
+                  <div class="bar-wrap"><div class="bar"><span style="width:15%;background:var(--fibo)"></span><i class="tick" style="left:8%"></i></div></div>
+                  <span class="nums"><b class="cur bad">15%</b><span class="safe">/8%</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div>
+        </div>
+        <div class="subcap">on hover (expanded) &middot; either rest state opens to this</div>
+      </div>
+
+      <div class="note">The tension in the open decision: C1 (pure sliver) is the smallest but tells you <b>nothing</b> at a glance - defeats the point of a tray overlay you don't want to click. C2 keeps a single worst-case % per account visible at rest (still tiny), so a glance says "am I fine or not", and hover gives the full breakdown. <b>Hover the two live cards</b> to watch them expand.</div>
+    </div>
+  </section>
+
+</body>
+</html>

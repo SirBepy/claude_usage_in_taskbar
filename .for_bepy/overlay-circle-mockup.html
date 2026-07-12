@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="void">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Overlay circle - one colour, faded safe pace</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --color-primary: #9d7dfc;
+    --color-surface: #1e1d2b;
+    --color-text: #e2e0f0; --color-text-muted: #7d7ba6; --color-border: #2d2c44;
+    --color-success: #55e0a8; --color-danger: #e05252; --color-warn: #f0b95a;
+    --track: #201f2b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #0c0b12; color: var(--color-text); font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 13px; line-height: 1.5; padding: 26px 22px 90px; display: flex; flex-direction: column; align-items: center; gap: 30px; }
+
+  .legend { width: 1080px; max-width: 100%; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .legend .title { font-size: 18px; font-weight: 700; } .legend .title small { color: var(--color-text-muted); font-weight: 500; font-size: 12px; }
+  .legend .spacer { flex: 1; }
+  .lk { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: 12px; }
+  .lk .sw { width: 26px; height: 8px; border-radius: 3px; }
+  .lk .sw.solid { background: var(--color-success); }
+  .lk .sw.faded { background: linear-gradient(90deg, var(--color-success) 0 45%, color-mix(in srgb, var(--color-success) 30%, transparent) 45%); }
+  .lk .sw.dark { background: linear-gradient(90deg, color-mix(in srgb, var(--color-danger) 50%, #000) 0 60%, var(--color-danger) 60%); }
+
+  .board { width: 1080px; max-width: 100%; }
+  .board-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .board-h .num { min-width: 26px; height: 26px; padding: 0 8px; border-radius: 7px; flex: none; background: var(--color-surface); border: 1px solid var(--color-border); display: grid; place-items: center; font-weight: 700; font-size: 12px; color: var(--color-primary); }
+  .board-h .t { font-size: 16px; font-weight: 700; } .board-h .d { color: var(--color-text-muted); font-size: 12.5px; }
+  .stage { background: #0f0e16; border: 1px solid var(--color-border); border-radius: 14px; padding: 24px; display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .note { font-size: 12px; color: var(--color-text-muted); line-height: 1.6; background: var(--color-surface); border: 1px dashed var(--color-border); border-radius: 8px; padding: 12px 14px; max-width: 330px; flex: 1 1 260px; }
+  .note b { color: var(--color-text); }
+
+  .desktop { width: 420px; height: 260px; border-radius: 12px; overflow: hidden; position: relative; background: radial-gradient(120% 120% at 20% 0%, #2a2740 0%, #14131d 55%, #0d0c14 100%); border: 1px solid var(--color-border); flex: none; }
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: rgba(20,19,29,.86); backdrop-filter: blur(8px); border-top: 1px solid var(--color-border); display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  .tb-ico { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-text-muted); font-size: 14px; } .tb-ico.app { background: color-mix(in srgb, var(--color-primary) 22%, transparent); color: var(--color-primary); } .taskbar .grow { flex: 1; }
+  .tray { display: flex; align-items: center; gap: 9px; color: var(--color-text-muted); font-size: 13px; } .tray-app { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 16%, transparent); }
+
+  .ov { position: absolute; right: 12px; bottom: 48px; background: color-mix(in srgb, var(--color-surface) 94%, transparent); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 18px 48px rgba(0,0,0,.6); padding: 12px; display: flex; gap: 14px; align-items: flex-start; }
+
+  .cell { position: relative; display: flex; flex-direction: column; align-items: center; }
+  .dial { position: relative; width: 62px; height: 62px; cursor: help; }
+  .dial svg { display: block; width: 62px; height: 62px; }
+  .dial .ic { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; color: var(--color-text); opacity: .82; }
+
+  .pop { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(.94); z-index: 8; width: 150px; background: rgba(11,10,18,.975); border: 1px solid var(--color-border); border-radius: 11px; box-shadow: 0 12px 32px rgba(0,0,0,.66); padding: 9px 11px; opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s; }
+  .cell:hover .pop, .cell.forced .pop { opacity: 1; transform: translate(-50%,-50%) scale(1); pointer-events: auto; }
+  .pop .pnm { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12.5px; margin-bottom: 7px; } .pop .pnm i { font-size: 13px; color: var(--color-text-muted); }
+  .pop .prow { display: grid; grid-template-columns: 18px 1fr; align-items: baseline; gap: 6px; font-size: 12px; padding: 2px 0; position: relative; cursor: help; }
+  .pop .prow .rk { font-size: 9px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .pop .prow .val { font-variant-numeric: tabular-nums; } .pop .prow .val b { font-weight: 700; } .pop .prow .val .safe { color: var(--color-text-muted); opacity: .6; font-size: 10.5px; }
+  .cur.ok { color: var(--color-success); } .cur.warn { color: var(--color-warn); } .cur.bad { color: var(--color-danger); }
+  .tt { position: absolute; right: 100%; top: 50%; transform: translateY(-50%) translateX(-8px); z-index: 9; background: #08070d; border: 1px solid var(--color-border); border-radius: 7px; padding: 6px 9px; width: 120px; opacity: 0; pointer-events: none; transition: opacity .12s; }
+  .prow:hover .tt, .prow.forced .tt { opacity: 1; }
+  .tt .l1 { font-weight: 700; font-size: 11px; } .tt .l2 { font-size: 11px; } .tt .l3 { font-size: 10.5px; color: var(--color-text-muted); }
+</style>
+</head>
+<body>
+
+  <div class="legend">
+    <span class="title">Overlay circle - one colour, faded safe pace <small>&middot; theme-void dark</small></span>
+    <span class="spacer"></span>
+    <span class="lk"><span class="sw solid"></span> current</span>
+    <span class="lk"><span class="sw faded"></span> faded = safe-pace headroom (under)</span>
+    <span class="lk"><span class="sw dark"></span> over = darker up to safe, bright past it</span>
+  </div>
+
+  <section class="board">
+    <div class="board-h"><span class="num">1</span><span class="t">One colour per ring = your pace state</span><span class="d">Colour is entirely status (green good / amber close / red over, per the Settings thresholds). Solid = where you are now. A faded ghost of the same colour extends to your safe-pace mark (your headroom). If you're over, the part up to safe goes darker and the overshoot stays bright.</span></div>
+    <div class="stage">
+      <div class="desktop"><div class="ov" id="R1"></div><div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div></div>
+      <div class="note"><b>personal</b>: both rings green, big faded gap = lots of headroom. <b>fibo</b>: 5h amber with a thin faded sliver (47 vs 52, almost at pace); 7d red - <b>darker</b> up to the safe mark (8%), then <b>brighter</b> red for the bit you're over (8→15). Icon (dimmed, neutral) tells the accounts apart since colour no longer does.</div>
+    </div>
+  </section>
+
+  <section class="board">
+    <div class="board-h"><span class="num">2</span><span class="t">Hover = info on top of the dial</span><span class="d">Same dials; hovering lays the name + both windows over the dial, hover a % row for the session detail. personal forced-open here; fibo is live in the preview.</span></div>
+    <div class="stage">
+      <div class="desktop" style="height:300px"><div class="ov" id="R2" style="right:70px"></div><div class="taskbar"><div class="tb-ico app"><i class="ph ph-baton"></i></div><div class="grow"></div><div class="tray"><i class="ph ph-wifi-high"></i><div class="tray-app"><i class="ph ph-gauge"></i></div></div></div></div>
+      <div class="note">Numbers in the popover carry the same status colour, so the panel and the ring agree at a glance.</div>
+    </div>
+  </section>
+
+<script>
+  const CS = getComputedStyle(document.documentElement);
+  const TRACK = CS.getPropertyValue('--track').trim();
+  const COL = { ok: CS.getPropertyValue('--color-success').trim(), warn: CS.getPropertyValue('--color-warn').trim(), bad: CS.getPropertyValue('--color-danger').trim() };
+
+  const ACCOUNTS = [
+    { icon:'ph-user', name:'personal',
+      fiveH:{cur:40, safe:52, resets:'1h 14m left', clock:'resets 14:50'},
+      sevenD:{cur:16, safe:68, resets:'well under pace', clock:'resets Thu'} },
+    { icon:'ph-buildings', name:'fibo',
+      fiveH:{cur:47, safe:52, resets:'47m left', clock:'resets 12:10'},
+      sevenD:{cur:15, safe:8, resets:'7% over pace', clock:'resets Sat'} },
+  ];
+
+  const statusOf = (cur, safe) => cur > safe ? 'bad' : (cur >= safe*0.9 ? 'warn' : 'ok');
+  const arc = (r, startPct, lenPct) => { const c = 2*Math.PI*r; return { dash: (lenPct/100*c).toFixed(2)+' '+c.toFixed(2), rot: (-90 + startPct/100*360).toFixed(2) }; };
+  const seg = (r, w, a, stroke, cap, extra='') => `<circle cx="22" cy="22" r="${r}" fill="none" stroke="${stroke}" stroke-width="${w}" stroke-dasharray="${a.dash}" transform="rotate(${a.rot} 22 22)"${cap?' stroke-linecap="round"':''}${extra}/>`;
+
+  function ring(r, w, cur, safe){
+    const st = statusOf(cur, safe), color = COL[st];
+    let out = seg(r, w, arc(r, 0, 100), TRACK, false);             // z0: full default track
+    if (cur === safe){
+      out += seg(r, w, arc(r, 0, cur), color, true);               // exactly on pace: one solid bar
+    } else if (cur < safe){
+      // under pace: larger (safe) faded underneath, smaller (current) solid on top
+      out += seg(r, w, arc(r, 0, safe), color, true, ' opacity="0.3"'); // z1
+      out += seg(r, w, arc(r, 0, cur), color, true);                    // z2 on top
+    } else {
+      // over pace: larger (current) normal underneath, smaller (safe) darker on top
+      const darker = `color-mix(in srgb, ${color} 52%, #08060c)`;
+      out += seg(r, w, arc(r, 0, cur), color, true);                    // z1 (current, bright)
+      out += seg(r, w, arc(r, 0, safe), darker, true);                  // z2 (safe, darker) on top
+    }
+    return out;
+  }
+
+  function dial(a){
+    const outer = ring(19, 4.5, a.fiveH.cur, a.fiveH.safe);
+    const inner = ring(12, 3, a.sevenD.cur, a.sevenD.safe);
+    return `<div class="dial" title="${a.name}"><svg viewBox="0 0 44 44">${outer}${inner}</svg><div class="ic"><i class="ph ${a.icon}"></i></div></div>`;
+  }
+
+  function popup(a){
+    const s5 = statusOf(a.fiveH.cur, a.fiveH.safe), s7 = statusOf(a.sevenD.cur, a.sevenD.safe);
+    return `<div class="pop">
+      <div class="pnm"><i class="ph ${a.icon}"></i>${a.name}</div>
+      <div class="prow forced"><span class="rk">5h</span><span class="val"><b class="cur ${s5}">${a.fiveH.cur}%</b><span class="safe"> / ${a.fiveH.safe}%</span></span>
+        <div class="tt"><div class="l1 cur ${s5}">5h session</div><div class="l2">${a.fiveH.resets}</div><div class="l3">${a.fiveH.clock}</div></div></div>
+      <div class="prow"><span class="rk">7d</span><span class="val"><b class="cur ${s7}">${a.sevenD.cur}%</b><span class="safe"> / ${a.sevenD.safe}%</span></span>
+        <div class="tt"><div class="l1 cur ${s7}">7d window</div><div class="l2">${a.sevenD.resets}</div><div class="l3">${a.sevenD.clock}</div></div></div>
+    </div>`;
+  }
+
+  function mount(id, withPop){
+    const host = document.getElementById(id);
+    ACCOUNTS.forEach((a, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (withPop && i === 0 ? ' forced' : '');
+      cell.innerHTML = (withPop ? popup(a) : '') + dial(a);
+      host.appendChild(cell);
+    });
+  }
+  mount('R1', false);
+  mount('R2', true);
+</script>
+</body>
+</html>

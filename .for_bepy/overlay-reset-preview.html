@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Overlay redesign preview</title>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<style>
+  :root {
+    --surface: #1f1f2c;
+    --surface-alt: #262637;
+    --border: #2e2e40;
+    --text: #e8e8f0;
+    --muted: #8a8aa0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 20% 10%, #3a5a8c 0%, transparent 55%),
+      radial-gradient(900px 700px at 85% 80%, #6b3a6e 0%, transparent 60%),
+      linear-gradient(135deg, #16202e 0%, #1c1730 100%);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 30px 24px 64px;
+  }
+  h1 { font-size: 19px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: #c8c8dc; font-size: 13.5px; margin: 0 0 26px; max-width: 720px; line-height: 1.55; }
+  .sub b { color: #fff; }
+  .sub li { margin: 3px 0; }
+
+  .demo { display: flex; gap: 48px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* ── Faithful overlay ────────────────────────────────────────────────── */
+  .oc { width: 320px; }
+
+  /* Drag handle: the ONLY grab surface now. */
+  .oc-grip {
+    display: flex; align-items: center; justify-content: center;
+    height: 20px; margin: 0 8px 2px; border-radius: 8px;
+    color: var(--muted); cursor: grab; font-size: 18px; line-height: 1;
+    opacity: 0.45; transition: opacity 0.15s, background 0.15s;
+  }
+  .oc-grip:hover { opacity: 0.9; background: rgba(255,255,255,0.06); }
+
+  .oc-rows { display: flex; flex-direction: column; gap: 8px; padding: 0 8px 8px; }
+
+  .oc-row {
+    position: relative;
+    background: transparent;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid transparent;
+    border-top: 3px solid var(--acc, #6e8fff);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;                          /* card body = click to open dashboard */
+    transition: background 0.16s, border-color 0.16s, box-shadow 0.16s;
+  }
+  .oc-row:hover {
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    border-color: var(--border);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+  }
+
+  .oc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+  .oc-badge { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+    background: var(--acc); color: #fff; font-size: 12px; font-weight: 700; flex: none; }
+  .oc-nm { font-weight: 600; }
+  .grow { flex: 1; }
+
+  /* Reset line: hidden by default, appears only on card hover. */
+  .oc-rs { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+    opacity: 0; transition: opacity 0.16s; }
+  .oc-row:hover .oc-rs { opacity: 1; }
+
+  .oc-metric {
+    display: grid;
+    grid-template-columns: 24px 1fr 74px;     /* fixed number column → constant bar width */
+    align-items: center;
+    gap: 9px;
+    margin-top: 6px;
+  }
+  /* 5h / 7d label carries the reset tooltip (Option B). */
+  .oc-k { position: relative; font-size: 10.5px; color: var(--muted); text-transform: uppercase;
+    cursor: help; text-decoration: underline dotted rgba(255,255,255,0.3); text-underline-offset: 2px; width: fit-content; }
+  .oc-k .bubble {
+    position: absolute; bottom: 155%; left: 0; z-index: 5;
+    background: #10101a; border: 1px solid var(--border); border-radius: 7px;
+    padding: 5px 8px; font-size: 11px; color: var(--text); text-transform: none;
+    white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none;
+    transition: opacity 0.12s, transform 0.12s; box-shadow: 0 8px 20px rgba(0,0,0,0.5); font-variant-numeric: tabular-nums; }
+  .oc-k:hover .bubble { opacity: 1; transform: translateY(0); }
+
+  .oc-bar { position: relative; height: 8px; border-radius: 4px; background: var(--surface-alt); }
+  .oc-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--acc); }
+  .oc-bar > .tick { position: absolute; top: -2px; height: 12px; width: 2px; border-radius: 1px; background: rgba(226,224,240,0.9); }
+  .oc-nums { display: flex; align-items: baseline; gap: 1px; justify-content: flex-end; white-space: nowrap; }
+  .oc-nums .cur { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .oc-nums .safe { color: var(--muted); opacity: 0.6; font-size: 11px; }
+
+  .notes { max-width: 320px; font-size: 12.5px; color: #c2c2d6; line-height: 1.6; }
+  .notes h3 { font-size: 13px; color: #fff; margin: 0 0 8px; }
+  .notes code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+  <h1>Overlay redesign — final look</h1>
+  <p class="sub">This is the whole thing put together. Try it:</p>
+
+  <div class="demo">
+    <div class="oc">
+      <div class="oc-grip" title="drag to move / flick to a corner"><i class="ph ph-dots-six"></i></div>
+      <div class="oc-rows">
+        <div class="oc-row" style="--acc:#6e8fff">
+          <div class="oc-top"><span class="oc-badge">A</span><span class="oc-nm">Anthropic</span><span class="grow"></span>
+            <span class="oc-rs">resets in 3h 12m</span></div>
+          <div class="oc-metric"><span class="oc-k">5h<span class="bubble">resets 14:30 today</span></span><div class="oc-bar"><span style="width:62%"></span><i class="tick" style="left:80%"></i></div><span class="oc-nums"><b class="cur">62%</b><span class="safe">/80%</span></span></div>
+          <div class="oc-metric"><span class="oc-k">7d<span class="bubble">resets Thu 09:00</span></span><div class="oc-bar"><span style="width:41%"></span><i class="tick" style="left:55%"></i></div><span class="oc-nums"><b class="cur">41%</b><span class="safe">/55%</span></span></div>
+        </div>
+        <div class="oc-row" style="--acc:#e0894a">
+          <div class="oc-top"><span class="oc-badge">W</span><span class="oc-nm">Work acct</span><span class="grow"></span>
+            <span class="oc-rs">resets in 47m</span></div>
+          <div class="oc-metric"><span class="oc-k">5h<span class="bubble">resets 11:15 today</span></span><div class="oc-bar"><span style="width:100%;background:#e2564a"></span><i class="tick" style="left:70%"></i></div><span class="oc-nums"><b class="cur" style="color:#e2564a">128%</b><span class="safe">/100%</span></span></div>
+          <div class="oc-metric"><span class="oc-k">7d<span class="bubble">resets Sat 00:00</span></span><div class="oc-bar"><span style="width:88%"></span><i class="tick" style="left:60%"></i></div><span class="oc-nums"><b class="cur">88%</b><span class="safe">/60%</span></span></div>
+        </div>
+        <div class="oc-row" style="--acc:#57b894">
+          <div class="oc-top"><span class="oc-badge">P</span><span class="oc-nm">Personal</span><span class="grow"></span>
+            <span class="oc-rs">resets in 1h 05m</span></div>
+          <div class="oc-metric"><span class="oc-k">5h<span class="bubble">resets 15:20 today</span></span><div class="oc-bar"><span style="width:24%"></span><i class="tick" style="left:45%"></i></div><span class="oc-nums"><b class="cur">24%</b><span class="safe">/45%</span></span></div>
+          <div class="oc-metric"><span class="oc-k">7d<span class="bubble">resets Mon 12:00</span></span><div class="oc-bar"><span style="width:9%"></span><i class="tick" style="left:30%"></i></div><span class="oc-nums"><b class="cur">9%</b><span class="safe">/30%</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h3>What to check</h3>
+      <ul style="padding-left:18px;margin:0">
+        <li>Only the <code>⠿</code> grip at the top is grabbable — cards no longer drag.</li>
+        <li>Card background is transparent; it fills in on hover.</li>
+        <li>The <b>resets in …</b> line (top-right) is hidden until you hover the card.</li>
+        <li>Hover a <code>5h</code> / <code>7d</code> label → tooltip with the exact reset time.</li>
+        <li>Cards show a pointer cursor — clicking one opens the dashboard for that account.</li>
+        <li>Taller bars, slightly bigger text, and the <b>128%/100%</b> row keeps the same bar width.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
