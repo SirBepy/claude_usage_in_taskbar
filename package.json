@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "dev:harness": "vite --port 4420 --strictPort",
+    "test:view": "playwright test",
     "test:e2e": "wdio run e2e/wdio.conf.js",
     "test:e2e:chat": "wdio run e2e/wdio.conf.js --spec e2e/specs/reload-dup.e2e.js",
     "test:e2e:changes": "wdio run e2e/wdio.conf.js --spec e2e/specs/changes-panel.e2e.js",
@@ -22,6 +24,7 @@
     "kill-orphans": "node scripts/kill-dev-orphans.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "20.19.39",
     "@wdio/cli": "^9.27.1",

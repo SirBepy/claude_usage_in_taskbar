@@ -12,6 +12,8 @@ Thumbs.db
 .direct-api-test-output.json
 .captured-cookies.json
 .playwright-mcp/
+test-results/
+playwright-report/
 .superpowers/
 .for_bepy/spike_fixtures/
 .for_bepy/autopilot-hots/
