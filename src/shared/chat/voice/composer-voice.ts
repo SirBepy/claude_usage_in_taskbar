@@ -2,7 +2,7 @@
 // Owns the VoiceController lifecycle, positional tracking (commitPos/volatileLen),
 // and the mic button visual state. Composer delegates all voice concerns here.
 
-import { VoiceController, type VoiceState } from "./controller";
+import { VoiceController, warmVoiceEngine, type VoiceState } from "./controller";
 
 export interface ComposerVoiceCallbacks {
   /** Full edit: autoResize + updateHighlight + persistDraft + onDraftActivity. */
@@ -21,9 +21,21 @@ export class ComposerVoice {
   private micBtn: HTMLButtonElement | null = null;
   private textarea: HTMLTextAreaElement | null = null;
   private cb: ComposerVoiceCallbacks;
+  private lastWarmAt = 0;
 
   constructor(cb: ComposerVoiceCallbacks) {
     this.cb = cb;
+  }
+
+  /** Pre-warm the STT sidecar so the first mic click starts recording instantly.
+   *  Called when the chat opens (and on mic hover as a re-warm). Throttled: the
+   *  daemon idle-shuts the sidecar down after a few idle minutes, so re-warm only
+   *  when the last warm is stale enough to have plausibly expired. */
+  warm(): void {
+    const now = Date.now();
+    if (now - this.lastWarmAt < 4 * 60_000) return;
+    this.lastWarmAt = now;
+    void warmVoiceEngine();
   }
 
   mount(micBtn: HTMLButtonElement, textarea: HTMLTextAreaElement): void {

@@ -365,7 +365,16 @@ export class Composer {
         const pos = this.textarea?.selectionStart ?? this.textarea?.value.length ?? 0;
         void this.cv.toggle(pos);
       });
-      if (this.micBtn && this.textarea) this.cv.mount(this.micBtn, this.textarea);
+      // Re-warm the STT sidecar on hover so a stale (idle-shut-down) engine is
+      // hot again by the time the click lands. Throttled inside warm().
+      this.micBtn?.addEventListener("pointerenter", () => {
+        if (!this.disabled) this.cv.warm();
+      });
+      if (this.micBtn && this.textarea) {
+        this.cv.mount(this.micBtn, this.textarea);
+        // Chat is now open: pre-warm so the first dictation click is instant.
+        this.cv.warm();
+      }
       this.root.classList.add("composer-root");
       this.root.addEventListener("dragover", this.onDragOver);
       this.root.addEventListener("dragleave", this.onDragLeave);

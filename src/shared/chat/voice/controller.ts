@@ -69,6 +69,40 @@ async function voiceWsTarget(): Promise<{ base: string; token: string }> {
   return { base: "ws://127.0.0.1:27183", token };
 }
 
+/** Pre-spawn the daemon's STT sidecar and load the Whisper model *before* the
+ *  user hits the mic, so the first real click flips straight to "recording"
+ *  instead of sitting in "connecting" through a multi-second cold start. Opens a
+ *  throwaway transcribe WS (no mic capture), waits for the sidecar's "ready"
+ *  frame - which arrives once the model is resident - then closes. The daemon
+ *  keeps the sidecar (and its loaded model) alive for its idle window, so the
+ *  subsequent real connect reuses the warm model. Fire-and-forget; every failure
+ *  is non-fatal (the click path still works cold). */
+export async function warmVoiceEngine(): Promise<void> {
+  try {
+    const { base, token } = await voiceWsTarget();
+    const url = `${base}/ws/transcribe?token=${encodeURIComponent(token)}`;
+    const ws = new WebSocket(url);
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        try { ws.close(); } catch { /* already closing */ }
+        resolve();
+      };
+      // Cap the wait so a wedged sidecar never leaves the warm socket dangling.
+      const timer = setTimeout(done, 30000);
+      ws.onmessage = (e: MessageEvent) => {
+        try {
+          if ((JSON.parse(e.data as string) as { type: string }).type === "ready") done();
+        } catch { /* ignore non-JSON frames */ }
+      };
+      ws.onerror = done;
+      ws.onclose = () => { clearTimeout(timer); resolve(); };
+    });
+  } catch (e) {
+    console.debug("[voice] warm failed (non-fatal)", e);
+  }
+}
+
 export class VoiceController {
   private ws: WebSocket | null = null;
   private ctx: AudioContext | null = null;
