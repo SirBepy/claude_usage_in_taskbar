@@ -233,15 +233,39 @@ async fn compute_fired(state: &Arc<DaemonState>, mut item: ScheduledItem, now: D
     }
     item.last_fired_at = Some(now.to_rfc3339());
     item.last_result = Some(match &outcome {
-        Ok(()) => "sent".to_string(),
+        Ok(_) => "sent".to_string(),
         Err(reason) => reason.clone(),
     });
+    // On a successful fire, `outcome` carries the session id that was spawned
+    // (NewChat) or targeted (Message), so the schedule view can later offer
+    // an "open that chat" click-through. A failed fire leaves whatever
+    // `last_session_id` was recorded on the previous fire untouched.
+    if let Ok(Some(sid)) = &outcome {
+        item.last_session_id = Some(sid.clone());
+        // Announce the fire so the app can pop a clickable toast: a scheduled
+        // chat otherwise springs to life silently (it only surfaces when the
+        // session list next refreshes, often mid-response). One-shot per fire,
+        // distinct from the list-shaped `scheduled_items_changed` broadcast.
+        let kind_tag = match &item.kind {
+            ScheduledKind::Message { .. } => "message",
+            ScheduledKind::NewChat { .. } => "new_chat",
+        };
+        state.notifier.publish(
+            "scheduled_item_fired",
+            serde_json::json!({
+                "id": item.id,
+                "kind": kind_tag,
+                "session_id": sid,
+                "prompt": item.prompt,
+            }),
+        );
+    }
     if let Some(rec) = item.recurrence.clone() {
         item.fire_at = scheduled_items::next_occurrence(now, &rec).to_rfc3339();
         item.status = ScheduledStatus::Pending;
     } else {
         item.status = match outcome {
-            Ok(()) => ScheduledStatus::Sent,
+            Ok(_) => ScheduledStatus::Sent,
             Err(reason) => ScheduledStatus::Failed { reason },
         };
     }
@@ -253,10 +277,13 @@ pub(crate) fn parse_rate_limited(reason: &str) -> Option<i64> {
     reason.strip_prefix(RATE_LIMITED_PREFIX)?.parse().ok()
 }
 
-async fn fire_kind(state: &Arc<DaemonState>, item: &ScheduledItem) -> Result<(), String> {
+/// `Ok(Some(session_id))` on success: the session id the fire sent into
+/// (spawned fresh for `NewChat`, or the existing target for `Message`).
+async fn fire_kind(state: &Arc<DaemonState>, item: &ScheduledItem) -> Result<Option<String>, String> {
     match &item.kind {
         ScheduledKind::Message { session_id, cwd } => {
-            fire_message(state, session_id, cwd, &item.prompt).await
+            fire_message(state, session_id, cwd, &item.prompt).await?;
+            Ok(Some(session_id.clone()))
         }
         ScheduledKind::NewChat { cwd, model, effort, account_id } => {
             fire_new_chat(state, cwd, model, effort, account_id.as_deref(), &item.prompt).await
@@ -341,7 +368,7 @@ async fn fire_new_chat(
     effort: &str,
     account_id: Option<&str>,
     prompt: &str,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let params = StartSessionParams {
         cwd: PathBuf::from(cwd),
         model: model.to_string(),
@@ -374,7 +401,7 @@ async fn fire_new_chat(
     state.registry.set_awaiting(&sid, None);
     state.registry.set_busy(&sid, true);
     state.notifier.publish("instances_changed", serde_json::json!({"instances": state.registry.list()}));
-    Ok(())
+    Ok(Some(sid))
 }
 
 fn err_to_string(e: LifecycleError) -> String {

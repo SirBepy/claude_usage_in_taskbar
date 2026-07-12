@@ -86,6 +86,11 @@ pub struct ScheduledItem {
     pub created_at: String,
     pub last_fired_at: Option<String>,
     pub last_result: Option<String>,
+    /// The session id spawned/targeted by the most recent fire, so the
+    /// frontend can offer an "open that chat" click-through. `None` until
+    /// the item has fired at least once (or the fire failed before a session
+    /// id was known).
+    pub last_session_id: Option<String>,
 }
 
 impl ScheduledItem {
@@ -103,6 +108,7 @@ impl ScheduledItem {
             created_at: chrono::Utc::now().to_rfc3339(),
             last_fired_at: None,
             last_result: None,
+            last_session_id: None,
         }
     }
 }

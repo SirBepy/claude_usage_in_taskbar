@@ -284,6 +284,7 @@ if (!await ensureRemoteToken()) {
 
   setupNewsBadgeAndNotifications();
   setupScheduleMissedPopup();
+  setupScheduledFireToast();
 }
 })();
 
@@ -421,6 +422,43 @@ function setupScheduleMissedPopup(): void {
 
     const ok = await askConfirm(text, { confirmLabel: "Open schedule", cancelLabel: "Dismiss", danger: false });
     if (ok) showView("schedule");
+  });
+}
+
+// A scheduled item just fired (daemon -> `scheduled-item-fired`). Pop a
+// clickable toast so a scheduled chat/message doesn't spring to life silently
+// (Joe's report: a scheduled new-chat "suddenly appeared" mid-response with no
+// heads-up). Registered globally in both the main and Chats windows; clicking
+// opens the chat via `open_chats_for_session` (which builds/focuses the Chats
+// window and resumes a closed session). One event per fire, so no de-dup set.
+interface ScheduledFirePayload { id: string; kind: string; session_id: string; prompt: string }
+
+function setupScheduledFireToast(): void {
+  const ev = window.__TAURI__?.event;
+  if (!ev?.listen) return;
+
+  void ev.listen<ScheduledFirePayload>("scheduled-item-fired", (e) => {
+    const p = e.payload;
+    if (!p?.session_id) return;
+    const isNewChat = p.kind === "new_chat";
+    const title = isNewChat ? "Scheduled chat started" : "Scheduled message sent";
+    const detail = (p.prompt || "").trim().replace(/\s+/g, " ").slice(0, 60);
+
+    const stack = document.getElementById("toastStack");
+    if (!stack) return;
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML = `<span class="toast-msg"></span>`;
+    const msg = toast.querySelector(".toast-msg");
+    if (msg) msg.textContent = detail ? `${title}: ${detail}` : title;
+    toast.onclick = () => {
+      void invoke("open_chats_for_session", { sessionId: p.session_id, mode: "live" })
+        .catch((err) => console.error("[schedule] open_chats_for_session failed", err));
+    };
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => toast.classList.add("leaving"), 6000);
+    setTimeout(() => toast.remove(), 6300);
   });
 }
 

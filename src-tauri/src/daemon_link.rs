@@ -272,6 +272,13 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
         "scheduled_items_changed" => {
             let _ = app.emit("scheduled-items-changed", params);
         }
+        // A scheduled item just fired successfully. Carries { id, kind,
+        // session_id, prompt } directly (unlike the list-shaped changed event),
+        // so the app can pop a clickable "scheduled chat started" toast that
+        // opens that chat. Pure forward.
+        "scheduled_item_fired" => {
+            let _ = app.emit("scheduled-item-fired", params);
+        }
         // "permission_request" and "question_request" are intentionally NOT handled
         // here. Both are delivered via the reliable `list_pending_prompts` poll (see
         // `spawn_pending_prompt_poll`) because the broadcast can silently drop frames
