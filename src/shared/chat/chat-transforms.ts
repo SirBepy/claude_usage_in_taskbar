@@ -41,6 +41,17 @@ const mdBreaks = new MarkdownIt({
 });
 mdBreaks.linkify.tlds("md", false);
 
+// PR preview bodies are Claude-authored (git commits / /create-pr output),
+// not arbitrary chat/tool content, so raw HTML like GitHub's <details>
+// collapsible sections is safe to render here even though the general
+// chat renderer above keeps html:false as a blast-radius guard.
+const mdHtml = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: false,
+});
+mdHtml.linkify.tlds("md", false);
+
 // Matches <file:PATH> or <file:PATH::DISPLAYNAME> tokens in user message text.
 // Group 1 = path, group 2 = display name (optional).
 const FILE_TOKEN_RE = /<file:(.+?)(?:::(.+?))?>/g;
@@ -172,7 +183,7 @@ function pastedLogChipHtml(name: string, body: string): string {
  * click handler only needs to surface the hidden template. */
 export function renderPrPreviewCard(title: string, bodyB64: string, commitsB64: string): string {
   const body = base64ToUtf8(bodyB64);
-  const renderedBody = body ? renderMarkdown(body) : "<p><em>No description.</em></p>";
+  const renderedBody = body ? renderMarkdown(body, false, true) : "<p><em>No description.</em></p>";
   let commitsHtml = "";
   try {
     const commits = JSON.parse(base64ToUtf8(commitsB64)) as Array<{ sha: string; msg: string }>;
@@ -259,8 +270,8 @@ function wrapTables(html: string): string {
   });
 }
 
-function renderMarkdown(text: string, breaks = false): string {
-  const inst = breaks ? mdBreaks : md;
+function renderMarkdown(text: string, breaks = false, allowHtml = false): string {
+  const inst = allowHtml ? mdHtml : breaks ? mdBreaks : md;
   return highlightKeywords(wrapTables(linkifyInlineCodeUrls(highlightSlashMentions(inst.render(text)), inst)));
 }
 
