@@ -2,8 +2,7 @@ import { base64ToUtf8 } from "./chat-transforms";
 import { openLightbox } from "./lightbox";
 import { chipToLightboxContent } from "./attachment-hydrator";
 import { showView } from "../navigation";
-import { escapeHtml } from "../escape-html";
-import { invoke } from "../ipc";
+import { openPrPreviewModal } from "./pr-review-modal";
 
 let tableOverlay: HTMLDivElement | null = null;
 
@@ -70,106 +69,12 @@ export function handleSlashClick(e: MouseEvent): void {
   showView("skill-detail");
 }
 
-let prModalOverlay: HTMLDivElement | null = null;
-
-function closePrModal(): void {
-  if (!prModalOverlay) return;
-  prModalOverlay.remove();
-  prModalOverlay = null;
-  document.removeEventListener("keydown", onPrModalEsc);
-}
-
-function onPrModalEsc(e: KeyboardEvent): void {
-  if (e.key === "Escape") closePrModal();
-}
-
-/** The "drag this screenshot into GitHub" stand-in shown when a local image
- * can't be inlined (unreadable path, non-image, or read failure). */
-function prImgPlaceholder(): HTMLDivElement {
-  const ph = document.createElement("div");
-  ph.className = "pr-img-placeholder";
-  ph.innerHTML = '<i class="ph ph-image"></i><span>Screenshot — drag into GitHub after creating the PR</span>';
-  return ph;
-}
-
-const PR_IMG_MIME: Record<string, string> = {
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-  gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp",
-};
-
-/** Image mime for a local path by extension, or null if it isn't an image. */
-function imageMimeFromPath(path: string): string | null {
-  const m = path.toLowerCase().match(/\.([a-z0-9]+)(?:\?.*)?$/);
-  return m ? (PR_IMG_MIME[m[1]!] ?? null) : null;
-}
-
 export function handlePrPreviewClick(e: MouseEvent): void {
   const btn = (e.target as Element).closest<HTMLButtonElement>(".pr-preview-btn");
   if (!btn) return;
   const card = btn.closest<HTMLElement>(".pr-preview-card");
   if (!card) return;
-  const tmpl = card.querySelector<HTMLTemplateElement>("template.pr-modal-tpl");
-  if (!tmpl) return;
-
-  closePrModal();
-
-  const overlay = document.createElement("div");
-  overlay.className = "pr-modal-overlay";
-  overlay.addEventListener("click", (ev) => { if (ev.target === overlay) closePrModal(); });
-  prModalOverlay = overlay;
-
-  const modal = document.createElement("div");
-  modal.className = "pr-modal";
-
-  const header = document.createElement("div");
-  header.className = "pr-modal-header";
-  const title = card.dataset.prTitle ?? "PR Preview";
-  header.innerHTML = `<i class="ph ph-git-pull-request"></i><span class="pr-modal-title">${escapeHtml(title)}</span><button class="pr-modal-close" aria-label="Close"><i class="ph ph-x"></i></button>`;
-  header.querySelector<HTMLButtonElement>(".pr-modal-close")!.addEventListener("click", closePrModal);
-
-  const content = document.createElement("div");
-  content.className = "pr-modal-content";
-  content.appendChild(tmpl.content.cloneNode(true));
-
-  // Images: remote URLs render directly (placeholder on 404). A local path
-  // can't load inside the webview (CSP + no file://), but a data: URL CAN, so
-  // read the file through the daemon and inline it as base64 to show the real
-  // screenshot in the preview. (It still must be dragged into GitHub on PR
-  // creation - GitHub won't resolve a local path either.) Any failure - bad
-  // path, non-image, read error - falls back to the drag-it-in placeholder.
-  content.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
-    const src = img.getAttribute("src") ?? "";
-    const isRemote = src.startsWith("https://") || src.startsWith("http://") || src.startsWith("data:");
-    if (isRemote) {
-      img.addEventListener("error", () => img.replaceWith(prImgPlaceholder()));
-      return;
-    }
-    const localPath = src.replace(/^file:\/\//, "");
-    const mime = imageMimeFromPath(localPath);
-    if (!mime) { img.replaceWith(prImgPlaceholder()); return; }
-    void invoke<string>("read_file_as_base64", { path: localPath })
-      .then((b64) => { img.src = `data:${mime};base64,${b64}`; })
-      .catch(() => img.replaceWith(prImgPlaceholder()));
-  });
-
-  // Render mermaid code blocks as styled diagram placeholders. markdown-it
-  // outputs <pre><code class="language-mermaid">; GitHub renders these
-  // natively but the in-app modal doesn't have mermaid.js.
-  content.querySelectorAll<HTMLElement>("code.language-mermaid").forEach((code) => {
-    const pre = code.closest("pre");
-    if (!pre) return;
-    const source = code.textContent ?? "";
-    const wrap = document.createElement("div");
-    wrap.className = "pr-mermaid-placeholder";
-    wrap.innerHTML = `<div class="pr-mermaid-header"><i class="ph ph-flow-arrow"></i><span>Diagram — renders on GitHub</span></div><pre class="pr-mermaid-source">${escapeHtml(source)}</pre>`;
-    pre.replaceWith(wrap);
-  });
-
-  modal.appendChild(header);
-  modal.appendChild(content);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-  document.addEventListener("keydown", onPrModalEsc);
+  openPrPreviewModal(card);
 }
 
 export function handleAttachmentClick(e: MouseEvent): void {

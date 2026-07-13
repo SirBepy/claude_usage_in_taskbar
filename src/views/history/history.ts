@@ -6,6 +6,7 @@ import { showView } from "../../shared/navigation";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
 import { showChatLoadingOverlay } from "../../shared/chat/chat-loading";
+import { setPrReviewCwdProvider } from "../../shared/chat/pr-review-modal";
 import { queueHistoryResume } from "../sessions/sessions";
 import { openChangeAccountModal } from "../../shared/change-account-modal";
 import "../../shared/chat/chat.css";
@@ -161,6 +162,9 @@ async function selectHistorySession(sessionId: string, pane: HTMLElement): Promi
   if (!messagesEl) return;
   const renderer = new ChatRenderer(messagesEl);
   state.renderer = renderer;
+  // Let the PR-preview modal's git IPC calls resolve this historical
+  // session's working directory.
+  setPrReviewCwdProvider(() => (entry?.cwd ? String(entry.cwd) : null));
 
   await renderer.attach(sessionId);
   if (state.mountId !== myMount || state.selectedId !== sessionId) {

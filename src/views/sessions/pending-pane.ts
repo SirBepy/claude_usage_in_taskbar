@@ -3,6 +3,7 @@ import { invoke } from "../../shared/ipc";
 import { api } from "../../shared/api";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
 import { sessionEvents } from "../../shared/chat/event-store";
+import { setPrReviewCwdProvider } from "../../shared/chat/pr-review-modal";
 import { Composer } from "../../shared/chat/composer";
 import { HeldMessages } from "../../shared/chat/held-messages";
 import type { ChatEvent, ContentBlock, ScheduledItem, ScheduledKind } from "../../types/ipc.generated";
@@ -97,6 +98,9 @@ export async function renderPendingPane(
   if (messagesEl) {
     const renderer = new ChatRenderer(messagesEl);
     state.renderer = renderer;
+    // Let the PR-preview modal's git IPC calls resolve this pending
+    // session's working directory.
+    setPrReviewCwdProvider(() => project.path || null);
     const sbForRenderer = state.statusbar;
     if (sbForRenderer) {
       renderer.onMetaUpdate = (meta) => {

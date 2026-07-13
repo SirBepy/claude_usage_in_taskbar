@@ -10,6 +10,7 @@ import { formatFireAt } from "../../shared/chat/schedule-picker";
 import { blocksToText } from "../../shared/chat/content-blocks";
 import { showToast } from "../../shared/toast";
 import { setFileEditsProvider } from "../../shared/chat/file-viewer";
+import { setPrReviewCwdProvider } from "../../shared/chat/pr-review-modal";
 import type { ChatEvent, ContentBlock, Instance, ScheduledItem, ScheduledKind } from "../../types/ipc.generated";
 import { state, setActiveSession } from "./state";
 import { getSettings } from "../../shared/state";
@@ -401,6 +402,9 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     };
     // Let the file viewer's Diff tab resolve this session's edits for any file.
     setFileEditsProvider(() => renderer.getFileEdits());
+    // Let the PR-preview modal's git IPC calls (get_range_files/get_file_diff)
+    // resolve this session's working directory.
+    setPrReviewCwdProvider(() => (sess.cwd ? String(sess.cwd) : null));
     renderer.onActivityUpdate = (activity) => setThinkingActivity(activity);
     renderer.onProgressUpdate = (n, m) => setThinkingProgress(n, m);
     renderer.onNextAiPromptDone = () => {
