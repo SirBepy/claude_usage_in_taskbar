@@ -308,6 +308,11 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   const stallTimer = window.setTimeout(() => {
     if (loadSettled || state.mountId !== myMount || state.selectedId !== sessionId) return;
     if (!messagesHost) return;
+    // ai_todo 228 diagnostics: this guard times a purely local chain
+    // (in-memory settings read + local transcript file read) - it is NOT
+    // waiting on the daemon pipe. If this fires, the stall is in that local
+    // chain (or an unhandled exception before it), not a pipe EOF.
+    console.error(`[sessions] chat load stalled >8s (local settings/history read), session=${sessionId}`);
     messagesHost.querySelector(".chat-loading-overlay")?.remove();
     messagesHost.innerHTML =
       `<div class="session-empty session-empty--stalled chat-load-stalled">` +
@@ -564,6 +569,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       hasHeld: () => !!state.heldMessages?.hasItemsForActive(),
       flushHeldWithDraft: (draftBlocks) => { void state.heldMessages?.flushHeldWithDraft(draftBlocks); },
       onDraftActivity: () => state.heldMessages?.notifyDraftActivity(),
+      getNextTokenReset: async () => {
+        if (!sess.account_id) return null;
+        const map = await api.getUsageMap();
+        const resetsAt = map[sess.account_id]?.session_resets_at;
+        return resetsAt ? new Date(new Date(resetsAt).getTime() + 60_000) : null;
+      },
       onSchedule: (blocks, fireAtUtcIso, recurrence) => {
         const prompt = blocksToText(blocks);
         if (!prompt.trim()) return;

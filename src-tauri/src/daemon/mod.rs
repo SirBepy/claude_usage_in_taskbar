@@ -68,6 +68,10 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     // never reclaims the production daemon's lock (ai_todo 71).
     let lock_path = app_data.join(format!("daemon{}.lock", instance::instance_suffix()));
     let _lock = LockGuard::acquire(lock_path)?;
+    // ai_todo 228 diagnostics: if a duplicate daemon process is momentarily
+    // alive (ai_todo 151's crash-loop scenario) and both write to the same
+    // log file, this pid lets the next investigation tell the lines apart.
+    log::info!("daemon: started, pid={}", std::process::id());
 
     let initial_settings = load_initial_settings();
     let settings_cache = SettingsCache::new(initial_settings);

@@ -8,9 +8,15 @@ use crate::daemon::health::PROTOCOL_VERSION;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot, Mutex};
+
+/// ai_todo 228 diagnostics: each successful `connect()` gets the next value so
+/// "reader stopped" / "connection lost" log lines across a respawn cycle can be
+/// paired up precisely instead of by timestamp proximity alone.
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -43,6 +49,8 @@ pub struct PersistentClient {
     /// `connect` for why a dead reader must wake every waiter (the "wedged pipe"
     /// bug: send/open/close hung + reconnect never fired until a full restart).
     closed: tokio::sync::watch::Receiver<bool>,
+    /// ai_todo 228 diagnostics: see `NEXT_GENERATION`.
+    pub generation: u64,
 }
 
 impl PersistentClient {
@@ -63,6 +71,8 @@ impl PersistentClient {
         if resp.get("handshake").and_then(Value::as_str) != Some("ok") {
             return Err(ClientError::Handshake(resp.to_string()));
         }
+        let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        log::info!("daemon: connected (generation {generation})");
         // Split into independent read/write halves.
         let (read_half, write_half) = tokio::io::split(pipe);
         let writer = Arc::new(Mutex::new(write_half));
@@ -83,10 +93,10 @@ impl PersistentClient {
                         // UnexpectedEof = clean daemon shutdown vs BrokenPipe/reset).
                         match &e {
                             FrameError::Io(io_err) => log::warn!(
-                                "daemon pipe reader stopped: io error kind={:?}: {io_err}",
+                                "daemon pipe reader stopped (generation {generation}): io error kind={:?}: {io_err}",
                                 io_err.kind()
                             ),
-                            other => log::warn!("daemon pipe reader stopped: {other}"),
+                            other => log::warn!("daemon pipe reader stopped (generation {generation}): {other}"),
                         }
                         break;
                     }
@@ -137,6 +147,7 @@ impl PersistentClient {
             subs,
             next_id: Arc::new(Mutex::new(0)),
             closed: closed_rx,
+            generation,
         })
     }
 

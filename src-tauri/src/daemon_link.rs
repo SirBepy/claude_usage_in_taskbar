@@ -30,6 +30,7 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
                 }
             };
             backoff_ms = 500;
+            let generation = client.generation;
             // Push initial settings BEFORE subscribing so the daemon's cache is
             // populated before any incoming hook traffic.
             let settings_snapshot = state.settings.lock().unwrap().clone();
@@ -71,7 +72,7 @@ pub async fn run_app_subscription(app_handle: tauri::AppHandle) {
                 let params = frame.get("params").cloned().unwrap_or(serde_json::Value::Null);
                 handle_daemon_notification(&app_handle, &method, params).await;
             }
-            log::warn!("daemon connection lost; respawning + reconnecting");
+            log::warn!("daemon connection lost (generation {generation}); respawning + reconnecting");
             {
                 use tauri::Emitter;
                 *state.daemon_client.lock().await = None;
