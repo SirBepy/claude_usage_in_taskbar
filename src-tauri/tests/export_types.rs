@@ -12,7 +12,7 @@ use claude_conductor_lib::ipc::accounts::{
 };
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::servers::ServerInfo;
-use claude_conductor_lib::ipc::git::GitInfo;
+use claude_conductor_lib::ipc::git::{GitInfo, PrFileChange};
 use claude_conductor_lib::ipc::files::TextFileData;
 use claude_conductor_lib::ipc::schedule::ExternalScheduledJob;
 use claude_conductor_lib::notifications::piper::{PiperStatus, VoiceEntry};
@@ -92,6 +92,7 @@ fn emit_ipc_types() {
 
     // misc IPC
     out.push_str(&decl::<GitInfo>());
+    out.push_str(&decl::<PrFileChange>());
     out.push_str(&decl::<TextFileData>());
     out.push_str(&decl::<AiTodoEntry>());
     out.push_str(&decl::<ServerInfo>());
