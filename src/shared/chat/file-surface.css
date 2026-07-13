@@ -1,0 +1,423 @@
+/* Shared file surface (bar + body: File/Diff view, search, nav stepper, ⋮
+ * menu). One component, mounted by file-viewer.ts today and, in future, an
+ * embedded PR-review file tab. Mirrors .for_bepy/pr-review-mockup.html's
+ * .fs-* styles, adapted to this app's real theme custom properties. */
+
+.fsurface {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fs-hidden {
+  display: none !important;
+}
+
+/* ── bar ──────────────────────────────────────────────────────────────── */
+
+.fs-bar {
+  display: flex;
+  gap: 2px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  align-items: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.fs-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.fs-mode > .ph {
+  font-size: 14px;
+}
+
+.fs-counts {
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 10.5px;
+  display: flex;
+  gap: 5px;
+}
+
+.fs-right,
+.fs-edit-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.fs-btn:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+
+.fs-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fs-btn.fs-sq {
+  width: 28px;
+  padding: 0;
+  font-size: 15px;
+}
+
+.fs-navpos {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  font-family: "Fira Code", ui-monospace, monospace;
+}
+
+.fs-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.fs-search > .ph {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.fs-search-input {
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 11.5px;
+  width: 110px;
+  outline: none;
+}
+
+.fs-search-count {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-family: "Fira Code", ui-monospace, monospace;
+  min-width: 26px;
+}
+
+/* ── ⋮ menu ───────────────────────────────────────────────────────────── */
+
+.fs-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 8px;
+  z-index: 20;
+  min-width: 200px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+
+.fs-mi {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.fs-mi:hover {
+  background: var(--color-surface-alt);
+}
+
+.fs-mi > .ph:first-child {
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.fs-mi span {
+  flex: 1;
+}
+
+.fs-chk {
+  font-size: 13px;
+  color: var(--color-primary);
+  visibility: hidden;
+}
+
+.fs-mi.fs-on .fs-chk {
+  visibility: visible;
+}
+
+.fs-mi.fs-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.fs-sep {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 6px;
+}
+
+/* ── body shell ───────────────────────────────────────────────────────── */
+
+.fs-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.fs-loading,
+.fs-error {
+  color: var(--color-text-muted);
+  padding: 12px 16px;
+  font-size: 0.85rem;
+}
+
+.fs-error {
+  color: var(--color-danger);
+}
+
+.fs-truncated {
+  margin: 12px 16px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(255, 196, 0, 0.12);
+  color: #e0b341;
+  font-size: 0.8rem;
+}
+
+.fs-session-diff {
+  padding: 10px 12px;
+}
+
+/* ── unified (inline) diff ────────────────────────────────────────────── */
+
+table.fs-udiff {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.fs-udiff td {
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.fs-udiff .fs-ln {
+  width: 1%;
+  min-width: 38px;
+  text-align: right;
+  color: var(--color-text-muted);
+  opacity: 0.55;
+  user-select: none;
+  font-size: 10px;
+  border-right: 1px solid var(--color-border);
+}
+
+.fs-udiff tr.fs-add td:not(.fs-ln) {
+  background: rgba(63, 185, 80, 0.12);
+}
+.fs-udiff tr.fs-add .fs-ln {
+  background: rgba(63, 185, 80, 0.05);
+}
+.fs-udiff tr.fs-del td:not(.fs-ln) {
+  background: rgba(248, 81, 73, 0.12);
+}
+.fs-udiff tr.fs-del .fs-ln {
+  background: rgba(248, 81, 73, 0.06);
+}
+
+.fs-udiff tr.fs-hunk td {
+  background: color-mix(in srgb, var(--color-secondary, var(--color-primary)) 7%, transparent);
+  color: var(--color-secondary, var(--color-primary));
+  font-size: 10.5px;
+  padding: 3px 10px;
+}
+
+.fs-udiff .fs-sign {
+  width: 14px;
+  user-select: none;
+  opacity: 0.8;
+}
+.fs-udiff tr.fs-add .fs-sign {
+  color: var(--color-success);
+}
+.fs-udiff tr.fs-del .fs-sign {
+  color: var(--color-danger);
+}
+
+/* ── split (side by side) diff ───────────────────────────────────────── */
+
+.fs-sdiff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.fs-sdiff .fs-side {
+  min-width: 0;
+  overflow: hidden;
+}
+.fs-sdiff .fs-side + .fs-side {
+  border-left: 1px solid var(--color-border);
+}
+
+.fs-sdiff .fs-srow {
+  display: flex;
+  white-space: pre;
+}
+
+.fs-sdiff .fs-ln {
+  width: 38px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--color-text-muted);
+  opacity: 0.55;
+  font-size: 10px;
+  border-right: 1px solid var(--color-border);
+  user-select: none;
+}
+
+.fs-sdiff .fs-code {
+  padding: 0 10px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fs-sdiff .fs-srow.fs-add {
+  background: rgba(63, 185, 80, 0.12);
+}
+.fs-sdiff .fs-srow.fs-del {
+  background: rgba(248, 81, 73, 0.12);
+}
+.fs-sdiff .fs-srow.fs-pad {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(107, 105, 144, 0.05) 4px,
+    rgba(107, 105, 144, 0.05) 8px
+  );
+}
+
+.fs-sdiff .fs-hunk {
+  background: color-mix(in srgb, var(--color-secondary, var(--color-primary)) 7%, transparent);
+  color: var(--color-secondary, var(--color-primary));
+  font-size: 10.5px;
+  padding: 3px 10px;
+}
+
+/* ── file view: line-number gutter (CSS counter, no DOM surgery) ────────
+ * Shiki emits one <span class="line"> per source line inside <pre
+ * class="shiki">; the plain-text fallback (renderFileView's catch branch)
+ * mirrors that shape by hand. Numbering is purely CSS so it survives search
+ * highlighting (<mark> insertion) with zero extra bookkeeping. */
+
+.fs-code-view {
+  padding: 8px 0;
+}
+
+.fs-code-view :is(pre.shiki, pre.fs-plain) {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  counter-reset: fs-line;
+}
+
+.fs-code-view .line {
+  display: flex;
+  counter-increment: fs-line;
+  padding: 0 14px 0 0;
+  white-space: pre;
+}
+
+.fs-code-view .line::before {
+  content: counter(fs-line);
+  display: inline-block;
+  width: 44px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 10px;
+  margin-right: 12px;
+  color: var(--color-text-muted);
+  opacity: 0.5;
+  user-select: none;
+  font-size: 10px;
+  border-right: 1px solid var(--color-border);
+}
+
+.fs-plain {
+  color: var(--color-text);
+}
+
+/* ── search hits ──────────────────────────────────────────────────────── */
+
+mark.fs-hit {
+  background: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-text);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+mark.fs-hit-cur {
+  background: var(--color-primary);
+  color: var(--color-background);
+}
+
+/* ── inline editor ────────────────────────────────────────────────────── */
+
+.fs-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 60vh;
+  box-sizing: border-box;
+  resize: none;
+  background: var(--color-background);
+  color: var(--color-text);
+  border: none;
+  padding: 14px 16px;
+  font-family: "Fira Code", ui-monospace, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+  outline: none;
+}
+
+.fs-error-inline {
+  margin: 0 16px 12px;
+}

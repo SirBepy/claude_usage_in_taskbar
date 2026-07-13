@@ -1,13 +1,16 @@
 /* Shared chat-renderer + composer styles. Imported by the Sessions and
- * History views. Barrel: the rules live in five purpose-scoped modules.
+ * History views. Barrel: the rules live in six purpose-scoped modules.
  *  - chat-messages.css: message bubbles, markdown, tables, sent attachment chips
  *  - composer.css:      composer input, attachments, file chips, drag-over state
  *  - chat-tools.css:    tool rows, chip strip, custom views, AUQ, turn footer
  *  - pr-preview.css:    PR preview card + modal (the /create-pr skill preview)
- *  - chat-overlays.css: lightbox, file viewer, edit window + unified diff
+ *  - chat-overlays.css: lightbox, edit window + unified diff (session hunks)
+ *  - file-surface.css:  shared file surface (bar + File/Diff body) mounted by
+ *                        the standalone file viewer (and, later, PR file tabs)
  */
 @import "./chat-messages.css";
 @import "./composer.css";
 @import "./chat-tools.css";
 @import "./pr-preview.css";
 @import "./chat-overlays.css";
+@import "./file-surface.css";

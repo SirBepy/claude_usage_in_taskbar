@@ -69,7 +69,8 @@
   margin: 0;
 }
 
-/* Read-only in-app file viewer (ai_todo 95 slice 1) */
+/* In-app file viewer (ai_todo 95): overlay + near-fullscreen panel hosting
+ * one shared file surface (file-surface.css owns the bar + body chrome). */
 
 .file-viewer-overlay {
   position: fixed;
@@ -84,9 +85,8 @@
 .file-viewer-panel {
   display: flex;
   flex-direction: column;
-  width: 86vw;
-  max-width: 1100px;
-  height: 86vh;
+  width: min(1400px, 92vw);
+  height: 92vh;
   background: #1e1e1e;
   border-radius: 8px;
   overflow: hidden;
@@ -131,30 +131,6 @@
   min-width: 0;
 }
 
-.file-viewer-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
-.file-viewer-ext {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  color: #d4d4d4;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.file-viewer-ext:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
 .file-viewer-close {
   background: rgba(255, 255, 255, 0.1);
   border: none;
@@ -176,114 +152,9 @@
 
 .file-viewer-body {
   flex: 1 1 auto;
-  overflow: auto;
-  padding: 14px 16px;
-}
-
-.file-viewer-body pre {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.file-viewer-plain {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: #d4d4d4;
-}
-
-.file-viewer-loading,
-.file-viewer-error {
-  color: #9aa0a6;
-  padding: 8px;
-  font-size: 0.85rem;
-}
-
-.file-viewer-error {
-  color: #f28b82;
-}
-
-.file-viewer-truncated {
-  margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: rgba(255, 196, 0, 0.12);
-  color: #e0b341;
-  font-size: 0.8rem;
-}
-
-.file-viewer-ext:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* File / Diff tab bar (ai_todo 95 slices 2-3). Hidden when the session never
-   edited this file (only the read-only File view is shown). */
-.file-viewer-tabs {
+  min-height: 0;
+  overflow: hidden;
   display: flex;
-  gap: 4px;
-  padding: 6px 12px 0;
-  background: #252526;
-  flex: 0 0 auto;
-}
-
-.file-viewer-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #9aa0a6;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.file-viewer-tab:hover {
-  color: #d4d4d4;
-}
-
-.file-viewer-tab--active {
-  color: #fff;
-  border-bottom-color: var(--color-primary);
-}
-
-.file-viewer-tab-diff {
-  display: inline-flex;
-  gap: 4px;
-  font-family: "Fira Code", ui-monospace, monospace;
-  font-size: 0.74rem;
-}
-
-.file-viewer-diff {
-  display: block;
-}
-
-/* Inline editor (slice 3): fills the viewer body. */
-.file-viewer-edit {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 60vh;
-  box-sizing: border-box;
-  resize: none;
-  background: #1e1e1e;
-  color: #d4d4d4;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  padding: 12px;
-  font-family: "Fira Code", ui-monospace, monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  white-space: pre;
-  tab-size: 2;
-}
-
-.file-viewer-edit:focus {
-  outline: none;
-  border-color: var(--color-primary);
 }
 
 /* Stacked per-file diff (shared edit-window renderer). Lives here, not
