@@ -19,6 +19,18 @@ These EOFs likely explain the "slow chat switching": every drop kills in-flight 
 - If drops STOP after the concurrent-dispatch fix: the head-of-line blocking was the cause (a blocked connection tripping some timeout); note it and close.
 - Check whether frequency correlates with heavy chat streaming or scheduled polls (drop timestamps were 2-20 min apart during active use).
 
+## Update 2026-07-13 (v0.2.19, post concurrent-dispatch fix)
+
+Recurrence confirmed - the concurrent-dispatch fix (`08d93445`) did NOT close this out. Same-day evidence:
+
+- `daemon.log` / `Claude Conductor.log` show ~40 `pipe reader stopped: io error kind=UnexpectedEof: early eof` -> `daemon connection lost; respawning + reconnecting` events today, roughly every 1-3 min - same frequency as the 07-11 incident.
+- New, worse symptom this time (Joe's report): fresh install/relaunch opened chats fine, one chat worked, then every other chat (including the one that had worked) started erroring; a subsequent app restart produced a full freeze (blank window, nothing rendering) instead of just a stall; required killing the process via Task Manager before a clean relaunch worked. This is an escalation beyond the "slow switching" symptom this todo was scoped around - the pipe drop may now be cascading into a startup-time deadlock/freeze, not just a runtime stall.
+- Two full `claude-conductor started` events logged 6 min apart around the freeze window, consistent with Joe's kill+relaunch. No Rust panic logged for either restart (last panic in the log predates this, 2026-07-09, unrelated `lifecycle.rs:355`), so the freeze looks like a hang, not a caught crash - can't rely on panic logs alone to diagnose it.
+- Joe says this specific pattern (works once, then breaks, then freezes on relaunch, resolved only by force-kill) has happened before, i.e. it's not a one-off.
+- Error string shown to the user during the "chat won't open" phase wasn't pinned down exactly (Joe paraphrased "backend sending an error"); closest candidate in source is the stall-guard message in `src/views/sessions/active-session.ts` ("This chat isn't loading - the backend didn't respond."), unconfirmed.
+
+Given the freeze is new and more severe than plain slow-switching, this todo may need to split: the original EOF/respawn diagnosis stays here, but if a next occurrence can be caught live (Joe leaves the app open + Task Manager visible instead of immediately killing it), capture whether the daemon or the GUI process is the one hung before killing anything - that pid-level distinction is missing from both incidents so far.
+
 ## Acceptance
 
 - A named root cause for the EOFs, with the log-line pair proving it.
