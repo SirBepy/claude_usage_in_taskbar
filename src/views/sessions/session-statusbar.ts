@@ -5,7 +5,7 @@ import { formatTokenCount } from "../../shared/chat/turn-chips";
 import { ToolTallyRow } from "./session-tally";
 import type { SessionMeta } from "../../shared/chat/chat-renderer";
 import type { GitInfo, ContextStatus } from "../../types/ipc.generated";
-import { type ChipType, isToolChip, chipToolName } from "./statusline-catalog";
+import { type ChipType, type StaticChipType, isToolChip, chipToolName, STATIC_CHIPS } from "./statusline-catalog";
 import { getCachedAccount, capitalize } from "../../shared/accounts-cache";
 import {
   formatDuration,
@@ -62,6 +62,11 @@ export class SessionStatusbar {
   private dirtyLoaded = false;
   private startedAt: string | null;
   private cwd: string | null;
+  // Live working dir the git-section chips resolve against. Starts at the spawn
+  // `cwd`, then follows the AI into a worktree via `session_live_cwd` (last cwd
+  // recorded in the transcript). Kept separate from `cwd` so session-scoped
+  // chips (ai_todos, servers) stay pinned to the spawn dir.
+  private gitCwd: string | null;
   private effort: string;
   private sessionId: string | null;
   private sessionModel: string | null;
@@ -93,6 +98,7 @@ export class SessionStatusbar {
     this.startedAt = startedAt;
     this.rows = rows;
     this.cwd = opts.cwd ?? null;
+    this.gitCwd = this.cwd;
     this.effort = opts.effort ?? "";
     this.sessionId = opts.sessionId ?? null;
     this.sessionModel = opts.sessionModel ?? null;
@@ -107,8 +113,8 @@ export class SessionStatusbar {
     // most one popover is ever open.
     this.tally.setBeforeOpen(() => this.closeChipPopovers());
 
-    if (this.cwd) {
-      const cached = gitInfoCache.get(this.cwd);
+    if (this.gitCwd) {
+      const cached = gitInfoCache.get(this.gitCwd);
       if (cached) { this.gitInfo = cached; this.gitInfoLoaded = true; }
     } else {
       this.gitInfoLoaded = true;
@@ -128,7 +134,9 @@ export class SessionStatusbar {
     if (this.wantsTimer()) this.startTimer();
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
-    if (this.hasChip("dirty")) void this.refreshDirty();
+    // Resolve the live git cwd (may follow the AI into a worktree), then fetch
+    // git info + dirty against it. Owns all git fetching for live sessions.
+    if (this.wantsGit()) void this.resolveGitCwd();
     if (this.hasChip("ai_todos") && this.cwd) void this.aiTodosPopover.refresh(this.cwd, () => this.render());
     if (this.wantsDrain()) void this.refreshDrain();
     if (this.hasChip("servers") && this.cwd) this.startServersPoll();
@@ -152,6 +160,38 @@ export class SessionStatusbar {
   private wantsContext(): boolean { return this.hasChip("context_pct") || this.hasChip("context_tokens"); }
   private wantsTimer(): boolean { return this.hasChip("duration") || this.hasChip("clock"); }
   private wantsDrain(): boolean { return this.hasChip("drain"); }
+  /** True when any git-section chip is present, so it's worth resolving the
+   *  live git cwd and fetching git info. */
+  private wantsGit(): boolean {
+    return this.rows.some((r) =>
+      r.some((c) => !isToolChip(c) && STATIC_CHIPS[c as StaticChipType]?.section === "git"),
+    );
+  }
+
+  /** Resolve the session's live working dir (the AI may have moved into a
+   *  worktree) and refresh git info + dirty against it. Falls back to the spawn
+   *  cwd when the live lookup is unavailable. */
+  private async resolveGitCwd(): Promise<void> {
+    const spawn = this.cwd;
+    if (!spawn) return;
+    let effective = spawn;
+    if (this.sessionId) {
+      try {
+        effective = await invoke<string>("session_live_cwd", { sessionId: this.sessionId, fallback: spawn });
+      } catch { /* command may predate this binary - keep spawn cwd */ }
+    }
+    const changed = effective !== this.gitCwd;
+    this.gitCwd = effective;
+    // Seed instantly from cache for the new dir (a revisit paints without flicker).
+    if (changed) {
+      const cached = gitInfoCache.get(effective);
+      if (cached) { this.gitInfo = cached; this.gitInfoLoaded = true; this.render(); }
+    }
+    await this.refreshGitInfo();
+    if (this.hasChip("dirty")) await this.refreshDirty();
+    // Folder chip renders from gitCwd; repaint if it moved off the spawn dir.
+    if (changed) this.render();
+  }
 
   private async refreshCounts(): Promise<void> {
     const sid = this.sessionId;
@@ -186,21 +226,21 @@ export class SessionStatusbar {
   }
 
   private async refreshGitInfo(): Promise<void> {
-    const cwd = this.cwd;
+    const cwd = this.gitCwd;
     if (!cwd) return;
     try {
       const info = await fetchGitInfo(cwd);
-      if (this.cwd !== cwd) return;
+      if (this.gitCwd !== cwd) return;
       this.updateGitInfo(info);
     } catch { /* transient */ }
   }
 
   private async refreshDirty(): Promise<void> {
-    const cwd = this.cwd;
+    const cwd = this.gitCwd;
     if (!cwd) return;
     try {
       const files = await invoke<string[]>("get_git_dirty", { cwd });
-      if (this.cwd !== cwd) return;
+      if (this.gitCwd !== cwd) return;
       this.dirtyCount = files.length;
       this.dirtyLoaded = true;
       this.render();
@@ -225,13 +265,18 @@ export class SessionStatusbar {
     if (this.wantsCounts()) void this.refreshCounts();
     if (this.wantsContext()) void this.refreshContextStatus();
     if (this.wantsDrain()) void this.refreshDrain();
-    if (turnJustCompleted && this.cwd) void this.refreshGitInfo();
+    // Re-resolve the live cwd too: the completed turn may have moved the AI
+    // into (or out of) a worktree.
+    if (turnJustCompleted && this.cwd) {
+      if (this.wantsGit()) void this.resolveGitCwd();
+      else void this.refreshGitInfo();
+    }
   }
 
   updateGitInfo(info: GitInfo): void {
     this.gitInfo = info;
     this.gitInfoLoaded = true;
-    if (this.cwd) gitInfoCache.set(this.cwd, info);
+    if (this.gitCwd) gitInfoCache.set(this.gitCwd, info);
     this.render();
     if (this.hasChip("dirty")) void this.refreshDirty();
   }
@@ -363,9 +408,12 @@ export class SessionStatusbar {
         return "";
       }
       case "folder": {
-        if (!this.cwd) return "";
-        const folderName = this.cwd.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? this.cwd;
-        const cwdEsc = escapeHtml(this.cwd);
+        // Git-section chip: follow the live git cwd so it stays coherent with
+        // the branch/repo chips when the AI is working in a worktree.
+        const dir = this.gitCwd;
+        if (!dir) return "";
+        const folderName = dir.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? dir;
+        const cwdEsc = escapeHtml(dir);
         return `<span class="sb-chip sb-folder sb-folder-btn${this.animClass("folder")}" role="button" title="${cwdEsc}" data-cwd="${cwdEsc}"><i class="ph ph-folder-open"></i>${escapeHtml(folderName)}</span>`;
       }
       case "commits": return this.renderCommits("both");
@@ -482,7 +530,7 @@ export class SessionStatusbar {
     `;
 
     this.container.querySelector<HTMLElement>(".sb-folder-btn")?.addEventListener("click", () => {
-      if (this.cwd) void invoke<void>("open_in_explorer", { path: this.cwd });
+      if (this.gitCwd) void invoke<void>("open_in_explorer", { path: this.gitCwd });
     });
 
     this.container.querySelector<HTMLElement>(".sb-account-btn")?.addEventListener("click", (e) => {
@@ -543,8 +591,8 @@ export class SessionStatusbar {
       const anchor = e.currentTarget as HTMLElement;
       const wasOpen = this.branchPopover.isOpen;
       this.closeChipPopovers();
-      if (wasOpen || !this.cwd) return;
-      const branches = await invoke<BranchEntry[]>("get_recent_branches", { cwd: this.cwd });
+      if (wasOpen || !this.gitCwd) return;
+      const branches = await invoke<BranchEntry[]>("get_recent_branches", { cwd: this.gitCwd });
       this.branchPopover.open(anchor, branches);
     });
 
@@ -553,8 +601,8 @@ export class SessionStatusbar {
       const anchor = e.currentTarget as HTMLElement;
       const wasOpen = this.commitsPopover.isOpen;
       this.closeChipPopovers();
-      if (wasOpen || !this.cwd) return;
-      const sync = await invoke<CommitSync>("get_commit_sync", { cwd: this.cwd });
+      if (wasOpen || !this.gitCwd) return;
+      const sync = await invoke<CommitSync>("get_commit_sync", { cwd: this.gitCwd });
       this.commitsPopover.open(anchor, sync);
     });
 

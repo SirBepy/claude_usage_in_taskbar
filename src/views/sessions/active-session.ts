@@ -23,7 +23,7 @@ import {
   statusDotClass,
   deriveQuestionSet,
 } from "./sessions-helpers";
-import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero, fetchGitInfo } from "./session-statusbar";
+import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero } from "./session-statusbar";
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar, refreshSessions } from "./sidebar";
 import { characterForSession, characterIconUrl, loadSessionCharacters } from "./session-characters";
@@ -364,13 +364,10 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       onAccountClick: () => { void changeAccountForSession(sess.session_id); },
     });
     state.statusbar = sb;
-    // Fetch git info async (cache-first; instantly populated by constructor
-    // when cwd is a revisit, this just refreshes in case branch changed).
-    if (sess.cwd) {
-      fetchGitInfo(String(sess.cwd))
-        .then((info) => { if (state.statusbar === sb) sb.updateGitInfo(info); })
-        .catch(() => { /* no git, fields just stay hidden */ });
-    }
+    // Git info is owned by the statusbar itself: it resolves the session's live
+    // cwd (which may follow the AI into a worktree) via `session_live_cwd`, then
+    // fetches against that. Fetching here too would race and clobber it with the
+    // spawn-cwd branch.
   }
 
   // Attach renderer

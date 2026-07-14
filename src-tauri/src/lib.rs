@@ -305,6 +305,7 @@ pub fn run() {
             ipc::get_commit_sync,
             ipc::get_range_files,
             ipc::get_file_diff,
+            ipc::session_live_cwd,
             ipc::context_status,
             ipc::count_ai_todos,
             ipc::list_ai_todos,
