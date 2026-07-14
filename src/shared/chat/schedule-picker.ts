@@ -22,6 +22,12 @@ export interface SchedulePickerOptions {
   initial?: { fireAtUtcIso: string; recurrence: Recurrence | null };
   /** Confirm button verb. Defaults to "Schedule" (edit flows pass "Update"). */
   confirmLabel?: string;
+  /** The account's next 5-hour usage-window reset (already +60s-buffered by
+   * the caller), added as a preset row once resolved. A settled value or a
+   * pending promise both work; null/past-due resolves to no row. Omit to
+   * skip the preset entirely (e.g. the edit-reopen flow, which has no
+   * presets view at all). */
+  nextTokenReset?: Date | null | Promise<Date | null>;
 }
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -67,6 +73,7 @@ export function formatRecurrenceBadge(rec: Recurrence): string {
 interface Preset {
   label: string;
   at: Date;
+  icon?: string;
 }
 
 function buildPresets(now: Date): Preset[] {
@@ -112,6 +119,13 @@ export function openSchedulePicker(opts: SchedulePickerOptions): void {
   let weekdays = new Set<number>();
   let everyN = 2;
   let dtValue: string;
+  let nextResetPreset: Preset | null = null;
+
+  Promise.resolve(opts.nextTokenReset).then((d) => {
+    if (!d || d.getTime() <= Date.now()) return;
+    nextResetPreset = { label: `Next token reset ${fmtTime(d)}`, at: d, icon: "hourglass-high" };
+    if (view === "presets" && pop.isConnected) renderPresets();
+  });
 
   if (opts.initial) {
     dtValue = toLocalInputValue(new Date(opts.initial.fireAtUtcIso));
@@ -189,12 +203,13 @@ export function openSchedulePicker(opts: SchedulePickerOptions): void {
   function renderPresets(): void {
     const now = new Date();
     const presets = buildPresets(now);
+    if (nextResetPreset) presets.splice(1, 0, nextResetPreset);
     pop.innerHTML = `
       <div class="schedule-picker-title">Schedule</div>
       <div class="schedule-picker-rows">
         ${presets.map((p, i) => `
           <button type="button" class="schedule-picker-row" data-preset="${i}">
-            <span class="schedule-picker-row-label">${escapeHtml(p.label)}</span>
+            <span class="schedule-picker-row-label">${p.icon ? `<i class="ph ph-${escapeHtml(p.icon)}"></i> ` : ""}${escapeHtml(p.label)}</span>
             <span class="schedule-picker-row-abs">${escapeHtml(fmtAbsolute(p.at))}</span>
           </button>
         `).join("")}

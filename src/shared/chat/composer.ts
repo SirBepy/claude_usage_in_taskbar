@@ -72,6 +72,10 @@ export interface ComposerOptions {
    * omitted, the split-Send chevron doesn't render. The composer builds the
    * blocks from the draft and clears itself before calling. */
   onSchedule?: (blocks: ContentBlock[], fireAtUtcIso: string, recurrence: Recurrence | null) => Promise<void> | void;
+  /** Resolves the active session's account's next usage-window reset (already
+   * +60s-buffered), surfaced as a "Next token reset" preset in the schedule
+   * popover. Omit to skip that preset. */
+  getNextTokenReset?: () => Promise<Date | null> | Date | null;
 }
 
 let _composerInstanceCount = 0;
@@ -514,6 +518,7 @@ export class Composer {
     if (this.isDraftEmpty()) return;
     openSchedulePicker({
       anchor,
+      nextTokenReset: this.opts.getNextTokenReset?.(),
       onConfirm: (result) => {
         const text = (this.textarea?.value ?? "").trim();
         const blocks = this.buildBlocks(text);
