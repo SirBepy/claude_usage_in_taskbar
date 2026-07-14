@@ -177,14 +177,19 @@ export function renderSidebar(listEl: HTMLElement): void {
   const sort = loadSort();
   const rateLimited = new Set(state.sessions.filter(isBlocked).map((s) => s.session_id));
 
-  // Load hidden set and prune stale IDs
+  // Load hidden set and prune stale IDs. Only prune against a non-empty live
+  // list: renderSidebar fires once on mount before refreshSessions()
+  // resolves (state.sessions still []), and pruning against that transient
+  // empty set would wipe every hidden id before the real list ever loads.
   const hidden = loadHiddenSessions();
   const liveIds = new Set(state.sessions.map(s => s.session_id));
-  let hiddenPruned = false;
-  for (const id of [...hidden]) {
-    if (!liveIds.has(id)) { hidden.delete(id); hiddenPruned = true; }
+  if (state.sessions.length > 0) {
+    let hiddenPruned = false;
+    for (const id of [...hidden]) {
+      if (!liveIds.has(id)) { hidden.delete(id); hiddenPruned = true; }
+    }
+    if (hiddenPruned) saveHiddenSessions(hidden);
   }
-  if (hiddenPruned) saveHiddenSessions(hidden);
 
   const hiddenSessions = state.sessions.filter(s => hidden.has(s.session_id));
 
