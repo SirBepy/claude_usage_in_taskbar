@@ -32,9 +32,14 @@ the whole fix - no spawn-path change needed.
 
 ## Verified
 
-- `cargo test --lib` daemon suite: 108 pass incl. the new dispatch + allowlist tests.
+- Daemon half: `cargo test --lib` daemon suite (108 pass) incl. the new
+  `list_accounts_dispatches_to_registered_handler` + allowlist tests.
+- Frontend half: `e2e/view-harness/new-chat-accounts.view.spec.ts` (`npm run test:view`)
+  drives the real new-chat modal - Start ENABLES when list_accounts returns accounts,
+  stays DISABLED ("No Claude accounts yet") when it returns [] (the bug repro).
 - `tsc --noEmit`: clean.
-- NOT verified: the live HTTP round-trip on Joe's actual phone (needs the device + network).
+- NOT verified: the live HTTP round-trip on Joe's actual phone (needs the device +
+  network + a paired token). Both code halves are proven; this is the last mile.
 
 ## Remaining: confirm on phone
 
