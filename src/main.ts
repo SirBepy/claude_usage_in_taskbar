@@ -37,7 +37,7 @@ import { renderRemoteAccessView } from "./views/settings/subviews/remote-access/
 import { renderAccountsSettingsView } from "./views/settings/subviews/accounts/accounts";
 import { initBoot } from "./shared/boot";
 import { ensureRemoteToken } from "./shared/remote-gate";
-import { isRemote } from "./shared/transport";
+import { isRemote, getTransport } from "./shared/transport";
 import { showView } from "./shared/navigation";
 import { closeSidemenu } from "./shared/sidemenu";
 import { initBackButton, registerOverlayBack } from "./shared/back-button";
@@ -424,10 +424,7 @@ function setupNewsBadgeAndNotifications(): void {
 const seenMissedIds = new Set<string>();
 
 function setupScheduleMissedPopup(): void {
-  const ev = window.__TAURI__?.event;
-  if (!ev?.listen) return;
-
-  void ev.listen("scheduled-items-changed", async () => {
+  void getTransport().listen("scheduled-items-changed", async () => {
     let items: ScheduledItem[];
     try {
       items = (await invoke<ScheduledItem[]>("schedule_list")) || [];
@@ -471,11 +468,7 @@ function setupScheduleMissedPopup(): void {
 interface ScheduledFirePayload { id: string; kind: string; session_id: string; prompt: string }
 
 function setupScheduledFireToast(): void {
-  const ev = window.__TAURI__?.event;
-  if (!ev?.listen) return;
-
-  void ev.listen<ScheduledFirePayload>("scheduled-item-fired", (e) => {
-    const p = e.payload;
+  void getTransport().listen<ScheduledFirePayload>("scheduled-item-fired", (p) => {
     if (!p?.session_id) return;
     const isNewChat = p.kind === "new_chat";
     const title = isNewChat ? "Scheduled chat started" : "Scheduled message sent";

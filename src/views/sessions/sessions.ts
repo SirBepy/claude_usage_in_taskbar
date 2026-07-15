@@ -20,6 +20,7 @@ import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
 import { rateLimitBanner, isBlocked } from "../../shared/chat/rate-limit-banner";
 import { sessionEvents } from "../../shared/chat/event-store";
+import { getTransport } from "../../shared/transport";
 import {
   initWhenDone,
   subscribeWhenDone,
@@ -332,118 +333,125 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       renderSidebar(listEl);
       refreshPaneEmptyState(pane);
     });
+  }
 
-    const syncInstances = async (): Promise<void> => {
+  const syncInstances = async (): Promise<void> => {
+    if (state.mountId !== myMount) return;
+    // refreshSessions() replaces state.sessions with only the LIVE ones
+    // (sidebar.ts's isLive filters out ended_at) — snapshot the ids we
+    // currently know about before the refresh, then diff, to catch any
+    // session that just ended or vanished and reclaim its event-store cache
+    // entry (listeners + buffered events). Deferred by evictEnded itself if
+    // the session is still open in this pane.
+    //
+    // Gated on the fetch actually succeeding: refreshSessions' catch empties
+    // state.sessions on ANY list_instances failure, which this diff cannot
+    // tell apart from "everything ended" — evicting there would flush every
+    // background cache on a transient IPC blip. A successful-but-empty list
+    // still evicts (those sessions genuinely ended). Ids present in a
+    // successful list also un-latch a stale `ended` mark left by an earlier
+    // transient vanish (e.g. daemon restart), so closing the pane later
+    // doesn't tear down a live session's cache.
+    const previousIds = new Set(state.sessions.map((s) => s.session_id));
+    const refreshed = await refreshSessions();
+    if (state.mountId !== myMount) return;
+    if (refreshed) {
+      const currentIds = new Set(state.sessions.map((s) => s.session_id));
+      for (const id of currentIds) sessionEvents.unmarkEnded(id);
+      for (const id of previousIds) {
+        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+      }
+    }
+
+    // Ensure every newly-appeared live session gets a character assigned.
+    // Track ensured ids so we don't re-call on every subsequent event.
+    const liveSessions = state.sessions.filter((s) => !s.ended_at && !s.end_reason);
+    const newOnes = liveSessions.filter((s) => !_ensuredSessionIds.has(s.session_id));
+    if (newOnes.length > 0) {
+      for (const s of newOnes) {
+        _ensuredSessionIds.add(s.session_id);
+      }
+      await Promise.all(newOnes.map((s) => api.ensureSessionCharacter(s.session_id).catch(() => null)));
       if (state.mountId !== myMount) return;
-      // refreshSessions() replaces state.sessions with only the LIVE ones
-      // (sidebar.ts's isLive filters out ended_at) — snapshot the ids we
-      // currently know about before the refresh, then diff, to catch any
-      // session that just ended or vanished and reclaim its event-store cache
-      // entry (listeners + buffered events). Deferred by evictEnded itself if
-      // the session is still open in this pane.
-      //
-      // Gated on the fetch actually succeeding: refreshSessions' catch empties
-      // state.sessions on ANY list_instances failure, which this diff cannot
-      // tell apart from "everything ended" — evicting there would flush every
-      // background cache on a transient IPC blip. A successful-but-empty list
-      // still evicts (those sessions genuinely ended). Ids present in a
-      // successful list also un-latch a stale `ended` mark left by an earlier
-      // transient vanish (e.g. daemon restart), so closing the pane later
-      // doesn't tear down a live session's cache.
-      const previousIds = new Set(state.sessions.map((s) => s.session_id));
-      const refreshed = await refreshSessions();
+      await loadSessionCharacters();
       if (state.mountId !== myMount) return;
-      if (refreshed) {
-        const currentIds = new Set(state.sessions.map((s) => s.session_id));
-        for (const id of currentIds) sessionEvents.unmarkEnded(id);
-        for (const id of previousIds) {
-          if (!currentIds.has(id)) sessionEvents.evictEnded(id);
-        }
-      }
+    }
 
-      // Ensure every newly-appeared live session gets a character assigned.
-      // Track ensured ids so we don't re-call on every subsequent event.
-      const liveSessions = state.sessions.filter((s) => !s.ended_at && !s.end_reason);
-      const newOnes = liveSessions.filter((s) => !_ensuredSessionIds.has(s.session_id));
-      if (newOnes.length > 0) {
-        for (const s of newOnes) {
-          _ensuredSessionIds.add(s.session_id);
-        }
-        await Promise.all(newOnes.map((s) => api.ensureSessionCharacter(s.session_id).catch(() => null)));
+    renderSidebar(listEl);
+    updateThinkingBar();
+    rateLimitBanner.update(state.sessions);
+    // If the initial mount's session restore failed (daemon not yet connected),
+    // restore now on the first instances-changed that populates the list.
+    if (!state.selectedId && !state.pendingNewSession) {
+      const lastId = loadLastSelectedSession();
+      if (lastId && state.sessions.find(s => s.session_id === lastId)) {
+        await selectSession(lastId, pane);
         if (state.mountId !== myMount) return;
-        await loadSessionCharacters();
-        if (state.mountId !== myMount) return;
+        updateThinkingBar();
       }
-
-      renderSidebar(listEl);
-      updateThinkingBar();
-      rateLimitBanner.update(state.sessions);
-      // If the initial mount's session restore failed (daemon not yet connected),
-      // restore now on the first instances-changed that populates the list.
-      if (!state.selectedId && !state.pendingNewSession) {
-        const lastId = loadLastSelectedSession();
-        if (lastId && state.sessions.find(s => s.session_id === lastId)) {
-          await selectSession(lastId, pane);
-          if (state.mountId !== myMount) return;
-          updateThinkingBar();
+    }
+    // Live-update the pane header title when the session name resolves, and
+    // recolour the header avatar's status ring (busy -> done, etc.).
+    if (state.selectedId && !state.pendingNewSession) {
+      const sess = state.sessions.find((s) => s.session_id === state.selectedId);
+      if (sess) {
+        const titleEl = pane.querySelector<HTMLElement>(".session-header .title");
+        if (titleEl) {
+          const newTitle = sessionSubtitle(sess);
+          if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
+        }
+        updateHeaderAvatarStatus(pane, sess);
+        pane.classList.toggle("is-rate-limited", isBlocked(sess));
+        state.composer?.refreshBlockedState();
+      }
+    }
+    // If the previously-selected session vanished (e.g. takeover renamed it,
+    // or it was ended externally), clear the pane to avoid stale content.
+    // Skip this check while a new-session turn is pending: state.selectedId
+    // is the placeholder id (not in the registry), and clearing the pane
+    // would tear down the in-flight renderer mid-stream.
+    if (
+      !state.pendingNewSession &&
+      state.selectedId &&
+      !state.sessions.find((s) => s.session_id === state.selectedId)
+    ) {
+      if (state.renderer) state.renderer.detach();
+      state.renderer = null;
+      state.composer?.destroy();
+      state.composer = null;
+      setActiveSession(null);
+      pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
+    }
+    // If the selected session's kind changed (e.g. Interactive -> External
+    // after "Open in Terminal"), the pane must re-render to show the correct
+    // read-only UI. Detect by comparing pane DOM vs current kind.
+    if (!state.pendingNewSession && state.selectedId) {
+      const updatedSess = state.sessions.find((s) => s.session_id === state.selectedId);
+      if (updatedSess) {
+        const paneIsReadOnly = !!pane.querySelector(".readonly-banner");
+        const sessIsReadOnly = updatedSess.kind === "external";
+        if (paneIsReadOnly !== sessIsReadOnly) {
+          const reloadId = state.selectedId;
+          setActiveSession(null);
+          await selectSession(reloadId, pane);
         }
       }
-      // Live-update the pane header title when the session name resolves, and
-      // recolour the header avatar's status ring (busy -> done, etc.).
-      if (state.selectedId && !state.pendingNewSession) {
-        const sess = state.sessions.find((s) => s.session_id === state.selectedId);
-        if (sess) {
-          const titleEl = pane.querySelector<HTMLElement>(".session-header .title");
-          if (titleEl) {
-            const newTitle = sessionSubtitle(sess);
-            if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
-          }
-          updateHeaderAvatarStatus(pane, sess);
-          pane.classList.toggle("is-rate-limited", isBlocked(sess));
-          state.composer?.refreshBlockedState();
-        }
-      }
-      // If the previously-selected session vanished (e.g. takeover renamed it,
-      // or it was ended externally), clear the pane to avoid stale content.
-      // Skip this check while a new-session turn is pending: state.selectedId
-      // is the placeholder id (not in the registry), and clearing the pane
-      // would tear down the in-flight renderer mid-stream.
-      if (
-        !state.pendingNewSession &&
-        state.selectedId &&
-        !state.sessions.find((s) => s.session_id === state.selectedId)
-      ) {
-        if (state.renderer) state.renderer.detach();
-        state.renderer = null;
-        state.composer?.destroy();
-        state.composer = null;
-        setActiveSession(null);
-        pane.innerHTML = paneEmptyStateHtml(state.daemonConnected, state.daemonSetupStalled);
-      }
-      // If the selected session's kind changed (e.g. Interactive -> External
-      // after "Open in Terminal"), the pane must re-render to show the correct
-      // read-only UI. Detect by comparing pane DOM vs current kind.
-      if (!state.pendingNewSession && state.selectedId) {
-        const updatedSess = state.sessions.find((s) => s.session_id === state.selectedId);
-        if (updatedSess) {
-          const paneIsReadOnly = !!pane.querySelector(".readonly-banner");
-          const sessIsReadOnly = updatedSess.kind === "external";
-          if (paneIsReadOnly !== sessIsReadOnly) {
-            const reloadId = state.selectedId;
-            setActiveSession(null);
-            await selectSession(reloadId, pane);
-          }
-        }
-      }
-    };
-    state.unlistenInstances = await ev.listen("instances-changed", () => { void syncInstances(); });
-    // Poll fallback: the daemon->app notifier is lossy under pipe backpressure
-    // (the permission-prompt path has its own poll for the same reason). A
-    // dropped instances_changed frame used to freeze a row's busy/awaiting at
-    // its last-known value until some unrelated session event happened to
-    // fire another broadcast. This low-frequency full resync heals any
-    // dropped frame within 15s. Skipped while a previous poll-triggered sync
-    // is still in flight.
+    }
+  };
+  // Routed through the transport seam (not the direct window.__TAURI__?.event
+  // check above) so this also runs on the remote (phone) client: HttpTransport
+  // fans "instances-changed" out from the daemon's global WS stream, while
+  // TauriTransport wraps the same desktop Tauri event used before.
+  state.unlistenInstances = await getTransport().listen("instances-changed", () => { void syncInstances(); });
+  // Poll fallback: the daemon->app notifier is lossy under pipe backpressure
+  // (the permission-prompt path has its own poll for the same reason). A
+  // dropped instances_changed frame used to freeze a row's busy/awaiting at
+  // its last-known value until some unrelated session event happened to
+  // fire another broadcast. This low-frequency full resync heals any
+  // dropped frame within 15s. Skipped while a previous poll-triggered sync
+  // is still in flight. Desktop-only: the remote transport already runs its
+  // own degrade-poll internally while its global WS is down/stale.
+  if (ev?.listen) {
     let pollInFlight = false;
     instancesPollTimer = setInterval(() => {
       if (pollInFlight || state.mountId !== myMount) return;
@@ -697,43 +705,41 @@ export async function renderDetachedSession(
   if (state.mountId !== myMount) return () => { /* superseded */ };
 
   // Subscribe to instances-changed so the meta line refreshes if the
-  // registry kind/busy/pid changes (e.g. takeover).
-  const ev = window.__TAURI__?.event;
-  if (ev?.listen) {
-    state.unlistenInstances = await ev.listen("instances-changed", async () => {
-      if (state.mountId !== myMount) return;
-      // Same ended/vanished diff as the main sessions view's handler — this
-      // detached window has its own event-store singleton (separate webview),
-      // so it must reclaim its own cache entry independently. Same gating:
-      // no eviction on a failed fetch (the catch empties state.sessions), and
-      // alive ids un-latch a stale `ended` mark from a transient vanish.
-      const previousIds = new Set(state.sessions.map((s) => s.session_id));
-      const refreshed = await refreshSessions();
-      if (state.mountId !== myMount) return;
-      if (refreshed) {
-        const currentIds = new Set(state.sessions.map((s) => s.session_id));
-        for (const id of currentIds) sessionEvents.unmarkEnded(id);
-        for (const id of previousIds) {
-          if (!currentIds.has(id)) sessionEvents.evictEnded(id);
-        }
+  // registry kind/busy/pid changes (e.g. takeover). Routed through the
+  // transport seam so this also runs on the remote (phone) client.
+  state.unlistenInstances = await getTransport().listen("instances-changed", async () => {
+    if (state.mountId !== myMount) return;
+    // Same ended/vanished diff as the main sessions view's handler — this
+    // detached window has its own event-store singleton (separate webview),
+    // so it must reclaim its own cache entry independently. Same gating:
+    // no eviction on a failed fetch (the catch empties state.sessions), and
+    // alive ids un-latch a stale `ended` mark from a transient vanish.
+    const previousIds = new Set(state.sessions.map((s) => s.session_id));
+    const refreshed = await refreshSessions();
+    if (state.mountId !== myMount) return;
+    if (refreshed) {
+      const currentIds = new Set(state.sessions.map((s) => s.session_id));
+      for (const id of currentIds) sessionEvents.unmarkEnded(id);
+      for (const id of previousIds) {
+        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
       }
-      // Live-update the pane header title when the session name resolves, and
-      // recolour the header avatar's status ring.
-      if (state.selectedId) {
-        const sess = state.sessions.find((s) => s.session_id === state.selectedId);
-        if (sess) {
-          const titleEl = pane.querySelector<HTMLElement>(".session-header .title");
-          if (titleEl) {
-            const newTitle = sessionSubtitle(sess);
-            if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
-          }
-          updateHeaderAvatarStatus(pane, sess);
-          pane.classList.toggle("is-rate-limited", isBlocked(sess));
-          state.composer?.refreshBlockedState();
+    }
+    // Live-update the pane header title when the session name resolves, and
+    // recolour the header avatar's status ring.
+    if (state.selectedId) {
+      const sess = state.sessions.find((s) => s.session_id === state.selectedId);
+      if (sess) {
+        const titleEl = pane.querySelector<HTMLElement>(".session-header .title");
+        if (titleEl) {
+          const newTitle = sessionSubtitle(sess);
+          if (titleEl.textContent !== newTitle) titleEl.textContent = newTitle;
         }
+        updateHeaderAvatarStatus(pane, sess);
+        pane.classList.toggle("is-rate-limited", isBlocked(sess));
+        state.composer?.refreshBlockedState();
       }
-    });
-  }
+    }
+  });
 
   await selectSession(sessionId, pane);
 
