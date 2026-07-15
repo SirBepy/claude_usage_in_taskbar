@@ -330,16 +330,13 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
                         .and_then(|s| s.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let text = item.get("content")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("")
-                        .to_string();
+                    let output = tool_result_output(item.get("content"));
                     let is_error = item.get("is_error")
                         .and_then(|b| b.as_bool())
                         .unwrap_or(false);
                     evs.push(ChatEvent::ToolResult {
                         tool_use_id,
-                        output: ContentBlock::Text { text },
+                        output,
                         is_error,
                         timestamp: ts,
                     });
@@ -440,9 +437,7 @@ pub fn parse_line(line: &str) -> Vec<ChatEvent> {
         }
         "tool_result" => vec![ChatEvent::ToolResult {
             tool_use_id: v.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            output: ContentBlock::Text {
-                text: v.get("content").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            },
+            output: tool_result_output(v.get("content")),
             is_error: v.get("is_error").and_then(|b| b.as_bool()).unwrap_or(false),
             timestamp: ts,
         }],
@@ -509,6 +504,28 @@ fn tool_use_from_assistant_line(line: &str) -> Vec<ChatEvent> {
     let parent_tool_use_id = v.get("parent_tool_use_id").and_then(|x| x.as_str()).map(String::from);
     let Some(content) = v.get("message").and_then(|m| m.get("content")) else { return vec![]; };
     tool_use_events(content, ts, parent_tool_use_id)
+}
+
+/// A tool_result's `content` field is a plain string for most tools, but MCP
+/// tools (e.g. a Playwright screenshot) and Read on an image file emit the
+/// array-of-blocks form instead. `ChatEvent::ToolResult.output` only carries
+/// one `ContentBlock`, so when the array contains an image, that's what gets
+/// surfaced (it's the reason this exists); otherwise any text blocks are
+/// concatenated, matching the prior string-only behavior.
+fn tool_result_output(content_val: Option<&Value>) -> ContentBlock {
+    let Some(v) = content_val else { return ContentBlock::Text { text: String::new() }; };
+    if let Some(s) = v.as_str() {
+        return ContentBlock::Text { text: s.to_string() };
+    }
+    let blocks = extract_content_blocks(v);
+    if let Some(image) = blocks.iter().find(|b| matches!(b, ContentBlock::Image { .. })) {
+        return image.clone();
+    }
+    let text = blocks.iter()
+        .filter_map(|b| match b { ContentBlock::Text { text } => Some(text.as_str()), _ => None })
+        .collect::<Vec<_>>()
+        .join("\n");
+    ContentBlock::Text { text }
 }
 
 fn extract_content_blocks(v: &Value) -> Vec<ContentBlock> {

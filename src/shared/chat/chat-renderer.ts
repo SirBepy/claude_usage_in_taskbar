@@ -5,7 +5,7 @@ import { armLazyDiffEnhance } from "./diff-enhancer";
 import { type FileEditView } from "./file-edits";
 import { type ToolTally } from "./tool-meta";
 import { ToolTallyState } from "./tool-tally-state";
-import { handleCopyClick, handleSlashClick, handleAttachmentClick, handlePastedLogClick, handleTableFullscreen, handlePrPreviewClick } from "./chat-click-handlers";
+import { handleCopyClick, handleSlashClick, handleAttachmentClick, handleBlockImageClick, handlePastedLogClick, handleTableFullscreen, handlePrPreviewClick } from "./chat-click-handlers";
 import { openFileViewer } from "./file-viewer";
 import { clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { renderCustomToolView } from "./tool-views";
@@ -184,6 +184,7 @@ export class ChatRenderer {
     this.container.addEventListener("click", handleCopyClick);
     this.container.addEventListener("click", handleSlashClick);
     this.container.addEventListener("click", handleAttachmentClick);
+    this.container.addEventListener("click", handleBlockImageClick);
     this.container.addEventListener("click", handlePastedLogClick);
     this.container.addEventListener("click", handleTableFullscreen);
     this.container.addEventListener("click", handlePrPreviewClick);

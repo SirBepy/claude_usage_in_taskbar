@@ -84,6 +84,17 @@ export function handleAttachmentClick(e: MouseEvent): void {
   if (content) openLightbox(content);
 }
 
+/** Tapping an inline rendered image block (screenshots, image tool results) zooms it. */
+export function handleBlockImageClick(e: MouseEvent): void {
+  const img = (e.target as Element).closest<HTMLImageElement>("img.block.image");
+  if (!img) return;
+  const match = /^data:([^;]+);base64,(.+)$/.exec(img.src);
+  const mime = match?.[1];
+  const base64 = match?.[2];
+  if (!mime || !base64) return;
+  openLightbox({ type: "image", mime, base64 });
+}
+
 export function handleCopyClick(e: MouseEvent): void {
   const btn = (e.target as Element).closest(".copy-btn") as HTMLButtonElement | null;
   if (!btn) return;
