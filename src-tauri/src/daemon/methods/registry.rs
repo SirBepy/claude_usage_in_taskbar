@@ -5,6 +5,7 @@ use crate::daemon::rpc::{Router, RpcError};
 use crate::daemon::state::DaemonState;
 use crate::types::EndReason;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
@@ -334,6 +335,55 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
         router.register("list_session_characters", move |_params, _ctx| {
             let state = state.clone();
             async move { Ok(json!(state.settings.snapshot().session_characters)) }
+        });
+    }
+    // Mirrors the ASSIGNMENT half of `ensure_session_character` (the Tauri
+    // command in ipc/characters.rs), which previously existed ONLY on the app
+    // process. HttpTransport had no case for it and the frontend's `.catch(()
+    // => null)` swallowed the resulting RemoteUnavailableError, so a
+    // remote-created session never got a character (silent no-op). Mutates the
+    // daemon's own settings cache immediately for an instant read (mirrors
+    // `upsert_project_for_cwd`'s pattern), then - on a FRESH pick only -
+    // publishes a notification so a connected app process persists the same
+    // assignment to settings.json (see daemon_link.rs's "project_created"
+    // handler for the app-side counterpart of this pattern).
+    {
+        let state = state.clone();
+        router.register("ensure_session_character", move |params, _ctx| {
+            let state = state.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct P { session_id: String }
+                let p: P = serde_json::from_value(params.unwrap_or(Value::Null))
+                    .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+
+                let instances = state.registry.list();
+                let live_ids: HashSet<String> = instances
+                    .iter()
+                    .filter(|i| i.end_reason.is_none())
+                    .map(|i| i.session_id.clone())
+                    .collect();
+                let Some(project_id) = instances
+                    .iter()
+                    .find(|i| i.session_id == p.session_id)
+                    .map(|i| i.project_id.clone())
+                else {
+                    return Ok(json!(null));
+                };
+
+                let all = crate::characters::list();
+                let (pick, is_new) = state.settings.ensure_session_character(
+                    &p.session_id, &project_id, &all, &live_ids,
+                );
+                if is_new {
+                    if let Some(ref character_id) = pick {
+                        state.notifier.publish("session_character_assigned", json!({
+                            "session_id": p.session_id, "character_id": character_id,
+                        }));
+                    }
+                }
+                Ok(json!(pick))
+            }
         });
     }
     // Mirrors `project_last_activity_at` (params: cwd) -> i64. PURE fs read of

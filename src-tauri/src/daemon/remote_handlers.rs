@@ -63,6 +63,12 @@ const SAFE_METHODS: &[&str] = &[
     "character_asset_url",
     "resolve_whitelist_characters",
     "list_session_characters",
+    // Write: assigns a character to a freshly-created remote session (the
+    // desktop-only Tauri command `ensure_session_character` had no remote
+    // mirror, so remote-started chats never got an avatar - ai_todo fix).
+    // Only mutates `session_characters` for the given session_id via
+    // whitelist pick_random; cannot touch any other settings field.
+    "ensure_session_character",
     "list_projects",
     "project_last_activity_at",
     "get_project_tech",
@@ -480,7 +486,7 @@ mod tests {
             "character_asset_url", "resolve_whitelist_characters", "list_projects",
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
-            "list_accounts", "list_slash_commands",
+            "list_accounts", "list_slash_commands", "ensure_session_character",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }

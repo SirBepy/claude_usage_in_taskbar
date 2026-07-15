@@ -194,6 +194,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ensure_session_character_dispatches_to_registered_handler() {
+        // Guards the remote-avatar bug: `ensure_session_character` (the
+        // ASSIGNMENT mutator) previously existed only as a Tauri app-process
+        // command, so a session started on the remote/browser transport never
+        // got a character - HttpTransport had no case for it and the daemon
+        // had no RPC registered, so dispatch would 404 with -32601 (method not
+        // found). With an empty registry (dummy_state) the session_id is
+        // unknown, so the handler can't resolve a project_id and returns
+        // `null` rather than erroring - the point of this test is that the
+        // ROUTE resolves at all.
+        let mut r = Router::new();
+        register_chat_registry(&mut r, dummy_state());
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "ensure_session_character".into(), params: Some(json!({"session_id": "ghost"})) }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "ensure_session_character not registered? got {:?}", resp.error);
+        assert_eq!(resp.result, Some(json!(null)));
+    }
+
+    #[tokio::test]
     async fn shutdown_daemon_returns_ok() {
         let mut r = Router::new();
         register(&mut r, dummy_state());

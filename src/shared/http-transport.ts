@@ -198,6 +198,14 @@ export class HttpTransport implements Transport {
         // sidebar + chat-header avatars. Without it every row shows the "?"
         // placeholder on the phone.
         return this.rpc<T>("list_session_characters", null);
+      case "ensure_session_character":
+        // Assigns a character to a freshly-started session. Without this the
+        // Tauri-only command had no remote mirror, so a remote-created chat
+        // never got a sidebar avatar (silently swallowed by the caller's
+        // `.catch(() => null)`).
+        return this.rpc<T>("ensure_session_character", {
+          session_id: args.sessionId ?? args.session_id,
+        });
       case "list_projects":
         return this.rpc<T>("list_projects", {});
       case "project_last_activity_at":

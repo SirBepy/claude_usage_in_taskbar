@@ -380,6 +380,30 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
                 let _ = app.emit("settings-changed", &snapshot);
             }
         }
+        // The daemon assigned a character to a session created on the remote
+        // (phone/browser) transport, where there is no app-process Tauri
+        // command to do this in-process (ipc/characters.rs's
+        // `ensure_session_character`). The daemon already updated its own
+        // in-memory settings cache for an instant read; here the app process
+        // (if running) merges the same assignment into its AppState and
+        // persists it to settings.json, mirroring the `project_created`
+        // handler above.
+        "session_character_assigned" => {
+            if let (Some(session_id), Some(character_id)) = (
+                params.get("session_id").and_then(|v| v.as_str()),
+                params.get("character_id").and_then(|v| v.as_str()),
+            ) {
+                let state = app.state::<crate::state::AppState>();
+                let mut settings_guard = state.settings.lock().unwrap();
+                settings_guard.session_characters.insert(session_id.to_string(), character_id.to_string());
+                let snapshot = settings_guard.clone();
+                drop(settings_guard);
+                if let Ok(path) = crate::settings::paths::settings_file() {
+                    let _ = crate::settings::save(&path, &snapshot);
+                }
+                let _ = app.emit("settings-changed", &snapshot);
+            }
+        }
         other => {
             log::debug!("daemon notif ignored: {other}");
         }
