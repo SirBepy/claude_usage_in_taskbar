@@ -19,6 +19,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::daemon::device_registry::DeviceRegistry;
 use crate::daemon::session::Session;
+use crate::daemon::state::DaemonState;
 
 use super::remote_server::{validate_pairing_code, RemoteCtx};
 
@@ -186,11 +187,16 @@ pub(super) async fn send_message(
     AxPath(id): AxPath<String>,
     Json(body): Json<SendBody>,
 ) -> Response {
-    let Some(session) = ctx.state.sessions.get(&id).map(|s| s.clone()) else {
-        return (StatusCode::NOT_FOUND, "no such session").into_response();
-    };
-    match crate::daemon::lifecycle::send_message(&session, &body.text).await {
+    // Respawns the session first if its per-turn `claude -p` process already
+    // exited since the last turn (the daemon-side equivalent of the desktop's
+    // -32004 -> start_session(resume) -> retry dance - see
+    // `lifecycle::send_message_with_respawn`). Without this a remote send into
+    // an idle chat 404'd here instead of resuming it.
+    match crate::daemon::lifecycle::send_message_with_respawn(&ctx.state, &id, &body.text).await {
         Ok(()) => StatusCode::OK.into_response(),
+        Err(crate::daemon::lifecycle::LifecycleError::NotFound(_)) => {
+            (StatusCode::NOT_FOUND, "no such session").into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -260,13 +266,31 @@ pub(super) async fn stream_ws(
     let Some(session) = ctx.state.sessions.get(&id).map(|s| s.clone()) else {
         return (StatusCode::NOT_FOUND, "no such session").into_response();
     };
-    ws.on_upgrade(move |socket| pump_events(socket, session))
+    let state = ctx.state.clone();
+    ws.on_upgrade(move |socket| pump_events(socket, state, id, session))
 }
+
+/// How long `pump_events` keeps polling the SessionMap for a respawn after its
+/// broadcast channel closes, before giving up and closing the socket (falling
+/// back to the client's own reconnect-with-backoff in http-transport.ts).
+/// Bounded so a browser tab left open on a session that has genuinely ended
+/// doesn't poll the daemon forever.
+const RESPAWN_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+const RESPAWN_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Forward a session's live ChatEvent broadcast to the WebSocket client until
 /// either side closes. Mirrors what the desktop Tauri event stream delivers, so
 /// a phone client sees the same turns stream in real time.
-async fn pump_events(mut socket: WebSocket, session: Arc<Session>) {
+///
+/// The per-turn `claude -p` process exits at the end of every turn (see
+/// `daemon::lifecycle::spawn_session`'s pump-exit handling), which drops this
+/// session's broadcast sender and closes `rx`. A naive close-on-`Closed` here
+/// would strand this window on the client's 1s-30s exponential WS reconnect
+/// backoff - exactly the window in which a sibling window's message can
+/// respawn the session and get silently missed here (the bug this whole
+/// change fixes). Instead, poll the SessionMap for the respawn and resubscribe
+/// to the NEW session's channel on the SAME socket.
+async fn pump_events(mut socket: WebSocket, state: Arc<DaemonState>, session_id: String, session: Arc<Session>) {
     let mut rx = crate::daemon::broadcast::subscribe(&session);
     loop {
         tokio::select! {
@@ -281,11 +305,42 @@ async fn pump_events(mut socket: WebSocket, session: Arc<Session>) {
                     }
                 }
                 Err(RecvError::Lagged(_)) => continue, // dropped frames under load; keep going
-                Err(RecvError::Closed) => break,       // session ended
+                Err(RecvError::Closed) => {
+                    match wait_for_respawn(&state, &session_id, &mut socket).await {
+                        Some(new_rx) => rx = new_rx,
+                        None => break, // client disconnected, or no respawn within RESPAWN_MAX_WAIT
+                    }
+                }
             },
             incoming = socket.recv() => match incoming {
                 Some(Ok(_)) => {}      // ignore client->server frames for now
                 _ => break,            // client closed or errored
+            },
+        }
+    }
+}
+
+/// Poll the SessionMap for `session_id` to come back live, up to
+/// `RESPAWN_MAX_WAIT`, while still watching `socket` so a client-initiated
+/// close is honored immediately instead of waiting out the poll.
+async fn wait_for_respawn(
+    state: &Arc<DaemonState>,
+    session_id: &str,
+    socket: &mut WebSocket,
+) -> Option<tokio::sync::broadcast::Receiver<crate::types::chat::ChatEvent>> {
+    let deadline = tokio::time::Instant::now() + RESPAWN_MAX_WAIT;
+    loop {
+        if let Some(session) = state.sessions.get(session_id).map(|s| s.clone()) {
+            return Some(crate::daemon::broadcast::subscribe(&session));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return None;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(RESPAWN_POLL_INTERVAL) => continue,
+            incoming = socket.recv() => match incoming {
+                Some(Ok(_)) => continue, // ignore client frames while waiting
+                _ => return None,        // client closed or errored
             },
         }
     }

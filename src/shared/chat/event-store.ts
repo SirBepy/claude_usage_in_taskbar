@@ -331,6 +331,20 @@ class SessionEventStore {
     this.deliver(sessionId, ev);
   }
 
+  /** Roll back a previously `pushSynthetic`-ed event (matched by reference
+   *  identity) after its send actually failed - e.g. active-session.ts's
+   *  optimistic user bubble, which must not linger looking sent once
+   *  `invoke("send_message")` rejects. No-op if the event isn't found (already
+   *  superseded by a real reconcile). Does not re-render by itself; callers
+   *  with an attached renderer for this session should follow up with
+   *  `renderer.loadFromStore()` to repaint without the reverted bubble. */
+  removeSynthetic(sessionId: string, ev: ChatEvent): void {
+    const entry = this.cache.get(sessionId);
+    if (!entry) return;
+    const idx = entry.events.indexOf(ev);
+    if (idx !== -1) entry.events.splice(idx, 1);
+  }
+
   /**
    * Common delivery gate for all LIVE event sources (runner stream, file
    * watcher, synthetic echoes). Drops cross-source duplicates of the same

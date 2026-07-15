@@ -475,11 +475,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
     const sendBundle = async (blocks: ContentBlock[]): Promise<void> => {
       // Optimistically push the user's message via the store; claude -p
       // doesn't echo it back via stream-json. Cache stays consistent.
-      sessionEvents.pushSynthetic(sessionId, {
+      const optimisticEvent = {
         type: "user_message",
         content: blocks,
         timestamp: BigInt(Date.now()),
-      } as ChatEvent);
+      } as ChatEvent;
+      sessionEvents.pushSynthetic(sessionId, optimisticEvent);
 
       // Watch this turn for the /close skill's own lifecycle markers - never
       // guess from the user's typed text (a "/close" substring anywhere in
@@ -538,6 +539,12 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
       } catch (err) {
         console.error("[sessions] send_message failed", err);
         cancelCloseWatch();
+        // The optimistic bubble above claimed the send succeeded; roll it back
+        // so a genuinely failed send doesn't keep looking like it went through.
+        sessionEvents.removeSynthetic(sessionId, optimisticEvent);
+        if (state.renderer && state.renderer.currentSessionId() === sessionId) {
+          await state.renderer.loadFromStore(cwd);
+        }
         alert(`Send failed: ${err}`);
       }
     };

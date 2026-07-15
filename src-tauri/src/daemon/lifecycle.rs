@@ -666,6 +666,59 @@ pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), Life
     Ok(())
 }
 
+/// Send a message to `session_id`, respawning it first if the daemon no
+/// longer holds it live in the `SessionMap`. The per-turn `claude -p`
+/// process exits at the end of every turn (see the `is_interactive` branch
+/// at the end of `spawn_session`'s pump task above), so a session that has
+/// gone idle since its last turn is routinely absent from the map even
+/// though the Registry still lists it as an open Interactive chat.
+///
+/// The desktop app compensates for this client-side: `ipc/chat/run.rs`'s
+/// `send_message_daemon` catches the `-32004` NotFound RPC error, calls
+/// `start_session` with `resume_id` set, re-attaches its event bridge, then
+/// retries the send. A remote (phone/browser) client has neither half of that
+/// dance and no cached cwd/model/effort/account to respawn with, so this does
+/// the equivalent respawn-then-retry entirely daemon-side, reading the
+/// session's cwd/model/effort/account from the Registry (the daemon's own
+/// canonical record) instead of trusting the caller.
+///
+/// Only respawns sessions the Registry still considers a live Interactive
+/// chat (not `ended_at`-marked, not External/Automated) - anything else is a
+/// genuine NotFound, same as before this existed.
+pub async fn send_message_with_respawn(
+    state: &Arc<DaemonState>,
+    session_id: &str,
+    text: &str,
+) -> Result<(), LifecycleError> {
+    if let Some(session) = state.sessions.get(session_id).map(|s| s.clone()) {
+        return send_message(&session, text).await;
+    }
+
+    let inst = state
+        .registry
+        .get(session_id)
+        .filter(|i| i.ended_at.is_none())
+        .filter(|i| matches!(i.kind, crate::sessions::kinds::InstanceKind::Interactive))
+        .ok_or_else(|| LifecycleError::NotFound(session_id.to_string()))?;
+
+    let model = if inst.model.is_empty() { "opus".to_string() } else { inst.model };
+    let effort = if inst.effort.is_empty() { "high".to_string() } else { inst.effort };
+    let session = spawn_session(
+        state,
+        StartSessionParams {
+            cwd: inst.cwd,
+            model,
+            effort,
+            resume_id: Some(session_id.to_string()),
+            remote: false,
+            account_id: inst.account_id,
+            fork: false,
+        },
+    )
+    .await?;
+    send_message(&session, text).await
+}
+
 pub async fn cancel_turn(map: &SessionMap, session_id: &str) -> Result<(), LifecycleError> {
     let session = map.get(session_id)
         .ok_or_else(|| LifecycleError::NotFound(session_id.to_string()))?
@@ -929,5 +982,82 @@ mod tests {
         let map = new_session_map();
         let r = end_session(&map, "nope").await;
         assert!(matches!(r, Err(LifecycleError::NotFound(_))));
+    }
+
+    // send_message_with_respawn: the remote (phone/browser) send path's
+    // daemon-side respawn. A live ChildStdin/process is needed to exercise
+    // the "already live, just send" branch (covered by the ignored Phase 2
+    // integration test, same as plain send_message above); these tests cover
+    // the respawn-selection logic, which is exactly the part remote sends
+    // were missing.
+
+    #[tokio::test]
+    async fn send_message_with_respawn_unknown_everywhere_errors_not_found() {
+        let state = test_state();
+        let r = send_message_with_respawn(&state, "ghost", "hi").await;
+        assert!(matches!(r, Err(LifecycleError::NotFound(_))), "{r:?}");
+    }
+
+    #[tokio::test]
+    async fn send_message_with_respawn_uses_registry_cwd_when_map_is_missing() {
+        // The session isn't live in the SessionMap (its per-turn process already
+        // exited - see spawn_session's is_interactive pump-exit branch) but the
+        // Registry still tracks it as an open Interactive chat. The respawn path
+        // must read cwd/model/effort from the Registry and actually attempt a
+        // spawn - proven here by getting CwdMissing (not NotFound) back for a
+        // bogus cwd, which only happens if spawn_session really ran with the
+        // registry's recorded path.
+        let state = test_state();
+        state.registry.upsert_interactive(
+            "sid-respawn-1",
+            &std::path::PathBuf::from("Z:\\does\\not\\exist"),
+            "proj-1",
+            "2026-01-01T00:00:00Z",
+        );
+        let r = send_message_with_respawn(&state, "sid-respawn-1", "hi").await;
+        assert!(matches!(r, Err(LifecycleError::CwdMissing(_))), "{r:?}");
+    }
+
+    #[tokio::test]
+    async fn send_message_with_respawn_refuses_ended_session() {
+        // A session the user genuinely closed (mark_ended) must not be
+        // silently resurrected by an incoming remote message - NotFound, same
+        // as an unknown session.
+        let state = test_state();
+        state.registry.upsert_interactive(
+            "sid-respawn-2",
+            &std::env::temp_dir(),
+            "proj-1",
+            "2026-01-01T00:00:00Z",
+        );
+        state.registry.mark_ended(
+            "sid-respawn-2",
+            crate::types::EndReason::Manual,
+            "2026-01-01T00:00:01Z",
+        );
+        let r = send_message_with_respawn(&state, "sid-respawn-2", "hi").await;
+        assert!(matches!(r, Err(LifecycleError::NotFound(_))), "{r:?}");
+    }
+
+    #[tokio::test]
+    async fn send_message_with_respawn_refuses_non_interactive_kind() {
+        // External/Automated sessions have no --resume respawn story; a
+        // Registry hit that isn't Interactive must still be a NotFound.
+        let state = test_state();
+        state.registry.register(
+            crate::sessions::registry::RegisterInput {
+                session_id: "sid-respawn-3".into(),
+                cwd: std::env::temp_dir(),
+                pid: 1,
+                kind: crate::sessions::kinds::InstanceKind::External,
+                is_remote: false,
+                transcript_path: None,
+                started_at: "2026-01-01T00:00:00Z".into(),
+            },
+            &std::sync::Mutex::new(crate::types::Settings::default()),
+            "2026-01-01T00:00:00Z",
+        );
+        let r = send_message_with_respawn(&state, "sid-respawn-3", "hi").await;
+        assert!(matches!(r, Err(LifecycleError::NotFound(_))), "{r:?}");
     }
 }
