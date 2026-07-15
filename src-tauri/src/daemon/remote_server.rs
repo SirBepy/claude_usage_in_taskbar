@@ -107,15 +107,20 @@ fn build_router(ctx: Arc<RemoteCtx>) -> Router {
         .route_layer(middleware::from_fn_with_state(ctx.clone(), auth_mw));
 
     // /api/health is unauthenticated (connectivity probe, reveals nothing).
-    // The WS stream self-authenticates via its query token in the handler.
+    // The WS streams self-authenticate via their query token in the handler.
     // Static SPA assets are served unauthenticated (no secrets in them; the
     // SPA JS authenticates every /api call with the bearer token).
     // The fallback only fires when no named route matches, so /api/* and the
-    // WS route above are never shadowed by it.
+    // WS routes above are never shadowed by it.
     let public = Router::new()
         .route("/api/health", get(|| async { "ok" }))
         .route("/api/pair", post(pair_device))
         .route("/api/sessions/:id/stream", get(stream_ws))
+        // Global (not session-scoped) live-state stream: the remote
+        // equivalent of the internal daemon<->app `subscribe_global` pipe
+        // link, so a second remote window sees instances/schedule changes
+        // in real time instead of the 3.5s http-transport.ts poll.
+        .route("/api/global/stream", get(global_stream_ws))
         .route("/ws/transcribe", get(transcribe_ws));
 
     protected
@@ -190,6 +195,25 @@ pub(super) fn validate_pairing_code(code: &str, app_data: &Path) -> Result<(), &
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    /// Route-registration smoke test: `build_router` must not panic when the
+    /// new `/api/global/stream` route is wired into the public router
+    /// alongside the existing REST + per-session-stream routes.
+    #[test]
+    fn build_router_registers_global_stream_route() {
+        use crate::daemon::session::new_session_map;
+        use crate::daemon::settings_cache::SettingsCache;
+        use crate::daemon::state::DaemonState;
+        use crate::types::Settings;
+
+        let ctx = Arc::new(RemoteCtx {
+            state: DaemonState::new(new_session_map(), SettingsCache::new(Settings::default())),
+            app_data: std::env::temp_dir(),
+            router: crate::daemon::rpc::Router::new(),
+            stt: crate::daemon::stt::SttSupervisor::new(std::env::temp_dir()),
+        });
+        let _app = build_router(ctx);
+    }
 
     #[test]
     fn sha256_hex_matches_known_vector() {

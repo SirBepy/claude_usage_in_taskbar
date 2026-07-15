@@ -55,6 +55,171 @@ export class RemoteUnavailableError extends Error {
   }
 }
 
+// ── Global live-state stream (singleton) ────────────────────────────────────
+//
+// One shared WebSocket to `/api/global/stream`, fanning daemon-wide
+// notifier events out to every `listen()` caller instead of each call opening
+// its own poll. This is the remote (browser) equivalent of the desktop's
+// internal `subscribe_global` pipe link (see `daemon_link.rs`): the daemon's
+// notifier emits snake_case JSON-RPC-shaped frames (`{jsonrpc, method,
+// params}`); this table is the same snake_case -> kebab-case translation
+// `daemon_link.rs` does app-side, restricted to the daemon events that have
+// an actual remote frontend consumer today (found by grepping `listen(` /
+// `.on(` call sites across src/).
+type GlobalCallback = (payload: unknown) => void;
+
+const GLOBAL_EVENT_MAP: Record<string, string> = {
+  instances_changed: "instances-changed",
+  scheduled_items_changed: "scheduled-items-changed",
+  scheduled_item_fired: "scheduled-item-fired",
+};
+const GLOBAL_KEBAB_EVENTS = new Set(Object.values(GLOBAL_EVENT_MAP));
+
+/** How stale (ms since the last inbound frame, heartbeat or otherwise) the
+ *  global stream must be before the watchdog treats it as a zombie socket.
+ *  Browsers never surface native WS ping/pong to JS, so `onclose` does not
+ *  fire when the connection silently dies (e.g. after the phone's screen was
+ *  off long enough for the OS to freeze it) - only a missed app-level
+ *  heartbeat can detect that. */
+const GLOBAL_STALE_MS = 10_000;
+const GLOBAL_WATCHDOG_INTERVAL_MS = 5_000;
+/** Degrade-path poll cadence, matching the interval the old per-listener poll
+ *  used before this singleton existed. */
+const GLOBAL_DEGRADE_POLL_MS = 3_500;
+
+let globalWs: WebSocket | null = null;
+let globalWsStopped = true;
+let globalRetryDelay = 1000;
+let globalLastFrameAt = 0;
+const globalListeners = new Map<string, Set<GlobalCallback>>();
+let globalWatchdogTimer: ReturnType<typeof setInterval> | undefined;
+let globalDegradePollTimer: ReturnType<typeof setInterval> | undefined;
+let globalDegradePollInFlight = false;
+/** The HttpTransport instance that registered the currently-active global
+ *  listeners. Only its `call()` can be used for the degrade-path poll (it
+ *  updates `nonStreamable` bookkeeping) - one instance lives for the whole
+ *  app lifetime in practice (`getTransport()` caches it), so this is set once
+ *  on the first `listen()` call and reused. */
+let globalStreamOwner: HttpTransport | null = null;
+
+function fireGlobal(kebabEvent: string, payload: unknown): void {
+  const cbs = globalListeners.get(kebabEvent);
+  if (!cbs) return;
+  for (const cb of cbs) cb(payload);
+}
+
+function allGlobalListenersEmpty(): boolean {
+  for (const set of globalListeners.values()) {
+    if (set.size > 0) return false;
+  }
+  return true;
+}
+
+/** Stops the degrade-path poll; called as soon as a fresh WS frame arrives
+ *  (WS is the fast path, poll is only the fallback while it's down/stale). */
+function stopGlobalDegradePoll(): void {
+  if (globalDegradePollTimer) {
+    clearInterval(globalDegradePollTimer);
+    globalDegradePollTimer = undefined;
+  }
+}
+
+/** Degrade path while the global WS is down or stale: re-poll `list_instances`
+ *  at the pre-WS cadence and fan it out to the "instances-changed" listeners
+ *  only - that is the one event with a documented safe poll substitute
+ *  (the others have no equivalent single-RPC resync and simply go stale
+ *  until the WS reconnects). */
+function startGlobalDegradePoll(): void {
+  if (globalDegradePollTimer) return;
+  globalDegradePollTimer = setInterval(() => {
+    if (globalDegradePollInFlight || !globalStreamOwner) return;
+    const cbs = globalListeners.get("instances-changed");
+    if (!cbs || cbs.size === 0) return;
+    globalDegradePollInFlight = true;
+    globalStreamOwner
+      .call<unknown>("list_instances")
+      .then(() => { fireGlobal("instances-changed", undefined); })
+      .catch(() => { /* network blip - skip this tick */ })
+      .finally(() => { globalDegradePollInFlight = false; });
+  }, GLOBAL_DEGRADE_POLL_MS);
+}
+
+function ensureGlobalWatchdog(): void {
+  if (globalWatchdogTimer) return;
+  globalWatchdogTimer = setInterval(() => {
+    if (globalWsStopped) return;
+    if (Date.now() - globalLastFrameAt > GLOBAL_STALE_MS) {
+      // Stale: assume the socket is a zombie (half-open, no clean close).
+      // Start degrading immediately and force-close so the existing
+      // reconnect/backoff in onclose kicks in.
+      startGlobalDegradePoll();
+      if (globalWs) {
+        try { globalWs.close(); } catch { /* ignore */ }
+      }
+    }
+  }, GLOBAL_WATCHDOG_INTERVAL_MS);
+}
+
+function connectGlobalStream(): void {
+  if (globalWsStopped) return;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const url =
+    `${proto}://${location.host}/api/global/stream?token=${encodeURIComponent(remoteToken())}`;
+  const ws = new WebSocket(url);
+  globalWs = ws;
+  ws.onmessage = (e: MessageEvent) => {
+    globalLastFrameAt = Date.now();
+    stopGlobalDegradePoll();
+    let frame: { method?: string; params?: unknown };
+    try {
+      frame = JSON.parse(e.data as string);
+    } catch {
+      return; // ignore non-JSON frames
+    }
+    if (!frame.method || frame.method === "heartbeat") return; // heartbeat: freshness signal only
+    const kebab = GLOBAL_EVENT_MAP[frame.method];
+    if (kebab) fireGlobal(kebab, frame.params);
+  };
+  ws.onopen = () => {
+    globalRetryDelay = 1000;
+    globalLastFrameAt = Date.now();
+    stopGlobalDegradePoll();
+  };
+  ws.onclose = () => {
+    if (globalWs === ws) globalWs = null;
+    if (globalWsStopped) return;
+    // No live channel until the reconnect completes - degrade immediately
+    // rather than waiting for the watchdog's next tick.
+    startGlobalDegradePoll();
+    setTimeout(connectGlobalStream, globalRetryDelay);
+    globalRetryDelay = Math.min(globalRetryDelay * 2, 30_000);
+  };
+}
+
+/** Opens the singleton global WS (no-op if already open/connecting) and
+ *  starts its watchdog. Safe to call on every `listen()` for a global event. */
+function ensureGlobalStream(): void {
+  if (typeof WebSocket === "undefined" || typeof location === "undefined") return; // node tests
+  if (!globalWsStopped && globalWs) return; // already connecting/open
+  globalWsStopped = false;
+  globalLastFrameAt = Date.now();
+  connectGlobalStream();
+  ensureGlobalWatchdog();
+}
+
+/** Tears the singleton down when the last global listener unsubscribes,
+ *  matching the per-session WS's cleanup semantics (its `unlisten` also
+ *  closes the socket). */
+function teardownGlobalStream(): void {
+  globalWsStopped = true;
+  if (globalWatchdogTimer) { clearInterval(globalWatchdogTimer); globalWatchdogTimer = undefined; }
+  stopGlobalDegradePoll();
+  if (globalWs) {
+    try { globalWs.close(); } catch { /* ignore */ }
+    globalWs = null;
+  }
+}
+
 /**
  * Transport for the browser PWA: talks to the daemon's remote-access server
  * (REST `/api/rpc` + per-session WebSocket) instead of the Tauri runtime.
@@ -244,28 +409,28 @@ export class HttpTransport implements Transport {
   }
 
   async listen<T>(event: string, cb: (payload: T) => void): Promise<Unlisten> {
-    // ── Global session-list poll ──────────────────────────────────────────────
-    // The desktop fires a Tauri "instances-changed" event whenever the session
-    // registry mutates. On the phone there is no global WebSocket, so we
-    // substitute a 3.5-second poll: call list_instances, reshape the result to
-    // the same void-payload the consumer expects (callbacks ignore the payload
-    // and call refreshSessions() themselves), then invoke cb to trigger the same
-    // refresh flow. An in-flight guard prevents overlapping requests.
-    if (event === "instances-changed") {
-      let timerId: ReturnType<typeof setInterval> | undefined;
-      let inFlight = false;
-      const poll = (): void => {
-        if (inFlight) return;
-        inFlight = true;
+    // ── Global live-state stream ──────────────────────────────────────────────
+    // The desktop fires a Tauri event whenever the session registry (or the
+    // schedule, etc.) mutates. On the phone there is no Tauri event bus, so
+    // these fan out through the singleton `/api/global/stream` WebSocket
+    // above instead, with a poll degrade path while it's down/stale.
+    if (GLOBAL_KEBAB_EVENTS.has(event)) {
+      const cbs = globalListeners.get(event) ?? new Set<GlobalCallback>();
+      cbs.add(cb as GlobalCallback);
+      globalListeners.set(event, cbs);
+      globalStreamOwner = this;
+      ensureGlobalStream();
+      if (event === "instances-changed") {
+        // Fire once immediately so the session list populates without
+        // waiting for the first WS frame / poll tick (pre-WS behavior).
         this.call<unknown>("list_instances")
           .then(() => { cb(undefined as unknown as T); })
-          .catch(() => { /* network blip – skip this tick */ })
-          .finally(() => { inFlight = false; });
+          .catch(() => { /* network blip - the WS snapshot frame will catch up */ });
+      }
+      return () => {
+        globalListeners.get(event)?.delete(cb as GlobalCallback);
+        if (allGlobalListenersEmpty()) teardownGlobalStream();
       };
-      // Fire once immediately so the session list populates without waiting 3.5s.
-      poll();
-      timerId = setInterval(poll, 3500);
-      return () => { clearInterval(timerId); };
     }
 
     const chat = /^chat:(.+)$/.exec(event);

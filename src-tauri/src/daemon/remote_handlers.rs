@@ -279,6 +279,101 @@ pub(super) async fn stream_ws(
     ws.on_upgrade(move |socket| pump_events(socket, state, id, session))
 }
 
+/// How often `pump_global_events` sends an app-level heartbeat text frame.
+/// Browsers never surface native WS ping/pong to JS (`onclose` does not fire
+/// on a half-open/zombie socket - e.g. after the phone's screen was off long
+/// enough for the OS to freeze the connection without a clean FIN), so
+/// http-transport.ts's watchdog needs a text frame it can time against to
+/// detect a silently-dead connection instead.
+const GLOBAL_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Not session-scoped: the remote (browser) equivalent of the internal
+/// daemon<->app `subscribe_global` pipe link (see `daemon_link.rs`'s
+/// `run_app_subscription`). Self-authenticates via `?token=` exactly like
+/// `stream_ws`, since browsers cannot set the Authorization header on a WS
+/// handshake.
+pub(super) async fn global_stream_ws(
+    State(ctx): State<Arc<RemoteCtx>>,
+    Query(q): Query<StreamQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if !DeviceRegistry::validate_token(&q.token, &ctx.app_data) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let state = ctx.state.clone();
+    ws.on_upgrade(move |socket| pump_global_events(socket, state))
+}
+
+/// Builds the same `instances_changed` frame shape the notifier publishes on
+/// every registry mutation (see e.g. `daemon::methods::registry`), so a
+/// freshly (re)connected client gets an immediate full resync instead of
+/// waiting for the next mutation.
+fn instances_changed_frame(state: &DaemonState) -> String {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "instances_changed",
+        "params": {"instances": state.registry.list()},
+    })
+    .to_string()
+}
+
+/// Forwards every daemon-wide notifier event to a global (not
+/// session-scoped) WebSocket client verbatim - no per-event filtering -
+/// because every notifier event (`instances_changed`, `channels_changed`,
+/// `project_created`, `scheduled_items_changed`, `scheduled_item_fired`,
+/// `permission_request`, `question_request`, `question_expired`,
+/// `turn_sound`, `refresh_requested`, `notify_requested`, `quit_requested`,
+/// `skill_usage_changed`, `session_character_assigned`,
+/// `token_history_updated` - see the `notifier.publish` call sites across
+/// `daemon/`) mirrors data already exposed by an allowlisted `/api/rpc`
+/// method (`list_instances`, `list_pending_prompts`, `get_token_history`,
+/// `list_session_characters`, ...), so nothing here is more sensitive than
+/// what a paired remote client can already read over REST.
+async fn pump_global_events(mut socket: WebSocket, state: Arc<DaemonState>) {
+    // Heal a client that just (re)connected: send a full snapshot before any
+    // future mutation, mirroring `fetch_and_reseed_instances` on the
+    // desktop app-side link.
+    if socket
+        .send(Message::Text(instances_changed_frame(&state)))
+        .await
+        .is_err()
+    {
+        return;
+    }
+
+    let mut rx = state.notifier.subscribe();
+    let mut heartbeat = tokio::time::interval(GLOBAL_HEARTBEAT_INTERVAL);
+    heartbeat.tick().await; // consume the immediate first tick (right after the snapshot)
+
+    loop {
+        tokio::select! {
+            recv = rx.recv() => match recv {
+                Ok(frame) => {
+                    let txt = match serde_json::to_string(&frame) {
+                        Ok(t) => t,
+                        Err(_) => continue,
+                    };
+                    if socket.send(Message::Text(txt)).await.is_err() {
+                        break; // client gone
+                    }
+                }
+                Err(RecvError::Lagged(_)) => continue, // dropped frames under load; keep going
+                Err(RecvError::Closed) => break, // notifier sender dropped (daemon shutting down)
+            },
+            incoming = socket.recv() => match incoming {
+                Some(Ok(_)) => {} // ignore client->server frames
+                _ => break,       // client closed or errored
+            },
+            _ = heartbeat.tick() => {
+                let hb = serde_json::json!({"jsonrpc": "2.0", "method": "heartbeat", "params": {}}).to_string();
+                if socket.send(Message::Text(hb)).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// How long `pump_events` keeps polling the SessionMap for a respawn after its
 /// broadcast channel closes, before giving up and closing the socket (falling
 /// back to the client's own reconnect-with-backoff in http-transport.ts).
@@ -461,6 +556,20 @@ pub(super) async fn pair_device(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::daemon::session::new_session_map;
+    use crate::daemon::settings_cache::SettingsCache;
+    use crate::types::Settings;
+
+    #[test]
+    fn instances_changed_frame_matches_notifier_shape() {
+        let state = DaemonState::new(new_session_map(), SettingsCache::new(Settings::default()));
+        let frame = instances_changed_frame(&state);
+        let v: serde_json::Value = serde_json::from_str(&frame).expect("valid json frame");
+        assert_eq!(v["jsonrpc"], "2.0");
+        assert_eq!(v["method"], "instances_changed");
+        assert!(v["params"]["instances"].is_array(), "params.instances should be an array: {v}");
+        assert_eq!(v["params"]["instances"].as_array().unwrap().len(), 0);
+    }
 
     #[test]
     fn allowlist_excludes_dangerous_methods() {
