@@ -1,6 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
-import type { Instance, DrainBoard } from "../../types/ipc.generated";
+import type { Instance, DrainBoard, ScheduledItem } from "../../types/ipc.generated";
 import { isSessionClosing, getClosingSet } from "./closing-sessions";
 import {
   projectName,
@@ -18,6 +18,7 @@ import {
   loadHiddenCollapsed,
   isSegCollapsed,
   resetSegCollapse,
+  scheduledCountsBySession,
 } from "./sessions-helpers";
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
@@ -26,7 +27,7 @@ import { reconcileList, loadAnimEnabled } from "./sidebar-anim";
 import { hydrateCharacterAvatars, hydrateProjectTechIcons } from "../../shared/projects";
 import { isBlocked } from "../../shared/chat/rate-limit-banner";
 import { setRerenderCallback } from "./sidebar-ctx-menu";
-import { drainChipHtml, leadingVisual, draftLeadingVisual } from "./sidebar-row-visuals";
+import { drainChipHtml, leadingVisual, draftLeadingVisual, scheduledBadgeHtml } from "./sidebar-row-visuals";
 export { closeCtxMenu, openDraftCtxMenu, openCtxMenu } from "./sidebar-ctx-menu";
 
 let sidebarListEl: HTMLElement | null = null;
@@ -68,6 +69,67 @@ function refreshDrainMap(sessionIds: string[]): void {
       drainFetchInFlight = false;
     }
   })();
+}
+
+// ── Scheduled-message counts (sidebar marker + count badge) ─────────────────
+//
+// sessionId -> count of pending/firing scheduled MESSAGE items, mirroring
+// scheduled-chip.ts's per-chat filter exactly. `schedule_list` returns EVERY
+// item across all sessions, so this fetches ONCE per refresh and groups
+// client-side (scheduledCountsBySession) rather than calling schedule_list
+// per row. Refreshed on the sidebar's normal render cadence (debounced, same
+// shape as drainMap above) and immediately on "scheduled-items-changed"
+// (wired in sessions.ts via forceRefreshScheduledCounts) so the badge doesn't
+// lag behind a schedule/cancel action taken in the open chat.
+const scheduledCountMap = new Map<string, number>();
+let scheduledFetchInFlight = false;
+let scheduledLastFetchMs = 0;
+const SCHEDULED_REFRESH_DEBOUNCE_MS = 3000;
+
+function scheduledCountMapsEqual(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [sid, n] of a) {
+    if (b.get(sid) !== n) return false;
+  }
+  return true;
+}
+
+function refreshScheduledCounts(force = false): void {
+  if (scheduledFetchInFlight) return;
+  if (!force && Date.now() - scheduledLastFetchMs < SCHEDULED_REFRESH_DEBOUNCE_MS) return;
+  scheduledFetchInFlight = true;
+  void (async () => {
+    try {
+      const all = await invoke<ScheduledItem[]>("schedule_list");
+      // Defensive: schedule_list is contracted to return an array, but never
+      // trust an IPC response shape blindly (a mocked/misbehaving transport
+      // returning e.g. {} would make the grouping loop below throw).
+      const next = scheduledCountsBySession(Array.isArray(all) ? all : []);
+      scheduledLastFetchMs = Date.now();
+      // Only re-render if the counts actually changed - the common case on
+      // every poll tick is "nothing scheduled changed", and re-rendering
+      // unconditionally would fire a full sidebar re-render (and its own
+      // recursive refreshScheduledCounts + avatar/icon hydrate passes) on
+      // every single refresh cycle for no visible difference.
+      if (!scheduledCountMapsEqual(scheduledCountMap, next)) {
+        scheduledCountMap.clear();
+        for (const [sid, n] of next) scheduledCountMap.set(sid, n);
+        if (sidebarListEl) renderSidebar(sidebarListEl);
+      }
+    } catch (err) {
+      console.error("[sidebar] schedule_list failed", err);
+    } finally {
+      scheduledFetchInFlight = false;
+    }
+  })();
+}
+
+/** Recount immediately, bypassing the debounce - called on the
+ *  "scheduled-items-changed" event so a schedule/cancel action in the open
+ *  chat reflects in the sidebar right away instead of waiting out the
+ *  debounce window. */
+export function forceRefreshScheduledCounts(): void {
+  refreshScheduledCounts(true);
 }
 
 export function isLive(i: Instance): boolean {
@@ -220,6 +282,9 @@ export function renderSidebar(listEl: HTMLElement): void {
   if (sort === "drain") {
     refreshDrainMap(filtered.map(s => s.session_id));
   }
+  // Unconditional (unlike the drain fetch above): the scheduled marker/count
+  // applies regardless of sort mode.
+  refreshScheduledCounts();
   const sorted = sortSessions(filtered, sort, unread, attention, question, closing, drainMap);
   state.sortedSessionIds = sorted.map(s => s.session_id);
 
@@ -334,7 +399,7 @@ export function renderSidebar(listEl: HTMLElement): void {
           html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""} ${rateLimited.has(s.session_id) ? "is-rate-limited" : ""}">
             ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
             <div class="session-row-text">
-              <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>
+              <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}${scheduledBadgeHtml(scheduledCountMap.get(s.session_id))}</span>
               <span class="session-row-subtitle">${escapeHtml(projectName(s))}${sort === "drain" ? drainChipHtml(drainMap.get(s.session_id)) : ""}</span>
             </div>
             <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">

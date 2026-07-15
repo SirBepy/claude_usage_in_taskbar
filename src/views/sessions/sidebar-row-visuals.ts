@@ -1,7 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import type { Instance } from "../../types/ipc.generated";
 import { characterForSession, characterIconUrl } from "./session-characters";
-import { statusDotClass } from "./sessions-helpers";
+import { statusDotClass, scheduledTooltip } from "./sessions-helpers";
 
 /** Inline "X% of 5h" chip shown in a row's subtitle while sorting by drain.
  *  Muted "—% of 5h" placeholder until the async drain fetch resolves. */
@@ -17,6 +17,21 @@ export function drainChipHtml(pct: number | undefined): string {
 export function projBadgeHtml(cwd: string | null, cls: string): string {
   if (!cwd) return "";
   return `<span class="${cls}"><span class="proj-face" data-proj-face="${escapeHtml(cwd)}"><i class="ph ph-folder"></i></span></span>`;
+}
+
+/** Sidebar row's "has pending scheduled message(s)" marker: a clock icon next
+ *  to the session title, with a count badge ONLY when more than one is
+ *  pending (a single scheduled item shows just the marker, per Joe's ask).
+ *  Purely visual - no effect on statusPriority/sort. Mirrors the per-chat
+ *  scheduled-chip's icon + count-span pattern (scheduled-chip.ts) so the two
+ *  read as the same affordance. Persists unchanged while an item is "firing"
+ *  (no distinct in-flight look for v1 - counts already include firing, same
+ *  as scheduled-chip's filter). */
+export function scheduledBadgeHtml(count: number | undefined): string {
+  if (!count) return "";
+  const title = escapeHtml(scheduledTooltip(count));
+  const countHtml = count > 1 ? `<span class="session-scheduled-count">${count}</span>` : "";
+  return `<span class="session-scheduled-badge" title="${title}"><i class="ph ph-clock-countdown"></i>${countHtml}</span>`;
 }
 
 /** Wrap an avatar strip + optional project badge in the positioning wrapper. */

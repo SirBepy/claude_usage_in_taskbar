@@ -60,6 +60,9 @@ export interface SessionsState {
    * preserving); destroyed on unmount. In-memory only. */
   scheduledChip: ScheduledChip | null;
   unlistenInstances: (() => void) | null;
+  /** Unsubscribe for the "scheduled-items-changed" event (sidebar's scheduled
+   *  marker/count recount - see sidebar.ts's forceRefreshScheduledCounts). */
+  unlistenScheduled: (() => void) | null;
   pendingNewSession: PendingNewSession | null;
   parkedDrafts: ParkedDraft[];
   statusbar: SessionStatusbar | null;
@@ -97,6 +100,7 @@ export function createInitialState(mountId: number): SessionsState {
     heldMessages: null,
     scheduledChip: null,
     unlistenInstances: null,
+    unlistenScheduled: null,
     pendingNewSession: null,
     parkedDrafts: [],
     statusbar: null,

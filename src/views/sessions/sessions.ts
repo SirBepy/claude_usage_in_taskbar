@@ -15,7 +15,7 @@ import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus 
 import { state, resetState, setActiveSession, loadLastSelectedSession, clearLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
 import { sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
-import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu } from "./sidebar";
+import { renderSidebar, refreshSessions, openCtxMenu, closeCtxMenu, openDraftCtxMenu, forceRefreshScheduledCounts } from "./sidebar";
 import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
 import { rateLimitBanner, isBlocked } from "../../shared/chat/rate-limit-banner";
@@ -443,6 +443,15 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   // fans "instances-changed" out from the daemon's global WS stream, while
   // TauriTransport wraps the same desktop Tauri event used before.
   state.unlistenInstances = await getTransport().listen("instances-changed", () => { void syncInstances(); });
+  // Recount the sidebar's scheduled-message marker/badge the moment a
+  // schedule/cancel action lands, instead of waiting for the next unrelated
+  // instances-changed event (which may not fire at all while the chat sits
+  // idle). Routed through the same transport seam so it also works on the
+  // remote (phone) client - schedule_list itself is still desktop/local-only
+  // data (ai_todo 257), but the event now reaches both transports.
+  state.unlistenScheduled = await getTransport().listen("scheduled-items-changed", () => {
+    forceRefreshScheduledCounts();
+  });
   // Poll fallback: the daemon->app notifier is lossy under pipe backpressure
   // (the permission-prompt path has its own poll for the same reason). A
   // dropped instances_changed frame used to freeze a row's busy/awaiting at
@@ -659,6 +668,10 @@ function teardownState(): void {
   if (state.unlistenInstances) {
     try { state.unlistenInstances(); } catch { /* ignore */ }
     state.unlistenInstances = null;
+  }
+  if (state.unlistenScheduled) {
+    try { state.unlistenScheduled(); } catch { /* ignore */ }
+    state.unlistenScheduled = null;
   }
   if (instancesPollTimer !== null) {
     clearInterval(instancesPollTimer);

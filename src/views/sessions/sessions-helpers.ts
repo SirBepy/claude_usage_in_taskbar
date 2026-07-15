@@ -1,4 +1,4 @@
-import type { Instance } from "../../types/ipc.generated";
+import type { Instance, ScheduledItem } from "../../types/ipc.generated";
 
 export type SessionSort = "status" | "recent" | "name" | "drain";
 export type SessionStateStyle = "icons" | "dots";
@@ -52,6 +52,30 @@ export function paneEmptyStateHtml(connected: boolean | null, stalled: boolean):
  */
 export function deriveQuestionSet(sessions: Instance[]): Set<string> {
   return new Set(sessions.filter((s) => s.awaiting === "question").map((s) => s.session_id));
+}
+
+/**
+ * Groups pending scheduled MESSAGE items by session_id, mirroring the exact
+ * filter `scheduled-chip.ts` uses per-chat: `kind.type === "message"` and
+ * status pending/firing (sent/failed excluded). `schedule_list` returns every
+ * item across all sessions, so callers fetch ONCE and pass the full array
+ * here rather than calling schedule_list per row. Purely a visual marker's
+ * data source - does not feed statusPriority/sort.
+ */
+export function scheduledCountsBySession(items: ScheduledItem[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const it of items) {
+    if (it.kind.type !== "message") continue;
+    if (it.status.type !== "pending" && it.status.type !== "firing") continue;
+    const sid = it.kind.session_id;
+    counts.set(sid, (counts.get(sid) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Hover text for the sidebar row's scheduled-message marker. */
+export function scheduledTooltip(count: number): string {
+  return `${count} scheduled message${count === 1 ? "" : "s"}`;
 }
 
 /** 0=NeedsPermission, 1=Question, 2=Working, 3=Waiting(external process),
