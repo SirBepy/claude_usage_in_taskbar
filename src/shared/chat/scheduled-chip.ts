@@ -15,6 +15,7 @@
 import { invoke } from "../ipc";
 import { escapeHtml } from "../escape-html";
 import { showToast } from "../toast";
+import { isRemote } from "../transport";
 import type { ScheduledItem } from "../../types/ipc.generated";
 import { formatFireAt, formatRecurrenceBadge } from "./schedule-picker";
 import "./scheduled-chip.css";
@@ -146,18 +147,21 @@ export class ScheduledChip {
       ? `<span class="scheduled-row-badge">${escapeHtml(formatRecurrenceBadge(it.recurrence))}</span>`
       : "";
     const firingBadge = firing ? `<span class="scheduled-row-badge scheduled-row-badge--firing">sending&hellip;</span>` : "";
+    // Mutators (send now / edit / delete) route through Tauri-only commands
+    // that HttpTransport doesn't forward (ai_todo 257 shipped schedule_list
+    // read-only) - remote is view-only until phone-side write access gets a
+    // deliberate [ARCH] decision, so skip the actions column entirely there.
+    const actions = firing || isRemote() ? "" : `
+          <button type="button" class="scheduled-row-btn scheduled-row-send" title="Send now"><i class="ph ph-paper-plane-tilt"></i></button>
+          <button type="button" class="scheduled-row-btn scheduled-row-edit" title="Edit"><i class="ph ph-pencil-simple"></i></button>
+          <button type="button" class="scheduled-row-btn scheduled-row-delete" title="Delete"><i class="ph ph-trash"></i></button>`;
     return `
       <div class="scheduled-row" data-id="${escapeHtml(it.id)}">
         <div class="scheduled-row-main">
           <div class="scheduled-row-preview" title="${escapeHtml(it.prompt)}">${escapeHtml(preview)}</div>
           <div class="scheduled-row-meta"><span class="scheduled-row-when">${escapeHtml(when)}</span>${badge}${firingBadge}</div>
         </div>
-        <div class="scheduled-row-actions">
-          ${firing ? "" : `
-          <button type="button" class="scheduled-row-btn scheduled-row-send" title="Send now"><i class="ph ph-paper-plane-tilt"></i></button>
-          <button type="button" class="scheduled-row-btn scheduled-row-edit" title="Edit"><i class="ph ph-pencil-simple"></i></button>
-          <button type="button" class="scheduled-row-btn scheduled-row-delete" title="Delete"><i class="ph ph-trash"></i></button>`}
-        </div>
+        <div class="scheduled-row-actions">${actions}</div>
       </div>
     `;
   }

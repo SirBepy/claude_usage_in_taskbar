@@ -401,6 +401,12 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("list_slash_commands", {
           project_dir: args.projectDir ?? args.project_dir,
         });
+      // Read-only scheduled-items list (ai_todo 257) so the scheduled-chip and
+      // Schedule view populate on remote/phone. The mutators (schedule_create/
+      // _update/_delete/_fire_now) have no case here on purpose - they stay
+      // desktop-only until a deliberate write-parity decision is made.
+      case "schedule_list":
+        return this.rpc<T>("schedule_list", null);
       // No remote path: poll_now (a CDP scrape needing Chrome), takeover,
       // editor/window/local-FS commands, and file watchers. Degrade clearly.
       default:

@@ -2,9 +2,15 @@
 //! writer of `scheduled-items.json` (mirrors `chat-config.json`'s "daemon
 //! sole writer" rule): every mutation goes through one of these methods so it
 //! composes correctly with the scheduler tick loop (`daemon::schedule`)
-//! reading and rewriting the same file. Reads (`schedule_list`) are NOT an
-//! RPC method - the app reads the store directly, same as `get_session_config`
-//! / `list_auto_accept` in `ipc/misc.rs` read `chat-config.json` directly.
+//! reading and rewriting the same file. The desktop app still reads
+//! `scheduled-items.json` directly for its own `schedule_list` Tauri command
+//! (same as `get_session_config` / `list_auto_accept` read `chat-config.json`
+//! directly), but `schedule_list` is ALSO registered here as a daemon RPC
+//! (read-only, `SAFE_METHODS`-allowlisted) so the remote/phone client - which
+//! has no Tauri runtime and no direct filesystem access - can list the same
+//! items (ai_todo 257). Only the read is exposed remotely; the mutators
+//! (`schedule_create` / `_update` / `_delete` / `_fire_now`) below stay
+//! desktop-only pending a deliberate decision on phone-side write access.
 
 use crate::daemon::rpc::{Router, RpcError};
 use crate::daemon::state::DaemonState;
@@ -28,6 +34,15 @@ struct IdParams {
 }
 
 pub fn register_schedule(router: &mut Router, state: Arc<DaemonState>) {
+    // Read-only: mirrors the desktop `schedule_list` Tauri command's JSON
+    // shape (`Vec<ScheduledItem>`). Exposed over the remote-access API so the
+    // phone's scheduled-chip and Schedule view populate (ai_todo 257) - without
+    // this, `HttpTransport.call("schedule_list")` fell through to
+    // `RemoteUnavailableError` and both surfaces silently rendered nothing.
+    router.register("schedule_list", move |_params, _ctx| {
+        async move { Ok(json!(scheduled_items::list())) }
+    });
+
     {
         let state = state.clone();
         router.register("schedule_create", move |params, _ctx| {

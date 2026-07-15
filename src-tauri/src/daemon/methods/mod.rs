@@ -16,7 +16,7 @@ pub use schedule::register_schedule;
 
 #[cfg(test)]
 mod tests {
-    use super::{register, register_channels, register_chat_registry, register_responders};
+    use super::{register, register_channels, register_chat_registry, register_responders, register_schedule};
     use crate::daemon::rpc::{ConnectionContext, Request, Router};
     use crate::daemon::session::new_session_map;
     use crate::daemon::settings_cache::SettingsCache;
@@ -187,6 +187,25 @@ mod tests {
         let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
             method: "list_slash_commands".into(), params: None }, dummy_ctx()).await;
         assert!(resp.error.is_none(), "list_slash_commands not registered? got {:?}", resp.error);
+        assert!(
+            resp.result.as_ref().map(serde_json::Value::is_array).unwrap_or(false),
+            "expected a JSON array, got {:?}", resp.result
+        );
+    }
+
+    #[tokio::test]
+    async fn schedule_list_dispatches_to_registered_handler() {
+        // Guards ai_todo 257: the phone's scheduled-chip and Schedule view call
+        // schedule_list over the remote API. If the daemon route is missing,
+        // dispatch returns method-not-found (-32601) and both surfaces render
+        // nothing. Assert it resolves to a handler returning a JSON array
+        // (empty or not, depending on the machine's scheduled-items.json -
+        // scheduled_items::list falls back to []).
+        let mut r = Router::new();
+        register_schedule(&mut r, dummy_state());
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "schedule_list".into(), params: None }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "schedule_list not registered? got {:?}", resp.error);
         assert!(
             resp.result.as_ref().map(serde_json::Value::is_array).unwrap_or(false),
             "expected a JSON array, got {:?}", resp.result

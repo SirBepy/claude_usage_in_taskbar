@@ -88,6 +88,11 @@ const SAFE_METHODS: &[&str] = &[
     // Read-only filesystem scan of the slash-command/skill dirs so the phone's
     // `/` autocomplete popup populates like desktop's (was always empty otherwise).
     "list_slash_commands",
+    // Read-only scheduled-items list (ai_todo 257) so the phone's scheduled-chip
+    // and Schedule view show the same pending/sent items as desktop. Read-only:
+    // the mutators (schedule_create/_update/_delete/_fire_now) are deliberately
+    // NOT here - phone-side scheduling writes need a separate reviewed decision.
+    "schedule_list",
 ];
 
 // ── Push notifications (ai_todo 119) ─────────────────────────────────────────
@@ -578,6 +583,10 @@ mod tests {
             "restart_channel", "show_channel", "hide_channel", "end_session",
             "attach_session", "detach_session", "subscribe_global",
             "externalize_session", "takeover_manual",
+            // ai_todo 257: schedule_list is a deliberate read-only exception;
+            // the mutators must stay desktop-only pending an [ARCH] decision.
+            "schedule_create", "schedule_update", "schedule_delete",
+            "schedule_fire_now", "schedule_list_external",
         ] {
             assert!(
                 !SAFE_METHODS.contains(&m),
@@ -596,6 +605,7 @@ mod tests {
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
             "list_accounts", "list_slash_commands", "ensure_session_character",
+            "schedule_list",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }
