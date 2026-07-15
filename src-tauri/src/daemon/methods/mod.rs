@@ -176,6 +176,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_slash_commands_dispatches_to_registered_handler() {
+        // Guards the remote `/` autocomplete popup bug: HttpTransport had no
+        // case for list_slash_commands and the daemon had no RPC registered for
+        // it, so the phone/browser popup was always empty. Assert it resolves
+        // to a handler returning a JSON array (scan_all always returns at least
+        // the builtins, even with no project_dir).
+        let mut r = Router::new();
+        register_chat_registry(&mut r, dummy_state());
+        let resp = r.dispatch(Request { jsonrpc: "2.0".into(), id: json!(1),
+            method: "list_slash_commands".into(), params: None }, dummy_ctx()).await;
+        assert!(resp.error.is_none(), "list_slash_commands not registered? got {:?}", resp.error);
+        assert!(
+            resp.result.as_ref().map(serde_json::Value::is_array).unwrap_or(false),
+            "expected a JSON array, got {:?}", resp.result
+        );
+    }
+
+    #[tokio::test]
     async fn shutdown_daemon_returns_ok() {
         let mut r = Router::new();
         register(&mut r, dummy_state());

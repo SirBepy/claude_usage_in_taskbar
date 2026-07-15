@@ -376,6 +376,26 @@ pub fn register_chat_registry(router: &mut Router, state: Arc<DaemonState>) {
             Ok(json!(crate::ipc::project_icons::get_project_icon(p.root).await))
         }
     });
+    // Mirrors the `list_slash_commands` Tauri command (params: project_dir) ->
+    // Vec<SlashEntry>. Read-only filesystem scan of ~/.claude/{commands,skills,
+    // plugins} + the project's .claude dir - the daemon runs on the same PC and
+    // can read the same disk as the desktop app, so `scan_all` works unchanged.
+    // Without this the phone/browser `/` autocomplete popup is always empty
+    // (HttpTransport had no case for this command).
+    router.register("list_slash_commands", move |params, _ctx| {
+        async move {
+            #[derive(serde::Deserialize, Default)]
+            struct P { project_dir: Option<String> }
+            let p: P = serde_json::from_value(params.unwrap_or(Value::Null)).unwrap_or_default();
+            let project = p.project_dir.map(std::path::PathBuf::from);
+            let entries = tokio::task::spawn_blocking(move || {
+                crate::slash::enumerate::scan_all(project.as_deref())
+            })
+            .await
+            .map_err(|e| RpcError::internal(format!("join: {e}")))?;
+            Ok(json!(entries))
+        }
+    });
     // ── Usage + token history (homescreen / stats on the phone) ───────────────
     // All three read the SAME shared `companion.db` the desktop app reads, via
     // the daemon's own connection (`state.db`). They mirror the Tauri commands

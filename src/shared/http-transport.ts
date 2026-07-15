@@ -222,6 +222,12 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("get_active_sessions", null);
       case "get_settings":
         return this.rpc<T>("get_settings", null);
+      case "list_slash_commands":
+        // Read-only filesystem scan for the `/` autocomplete popup; the daemon
+        // runs on the same PC and can read the same disk as desktop.
+        return this.rpc<T>("list_slash_commands", {
+          project_dir: args.projectDir ?? args.project_dir,
+        });
       // No remote path: poll_now (a CDP scrape needing Chrome), takeover,
       // editor/window/local-FS commands, and file watchers. Degrade clearly.
       default:

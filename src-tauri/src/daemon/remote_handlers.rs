@@ -79,6 +79,9 @@ const SAFE_METHODS: &[&str] = &[
     // Visual settings (theme, colors) so the phone mirrors the desktop appearance.
     // set_settings is deliberately NOT here (phone must not mutate desktop settings).
     "get_settings",
+    // Read-only filesystem scan of the slash-command/skill dirs so the phone's
+    // `/` autocomplete popup populates like desktop's (was always empty otherwise).
+    "list_slash_commands",
 ];
 
 // ── Push notifications (ai_todo 119) ─────────────────────────────────────────
@@ -477,7 +480,7 @@ mod tests {
             "character_asset_url", "resolve_whitelist_characters", "list_projects",
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
-            "list_accounts",
+            "list_accounts", "list_slash_commands",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }
