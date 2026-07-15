@@ -599,7 +599,15 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
 
     state.scheduledChip?.destroy();
     const scheduledChipSlot = pane.querySelector<HTMLElement>(".scheduled-chip-slot");
-    state.scheduledChip = scheduledChipSlot ? new ScheduledChip({ root: scheduledChipSlot, sessionId }) : null;
+    state.scheduledChip = scheduledChipSlot
+      ? new ScheduledChip({
+          root: scheduledChipSlot,
+          sessionId,
+          // Pencil-edit: bring the scheduled prompt back into this pane's
+          // composer as a fresh draft; the chip cancels the item itself.
+          onEdit: (item) => composer.setDraftText(item.prompt),
+        })
+      : null;
     if (state.renderer) {
       state.renderer.onSendText = (text) => { void sendBundle([{ type: "text", text }]); };
     }

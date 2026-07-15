@@ -1,9 +1,11 @@
 // Per-chat scheduled-message chip: clock icon + count of Pending
 // ScheduledKind::Message items for the active session, with a dropdown of
-// Send now / Edit / Delete rows. Mechanically mirrors held-messages.ts (chip +
-// floating dropdown, outside-click close) but renders in its own slot next to
-// `.session-thinking` rather than reusing its chipSlot/anchor, so the two
-// controllers never fight over the same DOM.
+// Send now / Edit / Delete rows. Edit loads the item's prompt back into the
+// composer (via onEdit) and cancels the pending item, leaving the user to
+// re-send or re-schedule through the normal composer flow. Mechanically
+// mirrors held-messages.ts (chip + floating dropdown, outside-click close) but
+// renders in its own slot next to `.session-thinking` rather than reusing its
+// chipSlot/anchor, so the two controllers never fight over the same DOM.
 //
 // Data source: schedule_list on mount/open + after every row action.
 // TODO(schedule-view phase): live event — the daemon emits
@@ -13,14 +15,20 @@
 import { invoke } from "../ipc";
 import { escapeHtml } from "../escape-html";
 import { showToast } from "../toast";
-import type { ScheduledItem, Recurrence } from "../../types/ipc.generated";
-import { openSchedulePicker, formatFireAt, formatRecurrenceBadge } from "./schedule-picker";
+import type { ScheduledItem } from "../../types/ipc.generated";
+import { formatFireAt, formatRecurrenceBadge } from "./schedule-picker";
 import "./scheduled-chip.css";
 
 export interface ScheduledChipOptions {
   /** `.scheduled-chip-slot` host — cleared/repopulated on every render. */
   root: HTMLElement;
   sessionId: string;
+  /** Called when the user clicks a pending item's Edit (pencil) action: load
+   * the item's prompt back into the composer as a fresh draft. The chip
+   * itself then cancels (schedule_delete) the item right after, so the
+   * caller only has to repopulate - the two never race since this call is
+   * synchronous. */
+  onEdit: (item: ScheduledItem) => void;
 }
 
 export class ScheduledChip {
@@ -169,7 +177,7 @@ export class ScheduledChip {
       });
       row.querySelector(".scheduled-row-edit")?.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.editItem(item, row);
+        this.editItem(item);
       });
     });
   }
@@ -195,24 +203,23 @@ export class ScheduledChip {
     await this.refresh();
   }
 
-  private editItem(item: ScheduledItem, anchorRow: HTMLElement): void {
-    openSchedulePicker({
-      anchor: anchorRow,
-      confirmLabel: "Update",
-      initial: { fireAtUtcIso: item.fire_at, recurrence: item.recurrence },
-      onConfirm: (result) => {
-        void this.updateItem(item, result.fireAtUtcIso, result.recurrence);
-      },
-    });
+  /** Load the item's prompt back into the composer, then cancel the pending
+   * item so it doesn't also fire while the user is re-editing - the user is
+   * left in the normal compose state (send now or re-schedule via the usual
+   * picker applies again). */
+  private editItem(item: ScheduledItem): void {
+    this.opts.onEdit(item);
+    this.isOpen = false;
+    this.closeDropdown();
+    void this.cancelForEdit(item.id);
   }
 
-  private async updateItem(item: ScheduledItem, fireAtUtcIso: string, recurrence: Recurrence | null): Promise<void> {
-    const updated: ScheduledItem = { ...item, fire_at: fireAtUtcIso, recurrence };
+  private async cancelForEdit(id: string): Promise<void> {
     try {
-      await invoke<void>("schedule_update", { item: updated });
+      await invoke<void>("schedule_delete", { id });
     } catch (err) {
-      console.error("[scheduled-chip] schedule_update failed", err);
-      showToast(`Failed to update: ${err}`);
+      console.error("[scheduled-chip] schedule_delete (edit) failed", err);
+      showToast(`Failed to cancel scheduled item: ${err}`);
     }
     await this.refresh();
   }
