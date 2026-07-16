@@ -116,13 +116,34 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     // Bind hook server BEFORE the RPC accept loop so in-flight claude
     // processes can re-discover the port the moment we're up.
     let _hook_port = match hooks_server::spawn(state.clone()).await {
-        Ok(port) => port,
-        // Another healthy daemon already owns the port: the normal outcome of
-        // a duplicate-spawn race (two apps calling ensure_daemon at once).
-        // Exit quietly - the caller's connect retry will reach the winner.
+        Ok(port) => Some(port),
+        // Another process answers the HTTP port. This is normally a healthy
+        // duplicate-spawn race (two apps calling ensure_daemon at once), but
+        // ai_todo 151: the HTTP health check alone can't tell that apart from
+        // a wedged old daemon whose named-pipe accept loop died while its HTTP
+        // server kept answering - in that case exiting here strands every
+        // future launch on a dead pipe forever (the app's ensure_daemon only
+        // ever retries the pipe, never the HTTP port). Probe the pipe too
+        // before trusting the "healthy" verdict.
         Err(hooks_server::HookBindError::HealthyDaemonExists(port)) => {
-            log::info!("daemon: a healthy daemon already serves port {port}; exiting (duplicate-spawn race)");
-            return Ok(());
+            let pipe_addr = crate::daemon_client::daemon_addr_for_current_user();
+            let pipe_alive = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                crate::daemon_client::PersistentClient::connect(&pipe_addr),
+            )
+            .await
+            .map(|r| r.is_ok())
+            .unwrap_or(false);
+            if pipe_alive {
+                log::info!("daemon: a healthy daemon already serves port {port}; exiting (duplicate-spawn race)");
+                return Ok(());
+            }
+            log::warn!(
+                "daemon: port {port} answers /health but the named pipe is not accepting \
+                 connections (ai_todo 151) - a previous daemon is likely wedged; continuing \
+                 startup without re-binding the hook HTTP port so pipe-based IPC can recover"
+            );
+            None
         }
         Err(e) => return Err(e.into()),
     };
