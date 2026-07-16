@@ -68,6 +68,11 @@ body.oc-dragging #ocPanel { cursor: grabbing; }
 /* One account = one dial + its (hover-revealed) popup, both anchored to this
  * cell so the popup can centre itself over just this dial. */
 .oc-cell { position: relative; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+/* Info circle is barely bigger than the dial (82px vs 52px), so the cursor
+ * sitting on top of it while hovering covers a meaningful chunk of the text.
+ * Hide the system cursor for the hover duration; the popup itself is the
+ * only feedback needed once it's showing. */
+.oc-cell:hover { cursor: none; }
 
 .oc-dial { position: relative; width: 52px; height: 52px; }
 .oc-dial svg { display: block; width: 52px; height: 52px; }
