@@ -1,7 +1,20 @@
 import { escapeHtml } from "../../../shared/escape-html";
 import { registerOverlayBack } from "../../../shared/back-button";
 import { clearHost, ensureHost, renderCardShell } from "./host";
-import type { Answers, Question, QuestionUIOpts, Selection } from "./types";
+import type { Answers, Question, QuestionDraft, QuestionUIOpts, Selection } from "./types";
+
+/**
+ * Pure "is this question answered" check, shared between the floating card's
+ * own gating (via a per-index wrapper below) and external callers - e.g. the
+ * chat-transcript live-progress sync - that only have a raw QuestionDraft, not
+ * this module's closures.
+ */
+export function isQuestionAnswered(q: Question | undefined, freeText: string, selection: Selection | undefined): boolean {
+  if (!q?.options?.length) return true;
+  if (freeText.trim()) return true;
+  if (q.multiSelect) return (selection instanceof Set ? selection.size : 0) > 0;
+  return typeof selection === "string";
+}
 
 /**
  * Format answers as plain text so claude can read them in the permission
@@ -87,9 +100,19 @@ export function snapshotActiveCardDraft(sessionId: string): import("./types").Qu
   return activeCard.getDraft();
 }
 
+// Synthetic option appended to every multiSelect question so "nothing
+// applies" is an explicit, selectable answer instead of an implicit
+// zero-selections state - lets isQuestionAnswered require a real choice
+// (checkbox or free text) instead of treating an untouched question as done.
+const NONE_LABEL = "None of the above";
+
 export function renderQuestionUI(opts: QuestionUIOpts): void {
   const { host } = ensureHost();
-  const { questions } = opts;
+  const questions: Question[] = opts.questions.map((q) => {
+    if (!q.multiSelect || !q.options?.length) return q;
+    if (q.options.some((o) => o.label === NONE_LABEL)) return q;
+    return { ...q, options: [...q.options, { label: NONE_LABEL }] };
+  });
 
   const selections = new Map<number, Selection>();
   const freeText = new Map<number, string>();
@@ -124,7 +147,7 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     backDisposer?.();
     backDisposer = null;
     clearHost();
-    document.removeEventListener("keydown", escHandler);
+    document.removeEventListener("keydown", keydownHandler);
     if (resizeObs) { try { resizeObs.disconnect(); } catch { /* ignore */ } resizeObs = null; }
     if (messagesEl) {
       messagesEl.style.paddingBottom = savedPaddingBottom;
@@ -132,42 +155,59 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     }
     if (activeCard?.teardown === teardown) activeCard = null;
   };
+  const currentDraft = (): QuestionDraft => ({
+    freeText: new Map(freeText),
+    selections: new Map(
+      Array.from(selections.entries()).map(([k, v]) => [k, v instanceof Set ? new Set(v) : v])
+    ),
+    activeTab,
+  });
   if (opts.id) {
     activeCard = {
       id: opts.id,
       sessionId: opts.sessionId,
       teardown,
-      getDraft: () => ({
-        freeText: new Map(freeText),
-        selections: new Map(
-          Array.from(selections.entries()).map(([k, v]) => [k, v instanceof Set ? new Set(v) : v])
-        ),
-        activeTab,
-      }),
+      getDraft: currentDraft,
     };
   }
 
-  const escHandler = (e: KeyboardEvent) => {
+  const keydownHandler = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       teardown();
       void opts.onCancel();
+      return;
+    }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      triggerPrimaryShortcut();
     }
   };
-  document.addEventListener("keydown", escHandler);
+  document.addEventListener("keydown", keydownHandler);
+
+  // Per-question answer, normalized: multiSelect -> string[] (possibly empty,
+  // always present), single-select/free-text -> string or null if unanswered.
+  const answerFor = (qi: number): string | string[] | null => {
+    const q = questions[qi];
+    const typed = (freeText.get(qi) ?? "").trim();
+    const s = selections.get(qi);
+    if (q?.multiSelect) {
+      const set = Array.from((s as Set<string> | undefined) ?? []);
+      if (typed) set.push(typed);
+      return set;
+    }
+    if (typed) return typed;
+    if (typeof s === "string") return s;
+    return null;
+  };
 
   const submit = () => {
     const answers: Answers = {};
     questions.forEach((q, i) => {
-      const typed = (freeText.get(i) ?? "").trim();
-      const s = selections.get(i);
+      const a = answerFor(i);
       if (q.multiSelect) {
-        const set = Array.from((s as Set<string> | undefined) ?? []);
-        if (typed) set.push(typed);
-        answers[q.question] = set;
-      } else if (typed) {
-        answers[q.question] = typed;
-      } else if (typeof s === "string") {
-        answers[q.question] = s;
+        answers[q.question] = a as string[];
+      } else if (a != null) {
+        answers[q.question] = a;
       }
     });
     teardown();
@@ -184,20 +224,47 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     return true;
   });
 
-  const isQuestionAnswered = (qi: number): boolean => {
+  const answeredAt = (qi: number): boolean =>
+    isQuestionAnswered(questions[qi], freeText.get(qi) ?? "", selections.get(qi));
+
+  const answerPreview = (qi: number): string => {
     const q = questions[qi];
-    if (!q?.options?.length) return true;
-    if ((freeText.get(qi) ?? "").trim()) return true;
-    // multiSelect is "select all that apply" - zero selections is a valid
-    // answer (none apply / answered via the free-text box), so never block it.
-    if (q.multiSelect) return true;
-    const s = selections.get(qi);
-    return typeof s === "string";
+    const a = answerFor(qi);
+    if (q?.multiSelect) return (a as string[]).length ? (a as string[]).join(", ") : "Not answered";
+    return typeof a === "string" && a ? a : "Not answered";
   };
 
+  const showTabs = questions.length > 1;
   let isCollapsed = false;
   let activeTab = opts.initialDraft?.activeTab ?? 0;
+  // Only meaningful when showTabs: "answer" is the per-question tab/form view,
+  // "summary" is the final recap-before-send screen.
+  let mode: "answer" | "summary" = "answer";
   let firstRender = true;
+
+  const goNext = () => {
+    activeTab = Math.min(activeTab + 1, questions.length - 1);
+    render();
+  };
+  const goToSummary = () => {
+    mode = "summary";
+    render();
+  };
+  const goBackToAnswers = () => {
+    mode = "answer";
+    render();
+  };
+  const triggerPrimaryShortcut = () => {
+    const allAnsweredNow = questions.every((_, i) => answeredAt(i));
+    if (!showTabs || mode === "summary") {
+      if (allAnsweredNow) submit();
+      return;
+    }
+    if (!answeredAt(activeTab)) return;
+    if (activeTab < questions.length - 1) goNext();
+    else goToSummary();
+  };
+
   const render = () => {
     const title = `
       <span class="prompt-card__title">
@@ -207,12 +274,12 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
       ${opts.rightChipHtml ?? ""}
     `;
 
-    const showTabs = questions.length > 1;
-    const tabsHtml = showTabs
+    const isSummary = showTabs && mode === "summary";
+    const tabsHtml = showTabs && !isSummary
       ? `<div class="prompt-tabs" role="tablist">
           ${questions.map((q, qi) => {
             const label = q.header?.trim() || `Question ${qi + 1}`;
-            const answered = isQuestionAnswered(qi);
+            const answered = answeredAt(qi);
             const isActive = qi === activeTab;
             return `
               <button type="button" role="tab" class="prompt-tab${isActive ? " is-active" : ""}${answered ? " is-answered" : ""}" data-tab="${qi}" aria-selected="${isActive}">
@@ -239,8 +306,9 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
       const desc = opt.description
         ? `<span class="prompt-opt__desc">${escapeHtml(opt.description)}</span>`
         : "";
+      const isNone = q!.multiSelect && opt.label === NONE_LABEL;
       return `
-        <label class="prompt-opt${selected ? " is-selected" : ""}">
+        <label class="prompt-opt${selected ? " is-selected" : ""}${isNone ? " prompt-opt--none" : ""}">
           <input type="${inputType}" name="q-${activeTab}" data-label="${escapeHtml(opt.label)}" ${selected ? "checked" : ""} />
           <span class="prompt-opt__body">
             <span class="prompt-opt__label">${escapeHtml(opt.label)}</span>
@@ -251,27 +319,68 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     }).join("");
 
     const typedValue = freeText.get(activeTab) ?? "";
-    const body = `
-      ${tabsHtml}
-      <div class="prompt-q" role="tabpanel">
-        <div class="prompt-q__head">${qHeaderTag}${modeHtml}</div>
-        <div class="prompt-q__text">${escapeHtml(q?.question ?? "")}</div>
-        <div class="prompt-q__opts">${rows}</div>
-        <label class="prompt-q__other">
-          <span class="prompt-q__other-label">Or write something:</span>
-          <textarea class="prompt-q__other-input" rows="1" placeholder="Type your own answer...">${escapeHtml(typedValue)}</textarea>
-        </label>
-      </div>
-    `;
+    const summaryRows = questions.map((sq, qi) => {
+      const label = sq.header?.trim() || `Question ${qi + 1}`;
+      const answered = answeredAt(qi);
+      return `
+        <button type="button" class="prompt-summary-row${answered ? "" : " is-unanswered"}" data-summary-tab="${qi}">
+          <span class="prompt-summary-row__main">
+            <span class="prompt-summary-row__label">${escapeHtml(label)}</span>
+            <span class="prompt-summary-row__answer">${escapeHtml(answerPreview(qi))}</span>
+          </span>
+          <i class="ph ph-pencil-simple"></i>
+        </button>
+      `;
+    }).join("");
 
-    const allAnswered = questions.every((_, i) => isQuestionAnswered(i));
+    const body = isSummary
+      ? `
+        <div class="prompt-summary" role="tabpanel">
+          <div class="prompt-summary__intro">Review your answers before sending:</div>
+          ${summaryRows}
+        </div>
+      `
+      : `
+        ${tabsHtml}
+        <div class="prompt-q" role="tabpanel">
+          <div class="prompt-q__head">${qHeaderTag}${modeHtml}</div>
+          <div class="prompt-q__text">${escapeHtml(q?.question ?? "")}</div>
+          <div class="prompt-q__opts">${rows}</div>
+          <label class="prompt-q__other">
+            <span class="prompt-q__other-label">Or write something:</span>
+            <textarea class="prompt-q__other-input" rows="1" placeholder="Type your own answer...">${escapeHtml(typedValue)}</textarea>
+          </label>
+        </div>
+      `;
+
+    const allAnswered = questions.every((_, i) => answeredAt(i));
     const submitDisabled = allAnswered ? "" : "disabled";
-    const footer = `
-      <button type="button" class="btn btn-secondary" data-act="cancel">${escapeHtml(opts.cancelLabel)}</button>
-      <button type="button" class="btn btn-primary" data-act="submit" ${submitDisabled}>
-        <i class="ph ${opts.submitIcon}"></i> ${escapeHtml(opts.submitLabel)}
-      </button>
-    `;
+    let footer: string;
+    if (!showTabs) {
+      footer = `
+        <button type="button" class="btn btn-secondary" data-act="cancel">${escapeHtml(opts.cancelLabel)}</button>
+        <button type="button" class="btn btn-primary" data-act="submit" ${submitDisabled}>
+          <i class="ph ${opts.submitIcon}"></i> ${escapeHtml(opts.submitLabel)}
+        </button>
+      `;
+    } else if (isSummary) {
+      footer = `
+        <button type="button" class="btn btn-secondary" data-act="cancel">${escapeHtml(opts.cancelLabel)}</button>
+        <button type="button" class="btn btn-secondary" data-act="back"><i class="ph ph-arrow-left"></i> Back</button>
+        <button type="button" class="btn btn-primary" data-act="submit" ${submitDisabled}>
+          <i class="ph ${opts.submitIcon}"></i> ${escapeHtml(opts.submitLabel)}
+        </button>
+      `;
+    } else {
+      const isLast = activeTab === questions.length - 1;
+      const stepDisabled = answeredAt(activeTab) ? "" : "disabled";
+      footer = `
+        <button type="button" class="btn btn-secondary" data-act="cancel">${escapeHtml(opts.cancelLabel)}</button>
+        <button type="button" class="btn btn-primary" data-act="${isLast ? "review" : "next"}" ${stepDisabled}>
+          <i class="ph ${isLast ? "ph-list-checks" : "ph-arrow-right"}"></i> ${isLast ? "Review" : "Next"}
+        </button>
+      `;
+    }
 
     host.innerHTML = renderCardShell(title, body, footer);
     const card = host.querySelector<HTMLElement>(".prompt-card");
@@ -317,14 +426,23 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
         if (!q) return;
         if (q.multiSelect) {
           const set = (selections.get(qi) as Set<string> | undefined) ?? new Set<string>();
-          if (input.checked) set.add(label); else set.delete(label);
+          if (label === NONE_LABEL) {
+            // Exclusive: picking "None of the above" clears every other pick.
+            set.clear();
+            if (input.checked) set.add(NONE_LABEL);
+          } else if (input.checked) {
+            set.delete(NONE_LABEL);
+            set.add(label);
+          } else {
+            set.delete(label);
+          }
           selections.set(qi, set);
         } else if (input.checked) {
           selections.set(qi, label);
         }
         // Single-select: auto-advance to next unanswered tab.
         if (!q.multiSelect && questions.length > 1) {
-          const next = questions.findIndex((_, i) => i !== qi && !isQuestionAnswered(i));
+          const next = questions.findIndex((_, i) => i !== qi && !answeredAt(i));
           if (next >= 0) activeTab = next;
         }
         render();
@@ -341,22 +459,19 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
       otherEl.addEventListener("input", () => {
         freeText.set(activeTab, otherEl.value);
         autoSize();
-        const allAnsweredNow = questions.every((_, i) => isQuestionAnswered(i));
+        const allAnsweredNow = questions.every((_, i) => answeredAt(i));
         const submitBtn = host.querySelector<HTMLButtonElement>('[data-act="submit"]');
         if (submitBtn) submitBtn.disabled = !allAnsweredNow;
+        const stepBtn = host.querySelector<HTMLButtonElement>('[data-act="next"], [data-act="review"]');
+        if (stepBtn) stepBtn.disabled = !answeredAt(activeTab);
         const tabBtn = host.querySelector<HTMLElement>(`.prompt-tab[data-tab="${activeTab}"]`);
         if (tabBtn) {
-          tabBtn.classList.toggle("is-answered", isQuestionAnswered(activeTab));
+          tabBtn.classList.toggle("is-answered", answeredAt(activeTab));
           const dotIcon = tabBtn.querySelector("i");
-          if (dotIcon) dotIcon.className = isQuestionAnswered(activeTab) ? "ph-fill ph-check-circle" : "ph ph-circle";
+          if (dotIcon) dotIcon.className = answeredAt(activeTab) ? "ph-fill ph-check-circle" : "ph ph-circle";
         }
         syncMessagesPadding();
-      });
-      otherEl.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          if (questions.every((_, i) => isQuestionAnswered(i))) submit();
-        }
+        opts.onDraftChange?.(currentDraft());
       });
     }
 
@@ -364,6 +479,22 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
       ?.addEventListener("click", submit);
     host.querySelector<HTMLButtonElement>('[data-act="cancel"]')
       ?.addEventListener("click", cancel);
+    host.querySelector<HTMLButtonElement>('[data-act="next"]')
+      ?.addEventListener("click", goNext);
+    host.querySelector<HTMLButtonElement>('[data-act="review"]')
+      ?.addEventListener("click", goToSummary);
+    host.querySelector<HTMLButtonElement>('[data-act="back"]')
+      ?.addEventListener("click", goBackToAnswers);
+    host.querySelectorAll<HTMLButtonElement>('[data-summary-tab]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.summaryTab);
+        if (Number.isFinite(idx)) {
+          activeTab = idx;
+          mode = "answer";
+          render();
+        }
+      });
+    });
 
     requestAnimationFrame(() => syncMessagesPadding());
     if (!resizeObs && messagesEl && typeof ResizeObserver !== "undefined") {
@@ -373,6 +504,7 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
         resizeObs.observe(card);
       }
     }
+    opts.onDraftChange?.(currentDraft());
   };
 
   render();

@@ -49,4 +49,7 @@ export interface QuestionUIOpts {
   cancelLabel: string;
   /** Partial answers to restore when re-surfacing a parked card. */
   initialDraft?: QuestionDraft;
+  /** Fired whenever the draft (selections/free text/active tab) changes, so a
+   *  caller can persist it and/or mirror progress into the chat transcript. */
+  onDraftChange?: (draft: QuestionDraft) => void;
 }
