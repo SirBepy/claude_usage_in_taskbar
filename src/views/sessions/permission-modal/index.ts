@@ -18,9 +18,11 @@
 
 import { invoke } from "../../../shared/ipc";
 import { getTransport } from "../../../shared/transport";
+import { state } from "../state";
 import { reconcilePendingPrompts } from "./remote-prompt-poll";
-import { extractQuestions, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
+import { extractQuestions, isQuestionAnswered, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
+import { clearQuestionDraft, loadQuestionDraft, saveQuestionDraft } from "./draft-persistence";
 import {
   allowPermission,
   autoAllowIfRemembered,
@@ -63,6 +65,22 @@ function rerenderSidebar(): void {
   _rerenderSidebar?.();
 }
 
+/** Mirror per-question answered/unanswered progress into the chat transcript's
+ *  question card while the floating card is still being answered. `state` is
+ *  imported directly (not injected like the sidebar hook above) because
+ *  gating.ts already imports it - that cycle is pre-existing and safe, since
+ *  neither side reads the other at module-evaluation time, only inside
+ *  functions called later. No-op for a prompt with no session (the headless
+ *  permission-card path has no chat transcript to sync into) or when the
+ *  prompt's session isn't the one currently on screen. */
+function syncQuestionProgress(sessionId: string | undefined, promptId: string, questions: Question[], draft: QuestionDraft): void {
+  if (!sessionId || state.selectedId !== sessionId) return;
+  const liveAnswered = questions.map((q, i) =>
+    isQuestionAnswered(q, draft.freeText.get(i) ?? "", draft.selections.get(i))
+  );
+  state.renderer?.updateQuestionProgress(promptId, liveAnswered);
+}
+
 function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: QuestionDraft): void {
   // Park the prompt while it's on screen so switching chats and back re-surfaces
   // it (the reliable poll only emits each id once, so a card torn down by
@@ -77,9 +95,11 @@ function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: Que
 
   // Snapshot draft from the old card if it belongs to this session (covers the
   // case where the user switched away and back without another session getting
-  // an AUQ in between).
+  // an AUQ in between). Falls back to the persisted draft - the in-memory
+  // snapshot is gone after a full app restart, but localStorage isn't.
   const initialDraft = restoredDraft
     ?? (payload.session_id ? snapshotActiveCardDraft(payload.session_id) : undefined)
+    ?? loadQuestionDraft(payload.id)
     ?? undefined;
 
   renderQuestionUI({
@@ -92,7 +112,12 @@ function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: Que
     submitLabel: "Submit",
     submitIcon: "ph-paper-plane-right",
     cancelLabel: "Skip",
+    onDraftChange: (draft) => {
+      saveQuestionDraft(payload.id, draft);
+      syncQuestionProgress(payload.session_id, payload.id, questions, draft);
+    },
     onSubmit: async (answers) => {
+      clearQuestionDraft(payload.id);
       try {
         await invoke("respond_question", { id: payload.id, answers });
       } catch (e) {
@@ -104,6 +129,7 @@ function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: Que
       }
     },
     onCancel: async () => {
+      clearQuestionDraft(payload.id);
       try {
         await invoke("respond_question", { id: payload.id, answers: {} });
       } catch {
@@ -187,6 +213,9 @@ function handleQuestionRequested(payload: QuestionRequestedPayload): void {
  *  screen - the user dismisses it explicitly. */
 function handlePromptResolved(id: string): void {
   clearPendingPromptById(id);
+  // No-op if this id never had a draft (permission-shaped prompt, or a
+  // question already answered/skipped through the normal submit/cancel path).
+  clearQuestionDraft(id);
   rerenderSidebar();
 }
 

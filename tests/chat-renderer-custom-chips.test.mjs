@@ -126,6 +126,49 @@ describe("custom chip-panel views", () => {
     expect(qa.querySelector(".tool-qa-a").textContent).toContain("awaiting answer");
     r.detach();
   });
+
+  it("updateQuestionProgress mirrors the floating card's live per-question progress (Joe's request, 2026-07-16)", () => {
+    const { r, container } = makeRenderer();
+    r.handleEvent(toolUseEvent("AskUserQuestion", {
+      questions: [{ question: "First?" }, { question: "Second?" }],
+    }, "q1"));
+
+    // Nothing answered yet in the floating card - both still read "awaiting answer".
+    r.updateQuestionProgress("q1", [false, false]);
+    let rows = container.querySelectorAll(".tool-qa");
+    expect(rows[0].querySelector(".tool-qa-a--live-answered")).toBeNull();
+    expect(rows[0].querySelector(".tool-qa-a").textContent).toContain("awaiting answer");
+
+    // User answers the first question and hits Next in the floating card.
+    r.updateQuestionProgress("q1", [true, false]);
+    rows = container.querySelectorAll(".tool-qa");
+    expect(rows[0].querySelector(".tool-qa-a--live-answered")).not.toBeNull();
+    expect(rows[0].querySelector(".tool-qa-a").textContent).toContain("Answered");
+    // Second question is still untouched.
+    expect(rows[1].querySelector(".tool-qa-a--live-answered")).toBeNull();
+    expect(rows[1].querySelector(".tool-qa-a").textContent).toContain("awaiting answer");
+
+    // An unknown prompt id (some other session's card) is a no-op.
+    r.updateQuestionProgress("some-other-id", [true, true]);
+    rows = container.querySelectorAll(".tool-qa");
+    expect(rows[1].querySelector(".tool-qa-a--live-answered")).toBeNull();
+
+    r.detach();
+  });
+
+  it("updateQuestionProgress is a no-op once the question has actually resolved", () => {
+    const { r, container } = makeRenderer();
+    r.handleEvent(toolUseEvent("AskUserQuestion", { questions: [{ question: "Pick one?" }] }, "q1"));
+    r.handleEvent(toolResultEvent("q1", "User answered the question(s):\nQ: Pick one?\nA: Real answer"));
+
+    // A stray late progress update (e.g. the card was already torn down) must
+    // never clobber the real, final answer that already landed.
+    r.updateQuestionProgress("q1", [false]);
+    const qa = container.querySelector(".tool-qa-a");
+    expect(qa.textContent).toContain("Real answer");
+    expect(qa.classList.contains("tool-qa-a--pending")).toBe(false);
+    r.detach();
+  });
 });
 
 describe("currently-working chip highlight", () => {

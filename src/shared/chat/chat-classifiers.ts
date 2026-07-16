@@ -198,6 +198,11 @@ export interface RenderedMessage {
   /** Ordinal of this compaction event within the session (1-based). Present
    *  only on system messages that represent a compaction boundary. */
   compactionN?: number;
+  /** Live per-question answered state for a still-pending `kind:"question"`
+   *  card, mirrored from the floating prompt card's draft as the user answers
+   *  it (ChatRenderer.updateQuestionProgress). Index-aligned with the parsed
+   *  questions in `input`. Never set once `text` is populated (resolved). */
+  liveAnswered?: boolean[];
 }
 
 /**

@@ -288,6 +288,16 @@
 .tool-qa-a--timed-out > .ph { color: var(--color-text-muted); }
 .tool-qa-a--pending { cursor: pointer; }
 .tool-qa-a--pending:hover { opacity: 0.9; }
+/* A question the floating card reports as answered, while the overall AUQ
+   is still open - reads as "resolved" (not muted/italic) despite being a
+   --pending row underneath (keeps the click-to-reopen affordance). */
+.tool-qa-a--live-answered {
+  opacity: 1;
+  font-style: normal;
+}
+.tool-qa-a--live-answered > .ph {
+  color: var(--color-primary);
+}
 
 /* ── AUQ question card: rendered as a centered first-class message that splits
    the chip strips before/after the question. Reuses .tool-qa internals. */

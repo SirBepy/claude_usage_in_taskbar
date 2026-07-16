@@ -11,7 +11,7 @@ import { clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { renderCustomToolView } from "./tool-views";
 import { ChatPaginator } from "./chat-pagination";
 import { TurnFooterRegistry, type TurnChipKey, type TurnUsageTotals } from "./turn-chips";
-import { buildMessageEl, foldClosedRange, revealTranscript } from "./chat-dom-renderer";
+import { buildMessageEl, flushRenderNow, foldClosedRange, revealTranscript } from "./chat-dom-renderer";
 import { handleChatEvent, bulkLoadEvents, type HandleEventOpts } from "./chat-event-handler";
 import { getCta } from "./cta-registry";
 
@@ -325,6 +325,22 @@ export class ChatRenderer {
 
   getFileEdits(): FileEditView[] {
     return [...this.fileEdits];
+  }
+
+  /** Mirror the floating AUQ prompt card's live per-question progress into
+   *  this session's still-pending question card in the transcript. No-op if
+   *  the prompt isn't in this session's loaded range, is already resolved
+   *  (its tool_result landed), or progress is unchanged - avoids replacing
+   *  the message's DOM node on every keystroke for no visible change. */
+  updateQuestionProgress(promptId: string, liveAnswered: boolean[]): void {
+    const idx = this.messages.findIndex((m) => m.kind === "question" && m.id === promptId);
+    if (idx < 0) return;
+    const m = this.messages[idx]!;
+    if (m.text !== undefined) return;
+    if (m.liveAnswered && m.liveAnswered.length === liveAnswered.length && m.liveAnswered.every((v, i) => v === liveAnswered[i])) return;
+    this.messages[idx] = { ...m, liveAnswered };
+    this.dirtyIndices.add(idx);
+    flushRenderNow(this);
   }
 
   /** Clone of the by-type tool tally (no internal refs leaked). */

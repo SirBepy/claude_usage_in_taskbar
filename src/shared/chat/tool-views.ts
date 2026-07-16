@@ -192,7 +192,7 @@ export function renderQuestionCardHtml(m: RenderedMessage): string {
       if (answers.size > 0) resolution = "answered";
     }
   }
-  const cards = questions.map((q) => {
+  const cards = questions.map((q, qi) => {
     const header = q.header
       ? `<div class="tool-qa-header">${escapeHtml(q.header)}</div>`
       : "";
@@ -206,6 +206,12 @@ export function renderQuestionCardHtml(m: RenderedMessage): string {
       answerHtml = `<div class="tool-qa-a tool-qa-a--skipped"><i class="ph ph-x-circle"></i><span>Skipped</span></div>`;
     } else if (resolution === "timed-out") {
       answerHtml = `<div class="tool-qa-a tool-qa-a--timed-out"><i class="ph ph-timer"></i><span>Timed out</span></div>`;
+    } else if (m.liveAnswered?.[qi]) {
+      // Still pending overall, but the floating card reports THIS question as
+      // answered - mirror that progress without leaking the typed/selected
+      // text itself (still --pending so the click-to-reopen affordance below
+      // keeps working while the card is up).
+      answerHtml = `<div class="tool-qa-a tool-qa-a--pending tool-qa-a--live-answered"><i class="ph ph-check-circle"></i><span>Answered</span></div>`;
     } else {
       answerHtml = `<div class="tool-qa-a tool-qa-a--pending"><i class="ph ph-clock"></i><span>awaiting answer</span></div>`;
     }
