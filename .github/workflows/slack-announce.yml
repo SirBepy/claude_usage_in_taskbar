@@ -1,0 +1,55 @@
+name: Slack announce on merge
+
+# Posts the PR's embedded Slack announcement to Slack when the PR is merged.
+# /create-pr writes the announcement into the PR body between
+# <!-- slack-announce-start --> and <!-- slack-announce-end --> markers
+# (inside a collapsed <details> block). No markers -> silently skips.
+# Requires the SLACK_PR_WEBHOOK repo secret (Slack incoming webhook URL).
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  announce:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract announcement and post to Slack
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          WEBHOOK: ${{ secrets.SLACK_PR_WEBHOOK }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$WEBHOOK" ]; then
+            echo "SLACK_PR_WEBHOOK secret not set - skipping announcement."
+            exit 0
+          fi
+
+          # Strip CRs, then take the lines between the markers (exclusive).
+          block=$(printf '%s' "$PR_BODY" | tr -d '\r' \
+            | sed -n '/<!-- slack-announce-start -->/,/<!-- slack-announce-end -->/p' \
+            | sed '1d;$d')
+
+          if [ -z "$block" ]; then
+            echo "No slack-announce block in PR body - nothing to post."
+            exit 0
+          fi
+
+          # Image lines (![alt](url)) become Slack image blocks; the rest is the text.
+          urls=$(printf '%s\n' "$block" | sed -n 's/^!\[[^]]*\](\([^)]*\)).*/\1/p')
+          text=$(printf '%s\n' "$block" | { grep -v '^!\[' || true; } | sed -e 's/[[:space:]]*$//' | sed -e '/./,$!d')
+
+          payload=$(jq -n --arg text "$text" --arg url "$PR_URL" \
+            '{blocks: [{type: "section", text: {type: "mrkdwn", text: ($text + "\n<" + $url + "|View the PR>")}}]}')
+
+          while IFS= read -r u; do
+            [ -z "$u" ] && continue
+            payload=$(printf '%s' "$payload" | jq --arg u "$u" \
+              '.blocks += [{type: "image", image_url: $u, alt_text: "screenshot"}]')
+          done <<< "$urls"
+
+          curl -sf -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK"
+          echo "Posted announcement to Slack."
