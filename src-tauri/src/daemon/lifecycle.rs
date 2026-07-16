@@ -233,6 +233,9 @@ pub async fn spawn_session(
         // the close turn ran meant the session was never marked ended and got
         // resurrected from the snapshot on the next start. See close_watch.rs.
         let mut close_watch = crate::daemon::close_watch::CloseWatch::new();
+        // True while the daemon-authoritative `closing` registry flag is set for
+        // the current turn (armed by <cc-close:starting>, cleared at turn end).
+        let mut closing_flagged = false;
         // Coalescing (ai_todo streaming-render O(n^2) fix): parser.rs re-clones
         // the FULL accumulated text into every content_block_delta snapshot, so
         // a long reply otherwise broadcasts - and re-serializes across
@@ -286,6 +289,19 @@ pub async fn spawn_session(
                                         if let crate::types::chat::ContentBlock::Text { text } = block {
                                             close_watch.observe_text(text);
                                         }
+                                    }
+                                }
+                                // <cc-close:starting> seen this turn: set the broadcast
+                                // `closing` flag once so EVERY window's sidebar can show
+                                // the "Closing" segment (it used to be per-window frontend
+                                // memory, visible only where the composer sent /close).
+                                if close_watch.armed() && !closing_flagged {
+                                    closing_flagged = true;
+                                    if state_for_pump.registry.set_closing(&pump_session.session_id, true) {
+                                        state_for_pump.notifier.publish(
+                                            "instances_changed",
+                                            serde_json::json!({"instances": state_for_pump.registry.list()}),
+                                        );
                                     }
                                 }
                                 // A streaming AssistantMessage marks the current turn as
@@ -415,7 +431,17 @@ pub async fn spawn_session(
                                     // close. Mark ended here so the teardown survives any
                                     // webview reload; the frontend's clear_session finalize
                                     // is now belt-and-suspenders (mark_ended is idempotent).
-                                    let close_confirmed = close_watch.close_confirmed();
+                                    // Hint: if the turn's prompt literally started with
+                                    // /close, <cc-close:done> alone confirms - the model
+                                    // sometimes skips/mangles the first-line `starting`
+                                    // marker, which used to silently disarm teardown.
+                                    let user_typed_close = pump_session
+                                        .last_prompt
+                                        .lock()
+                                        .ok()
+                                        .map(|p| p.trim_start().starts_with("/close"))
+                                        .unwrap_or(false);
+                                    let close_confirmed = close_watch.close_confirmed_with_hint(user_typed_close);
                                     if close_confirmed {
                                         let now = chrono::Utc::now().to_rfc3339();
                                         if state_for_pump.registry.mark_ended(
@@ -430,6 +456,15 @@ pub async fn spawn_session(
                                         }
                                     }
                                     close_watch.reset();
+                                    // Stand-down/hygiene: the turn ended, so the closing
+                                    // segment either resolved into `ended` (mark_ended
+                                    // above) or the close was aborted - clear the flag
+                                    // BEFORE the snapshot below so it never persists
+                                    // `closing: true`.
+                                    if closing_flagged {
+                                        closing_flagged = false;
+                                        state_for_pump.registry.set_closing(&pump_session.session_id, false);
+                                    }
                                     // Persist at turn end so a daemon restart keeps each
                                     // backgrounded chat's last status instead of wiping it
                                     // to "Done" (and so a marker-confirmed close sticks).
@@ -486,11 +521,41 @@ pub async fn spawn_session(
         if is_interactive {
             // Clear busy in case the process exited mid-turn without a result line.
             state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
+            // Ghost prompts: an open AskUserQuestion/permission prompt can only
+            // exist mid-turn, so any prompt still recorded when the process
+            // exits is orphaned - its hook curl died with the process, axum
+            // dropped the blocked handler, and the post-await cleanup never
+            // ran. Left alone, the record keeps resurrecting the card via the
+            // list_pending_prompts poll and pins awaiting=="question" forever.
+            let expired = state_for_pump
+                .expire_prompts_for_session(&pump_session.session_id)
+                .await;
+            if expired > 0 {
+                let _ = state_for_pump
+                    .registry
+                    .clear_awaiting_if_question(&pump_session.session_id);
+                log::info!(
+                    "daemon: session {} expired {} orphaned prompt(s) on EOF",
+                    pump_session.session_id, expired
+                );
+            }
+            // The turn is over either way - drop the broadcast closing flag
+            // before any snapshot below can persist `closing: true`. (No
+            // reassignment: the pump loop is done, the flag is never read again.)
+            if closing_flagged {
+                state_for_pump.registry.set_closing(&pump_session.session_id, false);
+            }
             // /close's Phase 6 kills the terminal tree ~800ms after emitting
             // <cc-close:done>, which can take the `claude -p` child down BEFORE
             // its result line flushes - so the confirmed close must also be
             // honored on EOF, not just at TurnUsage.
-            if close_watch.close_confirmed() {
+            let user_typed_close = pump_session
+                .last_prompt
+                .lock()
+                .ok()
+                .map(|p| p.trim_start().starts_with("/close"))
+                .unwrap_or(false);
+            if close_watch.close_confirmed_with_hint(user_typed_close) {
                 let now = chrono::Utc::now().to_rfc3339();
                 if state_for_pump.registry.mark_ended(
                     &pump_session.session_id,

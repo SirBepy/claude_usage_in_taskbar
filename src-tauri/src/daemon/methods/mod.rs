@@ -112,7 +112,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn respond_permission_unknown_request_id_errors() {
+    async fn respond_permission_unknown_request_id_settles_ok() {
+        // Ghost prompts (child died while the prompt was open) are settled,
+        // not rejected: -32004 here used to leave the record + awaiting flag
+        // stuck forever. See daemon/methods/permission.rs module docs.
         let mut r = Router::new();
         register_responders(&mut r, dummy_state());
         let resp = r.dispatch(Request {
@@ -121,7 +124,8 @@ mod tests {
             method: "respond_permission".into(),
             params: Some(json!({"request_id": "ghost", "allow": true})),
         }, dummy_ctx()).await;
-        assert_eq!(resp.error.as_ref().map(|e| e.code), Some(-32004));
+        assert!(resp.error.is_none(), "expected no error, got {:?}", resp.error);
+        assert_eq!(resp.result, Some(json!({"ok": true, "delivered": false})));
     }
 
     #[tokio::test]

@@ -24,6 +24,13 @@
 pub struct CloseWatch {
     starting_seen: bool,
     done_seen: bool,
+    /// `<cc-close:done>` seen regardless of whether `starting` preceded it.
+    /// Only trusted when the caller has independent evidence this turn is a
+    /// real /close run (the user's typed prompt started with `/close`) - see
+    /// `close_confirmed_with_hint`. Covers the model skipping/mangling the
+    /// first-line `starting` marker, which otherwise silently disarmed the
+    /// whole daemon-side teardown.
+    done_seen_raw: bool,
 }
 
 impl CloseWatch {
@@ -46,9 +53,19 @@ impl CloseWatch {
         if lower.contains("<cc-close:starting>") {
             self.starting_seen = true;
         }
-        if self.starting_seen && lower.contains("<cc-close:done>") {
-            self.done_seen = true;
+        if lower.contains("<cc-close:done>") {
+            self.done_seen_raw = true;
+            if self.starting_seen {
+                self.done_seen = true;
+            }
         }
+    }
+
+    /// True once `<cc-close:starting>` was seen this turn (the skill is
+    /// genuinely running). Drives the daemon-authoritative `Instance.closing`
+    /// flag so every window's sidebar can render "Closing".
+    pub fn armed(&self) -> bool {
+        self.starting_seen
     }
 
     /// True once both sentinels were seen in order within the current turn.
@@ -56,11 +73,21 @@ impl CloseWatch {
         self.starting_seen && self.done_seen
     }
 
+    /// Like [`close_confirmed`], but when `user_typed_close` is true (the
+    /// turn's prompt literally started with `/close`) a `<cc-close:done>`
+    /// alone is enough - the ordered-pair rule exists only to stop stray
+    /// `done` markers in ordinary prose from killing a session, and a turn
+    /// the user explicitly opened with `/close` is not ordinary prose.
+    pub fn close_confirmed_with_hint(&self, user_typed_close: bool) -> bool {
+        self.close_confirmed() || (user_typed_close && self.done_seen_raw)
+    }
+
     /// Turn boundary without a confirmed close (e.g. `--dont-close` stand-down,
     /// or an unrelated turn): forget everything.
     pub fn reset(&mut self) {
         self.starting_seen = false;
         self.done_seen = false;
+        self.done_seen_raw = false;
     }
 }
 
@@ -114,5 +141,41 @@ mod tests {
         let mut w = CloseWatch::new();
         w.observe_text("just a normal reply about closing files");
         assert!(!w.close_confirmed());
+    }
+
+    #[test]
+    fn armed_tracks_starting_only() {
+        let mut w = CloseWatch::new();
+        assert!(!w.armed());
+        w.observe_text("<cc-close:starting>");
+        assert!(w.armed());
+        w.reset();
+        assert!(!w.armed());
+    }
+
+    #[test]
+    fn hint_confirms_done_without_starting() {
+        // Model forgot the first-line starting marker, but the user literally
+        // typed /close: done alone must still confirm.
+        let mut w = CloseWatch::new();
+        w.observe_text("Retro written. <cc-close:done>");
+        assert!(!w.close_confirmed(), "no hint, no starting: must not confirm");
+        assert!(w.close_confirmed_with_hint(true));
+        assert!(!w.close_confirmed_with_hint(false));
+    }
+
+    #[test]
+    fn hint_without_done_never_confirms() {
+        let mut w = CloseWatch::new();
+        w.observe_text("<cc-close:starting> running with --dont-close");
+        assert!(!w.close_confirmed_with_hint(true), "hint + starting alone must not confirm");
+    }
+
+    #[test]
+    fn reset_clears_raw_done_too() {
+        let mut w = CloseWatch::new();
+        w.observe_text("prose mentioning <cc-close:done>");
+        w.reset();
+        assert!(!w.close_confirmed_with_hint(true), "raw done must not survive a turn boundary");
     }
 }

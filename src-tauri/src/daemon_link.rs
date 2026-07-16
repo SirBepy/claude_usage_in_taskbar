@@ -436,6 +436,7 @@ mod tests {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            closing: false,
             turn_gen: 0,
             account_id: None,
             rate_limited_resets_at: None,

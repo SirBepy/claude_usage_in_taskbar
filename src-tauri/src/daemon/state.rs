@@ -131,6 +131,56 @@ impl DaemonState {
     pub async fn list_prompts(&self) -> Vec<Value> {
         self.pending_prompts.lock().await.values().cloned().collect()
     }
+
+    /// The session a recorded prompt belongs to, if it is still open.
+    /// `respond_*` uses this to resolve the session BEFORE removing the record.
+    pub async fn prompt_session_id(&self, id: &str) -> Option<String> {
+        self.pending_prompts
+            .lock()
+            .await
+            .get(id)
+            .and_then(|v| v["payload"]["session_id"].as_str().map(str::to_string))
+    }
+
+    /// Expire every open prompt belonging to `session_id`: drop the prompt
+    /// records (so `list_pending_prompts` stops resurrecting their cards) and
+    /// the pending oneshots (waking any still-blocked hook handler into its
+    /// timeout branch). Publishes `question_expired` per question prompt.
+    ///
+    /// Called when a session's `claude -p` child hits EOF: the hook `curl`
+    /// dies with the process, axum then drops the blocked handler future on
+    /// client disconnect, and the handler's own post-await cleanup never runs
+    /// - which used to leave ghost cards that, when answered, resolved into
+    /// nothing and left the row on "Input Needed" forever. Returns how many
+    /// prompts were expired.
+    pub async fn expire_prompts_for_session(&self, session_id: &str) -> usize {
+        let expired: Vec<(String, bool)> = {
+            let mut prompts = self.pending_prompts.lock().await;
+            let ids: Vec<(String, bool)> = prompts
+                .iter()
+                .filter(|(_, v)| v["payload"]["session_id"].as_str() == Some(session_id))
+                .map(|(id, v)| (id.clone(), v["event"].as_str() == Some("question-requested")))
+                .collect();
+            for (id, _) in &ids {
+                prompts.remove(id);
+            }
+            ids
+        };
+        if expired.is_empty() {
+            return 0;
+        }
+        let mut pending = self.pending.lock().await;
+        for (id, is_question) in &expired {
+            pending.remove(id);
+            if *is_question {
+                self.notifier.publish(
+                    "question_expired",
+                    serde_json::json!({ "session_id": session_id, "id": id }),
+                );
+            }
+        }
+        expired.len()
+    }
 }
 
 #[cfg(test)]

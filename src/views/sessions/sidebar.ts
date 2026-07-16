@@ -1,7 +1,7 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import type { Instance, DrainBoard, ScheduledItem } from "../../types/ipc.generated";
-import { isSessionClosing, getClosingSet } from "./closing-sessions";
+import { getClosingSet } from "./closing-sessions";
 import {
   projectName,
   sessionSubtitle,
@@ -275,7 +275,14 @@ export function renderSidebar(listEl: HTMLElement): void {
     sessionSubtitle(s).toLowerCase().includes(filter)
   );
 
-  const closing = getClosingSet();
+  // Union of both closing sources: the per-window set (instant same-window
+  // UX the moment the composer sends /close) and the daemon-broadcast
+  // Instance.closing flag (armed by <cc-close:starting>, so every OTHER
+  // window shows the Closing segment too).
+  const closing = new Set([
+    ...getClosingSet(),
+    ...state.sessions.filter((s) => s.closing).map((s) => s.session_id),
+  ]);
   // Only fetch token-drain data when the user is actually sorting by it. Fire
   // the (debounced) async refresh in the background; render now with whatever
   // drainMap already holds so render never blocks on the IPC.
@@ -385,7 +392,7 @@ export function renderSidebar(listEl: HTMLElement): void {
         const i = sessionIndex++;
         const isActive = s.session_id === state.selectedId;
         const needsAttention = attention.has(s.session_id);
-        const isClosing = isSessionClosing(s.session_id);
+        const isClosing = closing.has(s.session_id);
         const indicator = statusIndicator(s, unread, attention, question, style, escapeHtml, rateLimited);
         let kbdHint = "";
         if (isManualSlots) {

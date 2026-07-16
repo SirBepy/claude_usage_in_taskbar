@@ -4,11 +4,42 @@
 //! `respond_*` in methods.rs) or the prompt timeout fires.
 
 use super::HookCtx;
+use crate::daemon::state::DaemonState;
 use axum::{extract::State as AxState, http::StatusCode, response::IntoResponse, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Stamp the durable "waiting on the user" state for a question prompt and
+/// tell every window about it. Both halves matter: the registry write is what
+/// survives a chat reopen, and the `instances_changed` publish is what flips
+/// the sidebar NOW - the question set/clear paths used to skip the publish
+/// (uniquely among all awaiting writers), leaving rows on a stale status until
+/// the 15s poll or an unrelated event happened by.
+fn set_question_awaiting(state: &Arc<DaemonState>, session_id: Option<&str>, asking: bool) {
+    let Some(sid) = session_id else { return };
+    let changed = if asking {
+        // Publish only for sessions the registry actually tracks - hook tests
+        // (and terminal-side sessions) pass ids the registry has never seen.
+        if state.registry.get(sid).is_none() {
+            return;
+        }
+        state.registry.set_awaiting(sid, Some("question".into()));
+        true
+    } else {
+        // Only clear a "question" value: a newer turn's real end-of-turn
+        // status (done/working/waiting) must not be stomped by a late-resuming
+        // prompt handler.
+        state.registry.clear_awaiting_if_question(sid)
+    };
+    if changed {
+        state.notifier.publish(
+            "instances_changed",
+            json!({"instances": state.registry.list()}),
+        );
+    }
+}
 
 /// How long the daemon holds a permission/question prompt open waiting for the
 /// user before giving up. The curl `--max-time` and the PreToolUse hook's
@@ -96,6 +127,11 @@ pub(super) async fn on_question_request(
     // the lossy notifier broadcast drops the frame.
     ctx.state.add_prompt(&body.id, "question-requested", payload.clone()).await;
     ctx.state.fire_blocked_prompt(body.session_id.as_deref(), &body.id);
+    // Durable "waiting on the user" state + sidebar publish, mirroring the
+    // AskUserQuestion hook path below - this relay used to leave the registry
+    // untouched, so a question asked via the MCP tool never showed (or cleared)
+    // "Input Needed" except by the model's own end-of-turn marker.
+    set_question_awaiting(&ctx.state, body.session_id.as_deref(), true);
     let subs = ctx.state.notifier.publish("question_request", payload);
     // Character "asking" sound (see `ask_question_decision` for the rationale).
     ctx.state.notifier.publish(
@@ -118,6 +154,7 @@ pub(super) async fn on_question_request(
         }
     };
     ctx.state.remove_prompt(&body.id).await;
+    set_question_awaiting(&ctx.state, body.session_id.as_deref(), false);
     result
 }
 
@@ -184,9 +221,7 @@ pub(super) async fn ask_question_decision_with_timeout(
     // its transcript replayed - the row then falls out of "Input Needed" before
     // the user has answered. Recording it on the registry makes it survive a
     // reopen (the sidebar unions `awaiting === "question"` into its question set).
-    if let Some(sid) = session_id.as_deref() {
-        ctx.state.registry.set_awaiting(sid, Some("question".into()));
-    }
+    set_question_awaiting(&ctx.state, session_id.as_deref(), true);
     ctx.state.notifier.publish("question_request", payload);
     // Character "asking" sound. An AskUserQuestion turn does NOT end with an
     // `awaiting:question` result (claude continues after the deny-feedback), so
@@ -216,9 +251,7 @@ pub(super) async fn ask_question_decision_with_timeout(
     // state so the resuming turn reads as "running" rather than staying parked
     // in "Input Needed". The turn's eventual `result` line overwrites this with
     // the real end-of-turn status (done / question / waiting).
-    if let Some(sid) = session_id.as_deref() {
-        ctx.state.registry.set_awaiting(sid, None);
-    }
+    set_question_awaiting(&ctx.state, session_id.as_deref(), false);
     deny_decision(&format_answers(&questions, &answers))
 }
 

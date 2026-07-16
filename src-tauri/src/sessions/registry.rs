@@ -103,6 +103,7 @@ impl Registry {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            closing: false,
             turn_gen: 0,
             account_id: None,
             rate_limited_resets_at: None,
@@ -159,6 +160,7 @@ impl Registry {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            closing: false,
             turn_gen: 0,
             account_id: None,
             rate_limited_resets_at: None,
@@ -205,6 +207,7 @@ impl Registry {
             effort: String::new(),
             awaiting: None,
             autopilot: false,
+            closing: false,
             turn_gen: 0,
             account_id: None,
             rate_limited_resets_at: None,
@@ -232,6 +235,36 @@ impl Registry {
         if let Some(i) = guard.get_mut(session_id) {
             if i.turn_gen == gen {
                 i.awaiting = awaiting;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Clear `awaiting` only if it currently reads `"question"`. Used by the
+    /// prompt-answer/expiry paths: they know the user just resolved (or the
+    /// daemon just invalidated) a question prompt, but must not stomp a status
+    /// some newer turn already wrote (`working`/`waiting`/`done`). Returns
+    /// true if a clear actually happened.
+    pub fn clear_awaiting_if_question(&self, session_id: &str) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            if i.awaiting.as_deref() == Some("question") {
+                i.awaiting = None;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Flip the daemon-authoritative "a /close run is in flight" flag. Returns
+    /// true if the value actually changed (callers publish `instances_changed`
+    /// only on real transitions). No-op false for unknown sessions.
+    pub fn set_closing(&self, session_id: &str, closing: bool) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        if let Some(i) = guard.get_mut(session_id) {
+            if i.closing != closing {
+                i.closing = closing;
                 return true;
             }
         }
