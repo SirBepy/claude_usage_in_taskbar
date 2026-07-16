@@ -15,6 +15,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
@@ -108,8 +109,22 @@ impl SttSupervisor {
     pub async fn ensure_running(&self) -> Result<(), String> {
         let mut guard = self.child.lock().await;
         if let Some(c) = guard.as_mut() {
-            if matches!(c.try_wait(), Ok(None)) {
-                return Ok(()); // still alive
+            match c.try_wait() {
+                Ok(None) => return Ok(()), // still alive
+                Ok(Some(status)) => {
+                    // ai_todo 228: prior sessions repeatedly found sidecar-respawn
+                    // clusters near unexplained daemon pipe drops, with zero
+                    // diagnostic output either time. Surface the exit status so a
+                    // future occurrence at least has a reason instead of silence.
+                    log::warn!("stt-sidecar exited unexpectedly (status {status:?}); respawning");
+                }
+                Err(e) => {
+                    // Ambiguous liveness - don't trust it's gone. Kill explicitly
+                    // before replacing the handle so a still-alive process can't
+                    // linger holding the port and starve the next spawn attempt.
+                    log::warn!("stt-sidecar liveness check failed ({e}); killing stale handle before respawning");
+                    let _ = c.kill().await;
+                }
             }
         }
         let dir = self.sidecar_dir();
@@ -134,10 +149,21 @@ impl SttSupervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         crate::util::process::hide_console_tokio(&mut cmd);
-        let child = cmd
+        let mut child = cmd
             .spawn()
             .map_err(|e| format!("spawn stt-sidecar in {dir:?}: {e}"))?;
         log::info!("stt-sidecar spawned (pid {:?})", child.id());
+        // Drain stderr in the background so an early crash (e.g. a port-bind
+        // race against a not-yet-exited previous instance) leaves a reason in
+        // the log instead of vanishing into the piped-but-never-read handle.
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    log::warn!("stt-sidecar stderr: {line}");
+                }
+            });
+        }
         *guard = Some(child);
         Ok(())
     }
