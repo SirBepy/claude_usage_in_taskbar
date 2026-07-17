@@ -21,6 +21,13 @@ import "./voice/voice.css";
 import "./builtins/register";
 import "./caret-popup/popup.css";
 import { openLightbox } from "./lightbox";
+// tauri-plugin-clipboard-api pulls in valibot@0.40.0, which has a ReDoS in
+// EMOJI_REGEX (GHSA-vqpr-j7v3-hqw9, valibot >=0.31.0 <1.2.0). Verified unreachable:
+// v.emoji()/EMOJI_REGEX is never called anywhere in the plugin's guest-js source
+// (only hasFiles/readFiles are imported here). Revisit if: the plugin bumps valibot
+// to >=1.2.0, this file starts importing the plugin's monitor/listener API, or we
+// migrate off this plugin.
+import { hasFiles, readFiles } from "tauri-plugin-clipboard-api";
 import {
   loadDraft, saveDraft, clearDraft,
   loadAttachmentsMeta, saveAttachmentsMeta, clearAttachmentsMeta,
@@ -548,16 +555,35 @@ export class Composer {
 
   private async onPaste(e: ClipboardEvent): Promise<void> {
     if (!e.clipboardData) return;
-    let handledFile = false;
-    for (const item of Array.from(e.clipboardData.items)) {
-      if (item.kind !== "file") continue;
-      const blob = item.getAsFile();
-      if (!blob) continue;
+    const hasFileItem = Array.from(e.clipboardData.items).some((item) => item.kind === "file");
+    if (hasFileItem) {
       e.preventDefault();
-      handledFile = true;
-      await this.attachBlob(blob, blob.name || `paste.${item.type.split("/")[1] ?? "bin"}`);
+      // The browser's DataTransfer only ever exposes one file when multiple
+      // files are copied from Explorer (a WebView2 limitation), so read the
+      // native clipboard file list directly when available. Falls back to
+      // the blob(s) the browser did expose when the plugin call fails (e.g.
+      // non-Windows, or the browser view-harness where it's never wired up).
+      let usedNativeFiles = false;
+      try {
+        if (await hasFiles()) {
+          const paths = await readFiles();
+          if (paths.length > 0) {
+            for (const path of paths) await this.attachFromPath(path);
+            usedNativeFiles = true;
+          }
+        }
+      } catch (err) {
+        console.warn("[Composer] clipboard readFiles failed, falling back to blob paste:", err);
+      }
+      if (usedNativeFiles) return;
+      for (const item of Array.from(e.clipboardData.items)) {
+        if (item.kind !== "file") continue;
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        await this.attachBlob(blob, blob.name || `paste.${item.type.split("/")[1] ?? "bin"}`);
+      }
+      return;
     }
-    if (handledFile) return;
     // A big plain-text paste becomes a collapsed log chip instead of a wall of
     // text in the textarea. Claude still receives the full text inline on send.
     const text = e.clipboardData.getData("text/plain");

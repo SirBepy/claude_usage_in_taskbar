@@ -151,6 +151,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_clipboard::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(
@@ -373,6 +374,15 @@ pub fn run() {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
             crate::tray::setup(app.handle())?;
+
+            // Debug (`cargo tauri dev`) builds auto-open the chats window on
+            // launch - the tray-icon left-click opens the account overlay, not
+            // this window (see tray/menu.rs's on_left_click), so without this a
+            // dev instance stays invisible until someone finds the right-click
+            // menu item. Prod is untouched: it still starts tray-only.
+            if cfg!(debug_assertions) {
+                let _ = ipc::open_chats_window(app.handle().clone());
+            }
 
             // The main dashboard window is built lazily on first open (see
             // `build_main_window`), NOT eagerly here - an eager startup window

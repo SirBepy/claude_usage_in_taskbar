@@ -24,6 +24,9 @@ tauri-plugin-log = "2.0"
 tauri-plugin-autostart = "2.0"
 tauri-plugin-updater = "2.0"
 tauri-plugin-clipboard-manager = "2.0"
+# Reads native multi-file clipboard lists (CF_HDROP on Windows) that the
+# official clipboard-manager plugin and the browser DataTransfer API can't see.
+tauri-plugin-clipboard = "2.1.11"
 tauri-plugin-dialog = "2.0"
 tauri-plugin-shell = "2.0"
 tauri-plugin-single-instance = "2.0"

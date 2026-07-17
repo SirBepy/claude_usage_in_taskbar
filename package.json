@@ -41,6 +41,7 @@
     "lit-html": "3.3.2",
     "markdown-it": "^14.1.1",
     "qr-scanner": "1.4.2",
-    "shiki": "^4.0.2"
+    "shiki": "^4.0.2",
+    "tauri-plugin-clipboard-api": "2.1.11"
   }
 }
