@@ -275,10 +275,14 @@ fn format_answers(questions: &Value, answers: &Value) -> String {
     if answers.is_null() {
         return "No answer yet - the question timed out without a response (the user may be away). Re-ask if you still need an answer; do not treat this as a refusal.".to_string();
     }
-    // Empty object = the user actively dismissed/skipped the prompt.
+    // Empty object = the user actively dismissed/skipped the prompt. This is a
+    // clean "no answer, move on" signal - NOT an invitation to re-ask. Nagging
+    // wording here previously pressured the agent into immediately re-asking
+    // the same question in plain text, which is exactly what skip is meant to
+    // avoid.
     let empty = answers.as_object().map(|o| o.is_empty()).unwrap_or(true);
     if empty {
-        return "The user dismissed the question without answering. Ask again in plain text if you still need an answer.".to_string();
+        return "The user skipped this question without answering. Do not re-ask it - drop it and continue with the task using your own best judgment.".to_string();
     }
     let mut lines = vec!["The user answered the question(s):".to_string()];
     if let Some(arr) = questions.as_array() {
@@ -322,9 +326,11 @@ mod tests {
         assert!(timed_out.contains("timed out"), "timeout message: {timed_out}");
         assert!(!timed_out.contains("dismissed"), "timeout must not say dismissed");
 
-        // Empty object = the user actively skipped.
+        // Empty object = the user actively skipped. Must read as a clean
+        // dismissal, not a nudge to re-ask.
         let dismissed = format_answers(&questions, &json!({}));
-        assert!(dismissed.contains("dismissed"), "dismiss message: {dismissed}");
+        assert!(dismissed.contains("skipped"), "dismiss message: {dismissed}");
+        assert!(!dismissed.contains("Ask again"), "skip must not tell the agent to re-ask: {dismissed}");
 
         // Real answer = echoed back.
         let answered = format_answers(&questions, &json!({ "Tabs or spaces?": "Tabs" }));
