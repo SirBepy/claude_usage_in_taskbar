@@ -588,7 +588,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     [unlistenDragEnter, unlistenDragLeave, unlistenFileDrop] = await Promise.all([
       ev.listen("tauri://drag-enter", () => { view.classList.add("drag-over"); }),
       ev.listen("tauri://drag-leave", () => { view.classList.remove("drag-over"); }),
-      ev.listen<{ paths: string[] }>("tauri://drop", (e) => {
+      ev.listen<{ paths: string[] }>("tauri://drag-drop", (e) => {
         view.classList.remove("drag-over");
         if (!state.composer || !e.payload.paths.length) return;
         void (async (composer, paths) => {
