@@ -288,15 +288,6 @@ export function installPermissionModalListener(): void {
 }
 
 /**
- * Replay a parked permission/question prompt for a session the user just
- * selected. Mirrors the arrival path (auto-accept, remembered-rule auto-allow,
- * then the card) so a switch-back surfaces exactly what would have shown had
- * the chat been focused when the tool fired. No-op if nothing is parked.
- *
- * Called from selectSession AFTER the pane is mounted so the card anchors over
- * the right composer.
- */
-/**
  * Drain a parked permission prompt for a session that just had auto-accept
  * toggled ON: allow it immediately and clear the sidebar attention dot. A
  * parked question (never auto-answered) is left in place. No-op if nothing is
@@ -315,6 +306,15 @@ export function autoAcceptParked(sessionId: string): void {
   storePendingPrompt(sessionId, pending);
 }
 
+/**
+ * Replay a parked permission/question prompt for a session the user just
+ * selected. Mirrors the arrival path (auto-accept, remembered-rule auto-allow,
+ * then the card) so a switch-back surfaces exactly what would have shown had
+ * the chat been focused when the tool fired. No-op if nothing is parked.
+ *
+ * Called from selectSession AFTER the pane is mounted so the card anchors over
+ * the right composer.
+ */
 export function replayPendingPrompt(sessionId: string): void {
   const pending = takePendingPrompt(sessionId);
   if (!pending) return;
