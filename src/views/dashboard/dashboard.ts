@@ -4,7 +4,8 @@ import "./dashboard.css";
 import "../../shared/account-chip.css";
 import { getSettings, setSettings, setUsageHistory, getUsageHistory } from "../../shared/state";
 import { api } from "../../shared/api";
-import type { UsageRecord, Account } from "../../shared/api";
+import type { UsageRecord } from "../../shared/api";
+import { setCachedAccounts, listCachedAccounts } from "../../shared/accounts-cache";
 import { navigateTo } from "../../router";
 import { escapeHtml } from "../../shared/escape-html";
 import {
@@ -38,7 +39,6 @@ let selectedAccountId: string | null = null;
 // by focusDashboardAccount; consumed on the next fullRefresh when the dashboard
 // isn't mounted yet, or applied immediately when it already is.
 let pendingFocusAccountId: string | null = null;
-let accountsCache: Account[] = [];
 let usageMapCache: Record<string, UsageRecord> = {};
 let dashboardWidgets: DashboardWidgetEntry[] = [];
 let editMode = false;
@@ -177,7 +177,7 @@ export function refreshDashboardView(): void {
  * request so the next fullRefresh (on mount) selects it. */
 export function focusDashboardAccount(id: string): void {
   pendingFocusAccountId = id;
-  if (mountedContainer && accountsCache.some((a) => a.id === id)) {
+  if (mountedContainer && listCachedAccounts().some((a) => a.id === id)) {
     onSelectAccount(mountedContainer, id);
     pendingFocusAccountId = null;
   }
@@ -270,11 +270,11 @@ function persistDashboardWidgets(): void {
 // ── Widget shell + registry wiring ──────────────────────────────────────────
 
 function currentCtx(): WidgetContext {
-  return { accountId: selectedAccountId, hasAccounts: accountsCache.length > 0 };
+  return { accountId: selectedAccountId, hasAccounts: listCachedAccounts().length > 0 };
 }
 
 function selectedAccountLabel(): string {
-  return accountsCache.find((a) => a.id === selectedAccountId)?.label ?? "";
+  return listCachedAccounts().find((a) => a.id === selectedAccountId)?.label ?? "";
 }
 
 function widgetShellHtml(entry: DashboardWidgetEntry, index: number, total: number): string {
@@ -282,7 +282,7 @@ function widgetShellHtml(entry: DashboardWidgetEntry, index: number, total: numb
   if (!widget) return "";
   const tag = widget.scope === "global"
     ? `<span class="dash-tag dash-tag-global">Global</span>`
-    : `<span class="dash-tag dash-tag-scoped" style="--acc:${escapeHtml(accountsCache.find((a) => a.id === selectedAccountId)?.colour ?? "")}">${escapeHtml(selectedAccountLabel())}</span>`;
+    : `<span class="dash-tag dash-tag-scoped" style="--acc:${escapeHtml(listCachedAccounts().find((a) => a.id === selectedAccountId)?.colour ?? "")}">${escapeHtml(selectedAccountLabel())}</span>`;
   // Edit buttons are always in the DOM; CSS (`#stats-content.editing`) shows
   // them only in edit mode, so toggling edit never re-renders the widget
   // bodies (which would blank the graphs for a frame).
@@ -307,6 +307,7 @@ function widgetShellHtml(entry: DashboardWidgetEntry, index: number, total: numb
  * separately via `mountWidgets`/`remountWidget`. */
 function renderShell(container: HTMLElement): void {
   const history = getHistory() || [];
+  const accountsCache = listCachedAccounts();
   const cardsHtml = accountsCache.length > 0
     ? buildAccountCardsHTML(accountsCache, usageMapCache, selectedAccountId, getSettings())
     : legacyStatCardsHtml(history);
@@ -333,10 +334,10 @@ function renderShell(container: HTMLElement): void {
 // ── "Set up your accounts" migration prompt (multi-account milestone 08) ───
 
 function setupBannerHtml(): string {
-  // Defensive double-gate: an account may have been added (accountsCache
-  // populated) in the moment between the mount-time IPC fetch and this
+  // Defensive double-gate: an account may have been added (shared accounts
+  // cache populated) in the moment between the mount-time IPC fetch and this
   // render - never show the prompt once there's a real account to select.
-  if (!showSetupBanner || accountsCache.length > 0) return "";
+  if (!showSetupBanner || listCachedAccounts().length > 0) return "";
   return `
     <div class="dash-setup-banner" id="dashSetupBanner">
       <i class="ph ph-user-circle-plus"></i>
@@ -410,7 +411,7 @@ function onSelectAccount(container: HTMLElement, newId: string): void {
   // refresh those in place along with the widget content itself.
   container.querySelectorAll<HTMLElement>(".dash-tag-scoped").forEach((tag) => {
     tag.textContent = selectedAccountLabel();
-    const colour = accountsCache.find((a) => a.id === newId)?.colour;
+    const colour = listCachedAccounts().find((a) => a.id === newId)?.colour;
     if (colour) tag.style.setProperty("--acc", colour);
   });
   for (const id of widgetsNeedingAccountRerender(dashboardWidgets, prev, newId)) {
@@ -460,19 +461,19 @@ async function fullRefresh(container: HTMLElement): Promise<void> {
 
   try {
     const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
-    accountsCache = accounts;
+    setCachedAccounts(accounts);
     usageMapCache = usageMap;
   } catch (e) {
     console.error("[dashboard] account/usage fetch failed", e);
   }
 
   const defaultAccountId = (getSettings()["default_account_id"] as string | null | undefined) ?? null;
-  selectedAccountId = reconcileSelectedAccountId(selectedAccountId, defaultAccountId, accountsCache);
+  selectedAccountId = reconcileSelectedAccountId(selectedAccountId, defaultAccountId, listCachedAccounts());
 
   // Honour a pending overlay "focus this account" request that arrived before
   // the dashboard was mounted (main.ts navigate-to-account handler).
   if (pendingFocusAccountId) {
-    if (accountsCache.some((a) => a.id === pendingFocusAccountId)) {
+    if (listCachedAccounts().some((a) => a.id === pendingFocusAccountId)) {
       selectedAccountId = pendingFocusAccountId;
     }
     pendingFocusAccountId = null;
