@@ -13,6 +13,32 @@ pub fn surface_main(w: &tauri::WebviewWindow) {
     let _ = w.set_focus();
 }
 
+/// Whether the main window's webview has actually finished its first
+/// navigation (see `AppState::main_window_loaded`). Fails open (`true`) if
+/// state isn't available, matching the existing `frontend_alive` fallback
+/// pattern below - state is only ever missing during early startup, before
+/// any window could exist to show.
+fn main_window_loaded(app: &AppHandle) -> bool {
+    app.try_state::<crate::state::AppState>()
+        .map(|s| s.main_window_loaded.load(Ordering::SeqCst))
+        .unwrap_or(true)
+}
+
+/// Show + focus `w` only if its webview has finished loading at least once.
+/// Guards every "window already exists" branch below: a `main` window that
+/// was just built (see `build_main_window`) exists as soon as `.build()`
+/// returns, well before its `on_page_load` "Finished" event fires. Calling
+/// `surface_main` unconditionally in that window would force a still-loading,
+/// unpainted webview visible - producing a blank white window that swallows
+/// input until the user notices and re-triggers a show (ai_todo-095 ghost
+/// dashboard bug). When not yet loaded, this is a no-op: `build_main_window`'s
+/// own `on_page_load` handler shows the window itself once loading finishes.
+fn surface_main_if_ready(app: &AppHandle, w: &tauri::WebviewWindow) {
+    if main_window_loaded(app) {
+        surface_main(w);
+    }
+}
+
 /// Hide-to-tray on close instead of destroying. A destroyed window means every
 /// reopen is a cold webview boot; a hidden one reopens instantly with its state
 /// intact. Real quit (tray menu) sets should_quit and passes.
@@ -38,7 +64,7 @@ fn attach_hide_to_tray(window: &tauri::WebviewWindow) {
 pub fn open_dashboard(app: AppHandle) {
     use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
-        surface_main(&w);
+        surface_main_if_ready(&app, &w);
         let alive = app
             .try_state::<crate::state::AppState>()
             .map(|s| s.frontend_alive.load(Ordering::SeqCst))
@@ -66,7 +92,7 @@ pub fn open_dashboard(app: AppHandle) {
 pub fn open_dashboard_project(app: AppHandle, cwd: String) {
     use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
-        surface_main(&w);
+        surface_main_if_ready(&app, &w);
         let alive = app
             .try_state::<crate::state::AppState>()
             .map(|s| s.frontend_alive.load(Ordering::SeqCst))
@@ -93,7 +119,7 @@ pub fn open_dashboard_project(app: AppHandle, cwd: String) {
 pub fn open_dashboard_settings_accounts(app: AppHandle) {
     use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
-        surface_main(&w);
+        surface_main_if_ready(&app, &w);
         let alive = app
             .try_state::<crate::state::AppState>()
             .map(|s| s.frontend_alive.load(Ordering::SeqCst))
@@ -118,7 +144,7 @@ pub fn open_dashboard_settings_accounts(app: AppHandle) {
 #[tauri::command]
 pub fn open_dashboard_account(app: AppHandle, account_id: String) {
     if let Some(w) = app.get_webview_window("main") {
-        surface_main(&w);
+        surface_main_if_ready(&app, &w);
         let alive = app
             .try_state::<crate::state::AppState>()
             .map(|s| s.frontend_alive.load(Ordering::SeqCst))
@@ -169,6 +195,9 @@ pub fn build_main_window(app: &AppHandle, nav: Option<&str>) -> Result<(), Strin
             .on_page_load(move |w, payload| {
                 if payload.event() == PageLoadEvent::Finished && !shown.swap(true, Ordering::SeqCst)
                 {
+                    if let Some(state) = w.app_handle().try_state::<crate::state::AppState>() {
+                        state.main_window_loaded.store(true, Ordering::SeqCst);
+                    }
                     let _ = w.show();
                     let _ = w.set_focus();
                 }

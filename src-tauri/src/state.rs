@@ -49,6 +49,17 @@ pub struct AppState {
     /// (covers WebView2 showing a "can't reach this page" error when the
     /// dev/prod start URL fails at boot, e.g. autostart racing with the network).
     pub frontend_alive: Arc<AtomicBool>,
+    /// Set to true only once the main dashboard window's `on_page_load`
+    /// "Finished" event has fired for the first time (see
+    /// `ipc::window::build_main_window`). Every show-path that surfaces an
+    /// *already-built* `main` window (`ipc::window::open_dashboard` and its
+    /// siblings) must check this before calling `surface_main` - a window
+    /// that exists but is still mid-navigation paints blank/white and
+    /// swallows input if forced visible early. `build_main_window`'s own
+    /// `on_page_load` handler is unaffected: it shows the window itself once
+    /// this flips, so callers that find it still `false` simply skip the
+    /// show and let that handler do it.
+    pub main_window_loaded: Arc<AtomicBool>,
     /// A pending "open this session in the chats window" request, set when the
     /// chats window is created fresh from the main window's "Open in chats" CTA.
     /// The chats window drains it on boot via `take_pending_chat_open`. Holds
@@ -111,6 +122,7 @@ impl AppState {
             update_state: Mutex::new(serde_json::json!({ "state": "idle" })),
             should_quit: Arc::new(AtomicBool::new(false)),
             frontend_alive: Arc::new(AtomicBool::new(false)),
+            main_window_loaded: Arc::new(AtomicBool::new(false)),
             pending_chat_open: Mutex::new(None),
             pending_new_chat: Mutex::new(None),
             pending_main_nav: Mutex::new(None),
