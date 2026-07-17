@@ -87,6 +87,15 @@ export interface ResetDisplay {
   diffMs: number;
 }
 
+/** "in Xh Ym" / "in Ym" for a non-negative ms delta - shared relative-time
+ * math for `fmtResetDisplay` and the rate-limit banner's countdown. */
+export function formatRelativeMinutes(diffMs: number): string {
+  const h = Math.floor(diffMs / 3_600_000);
+  const m = Math.floor((diffMs % 3_600_000) / 60_000);
+  if (h > 0) return `in ${h}h ${m}m`;
+  return `in ${m}m`;
+}
+
 export function fmtResetDisplay(isoStr: string | null | undefined): ResetDisplay | null {
   if (!isoStr) return null;
   const raw = new Date(isoStr);
@@ -94,12 +103,10 @@ export function fmtResetDisplay(isoStr: string | null | undefined): ResetDisplay
   const d = roundToNearest10Min(raw);
   const diffMs = d.getTime() - Date.now();
   if (diffMs <= 0) return { absolute: "now", relative: "", diffMs: 0 };
-  const h = Math.floor(diffMs / 3_600_000);
-  const m = Math.floor((diffMs % 3_600_000) / 60_000);
   const day = d.toLocaleDateString("en-US", { weekday: "long" });
   const hour = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
   const absolute = `${day} ${hour}`;
-  const relative = h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
+  const relative = formatRelativeMinutes(diffMs);
   return { absolute, relative, diffMs };
 }
 

@@ -18,6 +18,7 @@ import { showToast } from "../toast";
 import { showView } from "../navigation";
 import type { Instance } from "../../types/ipc.generated";
 import { setCachedAccounts, listCachedAccounts, getCachedAccount, capitalize } from "../accounts-cache";
+import { formatRelativeMinutes } from "../formatters";
 export { getCachedAccount, capitalize } from "../accounts-cache";
 
 /** Live predicate for "is this session's account currently blocked by a
@@ -44,12 +45,9 @@ export function formatClockLabel(ms: number, now: number = Date.now()): string {
 
 /** "in 2h 14m" / "in 14m" / "in under a minute". */
 function formatCountdown(remainingMs: number): string {
-  const totalMin = Math.floor(Math.max(0, remainingMs) / 60_000);
-  if (totalMin <= 0) return "in under a minute";
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  if (h > 0) return `in ${h}h ${m}m`;
-  return `in ${m}m`;
+  const clamped = Math.max(0, remainingMs);
+  if (clamped < 60_000) return "in under a minute";
+  return formatRelativeMinutes(clamped);
 }
 
 /** "five_hour" -> "5-hour", "seven_day"/"weekly" -> "weekly". */
