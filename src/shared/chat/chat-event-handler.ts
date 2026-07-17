@@ -23,8 +23,6 @@ import { canonicalTool } from "./tool-meta";
 import {
   describeActivity,
   flushRender,
-  scheduleFlush,
-  flushRenderNow,
   scrollToBottom,
   isNearBottom,
   enqueueTurnClose,
@@ -34,6 +32,7 @@ import {
   foldLeadingPartialTurn,
   scrollToBottomWhenSettled,
 } from "./chat-dom-renderer";
+import { scheduleFlush, flushRenderNow } from "./flush-scheduler";
 import type { ChatRenderer } from "./chat-renderer";
 
 export interface HandleEventOpts {

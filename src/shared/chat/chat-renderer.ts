@@ -11,7 +11,8 @@ import { clampUserMessages, type ToolGroup } from "./turn-collapse";
 import { renderCustomToolView } from "./tool-views";
 import { ChatPaginator } from "./chat-pagination";
 import { TurnFooterRegistry, type TurnChipKey, type TurnUsageTotals } from "./turn-chips";
-import { buildMessageEl, flushRenderNow, foldClosedRange, revealTranscript } from "./chat-dom-renderer";
+import { buildMessageEl, foldClosedRange, revealTranscript } from "./chat-dom-renderer";
+import { flushRenderNow } from "./flush-scheduler";
 import { handleChatEvent, bulkLoadEvents, type HandleEventOpts } from "./chat-event-handler";
 import { getCta } from "./cta-registry";
 
