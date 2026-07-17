@@ -355,6 +355,28 @@ function applyChatNewRequest(
   showView("sessions");
 }
 
+/** Build, show, and auto-dismiss one clickable toast in `#toastStack`. Shared
+ * by the news-notification fallback and the scheduled-item-fired toast,
+ * which previously each hand-rolled the same DOM-build/animate sequence
+ * (create `.toast` > `.toast-msg`, wire onclick, append, rAF the `.show`
+ * class, then `.leaving` + remove after the TTL). No-op if the stack host
+ * isn't in the DOM. */
+function pushToast(text: string, opts?: { onClick?: () => void; ttlMs?: number }): void {
+  const stack = document.getElementById("toastStack");
+  if (!stack) return;
+  const ttlMs = opts?.ttlMs ?? 5000;
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `<span class="toast-msg"></span>`;
+  const msg = toast.querySelector(".toast-msg");
+  if (msg) msg.textContent = text;
+  if (opts?.onClick) toast.onclick = opts.onClick;
+  stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("show"));
+  setTimeout(() => toast.classList.add("leaving"), ttlMs);
+  setTimeout(() => toast.remove(), ttlMs + 300);
+}
+
 function setupNewsBadgeAndNotifications(): void {
   const navItem = document.getElementById("sm-news");
   if (!navItem) return;
@@ -398,18 +420,7 @@ function setupNewsBadgeAndNotifications(): void {
       console.warn("[news] OS notification failed", err);
     }
     // Fallback: lightweight in-app toast.
-    const stack = document.getElementById("toastStack");
-    if (!stack) return;
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.innerHTML = `<span class="toast-msg"></span>`;
-    const msg = toast.querySelector(".toast-msg");
-    if (msg) msg.textContent = `${title}: ${body}`.trim();
-    toast.onclick = () => { void showView("news"); };
-    stack.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add("show"));
-    setTimeout(() => toast.classList.add("leaving"), 5000);
-    setTimeout(() => toast.remove(), 5300);
+    pushToast(`${title}: ${body}`.trim(), { onClick: () => { void showView("news"); } });
   });
 }
 
@@ -474,21 +485,13 @@ function setupScheduledFireToast(): void {
     const title = isNewChat ? "Scheduled chat started" : "Scheduled message sent";
     const detail = (p.prompt || "").trim().replace(/\s+/g, " ").slice(0, 60);
 
-    const stack = document.getElementById("toastStack");
-    if (!stack) return;
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.innerHTML = `<span class="toast-msg"></span>`;
-    const msg = toast.querySelector(".toast-msg");
-    if (msg) msg.textContent = detail ? `${title}: ${detail}` : title;
-    toast.onclick = () => {
-      void invoke("open_chats_for_session", { sessionId: p.session_id, mode: "live" })
-        .catch((err) => console.error("[schedule] open_chats_for_session failed", err));
-    };
-    stack.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add("show"));
-    setTimeout(() => toast.classList.add("leaving"), 6000);
-    setTimeout(() => toast.remove(), 6300);
+    pushToast(detail ? `${title}: ${detail}` : title, {
+      ttlMs: 6000,
+      onClick: () => {
+        void invoke("open_chats_for_session", { sessionId: p.session_id, mode: "live" })
+          .catch((err) => console.error("[schedule] open_chats_for_session failed", err));
+      },
+    });
   });
 }
 
