@@ -101,6 +101,13 @@ export async function openModelEffortModal(
     // resolves; absent/true => model is selectable. A disabled model (e.g. Fable
     // 5 when Anthropic has it off) stays clickable but blocks "Start session".
     const availability: Record<string, boolean> = {};
+    // Set when the backend's CLI-driven token-refresh retry still 401'd - the
+    // account is genuinely logged out, not just "this model is disabled".
+    // Distinct from per-model `availability` so the dialog shows a reconnect
+    // prompt instead of a per-model "disabled" warning, and blocks Start
+    // regardless of which model is selected (none of the probe data is
+    // trustworthy while auth is expired).
+    let authExpired = false;
 
     // ── Account picker state (multi-account milestone 04) ──────────────────────
     // Rendering/wiring live in account-field.ts; this modal just owns the
@@ -251,6 +258,7 @@ export async function openModelEffortModal(
     function modelIdx(): number { return Math.max(0, models.indexOf(model)); }
     function effortIdx(): number { return Math.max(0, EFFORTS.indexOf(effort as typeof EFFORTS[number])); }
     function modelDisabled(): boolean { return availability[model] === false; }
+    function sessionBlocked(): boolean { return authExpired || modelDisabled(); }
 
     function renderBody() {
       const presetButtons = presets.map((p, i) => `
@@ -298,11 +306,15 @@ export async function openModelEffortModal(
                 </label>
               </details>
 
-              ${modelDisabled() ? `<div class="me-model-warning" role="alert">${escapeHtml(modelDisplayLabel(model))} is disabled, please choose another model</div>` : ""}
+              ${authExpired
+                ? `<div class="me-model-warning" role="alert">Claude login session expired - reconnect (run <code>claude</code> in a terminal to log back in), then reopen this dialog</div>`
+                : modelDisabled()
+                  ? `<div class="me-model-warning" role="alert">${escapeHtml(modelDisplayLabel(model))} is disabled, please choose another model</div>`
+                  : ""}
 
               <div class="me-actions">
                 <button type="button" class="me-cancel">Cancel</button>
-                <button type="button" class="me-confirm"${(modelDisabled() || accountPickIncomplete(accountField, accounts)) ? " disabled" : ""}>Start session</button>
+                <button type="button" class="me-confirm"${(sessionBlocked() || accountPickIncomplete(accountField, accounts)) ? " disabled" : ""}>Start session</button>
               </div>
             </div>
             <div class="me-char-pane"></div>
@@ -397,7 +409,7 @@ export async function openModelEffortModal(
     }
 
     async function startWithCurrentConfig(): Promise<void> {
-      if (modelDisabled() || accountPickIncomplete(accountField, accounts)) return;
+      if (sessionBlocked() || accountPickIncomplete(accountField, accounts)) return;
       await persistChoice();
       await persistAccountBindingIfRequested();
       close({ model, effort, autoAccept, remote, characterId: character?.id ?? null, accountId: accountField.accountId });
@@ -447,7 +459,11 @@ export async function openModelEffortModal(
     // each family -> its latest id, probe those, then key results back by
     // family. Families with no API id (exotic user models) are left selectable.
     // When it resolves, re-render so a disabled model (e.g. Fable 5) blocks
-    // Start. Fails open: any probe error leaves every model selectable.
+    // Start. Fails open only for transient/network errors: any probe
+    // TRANSPORT error (throw/reject) leaves every model selectable, but a
+    // resolved result with `authExpired: true` (backend already tried a
+    // CLI-driven token refresh and it still failed) is never treated as
+    // available - see api.ts's ModelAvailability doc.
     const idByFamily = new Map<string, string>();
     for (const fam of models) {
       const id = latestIdForFamily(fam);
@@ -456,6 +472,7 @@ export async function openModelEffortModal(
     if (idByFamily.size > 0) {
       void api.probeModelsAvailability([...idByFamily.values()])
         .then((results) => {
+          authExpired = results.some((r) => r.authExpired);
           const byId = new Map(results.map((r) => [r.id, r.available]));
           for (const [fam, id] of idByFamily) availability[fam] = byId.get(id) ?? true;
           renderBody();

@@ -44,10 +44,14 @@ interface UsageSnapshot {
 
 // Per-model availability, from the count_tokens probe (probe_models_availability).
 // `message` carries the API's reason when a model is disabled (else null).
+// `authExpired` is true when a 401 survived a CLI-driven token-refresh retry
+// on the backend - the account is genuinely logged out, not just "this model
+// is disabled"; `available` is false in that case too (never fail-open).
 export interface ModelAvailability {
   id: string;
   available: boolean;
   message: string | null;
+  authExpired: boolean;
 }
 
 // Renderer-facing legacy shape (kept until views consume UsageSnapshot directly).
