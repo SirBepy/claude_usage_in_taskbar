@@ -46,13 +46,19 @@ fn mime_for(ext: &str) -> Option<&'static str> {
 /// holding a `.git` (the repo root) or after `max_depth` levels, whichever
 /// comes first. Lets a subfolder chat (e.g. a monorepo's `frontend/`) inherit
 /// the repo root's icon/tech instead of being detected in isolation.
+///
+/// The `.git` boundary check is `settings::identity::find_repo_root` (same
+/// walk, used unbounded there for project-key resolution); here we only need
+/// its result as a stop condition while re-walking `dir`'s own ancestors up
+/// to `max_depth`, so a `.git` beyond that depth is treated the same as
+/// "none found" - unchanged from the prior standalone implementation.
 fn ancestors_upto_repo_root(dir: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let repo_root = crate::settings::identity::find_repo_root(dir);
     let mut list = Vec::new();
     let mut current = dir.to_path_buf();
     for _ in 0..=max_depth {
-        let is_repo_root = current.join(".git").exists();
         list.push(current.clone());
-        if is_repo_root {
+        if repo_root.as_deref() == Some(current.as_path()) {
             break;
         }
         match current.parent() {
