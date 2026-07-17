@@ -8,7 +8,6 @@ import type { ContentBlock, Recurrence } from "../../types/ipc.generated";
 import { mimeToIcon } from "./attachment-hydrator";
 import { openSchedulePicker } from "./schedule-picker";
 import { openComposerMenu, type ComposerMenuItem } from "./composer-menu";
-import { getPttBinding, keyMatches, mouseMatches } from "./voice/push-to-talk";
 import { CaretSuggestPopup } from "./caret-popup/popup";
 import { SlashProvider } from "./caret-popup/providers/slash";
 import { FileProvider } from "./caret-popup/providers/file";
@@ -17,6 +16,7 @@ import type { ChatRenderer } from "./chat-renderer";
 import { parseBuiltin, HANDLERS, type BuiltinContext } from "./builtins";
 import { highlightComposerInput } from "./chat-transforms";
 import { ComposerVoice } from "./voice/composer-voice";
+import { ComposerPtt } from "./voice/composer-ptt";
 import "./voice/voice.css";
 import "./builtins/register";
 import "./caret-popup/popup.css";
@@ -114,10 +114,9 @@ export class Composer {
   // doesn't fire out from under the user mid-type.
   private lastKeyAt = 0;
   private cv: ComposerVoice;
+  private ptt: ComposerPtt;
   private micBtn: HTMLButtonElement | null = null;
   private fileInput: HTMLInputElement | null = null;
-  // Push-to-talk: true while the bound key/mouse-button is held down.
-  private _pttActive = false;
 
   private _globalKeydown = (e: KeyboardEvent): void => {
     if (this.disabled || !this.textarea || this.textarea.disabled) return;
@@ -140,52 +139,21 @@ export class Composer {
     e.preventDefault();
   };
 
-  // ── Push-to-talk (desktop only) ────────────────────────────────────────────
-  // Hold the bound key / mouse side-button to record, release to stop. Bound at
-  // event time via getPttBinding() so a Settings change takes effect live. The
-  // binding is suppressed (preventDefault) while held so a printable key doesn't
-  // also type; mouse handlers run in capture phase to beat webview back/forward.
-  private _pttKeydown = (e: KeyboardEvent): void => {
-    if (this.disabled || this.isMobileViewport()) return;
-    if (!keyMatches(getPttBinding(), e)) return;
-    e.preventDefault();
-    if (this._pttActive || e.repeat) return;
-    this._pttActive = true;
-    void this.cv.startForPtt(this.currentInsertPos());
-  };
-  private _pttKeyup = (e: KeyboardEvent): void => {
-    if (!this._pttActive || !keyMatches(getPttBinding(), e)) return;
-    e.preventDefault();
-    this._pttActive = false;
-    void this.cv.stopForPtt();
-  };
-  private _pttMousedown = (e: MouseEvent): void => {
-    if (this.disabled || this.isMobileViewport()) return;
-    if (!mouseMatches(getPttBinding(), e)) return;
-    e.preventDefault();
-    if (this._pttActive) return;
-    this._pttActive = true;
-    void this.cv.startForPtt(this.currentInsertPos());
-  };
-  private _pttMouseup = (e: MouseEvent): void => {
-    if (!this._pttActive || !mouseMatches(getPttBinding(), e)) return;
-    e.preventDefault();
-    this._pttActive = false;
-    void this.cv.stopForPtt();
-  };
-  // Losing window focus mid-hold would strand the recorder (no keyup arrives).
-  private _pttBlur = (): void => {
-    if (!this._pttActive) return;
-    this._pttActive = false;
-    void this.cv.stopForPtt();
-  };
-
   constructor(root: HTMLElement, opts: ComposerOptions) {
     this.root = root;
     this.opts = opts;
     this.cv = new ComposerVoice({
       onAfterEdit: () => { this.autoResize(); this.updateHighlight(); this.persistDraft(); this.opts.onDraftActivity?.(); },
       onHighlightOnly: () => this.updateHighlight(),
+    });
+    // Push-to-talk (desktop only): hold the bound key / mouse side-button to
+    // record, release to stop.
+    this.ptt = new ComposerPtt({
+      start: (pos) => this.cv.startForPtt(pos),
+      stop: () => this.cv.stopForPtt(),
+      currentInsertPos: () => this.currentInsertPos(),
+      isMobile: () => this.isMobileViewport(),
+      isDisabled: () => this.disabled,
     });
     // Establish positioning context so the absolute-anchored popup lands
     // above the composer instead of falling back to a distant ancestor.
@@ -199,11 +167,7 @@ export class Composer {
     this.file.start(opts.projectDir ?? null);
     this.render();
     document.addEventListener("keydown", this._globalKeydown);
-    document.addEventListener("keydown", this._pttKeydown);
-    document.addEventListener("keyup", this._pttKeyup);
-    document.addEventListener("mousedown", this._pttMousedown, true);
-    document.addEventListener("mouseup", this._pttMouseup, true);
-    window.addEventListener("blur", this._pttBlur);
+    this.ptt.mount();
     _composerInstanceCount++;
     if (_composerInstanceCount > 1) {
       console.warn(
@@ -214,15 +178,7 @@ export class Composer {
 
   destroy(): void {
     document.removeEventListener("keydown", this._globalKeydown);
-    document.removeEventListener("keydown", this._pttKeydown);
-    document.removeEventListener("keyup", this._pttKeyup);
-    document.removeEventListener("mousedown", this._pttMousedown, true);
-    document.removeEventListener("mouseup", this._pttMouseup, true);
-    window.removeEventListener("blur", this._pttBlur);
-    if (this._pttActive) {
-      this._pttActive = false;
-      void this.cv.stopForPtt();
-    }
+    this.ptt.destroy();
     if (this.noticeTimer) {
       clearTimeout(this.noticeTimer);
       this.noticeTimer = null;
