@@ -94,17 +94,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     {
         let h = app.clone();
         app.listen("settings-changed", move |_| {
-            let h2 = h.clone();
-            let _ = h.run_on_main_thread(move || {
-                let mute = h2.state::<AppState>().settings.lock().unwrap().mute_all();
-                let update = h2.state::<AppState>().update_state.lock().unwrap().clone();
-                if let Ok(new_menu) = build_menu(&h2, mute, &update) {
-                    if let Some(tray) = h2.tray_by_id(TRAY_ID) {
-                        let _ = tray.set_menu(Some(new_menu));
-                    }
-                }
-                render_tray_now(&h2);
-            });
+            rebuild_menu_and_render(&h);
         });
     }
 
@@ -131,17 +121,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     {
         let h = app.clone();
         app.listen("update-state", move |_| {
-            let h2 = h.clone();
-            let _ = h.run_on_main_thread(move || {
-                let mute = h2.state::<AppState>().settings.lock().unwrap().mute_all();
-                let update = h2.state::<AppState>().update_state.lock().unwrap().clone();
-                if let Ok(new_menu) = build_menu(&h2, mute, &update) {
-                    if let Some(tray) = h2.tray_by_id(TRAY_ID) {
-                        let _ = tray.set_menu(Some(new_menu));
-                    }
-                }
-                render_tray_now(&h2);
-            });
+            rebuild_menu_and_render(&h);
         });
     }
 
@@ -168,6 +148,24 @@ fn on_left_click(app: AppHandle, icon_rect: tauri::Rect) {
         return;
     }
     crate::ipc::toggle_overlay_window(&app, icon_rect);
+}
+
+/// Rebuild the tray menu from current mute/update state and re-render the
+/// icon, marshaled onto the main thread. Shared by the `settings-changed` and
+/// `update-state` listeners, whose rebuild-and-render bodies were previously
+/// byte-for-byte duplicated.
+fn rebuild_menu_and_render(app: &AppHandle) {
+    let h = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let mute = h.state::<AppState>().settings.lock().unwrap().mute_all();
+        let update = h.state::<AppState>().update_state.lock().unwrap().clone();
+        if let Ok(new_menu) = build_menu(&h, mute, &update) {
+            if let Some(tray) = h.tray_by_id(TRAY_ID) {
+                let _ = tray.set_menu(Some(new_menu));
+            }
+        }
+        render_tray_now(&h);
+    });
 }
 
 pub fn render_tray_now(app: &AppHandle) {
