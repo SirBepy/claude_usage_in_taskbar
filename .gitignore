@@ -19,6 +19,7 @@ playwright-report/
 .for_bepy/autopilot-hots/
 .for_bepy/autopilot-cartoons/
 .for_bepy/autopilot-resource/
+.for_bepy/mockups/
 .claude/scheduled_tasks.lock
 docs/superpowers/
 src/types/ipc.generated.ts
