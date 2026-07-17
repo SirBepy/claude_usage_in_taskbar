@@ -63,6 +63,33 @@ export {
  * while the view was hidden. */
 const _ensuredSessionIds = new Set<string>();
 
+/**
+ * Reclaim the event-store cache entry (listeners + buffered events) of any
+ * session that just ended or vanished from `state.sessions` (refreshSessions()
+ * replaces it with only the LIVE ones - sidebar.ts's isLive filters out
+ * ended_at). `previousIds` must be snapshotted BEFORE the refresh that
+ * produced `refreshed`; ids still present un-latch a stale `ended` mark left
+ * by an earlier transient vanish (e.g. daemon restart) so closing the pane
+ * later doesn't tear down a live session's cache. Eviction is deferred by
+ * evictEnded itself if the session is still open in this pane.
+ *
+ * Gated on `refreshed`: refreshSessions()'s catch empties state.sessions on
+ * ANY list_instances failure, which this diff cannot tell apart from
+ * "everything ended" - evicting there would flush every background cache on
+ * a transient IPC blip. A successful-but-empty list still evicts (those
+ * sessions genuinely ended). Shared by the main sessions view's and the
+ * detached window's instances-changed handlers, each with their own
+ * event-store singleton (separate webviews).
+ */
+function reconcileEndedSessions(previousIds: Set<string>, refreshed: boolean): void {
+  if (!refreshed) return;
+  const currentIds = new Set(state.sessions.map((s) => s.session_id));
+  for (const id of currentIds) sessionEvents.unmarkEnded(id);
+  for (const id of previousIds) {
+    if (!currentIds.has(id)) sessionEvents.evictEnded(id);
+  }
+}
+
 // ── Daemon setup stall detection ──────────────────────────────────────────────
 
 // If the daemon hasn't connected within this window, the sidebar's
@@ -337,31 +364,12 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
 
   const syncInstances = async (): Promise<void> => {
     if (state.mountId !== myMount) return;
-    // refreshSessions() replaces state.sessions with only the LIVE ones
-    // (sidebar.ts's isLive filters out ended_at) — snapshot the ids we
-    // currently know about before the refresh, then diff, to catch any
-    // session that just ended or vanished and reclaim its event-store cache
-    // entry (listeners + buffered events). Deferred by evictEnded itself if
-    // the session is still open in this pane.
-    //
-    // Gated on the fetch actually succeeding: refreshSessions' catch empties
-    // state.sessions on ANY list_instances failure, which this diff cannot
-    // tell apart from "everything ended" — evicting there would flush every
-    // background cache on a transient IPC blip. A successful-but-empty list
-    // still evicts (those sessions genuinely ended). Ids present in a
-    // successful list also un-latch a stale `ended` mark left by an earlier
-    // transient vanish (e.g. daemon restart), so closing the pane later
-    // doesn't tear down a live session's cache.
+    // See reconcileEndedSessions for why previousIds is snapshotted before
+    // the refresh and why eviction is gated on `refreshed`.
     const previousIds = new Set(state.sessions.map((s) => s.session_id));
     const refreshed = await refreshSessions();
     if (state.mountId !== myMount) return;
-    if (refreshed) {
-      const currentIds = new Set(state.sessions.map((s) => s.session_id));
-      for (const id of currentIds) sessionEvents.unmarkEnded(id);
-      for (const id of previousIds) {
-        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
-      }
-    }
+    reconcileEndedSessions(previousIds, refreshed);
 
     // Ensure every newly-appeared live session gets a character assigned.
     // Track ensured ids so we don't re-call on every subsequent event.
@@ -722,21 +730,14 @@ export async function renderDetachedSession(
   // transport seam so this also runs on the remote (phone) client.
   state.unlistenInstances = await getTransport().listen("instances-changed", async () => {
     if (state.mountId !== myMount) return;
-    // Same ended/vanished diff as the main sessions view's handler — this
-    // detached window has its own event-store singleton (separate webview),
-    // so it must reclaim its own cache entry independently. Same gating:
-    // no eviction on a failed fetch (the catch empties state.sessions), and
-    // alive ids un-latch a stale `ended` mark from a transient vanish.
+    // Same ended/vanished diff as the main sessions view's handler (see
+    // reconcileEndedSessions) - this detached window has its own event-store
+    // singleton (separate webview), so it must reclaim its own cache entry
+    // independently.
     const previousIds = new Set(state.sessions.map((s) => s.session_id));
     const refreshed = await refreshSessions();
     if (state.mountId !== myMount) return;
-    if (refreshed) {
-      const currentIds = new Set(state.sessions.map((s) => s.session_id));
-      for (const id of currentIds) sessionEvents.unmarkEnded(id);
-      for (const id of previousIds) {
-        if (!currentIds.has(id)) sessionEvents.evictEnded(id);
-      }
-    }
+    reconcileEndedSessions(previousIds, refreshed);
     // Live-update the pane header title when the session name resolves, and
     // recolour the header avatar's status ring.
     if (state.selectedId) {
