@@ -12,6 +12,7 @@ import { escapeHtml } from "../../shared/escape-html";
 import {
   buildAccountCardsHTML,
   wireAccountCardClicks,
+  tickAccountCardCountdowns,
 } from "./account-selector";
 import { reconcileSelectedAccountId } from "./account-selector-logic";
 import {
@@ -137,6 +138,12 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
   void maybeAutoPoll("crossover");
   const crossoverTimer = window.setInterval(() => void maybeAutoPoll("crossover"), 60_000);
 
+  // Live per-second ring countdown tick (targeted DOM update, not a re-render
+  // - renderShell/mountWidgets aren't torn-down-safe on a 1s timer).
+  const ringTickTimer = window.setInterval(() => {
+    if (mountedContainer) tickAccountCardCountdowns(mountedContainer);
+  }, 1000);
+
   // Start AI-running poll if any instances are live right now.
   void api.listInstances().then((list) => { if (list.length > 0) ensureAiPollRunning(); });
 
@@ -150,6 +157,7 @@ export async function renderDashboard(root: HTMLElement): Promise<() => void> {
     window.removeEventListener("refresh-dashboard-home", onRefreshEvent);
     document.removeEventListener("visibilitychange", onVisibility);
     window.clearInterval(crossoverTimer);
+    window.clearInterval(ringTickTimer);
     if (aiPollTimer !== null) { window.clearInterval(aiPollTimer); aiPollTimer = null; }
     closeDashMenu();
     teardownAllWidgets();

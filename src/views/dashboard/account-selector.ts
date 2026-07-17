@@ -14,25 +14,122 @@ import type { Account, UsageRecord } from "../../shared/api";
 const SESSION_WINDOW_MS = 5 * 3_600_000;
 const WEEKLY_WINDOW_MS = 7 * 24 * 3_600_000;
 
-function metricRowHtml(
+// Near/hot countdown thresholds - shared by the initial render (ringHtml) and
+// the live per-second tick (tickAccountCardCountdowns) so both agree on when
+// the duration switches to a ticking "M:SS" and when it turns red.
+const NEAR_THRESHOLD_MS = 3_600_000; // 1h - duration switches to live M:SS countdown
+const HOT_THRESHOLD_MS = 300_000; // 5m - countdown turns red + pulses
+
+// ── Ring fill: pace-brightness as a CSS conic-gradient ──────────────────────
+// Mirrors overlay.ts's ring()/seg() logic (same three cases: on-pace, under-
+// pace with a faded ghost continuation, over-pace with a darker fill under a
+// bright overshoot) but expressed as gradient stops instead of SVG arcs,
+// since this is a flat circular gauge rather than a dial.
+
+function ringPaceStops(cur: number, safe: number, color: string): Array<[number, number, string]> {
+  if (cur === safe) return [[0, cur, color]];
+  if (cur < safe) {
+    const ghost = `color-mix(in srgb, ${color} 30%, var(--color-surface-alt, #262637))`;
+    return [
+      [0, cur, color],
+      [cur, safe, ghost],
+    ];
+  }
+  const darker = `color-mix(in srgb, ${color} 52%, #08060c)`;
+  return [
+    [0, safe, darker],
+    [safe, cur, color],
+  ];
+}
+
+function ringConicGradient(stops: Array<[number, number, string]>, track: string): string {
+  const parts: string[] = [];
+  let last = 0;
+  for (const [a, b, color] of stops) {
+    if (a > last) parts.push(`${track} ${(last * 3.6).toFixed(1)}deg`);
+    parts.push(`${color} ${(a * 3.6).toFixed(1)}deg ${(b * 3.6).toFixed(1)}deg`);
+    last = b;
+  }
+  if (last < 100) parts.push(`${track} ${(last * 3.6).toFixed(1)}deg 360deg`);
+  return `conic-gradient(${parts.join(", ")})`;
+}
+
+// ── Time-stack formatting ────────────────────────────────────────────────—
+
+function fmtCountdown(ms: number): string {
+  const clamped = Math.max(0, ms);
+  const m = Math.floor(clamped / 60_000);
+  const s = Math.floor((clamped % 60_000) / 1000);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtDurationCompact(ms: number): string {
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/** The bare duration/countdown text + near/hot state for a reset - shared by
+ * the initial render and the live tick so both compute it identically. */
+function timeBigText(diffMs: number): { text: string; near: boolean; hot: boolean } {
+  const near = diffMs <= NEAR_THRESHOLD_MS;
+  const hot = diffMs <= HOT_THRESHOLD_MS;
+  return { text: near ? fmtCountdown(diffMs) : fmtDurationCompact(diffMs), near, hot };
+}
+
+function ringHtml(
   label: string,
   pct: number | null,
   safePct: number | null,
-  colour: string,
+  resetIso: string | null | undefined,
   settings: ValueColorSettings,
 ): string {
   if (pct == null) {
-    return `<div class="dash-mrow"><span class="dash-k">${label}</span><div class="dash-bar"></div><span class="dash-nums"><b class="dash-cur dash-cur-dim">--</b></span></div>`;
+    return `<div class="dash-ring-col">
+      <div class="dash-ring">
+        <div class="dash-ring-hole">
+          <div class="dash-ring-pcts"><span class="dash-ring-cur dash-ring-cur-dim">--</span></div>
+        </div>
+      </div>
+    </div>`;
   }
+
+  const clampedPct = Math.max(0, Math.min(100, pct));
+  const clampedSafe = safePct != null ? Math.max(0, Math.min(100, safePct)) : clampedPct;
   const color = valueColor(pct, safePct, settings, "dashboard");
-  const tick = safePct != null ? `<i class="dash-tick" style="left:${safePct}%"></i>` : "";
-  const safeNum = safePct != null ? `<span class="dash-safe">/${safePct}%</span>` : "";
-  return `<div class="dash-mrow">
-    <span class="dash-k">${label}</span>
-    <div class="dash-bar" style="--acc:${escapeHtml(colour)}"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span>${tick}</div>
-    <span class="dash-nums" title="usage / safe pace. Safe pace is the even-burn line; green = under it, red = over.">
-      <b class="dash-cur" style="color:${escapeHtml(color)}">${pct}%</b>${safeNum}
-    </span>
+  const bg = ringConicGradient(ringPaceStops(clampedPct, clampedSafe, color), "var(--color-surface-alt, #262637)");
+  const safeLine = safePct != null ? `<span class="dash-ring-safe">/${safePct}%</span>` : "";
+
+  const reset = fmtResetDisplay(resetIso);
+  let timeHtml = "";
+  let resetTitle = "";
+  let ringHotClass = "";
+  let dataAttr = "";
+  if (reset && reset.diffMs > 0) {
+    const { text: big, near, hot } = timeBigText(reset.diffMs);
+    const bigClass = `dash-ring-time-big${near ? " dash-ring-time-near" : ""}${hot ? " dash-ring-time-hot" : ""}`;
+    const clock = new Date(resetIso as string).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    timeHtml = `<div class="dash-ring-time">
+      <span class="${bigClass}">${escapeHtml(big)}</span>
+      <span class="dash-ring-time-dim">${escapeHtml(clock)}</span>
+    </div>`;
+    resetTitle = ` Resets ${reset.absolute}${reset.relative ? ` (${reset.relative})` : ""}.`;
+    ringHotClass = hot ? " dash-ring-hot" : "";
+    dataAttr = ` data-reset-iso="${escapeHtml(resetIso as string)}"`;
+  }
+
+  const title = `${label}: ${pct}% used this window${safePct != null ? `, ${safePct}% is the even safe-pace line` : ""}.${resetTitle}`;
+
+  return `<div class="dash-ring-col" title="${escapeHtml(title)}"${dataAttr}>
+    <div class="dash-ring${ringHotClass}" style="background:${bg}">
+      <div class="dash-ring-hole">
+        <div class="dash-ring-pcts">
+          <span class="dash-ring-cur" style="color:${escapeHtml(color)}">${pct}%</span>
+          ${safeLine}
+        </div>
+      </div>
+    </div>
+    ${timeHtml}
   </div>`;
 }
 
@@ -41,14 +138,44 @@ function accountCardHtml(account: Account, usage: UsageRecord | undefined, selec
   const weeklySafe = usage
     ? computeSafePacePct(usage.weekly_resets_at || new Date(Date.now() + 3_600_000).toISOString(), WEEKLY_WINDOW_MS)
     : null;
-  const sessionReset = usage ? fmtResetDisplay(usage.session_resets_at) : null;
+
+  const body = usage
+    ? `<div class="dash-ring-row">
+        ${ringHtml("5h", usage.session_pct as number | null, sessionSafe, usage.session_resets_at, settings)}
+        ${ringHtml("7d", usage.weekly_pct as number | null, weeklySafe, usage.weekly_resets_at, settings)}
+      </div>`
+    : `<div class="dash-ring-empty">No data yet</div>`;
 
   return `<div class="dash-acard${selected ? " active" : ""}" data-acc-id="${escapeHtml(account.id)}" style="--acc:${escapeHtml(account.colour)}">
     <div class="dash-ah">${accountIconBadgeHtml(account)}<span class="dash-who">${escapeHtml(account.label)}</span></div>
-    ${metricRowHtml("5h", usage ? (usage.session_pct as number | null) : null, sessionSafe, account.colour, settings)}
-    ${metricRowHtml("7d", usage ? (usage.weekly_pct as number | null) : null, weeklySafe, account.colour, settings)}
-    <div class="dash-reset">${sessionReset && sessionReset.diffMs > 0 ? `resets <b>${escapeHtml(sessionReset.absolute)}</b>` : usage ? "" : "No data yet"}</div>
+    ${body}
   </div>`;
+}
+
+/** Live per-second tick for the ring time-stacks: recomputes each reset's
+ * diffMs against the current time and updates only that ring's countdown
+ * text + near/hot classes in place - no innerHTML rebuild, no touching
+ * anything outside the matched `[data-reset-iso]` column. Safe to call on a
+ * container that has none (no-op). */
+export function tickAccountCardCountdowns(container: HTMLElement): void {
+  container.querySelectorAll<HTMLElement>("[data-reset-iso]").forEach((col) => {
+    const iso = col.dataset["resetIso"];
+    const big = col.querySelector<HTMLElement>(".dash-ring-time-big");
+    const ring = col.querySelector<HTMLElement>(".dash-ring");
+    if (!iso || !big || !ring) return;
+    const reset = fmtResetDisplay(iso);
+    if (!reset || reset.diffMs <= 0) {
+      big.textContent = "now";
+      big.classList.remove("dash-ring-time-near", "dash-ring-time-hot");
+      ring.classList.remove("dash-ring-hot");
+      return;
+    }
+    const { text, near, hot } = timeBigText(reset.diffMs);
+    big.textContent = text;
+    big.classList.toggle("dash-ring-time-near", near);
+    big.classList.toggle("dash-ring-time-hot", hot);
+    ring.classList.toggle("dash-ring-hot", hot);
+  });
 }
 
 export function buildAccountCardsHTML(
