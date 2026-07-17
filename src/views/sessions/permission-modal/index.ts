@@ -129,9 +129,21 @@ function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: Que
       }
     },
     onCancel: async () => {
+      // Skip is a TRUE INTERRUPT, not an answer: route it through the same
+      // cancel_turn path the Stop-turn button uses instead of resolving the
+      // hook with a deny-message. The daemon's cancel_turn handler sends the
+      // stream-json interrupt AND settles this prompt (expire_prompts_for_session
+      // - see daemon/methods/lifecycle.rs), so no "skipped"/"timed out" message
+      // ever reaches the agent and no waiter is left dangling. Falls back to the
+      // old respond_question({}) only if this prompt somehow has no session (a
+      // session-less prompt can't be interrupted at all).
       clearQuestionDraft(payload.id);
       try {
-        await invoke("respond_question", { id: payload.id, answers: {} });
+        if (payload.session_id) {
+          await invoke("cancel_turn", { sessionId: payload.session_id });
+        } else {
+          await invoke("respond_question", { id: payload.id, answers: {} });
+        }
       } catch {
         // Same: backend already cleaned up. Clear the park ourselves.
         clearPendingPromptById(payload.id);

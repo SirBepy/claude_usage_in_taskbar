@@ -147,6 +147,16 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 // turn's "waiting") is dead with the cancel - clear it so the
                 // sidebar doesn't keep flagging a question nobody is asking.
                 state.registry.set_awaiting(&p.session_id, None);
+                // Settle any AskUserQuestion/permission prompt still open for this
+                // session (e.g. the user hit Skip on the question card, which now
+                // routes through this same interrupt instead of answering the
+                // hook). Drops the blocked hook oneshot(s) - so a still-alive hook
+                // process resolves rather than hanging up to the 3600s prompt
+                // ceiling - and clears the prompt record so `list_pending_prompts`
+                // stops resurrecting the card. Mirrors the EOF-triggered "ghost
+                // prompt" cleanup in `lifecycle.rs`'s pump loop; a no-op when
+                // nothing is open for this session (the common Stop-turn case).
+                state.expire_prompts_for_session(&p.session_id).await;
                 state.notifier.publish("instances_changed", json!({"instances": state.registry.list()}));
                 Ok(json!({"ok": true}))
             }
