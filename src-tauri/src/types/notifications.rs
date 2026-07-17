@@ -157,6 +157,10 @@ impl Settings {
         self.extra.get("pauseInMeeting").and_then(|v| v.as_bool()).unwrap_or(true)
     }
 
+    /// Exclude app windows from screen capture while a meeting is detected
+    /// (`SetWindowDisplayAffinity`). Defaults to `false` (off) when absent.
+    pub fn hide_in_meeting(&self) -> bool { self.bool_extra("hideInMeeting") }
+
     /// Whether a given character-sound slot is enabled. `camel_key` is the
     /// slot's camelCase key (e.g. "workFinished"). Defaults to `true` (on) when
     /// the key is absent, so existing users keep hearing every slot.

@@ -152,14 +152,7 @@ pub fn start(app: AppHandle) {
                 log::info!("meeting: active={active} sources={sources:?}");
                 let hide = app
                     .try_state::<AppState>()
-                    .and_then(|s| {
-                        s.settings.lock().ok().map(|g| {
-                            g.extra
-                                .get("hideInMeeting")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                        })
-                    })
+                    .and_then(|s| s.settings.lock().ok().map(|g| g.hide_in_meeting()))
                     .unwrap_or(false);
                 let want_exclude = active && hide;
                 if want_exclude != applied_exclude {
@@ -193,10 +186,7 @@ pub fn start(app: AppHandle) {
 fn detection_wanted(app: &AppHandle) -> bool {
     app.try_state::<AppState>()
         .and_then(|s| {
-            s.settings.lock().ok().map(|g| {
-                let hide = g.extra.get("hideInMeeting").and_then(|v| v.as_bool()).unwrap_or(false);
-                hide || g.pause_notifications_in_meeting()
-            })
+            s.settings.lock().ok().map(|g| g.hide_in_meeting() || g.pause_notifications_in_meeting())
         })
         .unwrap_or(true)
 }

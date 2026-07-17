@@ -33,8 +33,7 @@ pub async fn save_settings(updated: Settings, state: State<'_, AppState>, app: A
     {
         use std::sync::atomic::Ordering;
         let meeting = state.meeting_active.load(Ordering::Relaxed);
-        let hide = updated.extra.get("hideInMeeting").and_then(|v| v.as_bool()).unwrap_or(false);
-        crate::meeting::apply_capture_affinity(meeting && hide);
+        crate::meeting::apply_capture_affinity(meeting && updated.hide_in_meeting());
     }
     Ok(())
 }
