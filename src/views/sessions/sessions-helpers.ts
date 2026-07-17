@@ -8,6 +8,7 @@ export const LS_SORT = "cc_session_sort";
 export const LS_UNREAD = "cc_session_unread";
 export const LS_HIDDEN = "cc_hidden_sessions";
 export const LS_HIDDEN_COLLAPSED = "cc_hidden_collapsed";
+export const LS_HIDDEN_PROJECTS = "cc_hidden_projects";
 
 export function projectName(i: Instance): string {
   const cwd = String(i.cwd ?? "");
@@ -206,6 +207,23 @@ export function loadHiddenSessions(): Set<string> {
 
 export function saveHiddenSessions(set: Set<string>): void {
   try { localStorage.setItem(LS_HIDDEN, JSON.stringify([...set])); }
+  catch { /* ignore */ }
+}
+
+/** Projects (keyed by cwd, matching the alias/merge system's own key) hidden
+ *  from the sidebar entirely via the project-rail filter. Independent of the
+ *  per-session hide list above: a hidden project's chats never show anywhere,
+ *  including in the "Hidden" section. */
+export function loadHiddenProjects(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_HIDDEN_PROJECTS);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+export function saveHiddenProjects(set: Set<string>): void {
+  try { localStorage.setItem(LS_HIDDEN_PROJECTS, JSON.stringify([...set])); }
   catch { /* ignore */ }
 }
 

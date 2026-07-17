@@ -15,11 +15,13 @@ import {
   loadStateStyle,
   loadHiddenSessions,
   saveHiddenSessions,
+  loadHiddenProjects,
   loadHiddenCollapsed,
   isSegCollapsed,
   resetSegCollapse,
   scheduledCountsBySession,
 } from "./sessions-helpers";
+import { renderProjectRail } from "./project-rail";
 import { state } from "./state";
 import { getChatSlotMode, getSlotAssignment } from "../../shared/shortcuts";
 import { pendingPromptSessionIds, clearPendingPrompt } from "./permission-modal";
@@ -253,9 +255,16 @@ export function renderSidebar(listEl: HTMLElement): void {
     if (hiddenPruned) saveHiddenSessions(hidden);
   }
 
-  const hiddenSessions = state.sessions.filter(s => hidden.has(s.session_id));
+  // Project-rail filter: hides a project's chats everywhere, including out of
+  // the "Hidden" section below - a hidden project means nothing from it shows.
+  const hiddenProjects = loadHiddenProjects();
+  const projectHidden = (s: Instance): boolean => hiddenProjects.has(String(s.cwd ?? ""));
+  const railHost = listEl.parentElement?.querySelector<HTMLElement>("#project-rail");
+  if (railHost) renderProjectRail(railHost, state.sessions, () => renderSidebar(listEl));
 
-  let visible = state.sessions.filter(s => !hidden.has(s.session_id));
+  const hiddenSessions = state.sessions.filter(s => hidden.has(s.session_id) && !projectHidden(s));
+
+  let visible = state.sessions.filter(s => !hidden.has(s.session_id) && !projectHidden(s));
   if (pending?.realId) {
     visible = visible.filter(s => s.session_id !== pending.realId);
   } else if (pending) {
