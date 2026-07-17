@@ -5,9 +5,19 @@ use crate::characters::slots::Slot;
 use crate::characters::whitelist;
 use crate::state::AppState;
 use crate::settings::{self, paths};
-use crate::types::{Avatar, CharacterWhitelist};
+use crate::types::{Avatar, CharacterWhitelist, Settings};
 use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Emitter, State};
+
+/// Save `snapshot` to `settings_file()` and emit `settings-changed`. The
+/// shared tail of every character/whitelist mutation in this file (ai_todo
+/// 281 - was hand-rolled ten times).
+fn persist(app: &AppHandle, snapshot: &Settings) {
+    if let Ok(path) = paths::settings_file() {
+        let _ = settings::save(&path, snapshot);
+    }
+    let _ = app.emit("settings-changed", snapshot);
+}
 
 #[tauri::command]
 pub fn list_characters() -> Vec<Character> {
@@ -32,10 +42,7 @@ pub fn assign_character(
         };
         s.clone()
     };
-    if let Ok(path) = paths::settings_file() {
-        let _ = settings::save(&path, &snapshot);
-    }
-    let _ = app.emit("settings-changed", &snapshot);
+    persist(&app, &snapshot);
     Ok(())
 }
 
@@ -164,8 +171,7 @@ pub fn ensure_session_character(
         if pruned {
             let snapshot = s.clone();
             drop(s);
-            if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-            let _ = app.emit("settings-changed", &snapshot);
+            persist(&app, &snapshot);
         }
         return Ok(Some(existing));
     }
@@ -182,8 +188,7 @@ pub fn ensure_session_character(
         if pruned {
             let snapshot = s.clone();
             drop(s);
-            if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-            let _ = app.emit("settings-changed", &snapshot);
+            persist(&app, &snapshot);
         }
         return Ok(None);
     };
@@ -218,8 +223,7 @@ pub fn ensure_session_character(
     if should_persist {
         let snapshot = s.clone();
         drop(s);
-        if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-        let _ = app.emit("settings-changed", &snapshot);
+        persist(&app, &snapshot);
     }
 
     Ok(pick)
@@ -241,8 +245,7 @@ pub fn set_session_character(
         }
         s.clone()
     };
-    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-    let _ = app.emit("settings-changed", &snapshot);
+    persist(&app, &snapshot);
     Ok(())
 }
 
@@ -269,8 +272,7 @@ pub fn reroll_session_character(
         if pruned {
             let snapshot = s.clone();
             drop(s);
-            if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-            let _ = app.emit("settings-changed", &snapshot);
+            persist(&app, &snapshot);
         }
         return Ok(None);
     };
@@ -307,8 +309,7 @@ pub fn reroll_session_character(
 
     let snapshot = s.clone();
     drop(s);
-    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-    let _ = app.emit("settings-changed", &snapshot);
+    persist(&app, &snapshot);
 
     Ok(pick)
 }
@@ -323,8 +324,7 @@ pub fn list_session_characters(state: State<AppState>, app: AppHandle) -> HashMa
     if pruned {
         let snapshot = s.clone();
         drop(s);
-        if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-        let _ = app.emit("settings-changed", &snapshot);
+        persist(&app, &snapshot);
     }
     map
 }
@@ -362,8 +362,7 @@ pub fn set_project_whitelist(
         p.whitelist = whitelist;
         s.clone()
     };
-    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-    let _ = app.emit("settings-changed", &snapshot);
+    persist(&app, &snapshot);
     Ok(())
 }
 
@@ -385,8 +384,7 @@ pub fn set_default_whitelist(
         s.default_character_whitelist = whitelist;
         s.clone()
     };
-    if let Ok(path) = paths::settings_file() { let _ = settings::save(&path, &snapshot); }
-    let _ = app.emit("settings-changed", &snapshot);
+    persist(&app, &snapshot);
     Ok(())
 }
 
