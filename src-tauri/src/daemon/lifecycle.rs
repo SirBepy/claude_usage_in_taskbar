@@ -212,383 +212,7 @@ pub async fn spawn_session(
     let pump_session = Arc::clone(&session);
     let map_for_pump = Arc::clone(map);
     let state_for_pump = Arc::clone(state);
-    tokio::spawn(async move {
-        let mut ctx = ParserContext::new_live();
-        let mut buf_reader = BufReader::new(stdout);
-        let mut line_buf = Vec::new();
-        // True once the current turn has streamed at least one content delta,
-        // meaning it is a live turn (not a replayed history result line from
-        // `--resume`). Reset to false after each TurnUsage so each turn is
-        // evaluated independently. Without this guard, resumed sessions fire one
-        // sound per prior completed turn on top of the real one.
-        let mut saw_stream_turn = false;
-        // Generation counter captured at the start of each live turn (when the
-        // first streaming AssistantMessage arrives). At turn-end we only call
-        // set_busy(false) if the registry's turn_gen still matches, preventing
-        // a stale result line from an interrupted turn from clearing the
-        // busy=true that a new send_message set in the meantime.
-        let mut pump_turn_gen: u64 = 0;
-        // Daemon-side /close teardown detector. The webview used to be the ONLY
-        // thing that acted on the /close skill's sentinels; an app reload while
-        // the close turn ran meant the session was never marked ended and got
-        // resurrected from the snapshot on the next start. See close_watch.rs.
-        let mut close_watch = crate::daemon::close_watch::CloseWatch::new();
-        // True while the daemon-authoritative `closing` registry flag is set for
-        // the current turn (armed by <cc-close:starting>, cleared at turn end).
-        let mut closing_flagged = false;
-        // Coalescing (ai_todo streaming-render O(n^2) fix): parser.rs re-clones
-        // the FULL accumulated text into every content_block_delta snapshot, so
-        // a long reply otherwise broadcasts - and re-serializes across
-        // daemon->app IPC, app->webview emit, AND the remote websocket - once
-        // per token. At most one streaming snapshot is held here; a newer one
-        // for the same block simply replaces it (both are idempotent full-text
-        // snapshots, so dropping a superseded one loses nothing). It flushes on
-        // whichever comes first: the ~100ms timer below, the next non-snapshot
-        // event (flushed BEFORE that event so relative order is exact), or the
-        // stream ending. The event shape on the wire is unchanged - only the
-        // count of broadcasts drops, from O(n) per response to a handful.
-        let mut pending_snapshot: Option<ChatEvent> = None;
-        let mut flush_deadline: Option<tokio::time::Instant> = None;
-        const SNAPSHOT_FLUSH_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
-        loop {
-            tokio::select! {
-                result = buf_reader.read_until(b'\n', &mut line_buf) => {
-                    match result {
-                        Ok(0) => {
-                            if let Some(pending) = pending_snapshot.take() {
-                                broadcast::publish(&pump_session, pending);
-                            }
-                            break;
-                        }
-                        Ok(_) => {
-                            // claude -p shows an interactive workspace-trust prompt when
-                            // the cwd hasn't been trusted before. With stdin piped the
-                            // process blocks indefinitely waiting for keyboard input.
-                            // Detect the prompt and auto-accept by selecting option 1.
-                            if !line_buf.starts_with(b"{") {
-                                if let Ok(s) = std::str::from_utf8(&line_buf) {
-                                    if s.contains("Enter to confirm") {
-                                        let mut stdin_guard = pump_session.stdin.lock().await;
-                                        let _ = stdin_guard.write_all(b"1\n").await;
-                                        let _ = stdin_guard.flush().await;
-                                    }
-                                }
-                            }
-                            for ev in ctx.feed(&line_buf) {
-                                // Suppress SessionStarted: claude re-emits a system/init
-                                // line at the start of EVERY turn. The app shows the
-                                // session via its own synthetic SessionStarted handoff,
-                                // so forwarding these spams "Session started" each turn.
-                                if matches!(ev, ChatEvent::SessionStarted { .. }) {
-                                    continue;
-                                }
-                                // Feed assistant text (streaming snapshots are cumulative;
-                                // finalized result text too) to the /close detector.
-                                if let ChatEvent::AssistantMessage { ref content, .. } = ev {
-                                    for block in content {
-                                        if let crate::types::chat::ContentBlock::Text { text } = block {
-                                            close_watch.observe_text(text);
-                                        }
-                                    }
-                                }
-                                // <cc-close:starting> seen this turn: set the broadcast
-                                // `closing` flag once so EVERY window's sidebar can show
-                                // the "Closing" segment (it used to be per-window frontend
-                                // memory, visible only where the composer sent /close).
-                                if close_watch.armed() && !closing_flagged {
-                                    closing_flagged = true;
-                                    if state_for_pump.registry.set_closing(&pump_session.session_id, true) {
-                                        state_for_pump.notifier.publish(
-                                            "instances_changed",
-                                            serde_json::json!({"instances": state_for_pump.registry.list()}),
-                                        );
-                                    }
-                                }
-                                // A streaming AssistantMessage marks the current turn as
-                                // live (not a replayed history line from --resume).
-                                // On the FIRST such event per turn, snapshot the registry's
-                                // turn_gen so the turn-end guard can detect if a newer
-                                // send_message arrived before the result line was processed.
-                                if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
-                                    if !saw_stream_turn {
-                                        pump_turn_gen = state_for_pump
-                                            .registry
-                                            .current_turn_gen(&pump_session.session_id);
-                                    }
-                                    saw_stream_turn = true;
-                                    // Hold instead of broadcasting immediately - see the
-                                    // coalescing comment above `pending_snapshot`.
-                                    pending_snapshot = Some(ev);
-                                    if flush_deadline.is_none() {
-                                        flush_deadline = Some(tokio::time::Instant::now() + SNAPSHOT_FLUSH_WINDOW);
-                                    }
-                                    continue;
-                                }
-                                // Any other event type (tool_use, tool_result, finalized
-                                // AssistantMessage, TurnUsage, Notification, ...): flush a
-                                // held snapshot FIRST so subscribers see it before this
-                                // one, preserving the parser's original event order exactly.
-                                if let Some(pending) = pending_snapshot.take() {
-                                    flush_deadline = None;
-                                    broadcast::publish(&pump_session, pending);
-                                }
-                                // A `result` line parses to TurnUsage and marks the turn
-                                // complete: update awaiting status, clear busy, and
-                                // broadcast the registry change.
-                                let (turn_done_awaiting, turn_autopilot_changed) =
-                                    if let ChatEvent::TurnUsage { ref awaiting, ref autopilot_changed, .. } = ev {
-                                        (Some(awaiting.clone()), *autopilot_changed)
-                                    } else {
-                                        (None, None)
-                                    };
-                                // The account ran out of quota mid-turn. Mark it
-                                // blocked and queue the resume before the event
-                                // is published, so the webview's first sight of
-                                // the rejection already has the state behind it.
-                                if let ChatEvent::Notification { ref kind, ref body } = ev {
-                                    if kind == "rate_limit" {
-                                        handle_rate_limit_rejection(
-                                            &state_for_pump,
-                                            &pump_session,
-                                            body,
-                                            saw_stream_turn,
-                                        );
-                                    }
-                                }
-                                if log::log_enabled!(log::Level::Debug) {
-                                    let variant = serde_json::to_value(&ev)
-                                        .ok()
-                                        .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_string))
-                                        .unwrap_or_else(|| "?".into());
-                                    log::debug!("daemon publish: {variant} for {}", pump_session.session_id);
-                                }
-                                broadcast::publish(&pump_session, ev);
-                                if let Some(awaiting) = turn_done_awaiting {
-                                    // Character "work finished" / "asking" sound. The in-app chat's
-                                    // turn completion is NOT covered by the global Stop/Notification
-                                    // hooks (those only drive skill-usage + external sessions), so
-                                    // fire the sound here off the same `result` line that sets
-                                    // awaiting. The app maps this to `notifications::fire`, which
-                                    // resolves the session character + slot + mute/meeting gating.
-                                    // Guard on saw_stream_turn so replayed history result lines
-                                    // (emitted by claude on --resume before the live turn starts)
-                                    // don't each trigger their own sound.
-                                    if saw_stream_turn && matches!(awaiting.as_deref(), Some("done") | Some("question")) {
-                                        state_for_pump.notifier.publish(
-                                            "turn_sound",
-                                            serde_json::json!({
-                                                "session_id": pump_session.session_id,
-                                                "cwd": pump_session.cwd.to_string_lossy(),
-                                                "awaiting": awaiting.as_deref(),
-                                            }),
-                                        );
-                                    }
-                                    // A turn ran to completion on this account, so
-                                    // whatever window we had recorded is over.
-                                    // Hygiene only: every consumer already treats
-                                    // a past `resets_at` as unblocked.
-                                    if saw_stream_turn {
-                                        state_for_pump
-                                            .registry
-                                            .clear_rate_limit_for_account(&pump_session.account_id);
-                                    }
-                                    let live_turn = saw_stream_turn;
-                                    saw_stream_turn = false;
-                                    // Only a LIVE turn's result may update the self-reported
-                                    // status, and only if no newer turn started meanwhile
-                                    // (gen guard, mirroring set_busy_false_if_gen). Without
-                                    // both gates, a replayed history result line on --resume
-                                    // or a cancelled turn's late result stamps a stale
-                                    // "question"/"waiting" over the current turn's state -
-                                    // the "Input needed while busy" bug.
-                                    if live_turn {
-                                        // Ground truth beats self-report: the Stop hook that fired
-                                        // just before this result line recorded how many background
-                                        // tasks the CLI still had live. A marker claiming "done" (or
-                                        // a missing one) while tasks run is the misjudgment class -
-                                        // show "working". Self-correcting: the finishing task
-                                        // re-invokes the session, and that turn's Stop refreshes the
-                                        // count to zero.
-                                        let awaiting = if matches!(awaiting.as_deref(), None | Some("done"))
-                                            && state_for_pump.registry.background_tasks(&pump_session.session_id) > 0
-                                        {
-                                            Some("working".to_string())
-                                        } else {
-                                            awaiting
-                                        };
-                                        state_for_pump.registry.set_awaiting_if_gen(
-                                            &pump_session.session_id,
-                                            awaiting,
-                                            pump_turn_gen,
-                                        );
-                                    }
-                                    state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
-                                    if let Some(active) = turn_autopilot_changed {
-                                        state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
-                                    }
-                                    // /close teardown, daemon-authoritative: both sentinels
-                                    // seen within this turn means the skill confirmed the
-                                    // close. Mark ended here so the teardown survives any
-                                    // webview reload; the frontend's clear_session finalize
-                                    // is now belt-and-suspenders (mark_ended is idempotent).
-                                    // Hint: if the turn's prompt literally started with
-                                    // /close, <cc-close:done> alone confirms - the model
-                                    // sometimes skips/mangles the first-line `starting`
-                                    // marker, which used to silently disarm teardown.
-                                    let user_typed_close = pump_session
-                                        .last_prompt
-                                        .lock()
-                                        .ok()
-                                        .map(|p| p.trim_start().starts_with("/close"))
-                                        .unwrap_or(false);
-                                    let close_confirmed = close_watch.close_confirmed_with_hint(user_typed_close);
-                                    if close_confirmed {
-                                        let now = chrono::Utc::now().to_rfc3339();
-                                        if state_for_pump.registry.mark_ended(
-                                            &pump_session.session_id,
-                                            crate::types::EndReason::Manual,
-                                            &now,
-                                        ) {
-                                            log::info!(
-                                                "daemon: session {} /close confirmed by markers; marked ended",
-                                                pump_session.session_id
-                                            );
-                                        }
-                                    }
-                                    close_watch.reset();
-                                    // Stand-down/hygiene: the turn ended, so the closing
-                                    // segment either resolved into `ended` (mark_ended
-                                    // above) or the close was aborted - clear the flag
-                                    // BEFORE the snapshot below so it never persists
-                                    // `closing: true`.
-                                    if closing_flagged {
-                                        closing_flagged = false;
-                                        state_for_pump.registry.set_closing(&pump_session.session_id, false);
-                                    }
-                                    // Persist at turn end so a daemon restart keeps each
-                                    // backgrounded chat's last status instead of wiping it
-                                    // to "Done" (and so a marker-confirmed close sticks).
-                                    if live_turn || close_confirmed {
-                                        crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
-                                    }
-                                    state_for_pump.notifier.publish(
-                                        "instances_changed",
-                                        serde_json::json!({"instances": state_for_pump.registry.list()}),
-                                    );
-                                }
-                            }
-                            line_buf.clear();
-                        }
-                        Err(e) => {
-                            if let Some(pending) = pending_snapshot.take() {
-                                broadcast::publish(&pump_session, pending);
-                            }
-                            log::warn!(
-                                "daemon: session {} stdout read failed: {}",
-                                pump_session.session_id,
-                                e
-                            );
-                            break;
-                        }
-                    }
-                }
-                // NOTE: in `tokio::select!` a disabled branch (guard = false) still
-                // has its future EXPRESSION evaluated (only the polling is skipped),
-                // so `flush_deadline.unwrap()` here would panic on every iteration
-                // where `flush_deadline` is None (the common case) and, with
-                // `panic = "abort"`, take the whole daemon down. Fall back to a
-                // throwaway `now` when None; the guard still prevents this branch
-                // from ever firing unless a real deadline is set.
-                _ = tokio::time::sleep_until(flush_deadline.unwrap_or_else(tokio::time::Instant::now)), if flush_deadline.is_some() => {
-                    if let Some(pending) = pending_snapshot.take() {
-                        broadcast::publish(&pump_session, pending);
-                    }
-                    flush_deadline = None;
-                }
-            }
-        }
-        map_for_pump.remove(&pump_session.session_id);
-        // Interactive sessions: `claude -p --input-format=stream-json` exits after
-        // completing each turn. Keep the registry entry live so the sidebar keeps
-        // showing the session. The next send_message will find the session missing
-        // from the SessionMap, get -32004 NotFound, and auto-respawn with --resume.
-        // For non-Interactive kinds (External / Automated) a process exit really
-        // does mean the session is gone, so mark it ended as before.
-        let is_interactive = state_for_pump.registry
-            .get(&pump_session.session_id)
-            .map(|i| matches!(i.kind, crate::sessions::kinds::InstanceKind::Interactive))
-            .unwrap_or(false);
-        if is_interactive {
-            // Clear busy in case the process exited mid-turn without a result line.
-            state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
-            // Ghost prompts: an open AskUserQuestion/permission prompt can only
-            // exist mid-turn, so any prompt still recorded when the process
-            // exits is orphaned - its hook curl died with the process, axum
-            // dropped the blocked handler, and the post-await cleanup never
-            // ran. Left alone, the record keeps resurrecting the card via the
-            // list_pending_prompts poll and pins awaiting=="question" forever.
-            let expired = state_for_pump
-                .expire_prompts_for_session(&pump_session.session_id)
-                .await;
-            if expired > 0 {
-                let _ = state_for_pump
-                    .registry
-                    .clear_awaiting_if_question(&pump_session.session_id);
-                log::info!(
-                    "daemon: session {} expired {} orphaned prompt(s) on EOF",
-                    pump_session.session_id, expired
-                );
-            }
-            // The turn is over either way - drop the broadcast closing flag
-            // before any snapshot below can persist `closing: true`. (No
-            // reassignment: the pump loop is done, the flag is never read again.)
-            if closing_flagged {
-                state_for_pump.registry.set_closing(&pump_session.session_id, false);
-            }
-            // /close's Phase 6 kills the terminal tree ~800ms after emitting
-            // <cc-close:done>, which can take the `claude -p` child down BEFORE
-            // its result line flushes - so the confirmed close must also be
-            // honored on EOF, not just at TurnUsage.
-            let user_typed_close = pump_session
-                .last_prompt
-                .lock()
-                .ok()
-                .map(|p| p.trim_start().starts_with("/close"))
-                .unwrap_or(false);
-            if close_watch.close_confirmed_with_hint(user_typed_close) {
-                let now = chrono::Utc::now().to_rfc3339();
-                if state_for_pump.registry.mark_ended(
-                    &pump_session.session_id,
-                    crate::types::EndReason::Manual,
-                    &now,
-                ) {
-                    log::info!(
-                        "daemon: session {} /close confirmed by markers (EOF, no result line); marked ended",
-                        pump_session.session_id
-                    );
-                }
-                crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
-            }
-        } else {
-            let now = chrono::Utc::now().to_rfc3339();
-            state_for_pump.registry.mark_ended(&pump_session.session_id, crate::types::EndReason::ProcessGone, &now);
-        }
-        state_for_pump.notifier.publish(
-            "instances_changed",
-            serde_json::json!({"instances": state_for_pump.registry.list()}),
-        );
-        log::info!(
-            "daemon: session {} pump task exited",
-            pump_session.session_id
-        );
-        if let Some(ref p) = pump_session.mcp_config_path {
-            let _ = std::fs::remove_file(p);
-        }
-        if let Some(ref p) = pump_session.hook_settings_path {
-            let _ = std::fs::remove_file(p);
-        }
-        let _ = child.wait().await;
-    });
+    tokio::spawn(run_stdout_pump(child, stdout, pump_session, map_for_pump, state_for_pump));
 
     // NOTE: jsonl_tail is intentionally NOT spawned in Phase 5a. It republishes
     // every transcript line to the same broadcast the stdout pump already feeds,
@@ -599,94 +223,399 @@ pub async fn spawn_session(
     Ok(session)
 }
 
-/// The CLI rejected a turn because the account is out of quota. Two effects:
-///
-/// 1. Mark EVERY live session on that account blocked. One account's window
-///    blocks all of its chats at once, even the idle ones, and the UI has to
-///    say so before the user types into a chat that cannot answer.
-/// 2. Queue a resume for THIS session only. It is the one whose turn died
-///    mid-flight; the account's other sessions are merely unable to start, and
-///    have no interrupted work to replay.
-///
-/// The resume is a real persisted `ScheduledItem`, not an in-process timer, so
-/// it survives an app restart and shows up in the schedule view where the user
-/// can see, edit, or cancel it.
-pub(crate) fn handle_rate_limit_rejection(
-    state: &Arc<DaemonState>,
-    session: &Arc<Session>,
-    body: &str,
-    saw_stream_turn: bool,
+/// The stdout-pump task for one session's `claude` subprocess: reads and
+/// parses stdout line by line, coalesces streaming snapshots (see the
+/// `pending_snapshot`/`flush_deadline` comment below) into the broadcast
+/// channel, updates registry/notifier state as turns complete, and - once
+/// stdout hits EOF or a read error - runs pump-exit cleanup (mark the
+/// session ended or leave it Interactive-and-idle, expire orphaned prompts,
+/// remove the per-session mcp/hook temp files, and reap the child).
+/// Extracted out of `spawn_session` (ai_todo 197): `child` and `stdout` are
+/// the two handles `spawn_session` pulled off the spawned process before
+/// handing this task ownership of the rest of the session's natural
+/// lifetime.
+async fn run_stdout_pump(
+    mut child: tokio::process::Child,
+    stdout: tokio::process::ChildStdout,
+    pump_session: Arc<Session>,
+    map_for_pump: SessionMap,
+    state_for_pump: Arc<DaemonState>,
 ) {
-    let Ok(info) = serde_json::from_str::<serde_json::Value>(body) else {
-        log::warn!("daemon: rate_limit body was not JSON: {body}");
-        return;
-    };
-    let Some(resets_at) = info.get("resetsAt").and_then(|v| v.as_i64()) else {
-        log::warn!("daemon: rate_limit body has no resetsAt: {body}");
-        return;
-    };
-    let window = info.get("rateLimitType").and_then(|v| v.as_str()).unwrap_or("five_hour");
-    let blocked = state
-        .registry
-        .set_rate_limited_for_account(&session.account_id, resets_at, window);
-    log::info!(
-        "daemon: account {} rate limited ({window}) until {resets_at}; {} session(s) blocked",
-        session.account_id,
-        blocked.len()
-    );
-
-    // Replay the exact prompt when the turn died before producing anything.
-    // Once output has streamed, resending the prompt would redo finished work,
-    // so nudge instead. Either way it must read sensibly in the schedule view.
-    let prompt = if saw_stream_turn {
-        "Continue from where you left off.".to_string()
-    } else {
-        session
+    let mut ctx = ParserContext::new_live();
+    let mut buf_reader = BufReader::new(stdout);
+    let mut line_buf = Vec::new();
+    // True once the current turn has streamed at least one content delta,
+    // meaning it is a live turn (not a replayed history result line from
+    // `--resume`). Reset to false after each TurnUsage so each turn is
+    // evaluated independently. Without this guard, resumed sessions fire one
+    // sound per prior completed turn on top of the real one.
+    let mut saw_stream_turn = false;
+    // Generation counter captured at the start of each live turn (when the
+    // first streaming AssistantMessage arrives). At turn-end we only call
+    // set_busy(false) if the registry's turn_gen still matches, preventing
+    // a stale result line from an interrupted turn from clearing the
+    // busy=true that a new send_message set in the meantime.
+    let mut pump_turn_gen: u64 = 0;
+    // Daemon-side /close teardown detector. The webview used to be the ONLY
+    // thing that acted on the /close skill's sentinels; an app reload while
+    // the close turn ran meant the session was never marked ended and got
+    // resurrected from the snapshot on the next start. See close_watch.rs.
+    let mut close_watch = crate::daemon::close_watch::CloseWatch::new();
+    // True while the daemon-authoritative `closing` registry flag is set for
+    // the current turn (armed by <cc-close:starting>, cleared at turn end).
+    let mut closing_flagged = false;
+    // Coalescing (ai_todo streaming-render O(n^2) fix): parser.rs re-clones
+    // the FULL accumulated text into every content_block_delta snapshot, so
+    // a long reply otherwise broadcasts - and re-serializes across
+    // daemon->app IPC, app->webview emit, AND the remote websocket - once
+    // per token. At most one streaming snapshot is held here; a newer one
+    // for the same block simply replaces it (both are idempotent full-text
+    // snapshots, so dropping a superseded one loses nothing). It flushes on
+    // whichever comes first: the ~100ms timer below, the next non-snapshot
+    // event (flushed BEFORE that event so relative order is exact), or the
+    // stream ending. The event shape on the wire is unchanged - only the
+    // count of broadcasts drops, from O(n) per response to a handful.
+    let mut pending_snapshot: Option<ChatEvent> = None;
+    let mut flush_deadline: Option<tokio::time::Instant> = None;
+    const SNAPSHOT_FLUSH_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
+    loop {
+        tokio::select! {
+            result = buf_reader.read_until(b'\n', &mut line_buf) => {
+                match result {
+                    Ok(0) => {
+                        if let Some(pending) = pending_snapshot.take() {
+                            broadcast::publish(&pump_session, pending);
+                        }
+                        break;
+                    }
+                    Ok(_) => {
+                        // claude -p shows an interactive workspace-trust prompt when
+                        // the cwd hasn't been trusted before. With stdin piped the
+                        // process blocks indefinitely waiting for keyboard input.
+                        // Detect the prompt and auto-accept by selecting option 1.
+                        if !line_buf.starts_with(b"{") {
+                            if let Ok(s) = std::str::from_utf8(&line_buf) {
+                                if s.contains("Enter to confirm") {
+                                    let mut stdin_guard = pump_session.stdin.lock().await;
+                                    let _ = stdin_guard.write_all(b"1\n").await;
+                                    let _ = stdin_guard.flush().await;
+                                }
+                            }
+                        }
+                        for ev in ctx.feed(&line_buf) {
+                            // Suppress SessionStarted: claude re-emits a system/init
+                            // line at the start of EVERY turn. The app shows the
+                            // session via its own synthetic SessionStarted handoff,
+                            // so forwarding these spams "Session started" each turn.
+                            if matches!(ev, ChatEvent::SessionStarted { .. }) {
+                                continue;
+                            }
+                            // Feed assistant text (streaming snapshots are cumulative;
+                            // finalized result text too) to the /close detector.
+                            if let ChatEvent::AssistantMessage { ref content, .. } = ev {
+                                for block in content {
+                                    if let crate::types::chat::ContentBlock::Text { text } = block {
+                                        close_watch.observe_text(text);
+                                    }
+                                }
+                            }
+                            // <cc-close:starting> seen this turn: set the broadcast
+                            // `closing` flag once so EVERY window's sidebar can show
+                            // the "Closing" segment (it used to be per-window frontend
+                            // memory, visible only where the composer sent /close).
+                            if close_watch.armed() && !closing_flagged {
+                                closing_flagged = true;
+                                if state_for_pump.registry.set_closing(&pump_session.session_id, true) {
+                                    state_for_pump.notifier.publish(
+                                        "instances_changed",
+                                        serde_json::json!({"instances": state_for_pump.registry.list()}),
+                                    );
+                                }
+                            }
+                            // A streaming AssistantMessage marks the current turn as
+                            // live (not a replayed history line from --resume).
+                            // On the FIRST such event per turn, snapshot the registry's
+                            // turn_gen so the turn-end guard can detect if a newer
+                            // send_message arrived before the result line was processed.
+                            if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
+                                if !saw_stream_turn {
+                                    pump_turn_gen = state_for_pump
+                                        .registry
+                                        .current_turn_gen(&pump_session.session_id);
+                                }
+                                saw_stream_turn = true;
+                                // Hold instead of broadcasting immediately - see the
+                                // coalescing comment above `pending_snapshot`.
+                                pending_snapshot = Some(ev);
+                                if flush_deadline.is_none() {
+                                    flush_deadline = Some(tokio::time::Instant::now() + SNAPSHOT_FLUSH_WINDOW);
+                                }
+                                continue;
+                            }
+                            // Any other event type (tool_use, tool_result, finalized
+                            // AssistantMessage, TurnUsage, Notification, ...): flush a
+                            // held snapshot FIRST so subscribers see it before this
+                            // one, preserving the parser's original event order exactly.
+                            if let Some(pending) = pending_snapshot.take() {
+                                flush_deadline = None;
+                                broadcast::publish(&pump_session, pending);
+                            }
+                            // A `result` line parses to TurnUsage and marks the turn
+                            // complete: update awaiting status, clear busy, and
+                            // broadcast the registry change.
+                            let (turn_done_awaiting, turn_autopilot_changed) =
+                                if let ChatEvent::TurnUsage { ref awaiting, ref autopilot_changed, .. } = ev {
+                                    (Some(awaiting.clone()), *autopilot_changed)
+                                } else {
+                                    (None, None)
+                                };
+                            // The account ran out of quota mid-turn. Mark it
+                            // blocked and queue the resume before the event
+                            // is published, so the webview's first sight of
+                            // the rejection already has the state behind it.
+                            if let ChatEvent::Notification { ref kind, ref body } = ev {
+                                if kind == "rate_limit" {
+                                    crate::daemon::rate_limit::handle_rate_limit_rejection(
+                                        &state_for_pump,
+                                        &pump_session,
+                                        body,
+                                        saw_stream_turn,
+                                    );
+                                }
+                            }
+                            if log::log_enabled!(log::Level::Debug) {
+                                let variant = serde_json::to_value(&ev)
+                                    .ok()
+                                    .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(str::to_string))
+                                    .unwrap_or_else(|| "?".into());
+                                log::debug!("daemon publish: {variant} for {}", pump_session.session_id);
+                            }
+                            broadcast::publish(&pump_session, ev);
+                            if let Some(awaiting) = turn_done_awaiting {
+                                // Character "work finished" / "asking" sound. The in-app chat's
+                                // turn completion is NOT covered by the global Stop/Notification
+                                // hooks (those only drive skill-usage + external sessions), so
+                                // fire the sound here off the same `result` line that sets
+                                // awaiting. The app maps this to `notifications::fire`, which
+                                // resolves the session character + slot + mute/meeting gating.
+                                // Guard on saw_stream_turn so replayed history result lines
+                                // (emitted by claude on --resume before the live turn starts)
+                                // don't each trigger their own sound.
+                                if saw_stream_turn && matches!(awaiting.as_deref(), Some("done") | Some("question")) {
+                                    state_for_pump.notifier.publish(
+                                        "turn_sound",
+                                        serde_json::json!({
+                                            "session_id": pump_session.session_id,
+                                            "cwd": pump_session.cwd.to_string_lossy(),
+                                            "awaiting": awaiting.as_deref(),
+                                        }),
+                                    );
+                                }
+                                // A turn ran to completion on this account, so
+                                // whatever window we had recorded is over.
+                                // Hygiene only: every consumer already treats
+                                // a past `resets_at` as unblocked.
+                                if saw_stream_turn {
+                                    state_for_pump
+                                        .registry
+                                        .clear_rate_limit_for_account(&pump_session.account_id);
+                                }
+                                let live_turn = saw_stream_turn;
+                                saw_stream_turn = false;
+                                // Only a LIVE turn's result may update the self-reported
+                                // status, and only if no newer turn started meanwhile
+                                // (gen guard, mirroring set_busy_false_if_gen). Without
+                                // both gates, a replayed history result line on --resume
+                                // or a cancelled turn's late result stamps a stale
+                                // "question"/"waiting" over the current turn's state -
+                                // the "Input needed while busy" bug.
+                                if live_turn {
+                                    // Ground truth beats self-report: the Stop hook that fired
+                                    // just before this result line recorded how many background
+                                    // tasks the CLI still had live. A marker claiming "done" (or
+                                    // a missing one) while tasks run is the misjudgment class -
+                                    // show "working". Self-correcting: the finishing task
+                                    // re-invokes the session, and that turn's Stop refreshes the
+                                    // count to zero.
+                                    let awaiting = if matches!(awaiting.as_deref(), None | Some("done"))
+                                        && state_for_pump.registry.background_tasks(&pump_session.session_id) > 0
+                                    {
+                                        Some("working".to_string())
+                                    } else {
+                                        awaiting
+                                    };
+                                    state_for_pump.registry.set_awaiting_if_gen(
+                                        &pump_session.session_id,
+                                        awaiting,
+                                        pump_turn_gen,
+                                    );
+                                }
+                                state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
+                                if let Some(active) = turn_autopilot_changed {
+                                    state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
+                                }
+                                // /close teardown, daemon-authoritative: both sentinels
+                                // seen within this turn means the skill confirmed the
+                                // close. Mark ended here so the teardown survives any
+                                // webview reload; the frontend's clear_session finalize
+                                // is now belt-and-suspenders (mark_ended is idempotent).
+                                // Hint: if the turn's prompt literally started with
+                                // /close, <cc-close:done> alone confirms - the model
+                                // sometimes skips/mangles the first-line `starting`
+                                // marker, which used to silently disarm teardown.
+                                let user_typed_close = pump_session
+                                    .last_prompt
+                                    .lock()
+                                    .ok()
+                                    .map(|p| p.trim_start().starts_with("/close"))
+                                    .unwrap_or(false);
+                                let close_confirmed = close_watch.close_confirmed_with_hint(user_typed_close);
+                                if close_confirmed {
+                                    let now = chrono::Utc::now().to_rfc3339();
+                                    if state_for_pump.registry.mark_ended(
+                                        &pump_session.session_id,
+                                        crate::types::EndReason::Manual,
+                                        &now,
+                                    ) {
+                                        log::info!(
+                                            "daemon: session {} /close confirmed by markers; marked ended",
+                                            pump_session.session_id
+                                        );
+                                    }
+                                }
+                                close_watch.reset();
+                                // Stand-down/hygiene: the turn ended, so the closing
+                                // segment either resolved into `ended` (mark_ended
+                                // above) or the close was aborted - clear the flag
+                                // BEFORE the snapshot below so it never persists
+                                // `closing: true`.
+                                if closing_flagged {
+                                    closing_flagged = false;
+                                    state_for_pump.registry.set_closing(&pump_session.session_id, false);
+                                }
+                                // Persist at turn end so a daemon restart keeps each
+                                // backgrounded chat's last status instead of wiping it
+                                // to "Done" (and so a marker-confirmed close sticks).
+                                if live_turn || close_confirmed {
+                                    crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
+                                }
+                                state_for_pump.notifier.publish(
+                                    "instances_changed",
+                                    serde_json::json!({"instances": state_for_pump.registry.list()}),
+                                );
+                            }
+                        }
+                        line_buf.clear();
+                    }
+                    Err(e) => {
+                        if let Some(pending) = pending_snapshot.take() {
+                            broadcast::publish(&pump_session, pending);
+                        }
+                        log::warn!(
+                            "daemon: session {} stdout read failed: {}",
+                            pump_session.session_id,
+                            e
+                        );
+                        break;
+                    }
+                }
+            }
+            // NOTE: in `tokio::select!` a disabled branch (guard = false) still
+            // has its future EXPRESSION evaluated (only the polling is skipped),
+            // so `flush_deadline.unwrap()` here would panic on every iteration
+            // where `flush_deadline` is None (the common case) and, with
+            // `panic = "abort"`, take the whole daemon down. Fall back to a
+            // throwaway `now` when None; the guard still prevents this branch
+            // from ever firing unless a real deadline is set.
+            _ = tokio::time::sleep_until(flush_deadline.unwrap_or_else(tokio::time::Instant::now)), if flush_deadline.is_some() => {
+                if let Some(pending) = pending_snapshot.take() {
+                    broadcast::publish(&pump_session, pending);
+                }
+                flush_deadline = None;
+            }
+        }
+    }
+    map_for_pump.remove(&pump_session.session_id);
+    // Interactive sessions: `claude -p --input-format=stream-json` exits after
+    // completing each turn. Keep the registry entry live so the sidebar keeps
+    // showing the session. The next send_message will find the session missing
+    // from the SessionMap, get -32004 NotFound, and auto-respawn with --resume.
+    // For non-Interactive kinds (External / Automated) a process exit really
+    // does mean the session is gone, so mark it ended as before.
+    let is_interactive = state_for_pump.registry
+        .get(&pump_session.session_id)
+        .map(|i| matches!(i.kind, crate::sessions::kinds::InstanceKind::Interactive))
+        .unwrap_or(false);
+    if is_interactive {
+        // Clear busy in case the process exited mid-turn without a result line.
+        state_for_pump.registry.set_busy_false_if_gen(&pump_session.session_id, pump_turn_gen);
+        // Ghost prompts: an open AskUserQuestion/permission prompt can only
+        // exist mid-turn, so any prompt still recorded when the process
+        // exits is orphaned - its hook curl died with the process, axum
+        // dropped the blocked handler, and the post-await cleanup never
+        // ran. Left alone, the record keeps resurrecting the card via the
+        // list_pending_prompts poll and pins awaiting=="question" forever.
+        let expired = state_for_pump
+            .expire_prompts_for_session(&pump_session.session_id)
+            .await;
+        if expired > 0 {
+            let _ = state_for_pump
+                .registry
+                .clear_awaiting_if_question(&pump_session.session_id);
+            log::info!(
+                "daemon: session {} expired {} orphaned prompt(s) on EOF",
+                pump_session.session_id, expired
+            );
+        }
+        // The turn is over either way - drop the broadcast closing flag
+        // before any snapshot below can persist `closing: true`. (No
+        // reassignment: the pump loop is done, the flag is never read again.)
+        if closing_flagged {
+            state_for_pump.registry.set_closing(&pump_session.session_id, false);
+        }
+        // /close's Phase 6 kills the terminal tree ~800ms after emitting
+        // <cc-close:done>, which can take the `claude -p` child down BEFORE
+        // its result line flushes - so the confirmed close must also be
+        // honored on EOF, not just at TurnUsage.
+        let user_typed_close = pump_session
             .last_prompt
             .lock()
             .ok()
-            .map(|p| p.clone())
-            .filter(|p| !p.trim().is_empty())
-            .unwrap_or_else(|| "Continue from where you left off.".to_string())
-    };
-
-    // A second rejection for the same session (user retried, got blocked again)
-    // must not leave two resumes queued for one chat.
-    for existing in crate::sessions::scheduled_items::list() {
-        let is_pending_resume_for_this = matches!(
-            &existing.kind,
-            crate::sessions::scheduled_items::ScheduledKind::Message { session_id, .. }
-                if session_id == &session.session_id
-        ) && matches!(
-            existing.status,
-            crate::sessions::scheduled_items::ScheduledStatus::Pending
-        );
-        if is_pending_resume_for_this {
-            crate::sessions::scheduled_items::delete(&existing.id);
+            .map(|p| p.trim_start().starts_with("/close"))
+            .unwrap_or(false);
+        if close_watch.close_confirmed_with_hint(user_typed_close) {
+            let now = chrono::Utc::now().to_rfc3339();
+            if state_for_pump.registry.mark_ended(
+                &pump_session.session_id,
+                crate::types::EndReason::Manual,
+                &now,
+            ) {
+                log::info!(
+                    "daemon: session {} /close confirmed by markers (EOF, no result line); marked ended",
+                    pump_session.session_id
+                );
+            }
+            crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
         }
+    } else {
+        let now = chrono::Utc::now().to_rfc3339();
+        state_for_pump.registry.mark_ended(&pump_session.session_id, crate::types::EndReason::ProcessGone, &now);
     }
-
-    let fire_at =
-        crate::daemon::schedule::next_stagger_slot(state, Some(&session.account_id), resets_at);
-    let item = crate::sessions::scheduled_items::ScheduledItem::new(
-        crate::sessions::scheduled_items::ScheduledKind::Message {
-            session_id: session.session_id.clone(),
-            cwd: session.cwd.to_string_lossy().to_string(),
-        },
-        prompt,
-        fire_at.to_rfc3339(),
-        None,
-    );
-    crate::sessions::scheduled_items::upsert(item);
-
-    state.notifier.publish(
+    state_for_pump.notifier.publish(
         "instances_changed",
-        serde_json::json!({"instances": state.registry.list()}),
+        serde_json::json!({"instances": state_for_pump.registry.list()}),
     );
-    state.notifier.publish(
-        "scheduled_items_changed",
-        serde_json::json!({"items": crate::sessions::scheduled_items::list()}),
+    log::info!(
+        "daemon: session {} pump task exited",
+        pump_session.session_id
     );
+    if let Some(ref p) = pump_session.mcp_config_path {
+        let _ = std::fs::remove_file(p);
+    }
+    if let Some(ref p) = pump_session.hook_settings_path {
+        let _ = std::fs::remove_file(p);
+    }
+    let _ = child.wait().await;
 }
 
 pub async fn send_message(session: &Arc<Session>, text: &str) -> Result<(), LifecycleError> {
@@ -870,14 +799,6 @@ mod tests {
         let args = base_claude_args(Some("abc-123"), "abc-123", "opus", "high", false, false);
         assert!(!args.iter().any(|a| a == "--fork-session"), "{args:?}");
         assert!(!args.iter().any(|a| a == "--session-id"), "{args:?}");
-    }
-
-    #[test]
-    fn rate_limited_sentinel_round_trips() {
-        use crate::daemon::schedule::parse_rate_limited as parse;
-        assert_eq!(parse("RATE_LIMITED:1800000000"), Some(1_800_000_000));
-        assert_eq!(parse("sent"), None);
-        assert_eq!(parse("RATE_LIMITED:not-a-number"), None);
     }
 
     #[test]

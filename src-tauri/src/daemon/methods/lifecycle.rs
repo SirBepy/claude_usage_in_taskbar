@@ -10,6 +10,7 @@ use crate::daemon::state::DaemonState;
 use crate::types::EndReason;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +67,41 @@ pub(super) fn err_to_rpc(e: LifecycleError) -> RpcError {
     }
 }
 
+/// Register a freshly-spawned session into the project/registry/chat-config
+/// layers: upserts the cwd's project (publishing `project_created` if it's
+/// new), records model/effort/account into both the registry and
+/// `chat_config`, and clears `awaiting`. Shared by `start_session` and
+/// `move_session_to_account`, which both spawn a session via
+/// `lifecycle::spawn_session` and then need this identical sequence to make
+/// it visible session-wide.
+fn register_new_session(
+    state: &DaemonState,
+    session_id: &str,
+    cwd: &Path,
+    model: &str,
+    effort: &str,
+    account_id: &str,
+    now: &str,
+) {
+    let (project_id, created_new) = {
+        let mut snap = state.settings.snapshot();
+        crate::settings::upsert_project_for_cwd(&mut snap, cwd, now)
+    };
+    if created_new {
+        state.notifier.publish("project_created", json!({
+            "project_id": project_id,
+            "cwd": cwd.to_string_lossy(),
+            "now": now,
+        }));
+    }
+    state.registry.upsert_interactive(session_id, cwd, &project_id, now);
+    state.registry.set_model_effort(session_id, model, effort);
+    state.registry.set_account(session_id, account_id);
+    crate::sessions::chat_config::record(session_id, model, effort);
+    crate::sessions::chat_config::set_account(session_id, account_id);
+    state.registry.set_awaiting(session_id, None);
+}
+
 pub fn register(router: &mut Router, state: Arc<DaemonState>) {
     let map = state.sessions.clone();
     {
@@ -82,23 +118,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let sid = session.session_id.clone();
                 let account_id = session.account_id.clone();
                 let now = chrono::Utc::now().to_rfc3339();
-                let (project_id, created_new) = {
-                    let mut snap = state.settings.snapshot();
-                    crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
-                };
-                if created_new {
-                    state.notifier.publish("project_created", json!({
-                        "project_id": project_id,
-                        "cwd": cwd.to_string_lossy(),
-                        "now": now,
-                    }));
-                }
-                state.registry.upsert_interactive(&sid, &cwd, &project_id, &now);
-                state.registry.set_model_effort(&sid, &model, &effort);
-                state.registry.set_account(&sid, &account_id);
-                crate::sessions::chat_config::record(&sid, &model, &effort);
-                crate::sessions::chat_config::set_account(&sid, &account_id);
-                state.registry.set_awaiting(&sid, None);
+                register_new_session(&state, &sid, &cwd, &model, &effort, &account_id, &now);
                 // Deliberately NOT set_busy(true) here: no turn is in flight yet
                 // (claude emits nothing until its first stdin message, so the
                 // pump can never clear a busy set now). The caller's follow-up
@@ -206,16 +226,8 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 // if any - its prompt is what should continue on the new account.
                 // handle_rate_limit_rejection dedupes to at most one such resume per
                 // session, so the first match is the only match.
-                let pending_resume = crate::sessions::scheduled_items::list()
-                    .into_iter()
-                    .find(|item| {
-                        matches!(item.status, crate::sessions::scheduled_items::ScheduledStatus::Pending)
-                            && matches!(
-                                &item.kind,
-                                crate::sessions::scheduled_items::ScheduledKind::Message { session_id, .. }
-                                    if session_id == &p.session_id
-                            )
-                    });
+                let pending_resume =
+                    crate::sessions::scheduled_items::find_pending_message_for_session(&p.session_id);
                 let prompt = if let Some(item) = pending_resume {
                     crate::sessions::scheduled_items::delete(&item.id);
                     item.prompt
@@ -235,23 +247,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let new_id = session.session_id.clone();
                 let account_id = session.account_id.clone();
                 let now = chrono::Utc::now().to_rfc3339();
-                let (project_id, created_new) = {
-                    let mut snap = state.settings.snapshot();
-                    crate::settings::upsert_project_for_cwd(&mut snap, &cwd, &now)
-                };
-                if created_new {
-                    state.notifier.publish("project_created", json!({
-                        "project_id": project_id,
-                        "cwd": cwd.to_string_lossy(),
-                        "now": now,
-                    }));
-                }
-                state.registry.upsert_interactive(&new_id, &cwd, &project_id, &now);
-                state.registry.set_model_effort(&new_id, &model, &effort);
-                state.registry.set_account(&new_id, &account_id);
-                crate::sessions::chat_config::record(&new_id, &model, &effort);
-                crate::sessions::chat_config::set_account(&new_id, &account_id);
-                state.registry.set_awaiting(&new_id, None);
+                register_new_session(&state, &new_id, &cwd, &model, &effort, &account_id, &now);
 
                 lifecycle::send_message(&session, &prompt).await.map_err(err_to_rpc)?;
                 state.registry.set_busy(&new_id, true);
@@ -297,7 +293,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                     "utilization": 100.0,
                 })
                 .to_string();
-                lifecycle::handle_rate_limit_rejection(&state, &session, &body, false);
+                crate::daemon::rate_limit::handle_rate_limit_rejection(&state, &session, &body, false);
                 Ok(json!({"resets_at": resets_at, "rate_limit_type": kind}))
             }
         });
@@ -371,9 +367,7 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 for c in state.channels.list() {
                     let _ = crate::daemon::channels::stop_channel(&state, &c.project_id);
                 }
-                for entry in state.sessions.iter() {
-                    crate::channels::kill::kill_tree(entry.pid);
-                }
+                crate::daemon::kill_all_sessions(&state);
                 state.shutdown.notify_one();
                 Ok(json!({"ok": true}))
             }

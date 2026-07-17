@@ -20,6 +20,7 @@ pub mod lockfile;
 pub mod methods;
 pub mod notifier;
 pub mod push;
+pub mod rate_limit;
 mod remote_handlers;
 pub mod remote_server;
 pub mod rpc;
@@ -56,6 +57,18 @@ fn load_initial_settings() -> Settings {
     // connect via `set_settings`.
     let Ok(path) = crate::settings::paths::settings_file() else { return Settings::default() };
     crate::settings::load(&path)
+}
+
+/// Kill every live session's process tree. Shared by the two shutdown paths
+/// that both need to reap in-flight chat children: the main loop's Ctrl-C /
+/// `shutdown_daemon`-notify exit below, and the `shutdown_daemon` RPC handler
+/// (`daemon/methods/lifecycle.rs`). Without this, a session with a turn still
+/// in flight leaves its `claude` child (and subprocess tree) orphaned - there
+/// is no pump task left to reap it once the daemon process is gone.
+pub fn kill_all_sessions(state: &DaemonState) {
+    for entry in state.sessions.iter() {
+        crate::channels::kill::kill_tree(entry.pid);
+    }
 }
 
 /// Daemon process entry. Called by the standalone `cc-conductor-daemon` bin
@@ -265,9 +278,7 @@ pub async fn run_daemon_main() -> Result<(), Box<dyn std::error::Error + Send + 
     // bare Ctrl-C would otherwise leave any in-flight session's `claude`
     // child (and its subprocess tree) running with no pump task left to
     // reap it. Kill every live session's tree before exiting.
-    for entry in state.sessions.iter() {
-        crate::channels::kill::kill_tree(entry.pid);
-    }
+    kill_all_sessions(&state);
     // Graceful teardown: never let the Python STT sidecar outlive the daemon.
     stt.kill().await;
     Ok(())

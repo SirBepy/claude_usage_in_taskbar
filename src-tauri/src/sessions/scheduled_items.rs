@@ -168,6 +168,23 @@ fn list_at(path: &Path) -> Vec<ScheduledItem> {
     load_map(path).into_values().collect()
 }
 
+/// The pending scheduled resume queued for `session_id`, if any: a `Pending`
+/// `Message` item whose `session_id` matches. Shared query behind both
+/// `daemon::lifecycle::handle_rate_limit_rejection`'s defensive dedupe (delete
+/// any stray pending resume before queuing a fresh one - callers loop this
+/// until it returns `None` to reproduce "delete every match", since normally
+/// at most one exists) and `move_session_to_account`'s "reclaim the one
+/// pending resume for this session" lookup.
+pub fn find_pending_message_for_session(session_id: &str) -> Option<ScheduledItem> {
+    list().into_iter().find(|item| {
+        matches!(item.status, ScheduledStatus::Pending)
+            && matches!(
+                &item.kind,
+                ScheduledKind::Message { session_id: sid, .. } if sid == session_id
+            )
+    })
+}
+
 pub fn get(id: &str) -> Option<ScheduledItem> {
     let path = config_path()?;
     get_at(&path, id)
