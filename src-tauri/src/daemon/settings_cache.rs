@@ -82,7 +82,7 @@ impl SettingsCache {
             .filter_map(|sid| g.session_characters.get(sid).cloned())
             .collect();
 
-        let pick = whitelist::pick_random(&resolved, &live_taken);
+        let pick = whitelist::pick_deterministic(&resolved, &live_taken, session_id);
         if let Some(ref id) = pick {
             g.session_characters.insert(session_id.to_string(), id.clone());
         }

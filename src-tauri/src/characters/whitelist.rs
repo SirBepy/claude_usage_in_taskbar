@@ -118,6 +118,39 @@ pub fn pick_random(resolved: &[String], live_taken: &HashSet<String>) -> Option<
     }
 }
 
+/// Same selection rules as `pick_random` (prefer a free id, else allow a
+/// duplicate, `None` only when `resolved` is empty), but the pick is seeded by
+/// `seed` (a session_id) instead of the OS RNG - the SAME session always
+/// resolves to the SAME character, regardless of which process/daemon
+/// discovers it first. Use this for first-assignment paths (a session should
+/// look the same everywhere); `pick_random` remains correct for an explicit
+/// user-triggered reroll, which must be able to produce something different.
+pub fn pick_deterministic(resolved: &[String], live_taken: &HashSet<String>, seed: &str) -> Option<String> {
+    if resolved.is_empty() {
+        return None;
+    }
+
+    // FNV-1a: simple and deterministic across platforms/compilers/runs, unlike
+    // std's DefaultHasher (SipHash), which makes no such cross-build guarantee.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in seed.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    let idx = hash as usize;
+
+    let free: Vec<&String> = resolved
+        .iter()
+        .filter(|id| !live_taken.contains(*id))
+        .collect();
+
+    if !free.is_empty() {
+        Some(free[idx % free.len()].clone())
+    } else {
+        Some(resolved[idx % resolved.len()].clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,5 +326,44 @@ mod tests {
             assert!(pick.is_some(), "should return Some even when all taken");
             assert!(resolved.contains(pick.as_ref().unwrap()));
         }
+    }
+
+    // ------------------------------------------------------------------
+    // pick_deterministic
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn pick_deterministic_empty_returns_none() {
+        let taken: HashSet<String> = HashSet::new();
+        assert_eq!(pick_deterministic(&[], &taken, "session-1"), None);
+    }
+
+    #[test]
+    fn pick_deterministic_same_seed_always_same_result() {
+        let resolved: Vec<String> = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        let taken: HashSet<String> = HashSet::new();
+        let first = pick_deterministic(&resolved, &taken, "session-abc-123");
+        for _ in 0..50 {
+            assert_eq!(pick_deterministic(&resolved, &taken, "session-abc-123"), first);
+        }
+    }
+
+    #[test]
+    fn pick_deterministic_never_takes_taken_when_free_exist() {
+        let resolved: Vec<String> = vec!["a".into(), "b".into(), "c".into()];
+        let taken: HashSet<String> = ["a".to_string(), "b".to_string()].into();
+        for seed in ["s1", "s2", "s3", "s4"] {
+            let pick = pick_deterministic(&resolved, &taken, seed).unwrap();
+            assert_eq!(pick, "c", "should only pick free id");
+        }
+    }
+
+    #[test]
+    fn pick_deterministic_when_all_taken_still_returns_some() {
+        let resolved: Vec<String> = vec!["a".into(), "b".into()];
+        let taken: HashSet<String> = ["a".to_string(), "b".to_string()].into();
+        let pick = pick_deterministic(&resolved, &taken, "session-x");
+        assert!(pick.is_some(), "should return Some even when all taken");
+        assert!(resolved.contains(pick.as_ref().unwrap()));
     }
 }

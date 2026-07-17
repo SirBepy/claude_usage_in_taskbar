@@ -209,7 +209,7 @@ pub fn ensure_session_character(
         .filter_map(|i| s.session_characters.get(&i.session_id).cloned())
         .collect();
 
-    let pick = whitelist::pick_random(&resolved, &live_taken);
+    let pick = whitelist::pick_deterministic(&resolved, &live_taken, &session_id);
     if let Some(ref id) = pick {
         s.session_characters.insert(session_id, id.clone());
     }
