@@ -113,10 +113,25 @@ pub fn save_snapshot_default(registry: &Registry) {
 pub fn load_snapshot(path: &Path) -> Vec<PersistedInteractive> {
     let raw = match fs::read_to_string(path) {
         Ok(s) => s,
-        Err(_) => return Vec::new(),
+        Err(_) => {
+            // Distinguishes "no snapshot file at all" (first run, or the file
+            // was never written) from "file present but 0/N entries" below -
+            // both used to collapse into a silent empty Vec, which made a
+            // "restored 8 sessions" -> "no restored line" transition between
+            // two daemon restarts un-diagnosable from daemon.log alone.
+            log::info!("persist sessions: no snapshot file at {}", path.display());
+            return Vec::new();
+        }
     };
     match serde_json::from_str::<Vec<PersistedInteractive>>(&raw) {
-        Ok(v) => v,
+        Ok(v) => {
+            log::info!(
+                "persist sessions: loaded snapshot at {} with {} entries",
+                path.display(),
+                v.len()
+            );
+            v
+        }
         Err(e) => {
             // Preserve the corrupt file for diagnosis instead of letting the next
             // save_snapshot silently clobber it (mirrors settings::store::load).
