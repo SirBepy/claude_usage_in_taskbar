@@ -13,25 +13,12 @@ pub async fn gc_attachments() {
         Ok(d) => d.join("chat-attachments"),
         Err(_) => return,
     };
-    if !root.exists() {
-        return;
-    }
-    let cutoff = std::time::SystemTime::now()
-        - std::time::Duration::from_secs(30 * 24 * 60 * 60);
-    let entries = match std::fs::read_dir(&root) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Ok(meta) = entry.metadata() {
-            if let Ok(modified) = meta.modified() {
-                if modified < cutoff {
-                    let _ = std::fs::remove_dir_all(&path);
-                }
-            }
-        }
-    }
+    crate::util::sweep_dir_older_than(
+        &root,
+        std::time::Duration::from_secs(30 * 24 * 60 * 60),
+        |_| true,
+        true,
+    );
 }
 
 /// Open the given chat session in a dedicated Tauri webview window. The

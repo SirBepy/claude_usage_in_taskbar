@@ -94,21 +94,12 @@ pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
 /// Mirrors the chat-attachments sweep in `ipc::chat::lifecycle::gc_attachments`.
 pub(crate) fn gc_temp_files() {
     let Ok(dir) = crate::settings::paths::mcp_temp_dir() else { return };
-    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(7 * 24 * 60 * 60);
-    let Ok(entries) = std::fs::read_dir(&dir) else { return };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        if let Ok(meta) = entry.metadata() {
-            if let Ok(modified) = meta.modified() {
-                if modified < cutoff {
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
-        }
-    }
+    crate::util::sweep_dir_older_than(
+        &dir,
+        std::time::Duration::from_secs(7 * 24 * 60 * 60),
+        |path| path.extension().and_then(|e| e.to_str()) == Some("json"),
+        false,
+    );
 }
 
 /// The hook server's actual bound port. The production daemon pins HOOK_PORT
