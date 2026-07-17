@@ -4,6 +4,8 @@ import { invoke } from "../../shared/ipc";
 import * as shortcuts from "../../shared/shortcuts";
 import "../../shared/chat/chat.css";
 import "./sessions.css";
+import "./project-rail.css";
+import "./changes-rail.css";
 import "./session-avatar.css";
 import "./session-statusbar.css";
 import "./project-picker.css";

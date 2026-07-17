@@ -1,0 +1,70 @@
+/* Project filter rail (above the chat list). Only rendered once 2+ projects
+   have a live chat - see project-rail.ts. */
+.project-rail {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+}
+
+.project-rail-all {
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.project-rail-all.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-background);
+  font-weight: 600;
+}
+
+.project-rail-avatars {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-rail-avatar {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.project-rail-avatar .proj-face {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.project-rail-avatar.off {
+  opacity: 0.35;
+  position: relative;
+}
+
+.project-rail-avatar.off::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--color-text-muted) 50%, transparent calc(50% + 1px));
+}
