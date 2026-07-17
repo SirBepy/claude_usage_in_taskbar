@@ -174,7 +174,14 @@ pub fn run() {
                         | tauri_plugin_window_state::StateFlags::POSITION
                         | tauri_plugin_window_state::StateFlags::MAXIMIZED,
                 )
-                .with_denylist(&["session-overlay"])
+                // `with_denylist(&["session-overlay"])` used to sit alongside
+                // this filter, but the filter already rejects "session-overlay"
+                // (fails both the "== session-chats" and "!starts_with(session-)"
+                // arms) and both gates are checked at the same on_window_ready
+                // call in tauri-plugin-window-state, which covers restore AND
+                // the on_window_event listener that drives every later save -
+                // so the denylist entry never excluded anything the filter
+                // didn't already exclude (ai_todo 194).
                 .with_filter(|label| label == "session-chats" || !label.starts_with("session-"))
                 .build(),
         )
