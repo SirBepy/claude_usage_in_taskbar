@@ -10,9 +10,8 @@ describe("buildOverlayRow", () => {
   it("marks an account with no usage entry as no-data, all metrics null", () => {
     const row = buildOverlayRow(personal, undefined, NOW);
     expect(row.hasData).toBe(false);
-    expect(row.session).toEqual({ pct: null, safePct: null, resetAbs: null, resetRelative: null });
-    expect(row.weekly).toEqual({ pct: null, safePct: null, resetAbs: null, resetRelative: null });
-    expect(row.resetLabel).toBe("");
+    expect(row.session).toEqual({ pct: null, safePct: null });
+    expect(row.weekly).toEqual({ pct: null, safePct: null });
     expect(row.id).toBe("acct-personal");
     expect(row.colour).toBe("#9d7dfc");
   });
@@ -32,19 +31,6 @@ describe("buildOverlayRow", () => {
     expect(row.weekly.safePct).toBe(0);
   });
 
-  it("labels an active reset window as 'resets in ...' (fmtResetDisplay uses real wall-clock time)", () => {
-    const futureResetIso = new Date(Date.now() + 5 * 3_600_000).toISOString();
-    const usage = {
-      session_pct: 42,
-      weekly_pct: 31,
-      session_resets_at: futureResetIso,
-      weekly_resets_at: null,
-    };
-    const row = buildOverlayRow(work, usage);
-    expect(row.resetLabel).toMatch(/^resets in \d+h \d+m$/);
-    expect(row.session.resetRelative).toMatch(/^\d+h \d+m left$/);
-  });
-
   it("falls back to a synthetic +1h weekly reset when the API omits it (matches account-selector.ts)", () => {
     const usage = {
       session_pct: 10,
@@ -57,17 +43,6 @@ describe("buildOverlayRow", () => {
     // fallback reset is ~now + 1h against a 7-day window).
     expect(row.weekly.safePct).not.toBeNull();
     expect(row.session.safePct).toBeNull(); // no fallback for session
-  });
-
-  it("omits the reset label once the window has already reset", () => {
-    const usage = {
-      session_pct: 0,
-      weekly_pct: 0,
-      session_resets_at: "2026-04-20T09:00:00Z", // in the past
-      weekly_resets_at: "2026-04-27T10:00:00Z",
-    };
-    const row = buildOverlayRow(work, usage, NOW);
-    expect(row.resetLabel).toBe("");
   });
 });
 

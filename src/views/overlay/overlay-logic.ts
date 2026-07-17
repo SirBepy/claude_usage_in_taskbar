@@ -5,7 +5,7 @@
 // (percentages, safe-pace, reset), account-selector.ts/overlay.ts handle the
 // HTML for their own (differently-shaped) markup.
 
-import { computeSafePacePct, fmtResetDisplay } from "../../shared/formatters";
+import { computeSafePacePct } from "../../shared/formatters";
 import type { AccountLite } from "../../shared/account-chip";
 
 const SESSION_WINDOW_MS = 5 * 3_600_000;
@@ -23,14 +23,6 @@ export interface OverlayUsageLite {
 export interface OverlayMetric {
   pct: number | null;
   safePct: number | null;
-  /** Absolute clock time this window resets (e.g. "Thu 09:00"), shown in the
-   * hover tooltip on the metric's 5h/7d label. Null when there's no active
-   * reset window. */
-  resetAbs: string | null;
-  /** Relative time-left until reset (e.g. "1h 14m left"), shown as the
-   * tooltip's middle line for both the 5h and 7d dial. Null when there's no
-   * active reset window. */
-  resetRelative: string | null;
 }
 
 export interface OverlayRow {
@@ -41,8 +33,6 @@ export interface OverlayRow {
   hasData: boolean;
   session: OverlayMetric;
   weekly: OverlayMetric;
-  /** Human-readable "resets in Xh Ym", empty when no active reset window. */
-  resetLabel: string;
 }
 
 /** One row's worth of data for an account, given its usage record (absent
@@ -60,31 +50,21 @@ export function buildOverlayRow(
       colour: account.colour,
       icon: account.icon,
       hasData: false,
-      session: { pct: null, safePct: null, resetAbs: null, resetRelative: null },
-      weekly: { pct: null, safePct: null, resetAbs: null, resetRelative: null },
-      resetLabel: "",
+      session: { pct: null, safePct: null },
+      weekly: { pct: null, safePct: null },
     };
   }
   const sessionSafe = computeSafePacePct(usage.session_resets_at, SESSION_WINDOW_MS, now);
   const weeklyFallback = usage.weekly_resets_at || new Date(now + 3_600_000).toISOString();
   const weeklySafe = computeSafePacePct(weeklyFallback, WEEKLY_WINDOW_MS, now);
-  const sessionReset = fmtResetDisplay(usage.session_resets_at);
-  const weeklyReset = fmtResetDisplay(usage.weekly_resets_at);
-  const sessionAbs = sessionReset && sessionReset.diffMs > 0 ? sessionReset.absolute : null;
-  const weeklyAbs = weeklyReset && weeklyReset.diffMs > 0 ? weeklyReset.absolute : null;
-  // "in 1h 14m" -> "1h 14m left" (dial tooltip's middle line — see
-  // overlay.ts::popupHtml). Same fmtResetDisplay the reset-label already used.
-  const timeLeft = (r: typeof sessionReset): string | null =>
-    r && r.diffMs > 0 ? `${r.relative.replace(/^in /, "")} left` : null;
   return {
     id: account.id,
     label: account.label,
     colour: account.colour,
     icon: account.icon,
     hasData: true,
-    session: { pct: usage.session_pct, safePct: sessionSafe, resetAbs: sessionAbs, resetRelative: timeLeft(sessionReset) },
-    weekly: { pct: usage.weekly_pct, safePct: weeklySafe, resetAbs: weeklyAbs, resetRelative: timeLeft(weeklyReset) },
-    resetLabel: sessionReset && sessionReset.diffMs > 0 ? `resets ${sessionReset.relative}` : "",
+    session: { pct: usage.session_pct, safePct: sessionSafe },
+    weekly: { pct: usage.weekly_pct, safePct: weeklySafe },
   };
 }
 
