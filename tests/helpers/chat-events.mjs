@@ -25,3 +25,8 @@ export function toolUseEvent(toolName, input, id, ts = 0) {
 export function remoteEchoUserEvent(text, ts = 0) {
   return { type: "user_message", content: [{ type: "text", text }], timestamp: ts, remote_echo: true };
 }
+
+/** An O(delta) stream chunk (ai_todo 186). `snapshot: true` = full-text resync frame. */
+export function deltaEvent(text, block, seq, snapshot = false, ts = 0) {
+  return { type: "assistant_delta", text, block, seq, snapshot, timestamp: ts };
+}

@@ -41,6 +41,23 @@ pub enum ChatEvent {
         streaming: bool,
         timestamp: i64,
     },
+    /// O(delta) live-stream chunk (ai_todo 186). Replaces the per-chunk
+    /// full-text `AssistantMessage { streaming: true }` snapshots on the live
+    /// wire: `text` carries only the new characters. `block` is the text-block
+    /// ordinal within the stream (client accumulators reset when it changes;
+    /// each turn's fresh `claude -p` process restarts it at 1). `seq` is the
+    /// per-block emit sequence assigned by the daemon pump after coalescing,
+    /// so a client can drop deltas already covered by a `snapshot: true`
+    /// resync frame (whose `text` is the FULL accumulated block text; sent on
+    /// mid-turn attach and after broadcast lag). Never appears in JSONL
+    /// history replay - those paths still emit full `AssistantMessage`s.
+    AssistantDelta {
+        text: String,
+        block: u64,
+        seq: u64,
+        snapshot: bool,
+        timestamp: i64,
+    },
     ToolUse {
         tool_name: String,
         #[ts(type = "unknown")]

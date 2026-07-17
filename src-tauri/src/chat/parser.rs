@@ -28,12 +28,13 @@ fn event_timestamp(v: &Value) -> i64 {
 
 pub struct ParserContext {
     buf: Vec<u8>,
-    /// Accumulator for the current text content_block being assembled from
-    /// `stream_event` `content_block_delta` lines. `--include-partial-messages`
-    /// emits one stream_event per token chunk; we concatenate them so the
-    /// frontend sees the running text grow in place. Cleared on each new
-    /// `content_block_start { type: "text" }`.
-    current_text: String,
+    /// Ordinal of the current text content_block, incremented on each
+    /// `content_block_start { type: "text" }`. Stamped onto the
+    /// `AssistantDelta` emitted per `content_block_delta` chunk so consumers
+    /// know when to reset their accumulator (ai_todo 186 - the parser no
+    /// longer accumulates text itself; the daemon pump owns the running text
+    /// via `Session::streaming`, keeping per-chunk cost O(delta)).
+    text_block: u64,
     /// Set when a `content_block_start` with type "thinking" is seen in the
     /// stream. Stays true for the session lifetime so the statusbar keeps
     /// the indicator after the first thinking turn.
@@ -52,7 +53,7 @@ impl ParserContext {
     pub fn new() -> Self {
         Self {
             buf: Vec::with_capacity(4096),
-            current_text: String::new(),
+            text_block: 0,
             has_thinking: false,
             live: false,
         }
@@ -120,9 +121,10 @@ impl ParserContext {
                     .and_then(|t| t.as_str())
                     .unwrap_or("");
                 if block_type == "text" {
-                    // New text block; discard any prior accumulator (defensive
-                    // against malformed streams that skip content_block_stop).
-                    self.current_text.clear();
+                    // New text block: bump the ordinal so delta consumers
+                    // reset their accumulator (covers malformed streams that
+                    // skip content_block_stop too).
+                    self.text_block += 1;
                 } else if block_type == "thinking" {
                     self.has_thinking = true;
                 }
@@ -130,10 +132,14 @@ impl ParserContext {
             }
             "content_block_delta" => {
                 if let Some(t) = text_delta(line) {
-                    self.current_text.push_str(&t);
-                    return Some(vec![ChatEvent::AssistantMessage {
-                        content: vec![ContentBlock::Text { text: self.current_text.clone() }],
-                        streaming: true,
+                    // O(delta) on the wire (ai_todo 186): forward only the new
+                    // chunk. `seq` is assigned downstream by the daemon pump
+                    // after coalescing (see lifecycle.rs); 0 here.
+                    return Some(vec![ChatEvent::AssistantDelta {
+                        text: t,
+                        block: self.text_block,
+                        seq: 0,
+                        snapshot: false,
                         timestamp: ts,
                     }]);
                 }
@@ -636,7 +642,7 @@ mod tests {
         // The streaming delta still flows so the UI shows live typing.
         let streaming = events
             .iter()
-            .filter(|e| matches!(e, ChatEvent::AssistantMessage { streaming: true, .. }))
+            .filter(|e| matches!(e, ChatEvent::AssistantDelta { snapshot: false, .. }))
             .count();
         assert!(streaming >= 1, "streaming deltas still forwarded in live mode");
     }
@@ -682,7 +688,7 @@ mod tests {
 
         let streaming = events
             .iter()
-            .filter(|e| matches!(e, ChatEvent::AssistantMessage { streaming: true, .. }))
+            .filter(|e| matches!(e, ChatEvent::AssistantDelta { snapshot: false, .. }))
             .count();
         assert!(streaming >= 1, "streaming deltas still flow through live mode");
     }
@@ -981,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_event_text_delta_accumulates_into_streaming_assistant() {
+    fn stream_event_text_delta_emits_chunk_deltas() {
         let mut ctx = ParserContext::new();
         let lines = [
             r#"{"type":"stream_event","event":{"type":"message_start","message":{}}}"#,
@@ -995,20 +1001,18 @@ mod tests {
         for l in lines {
             all.extend(ctx.feed(format!("{}\n", l).as_bytes()));
         }
-        // Expect two streaming AssistantMessage events: "Hi. " then "Hi. Ready.".
-        let streaming_msgs: Vec<_> = all
+        // O(delta) protocol: each chunk surfaces as its own AssistantDelta
+        // carrying ONLY the new text, all within the same block ordinal.
+        let deltas: Vec<_> = all
             .iter()
             .filter_map(|e| match e {
-                ChatEvent::AssistantMessage { content, streaming, .. } if *streaming => {
-                    match &content[0] {
-                        ContentBlock::Text { text } => Some(text.clone()),
-                        _ => None,
-                    }
+                ChatEvent::AssistantDelta { text, block, snapshot: false, .. } => {
+                    Some((text.clone(), *block))
                 }
                 _ => None,
             })
             .collect();
-        assert_eq!(streaming_msgs, vec!["Hi. ".to_string(), "Hi. Ready.".to_string()]);
+        assert_eq!(deltas, vec![("Hi. ".to_string(), 1), ("Ready.".to_string(), 1)]);
     }
 
     #[test]
@@ -1180,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn new_text_block_resets_accumulator() {
+    fn new_text_block_bumps_block_ordinal() {
         let mut ctx = ParserContext::new();
         let lines = [
             r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
@@ -1189,16 +1193,16 @@ mod tests {
             r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}"#,
             r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Second"}}}"#,
         ];
-        let mut last: Option<String> = None;
+        let mut deltas = Vec::new();
         for l in lines {
             for ev in ctx.feed(format!("{}\n", l).as_bytes()) {
-                if let ChatEvent::AssistantMessage { content, .. } = ev {
-                    if let ContentBlock::Text { text } = &content[0] {
-                        last = Some(text.clone());
-                    }
+                if let ChatEvent::AssistantDelta { text, block, .. } = ev {
+                    deltas.push((text, block));
                 }
             }
         }
-        assert_eq!(last, Some("Second".to_string()));
+        // The second block's chunk carries a new ordinal so downstream
+        // accumulators know to reset instead of appending across blocks.
+        assert_eq!(deltas, vec![("First".to_string(), 1), ("Second".to_string(), 2)]);
     }
 }

@@ -84,7 +84,16 @@ interface CacheEntry {
    * once it also has no subscribers it is torn down immediately rather than
    * waiting out the TTL. */
   ended: boolean;
+  /** Live `assistant_delta` accumulator (ai_todo 186). The wire now carries
+   * O(delta) text chunks; this rebuilds the running block text and tracks the
+   * synthesized streaming event most recently pushed for it, so successive
+   * deltas REPLACE one cache entry instead of appending one per flush. Null
+   * until the first delta of a turn; reset at turn end. */
+  streamAcc: { block: number; seq: number; text: string; evRef: ChatEvent | null } | null;
 }
+
+/** The `assistant_delta` member of the ChatEvent union. */
+type AssistantDeltaEvent = Extract<ChatEvent, { type: "assistant_delta" }>;
 
 class SessionEventStore {
   private cache = new Map<string, CacheEntry>();
@@ -320,6 +329,7 @@ class SessionEventStore {
     entry.hasMore = false;
     entry.initialLoaded = false;
     entry.recent = [];
+    entry.streamAcc = null;
   }
 
   pushSynthetic(sessionId: string, ev: ChatEvent): void {
@@ -363,6 +373,18 @@ class SessionEventStore {
     }
     const entry = this.cache.get(sessionId);
     if (!entry) return;
+    // O(delta) stream chunks rebuild the running text here instead of
+    // carrying full snapshots on the wire (ai_todo 186).
+    if (ev.type === "assistant_delta") {
+      this.applyDelta(entry, ev);
+      return;
+    }
+    // Turn boundary: the accumulator's (block, seq) numbering restarts with
+    // the next turn's fresh `claude -p` process, so drop it now - otherwise
+    // the next turn's early deltas would look "already covered" and be eaten.
+    if (ev.type === "turn_usage" || (ev.type === "assistant_message" && !ev.streaming)) {
+      entry.streamAcc = null;
+    }
     if (this.isLiveDuplicate(entry, ev)) return;
     this.recordSig(entry, ev);
     entry.events.push(ev);
@@ -372,6 +394,62 @@ class SessionEventStore {
     entry.lastAccess = Date.now();
     entry.subscribers.forEach((fn) => {
       try { fn(ev); } catch { /* ignore */ }
+    });
+  }
+
+  /**
+   * Fold one `assistant_delta` into the entry's accumulator and surface the
+   * result as a synthesized `assistant_message { streaming: true }` carrying
+   * the full accumulated text - so every downstream consumer (renderer,
+   * dedup, replay) keeps seeing the exact pre-delta event shape.
+   *
+   * Protocol rules (mirroring the daemon pump's `StreamingText`):
+   * - `snapshot: true` frames carry the FULL block text (attach/lag resync);
+   *   applied unless the accumulator already covers that (block, seq).
+   * - A new `block`, or `seq === 1` (the pump's first emit after a reset -
+   *   also what a fresh turn's restarted numbering produces), restarts the
+   *   accumulator with this chunk.
+   * - `seq` at or below the accumulator's is already covered (deltas queued
+   *   behind a resync snapshot) - dropped.
+   * - A `seq` gap (lossy channel) is tolerated: the chunk still appends and
+   *   the turn-end finalized message replaces the bubble wholesale anyway.
+   */
+  private applyDelta(entry: CacheEntry, ev: AssistantDeltaEvent): void {
+    const block = Number(ev.block);
+    const seq = Number(ev.seq);
+    const acc = entry.streamAcc;
+    if (ev.snapshot) {
+      if (acc && block === acc.block && seq <= acc.seq) return; // stale resync
+      entry.streamAcc = { block, seq, text: ev.text, evRef: acc?.evRef ?? null };
+    } else if (!acc || block !== acc.block || seq === 1) {
+      entry.streamAcc = { block, seq, text: ev.text, evRef: acc?.evRef ?? null };
+    } else if (seq <= acc.seq) {
+      return; // already covered by a snapshot resync
+    } else {
+      acc.text += ev.text;
+      acc.seq = seq;
+    }
+    const cur = entry.streamAcc!;
+    const synth = {
+      type: "assistant_message",
+      content: [{ type: "text", text: cur.text }],
+      streaming: true,
+      timestamp: Number(ev.timestamp),
+    } as unknown as ChatEvent;
+    // Same suppression the raw streaming partials got: if a finalized
+    // assistant covering this text already landed (watcher won the race),
+    // don't render a second, orphaned bubble.
+    if (this.isLiveDuplicate(entry, synth)) return;
+    const last = entry.events[entry.events.length - 1];
+    if (cur.evRef && last === cur.evRef) {
+      entry.events[entry.events.length - 1] = synth;
+    } else {
+      entry.events.push(synth);
+    }
+    cur.evRef = synth;
+    entry.lastAccess = Date.now();
+    entry.subscribers.forEach((fn) => {
+      try { fn(synth); } catch { /* ignore */ }
     });
   }
 
@@ -455,6 +533,7 @@ class SessionEventStore {
       recent: [],
       lastAccess: Date.now(),
       ended: false,
+      streamAcc: null,
     };
   }
 

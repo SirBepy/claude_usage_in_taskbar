@@ -401,6 +401,23 @@ const RESPAWN_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(120
 /// to the NEW session's channel on the SAME socket.
 async fn pump_events(mut socket: WebSocket, state: Arc<DaemonState>, session_id: String, session: Arc<Session>) {
     let mut rx = crate::daemon::broadcast::subscribe(&session);
+    // Mid-turn attach resync (ai_todo 186): the stream now carries O(delta)
+    // `assistant_delta` chunks, so a client joining mid-turn has no way to
+    // recover the text already streamed. Send the accumulated block as one
+    // `snapshot: true` frame first; any deltas already queued in `rx` carry a
+    // `seq` at or below the snapshot's and are dropped client-side. (The PWA
+    // client is served by this same daemon, so it always speaks the delta
+    // protocol - no legacy conversion needed here, unlike `attach_session`.)
+    // (Bound separately: an `if let` scrutinee would hold the MutexGuard
+    // across the `.await`, making the future non-Send.)
+    let resync = session.streaming.lock().unwrap().snapshot_event();
+    if let Some(snap) = resync {
+        if let Ok(txt) = serde_json::to_string(&snap) {
+            if socket.send(Message::Text(txt)).await.is_err() {
+                return; // client gone
+            }
+        }
+    }
     loop {
         tokio::select! {
             recv = rx.recv() => match recv {
@@ -413,7 +430,29 @@ async fn pump_events(mut socket: WebSocket, state: Arc<DaemonState>, session_id:
                         break; // client gone
                     }
                 }
-                Err(RecvError::Lagged(_)) => continue, // dropped frames under load; keep going
+                Err(RecvError::Lagged(n)) => {
+                    // Dropped frames under load. Deltas don't compose across a
+                    // gap, so resync the streamed text with a snapshot frame
+                    // before continuing (a delta client drops anything its
+                    // accumulator already covers).
+                    log::warn!("remote stream lagged for {session_id}: dropped {n} chat events");
+                    // Look the session up fresh: after a respawn+resubscribe
+                    // (`wait_for_respawn` below) the captured `session` is the
+                    // OLD object and its accumulator would be stale.
+                    let snap = state
+                        .sessions
+                        .get(&session_id)
+                        .map(|s| s.clone())
+                        .and_then(|s| s.streaming.lock().unwrap().snapshot_event());
+                    if let Some(snap) = snap {
+                        if let Ok(txt) = serde_json::to_string(&snap) {
+                            if socket.send(Message::Text(txt)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    continue;
+                }
                 Err(RecvError::Closed) => {
                     match wait_for_respawn(&state, &session_id, &mut socket).await {
                         Some(new_rx) => rx = new_rx,

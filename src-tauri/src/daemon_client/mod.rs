@@ -216,7 +216,11 @@ impl PersistentClient {
             let mut subs = self.subs.lock().await;
             subs.insert(session_id.to_string(), tx);
         }
-        self.call("attach_session", json!({"session_id": session_id})).await?;
+        // `delta: true` = this client understands the O(delta) `assistant_delta`
+        // stream protocol (ai_todo 186). An older daemon ignores the extra
+        // field and keeps sending full-text snapshots, which the frontend
+        // still accepts - both skew directions stay compatible.
+        self.call("attach_session", json!({"session_id": session_id, "delta": true})).await?;
         Ok(rx)
     }
 

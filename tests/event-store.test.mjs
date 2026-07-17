@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { userEvent, assistantEvent, streamingEvent } from "./helpers/chat-events.mjs";
+import { userEvent, assistantEvent, streamingEvent, finalEvent, toolUseEvent, deltaEvent } from "./helpers/chat-events.mjs";
 
 const invokeMock = vi.fn();
 vi.mock("../src/shared/ipc.ts", () => ({ invoke: invokeMock }));
@@ -242,5 +242,103 @@ describe("SessionEventStore pagination", () => {
     const older = await sessionEvents.loadOlder(sid);
     expect(older).toBeNull();
     expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("assistant_delta accumulation (ai_todo 186)", () => {
+  const turnUsage = () => ({
+    type: "turn_usage",
+    input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0, total_cost_usd: 0, duration_ms: 1,
+    has_thinking: false, model: null, awaiting: null, autopilot_changed: null,
+  });
+
+  it("accumulates chunks into one synthesized streaming assistant_message", () => {
+    const sid = "sess-delta-accum";
+    sessionEvents.pushSynthetic(sid, deltaEvent("Hel", 1, 1));
+    sessionEvents.pushSynthetic(sid, deltaEvent("lo wor", 1, 2));
+    sessionEvents.pushSynthetic(sid, deltaEvent("ld", 1, 3));
+    const evs = sessionEvents.events(sid);
+    // Successive deltas REPLACE the synthesized entry, not append one each.
+    expect(evs).toHaveLength(1);
+    expect(evs[0].type).toBe("assistant_message");
+    expect(evs[0].streaming).toBe(true);
+    expect(evs[0].content[0].text).toBe("Hello world");
+  });
+
+  it("subscribers see the growing accumulated text per delta", () => {
+    const sid = "sess-delta-subs";
+    const seen = [];
+    const unsub = sessionEvents.subscribe(sid, (ev) => seen.push(ev.content?.[0]?.text));
+    sessionEvents.pushSynthetic(sid, deltaEvent("A", 1, 1));
+    sessionEvents.pushSynthetic(sid, deltaEvent("B", 1, 2));
+    unsub();
+    expect(seen).toEqual(["A", "AB"]);
+  });
+
+  it("a new block restarts the accumulator", () => {
+    const sid = "sess-delta-block";
+    sessionEvents.pushSynthetic(sid, deltaEvent("first block", 1, 1));
+    sessionEvents.pushSynthetic(sid, deltaEvent("second", 2, 1));
+    sessionEvents.pushSynthetic(sid, deltaEvent(" block", 2, 2));
+    const evs = sessionEvents.events(sid);
+    expect(evs[evs.length - 1].content[0].text).toBe("second block");
+  });
+
+  it("snapshot resync applies, then already-covered deltas are dropped", () => {
+    const sid = "sess-delta-snap";
+    // Mid-turn attach: snapshot carries everything streamed so far (seq 4)...
+    sessionEvents.pushSynthetic(sid, deltaEvent("Hello wor", 1, 4, true));
+    // ...then deltas queued behind it re-deliver covered chunks (seq <= 4).
+    sessionEvents.pushSynthetic(sid, deltaEvent("wor", 1, 4));
+    sessionEvents.pushSynthetic(sid, deltaEvent("ld", 1, 5));
+    const evs = sessionEvents.events(sid);
+    expect(evs).toHaveLength(1);
+    expect(evs[0].content[0].text).toBe("Hello world");
+  });
+
+  it("a stale snapshot never regresses the accumulator", () => {
+    const sid = "sess-delta-stale-snap";
+    sessionEvents.pushSynthetic(sid, deltaEvent("Hello", 1, 1));
+    sessionEvents.pushSynthetic(sid, deltaEvent(" world", 1, 2));
+    sessionEvents.pushSynthetic(sid, deltaEvent("Hel", 1, 1, true)); // late/stale resync
+    const evs = sessionEvents.events(sid);
+    expect(evs[evs.length - 1].content[0].text).toBe("Hello world");
+  });
+
+  it("turn end resets numbering: next turn's seq-1 delta starts fresh", () => {
+    const sid = "sess-delta-turn-reset";
+    sessionEvents.pushSynthetic(sid, deltaEvent("turn one text", 1, 1));
+    sessionEvents.pushSynthetic(sid, deltaEvent(" more", 1, 2));
+    sessionEvents.pushSynthetic(sid, finalEvent("turn one text more"));
+    sessionEvents.pushSynthetic(sid, turnUsage());
+    // Fresh `claude -p` per turn restarts (block, seq) at (1, 1). Must not be
+    // eaten as "already covered".
+    sessionEvents.pushSynthetic(sid, deltaEvent("turn two", 1, 1));
+    const evs = sessionEvents.events(sid);
+    expect(evs[evs.length - 1].content[0].text).toBe("turn two");
+    expect(evs[evs.length - 1].streaming).toBe(true);
+  });
+
+  it("suppresses the synthesized partial when a finalized assistant already covers it", () => {
+    const sid = "sess-delta-final-first";
+    // Watcher won the race: finalized full text landed first.
+    sessionEvents.pushSynthetic(sid, finalEvent("complete answer"));
+    sessionEvents.pushSynthetic(sid, deltaEvent("complete", 1, 1));
+    const evs = sessionEvents.events(sid);
+    expect(evs).toHaveLength(1);
+    expect(evs[0].streaming).toBe(false);
+  });
+
+  it("does not clobber a non-delta event that landed between deltas", () => {
+    const sid = "sess-delta-interleave";
+    sessionEvents.pushSynthetic(sid, deltaEvent("part one", 1, 1));
+    sessionEvents.pushSynthetic(sid, toolUseEvent("Read", { file_path: "/x" }, "toolu_x"));
+    sessionEvents.pushSynthetic(sid, deltaEvent(" part two", 1, 2));
+    const evs = sessionEvents.events(sid);
+    expect(evs.map((e) => e.type)).toEqual([
+      "assistant_message", "tool_use", "assistant_message",
+    ]);
+    expect(evs[2].content[0].text).toBe("part one part two");
   });
 });

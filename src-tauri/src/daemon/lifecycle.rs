@@ -223,9 +223,36 @@ pub async fn spawn_session(
     Ok(session)
 }
 
+/// Flush the pump's held delta buffer (ai_todo 186): fold it into the
+/// session's shared `StreamingText` accumulator (which assigns the emit
+/// `seq` and lets attach paths resync a mid-turn client), feed the
+/// accumulated text to the /close marker watcher, and broadcast the
+/// O(delta) wire event carrying only the new characters. No-op when
+/// nothing is pending.
+fn flush_pending_delta(
+    session: &Session,
+    close_watch: &mut crate::daemon::close_watch::CloseWatch,
+    pending: &mut Option<(u64, String, i64)>,
+) {
+    let Some((block, chunk, ts)) = pending.take() else { return };
+    let seq = {
+        let mut s = session.streaming.lock().unwrap();
+        let seq = s.apply_chunk(block, &chunk);
+        close_watch.observe_text(&s.text);
+        seq
+    };
+    broadcast::publish(session, ChatEvent::AssistantDelta {
+        text: chunk,
+        block,
+        seq,
+        snapshot: false,
+        timestamp: ts,
+    });
+}
+
 /// The stdout-pump task for one session's `claude` subprocess: reads and
-/// parses stdout line by line, coalesces streaming snapshots (see the
-/// `pending_snapshot`/`flush_deadline` comment below) into the broadcast
+/// parses stdout line by line, coalesces streamed text deltas (see the
+/// `pending_delta`/`flush_deadline` comment below) into the broadcast
 /// channel, updates registry/notifier state as turns complete, and - once
 /// stdout hits EOF or a read error - runs pump-exit cleanup (mark the
 /// session ended or leave it Interactive-and-idle, expire orphaned prompts,
@@ -251,7 +278,7 @@ async fn run_stdout_pump(
     // sound per prior completed turn on top of the real one.
     let mut saw_stream_turn = false;
     // Generation counter captured at the start of each live turn (when the
-    // first streaming AssistantMessage arrives). At turn-end we only call
+    // first streamed text delta arrives). At turn-end we only call
     // set_busy(false) if the registry's turn_gen still matches, preventing
     // a stale result line from an interrupted turn from clearing the
     // busy=true that a new send_message set in the meantime.
@@ -264,18 +291,18 @@ async fn run_stdout_pump(
     // True while the daemon-authoritative `closing` registry flag is set for
     // the current turn (armed by <cc-close:starting>, cleared at turn end).
     let mut closing_flagged = false;
-    // Coalescing (ai_todo streaming-render O(n^2) fix): parser.rs re-clones
-    // the FULL accumulated text into every content_block_delta snapshot, so
-    // a long reply otherwise broadcasts - and re-serializes across
-    // daemon->app IPC, app->webview emit, AND the remote websocket - once
-    // per token. At most one streaming snapshot is held here; a newer one
-    // for the same block simply replaces it (both are idempotent full-text
-    // snapshots, so dropping a superseded one loses nothing). It flushes on
-    // whichever comes first: the ~100ms timer below, the next non-snapshot
-    // event (flushed BEFORE that event so relative order is exact), or the
-    // stream ending. The event shape on the wire is unchanged - only the
-    // count of broadcasts drops, from O(n) per response to a handful.
-    let mut pending_snapshot: Option<ChatEvent> = None;
+    // Delta coalescing (ai_todo 186, evolving the earlier O(n^2) frequency
+    // fix): the parser now emits O(delta) `AssistantDelta` chunks instead of
+    // full-text snapshots, so per-chunk cost is flat end-to-end (the old
+    // shape re-cloned and re-serialized the WHOLE accumulated text across
+    // daemon->app IPC, app->webview emit, AND the remote websocket per emit).
+    // At most one chunk buffer is held here; newer chunks for the same block
+    // are CONCATENATED into it (deltas compose, unlike the old idempotent
+    // snapshots which replaced each other). It flushes on whichever comes
+    // first: the ~100ms timer below, the next non-delta event (flushed
+    // BEFORE that event so relative order is exact), or the stream ending.
+    // (block ordinal, buffered chunk text, timestamp)
+    let mut pending_delta: Option<(u64, String, i64)> = None;
     let mut flush_deadline: Option<tokio::time::Instant> = None;
     const SNAPSHOT_FLUSH_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
     loop {
@@ -283,9 +310,7 @@ async fn run_stdout_pump(
             result = buf_reader.read_until(b'\n', &mut line_buf) => {
                 match result {
                     Ok(0) => {
-                        if let Some(pending) = pending_snapshot.take() {
-                            broadcast::publish(&pump_session, pending);
-                        }
+                        flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
                         break;
                     }
                     Ok(_) => {
@@ -310,8 +335,9 @@ async fn run_stdout_pump(
                             if matches!(ev, ChatEvent::SessionStarted { .. }) {
                                 continue;
                             }
-                            // Feed assistant text (streaming snapshots are cumulative;
-                            // finalized result text too) to the /close detector.
+                            // Feed finalized assistant/result text to the /close
+                            // detector. (Live streamed text reaches it via the
+                            // accumulated `StreamingText` inside flush_pending_delta.)
                             if let ChatEvent::AssistantMessage { ref content, .. } = ev {
                                 for block in content {
                                     if let crate::types::chat::ContentBlock::Text { text } = block {
@@ -332,33 +358,45 @@ async fn run_stdout_pump(
                                     );
                                 }
                             }
-                            // A streaming AssistantMessage marks the current turn as
-                            // live (not a replayed history line from --resume).
-                            // On the FIRST such event per turn, snapshot the registry's
-                            // turn_gen so the turn-end guard can detect if a newer
-                            // send_message arrived before the result line was processed.
-                            if matches!(ev, ChatEvent::AssistantMessage { streaming: true, .. }) {
-                                if !saw_stream_turn {
-                                    pump_turn_gen = state_for_pump
-                                        .registry
-                                        .current_turn_gen(&pump_session.session_id);
+                            // A streamed text delta marks the current turn as live
+                            // (not a replayed history line from --resume). On the
+                            // FIRST one per turn, snapshot the registry's turn_gen
+                            // so the turn-end guard can detect if a newer
+                            // send_message arrived before the result line was
+                            // processed. Deltas are held + concatenated instead of
+                            // broadcast immediately - see the coalescing comment
+                            // above `pending_delta`.
+                            let ev = match ev {
+                                ChatEvent::AssistantDelta { text, block, timestamp, .. } => {
+                                    if !saw_stream_turn {
+                                        pump_turn_gen = state_for_pump
+                                            .registry
+                                            .current_turn_gen(&pump_session.session_id);
+                                    }
+                                    saw_stream_turn = true;
+                                    match pending_delta {
+                                        Some((pb, ref mut buf, _)) if pb == block => buf.push_str(&text),
+                                        _ => {
+                                            // A different block is still buffered:
+                                            // flush it first so order stays exact.
+                                            flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
+                                            pending_delta = Some((block, text, timestamp));
+                                        }
+                                    }
+                                    if flush_deadline.is_none() {
+                                        flush_deadline = Some(tokio::time::Instant::now() + SNAPSHOT_FLUSH_WINDOW);
+                                    }
+                                    continue;
                                 }
-                                saw_stream_turn = true;
-                                // Hold instead of broadcasting immediately - see the
-                                // coalescing comment above `pending_snapshot`.
-                                pending_snapshot = Some(ev);
-                                if flush_deadline.is_none() {
-                                    flush_deadline = Some(tokio::time::Instant::now() + SNAPSHOT_FLUSH_WINDOW);
-                                }
-                                continue;
-                            }
+                                other => other,
+                            };
                             // Any other event type (tool_use, tool_result, finalized
                             // AssistantMessage, TurnUsage, Notification, ...): flush a
-                            // held snapshot FIRST so subscribers see it before this
+                            // held delta FIRST so subscribers see it before this
                             // one, preserving the parser's original event order exactly.
-                            if let Some(pending) = pending_snapshot.take() {
+                            if pending_delta.is_some() {
                                 flush_deadline = None;
-                                broadcast::publish(&pump_session, pending);
+                                flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
                             }
                             // A `result` line parses to TurnUsage and marks the turn
                             // complete: update awaiting status, clear busy, and
@@ -392,6 +430,10 @@ async fn run_stdout_pump(
                             }
                             broadcast::publish(&pump_session, ev);
                             if let Some(awaiting) = turn_done_awaiting {
+                                // Turn over: drop the shared stream accumulator so a
+                                // client attaching between turns doesn't get a stale
+                                // resync snapshot of the finished turn's text.
+                                pump_session.streaming.lock().unwrap().clear();
                                 // Character "work finished" / "asking" sound. The in-app chat's
                                 // turn completion is NOT covered by the global Stop/Notification
                                 // hooks (those only drive skill-usage + external sessions), so
@@ -508,9 +550,7 @@ async fn run_stdout_pump(
                         line_buf.clear();
                     }
                     Err(e) => {
-                        if let Some(pending) = pending_snapshot.take() {
-                            broadcast::publish(&pump_session, pending);
-                        }
+                        flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
                         log::warn!(
                             "daemon: session {} stdout read failed: {}",
                             pump_session.session_id,
@@ -528,9 +568,7 @@ async fn run_stdout_pump(
             // throwaway `now` when None; the guard still prevents this branch
             // from ever firing unless a real deadline is set.
             _ = tokio::time::sleep_until(flush_deadline.unwrap_or_else(tokio::time::Instant::now)), if flush_deadline.is_some() => {
-                if let Some(pending) = pending_snapshot.take() {
-                    broadcast::publish(&pump_session, pending);
-                }
+                flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
                 flush_deadline = None;
             }
         }

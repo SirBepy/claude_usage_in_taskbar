@@ -10,6 +10,69 @@ use tokio::sync::{broadcast, Mutex};
 
 pub const BROADCAST_CAPACITY: usize = 1024;
 
+/// Accumulated text of the in-flight streamed text block (ai_todo 186).
+/// Written by the pump on each coalesced delta flush; read by the attach
+/// paths (pipe `attach_session`, remote WS) to synthesize a full-text resync
+/// frame for clients that join or lag mid-turn, and by the legacy conversion
+/// for clients that don't speak the delta protocol. Cleared at turn end.
+#[derive(Debug, Default)]
+pub struct StreamingText {
+    pub block: u64,
+    pub seq: u64,
+    pub text: String,
+}
+
+impl StreamingText {
+    /// Fold one coalesced chunk in and return the emit `seq` to stamp on its
+    /// wire event. A new `block` resets the accumulator (mirrors the parser
+    /// clearing on each text `content_block_start`).
+    pub fn apply_chunk(&mut self, block: u64, chunk: &str) -> u64 {
+        if block != self.block {
+            self.block = block;
+            self.seq = 0;
+            self.text.clear();
+        }
+        self.text.push_str(chunk);
+        self.seq += 1;
+        self.seq
+    }
+
+    /// Full-text resync frame for a delta-protocol client attaching (or
+    /// lagging) mid-turn. `None` when nothing is streaming right now.
+    pub fn snapshot_event(&self) -> Option<ChatEvent> {
+        if self.text.is_empty() {
+            return None;
+        }
+        Some(ChatEvent::AssistantDelta {
+            text: self.text.clone(),
+            block: self.block,
+            seq: self.seq,
+            snapshot: true,
+            timestamp: 0,
+        })
+    }
+
+    /// Old-wire-shape equivalent of [`Self::snapshot_event`]: the full-text
+    /// streaming `AssistantMessage` a pre-delta client expects. `None` when
+    /// nothing is streaming.
+    pub fn legacy_snapshot_event(&self) -> Option<ChatEvent> {
+        if self.text.is_empty() {
+            return None;
+        }
+        Some(ChatEvent::AssistantMessage {
+            content: vec![crate::types::chat::ContentBlock::Text { text: self.text.clone() }],
+            streaming: true,
+            timestamp: 0,
+        })
+    }
+
+    pub fn clear(&mut self) {
+        self.block = 0;
+        self.seq = 0;
+        self.text.clear();
+    }
+}
+
 pub struct Session {
     pub session_id: String,
     pub cwd: PathBuf,
@@ -36,6 +99,9 @@ pub struct Session {
     /// rescheduled verbatim rather than as a vague "continue". Empty until the
     /// first send. std `Mutex`: only ever held across a `String` clone.
     pub last_prompt: std::sync::Mutex<String>,
+    /// In-flight streamed text block accumulator - see [`StreamingText`].
+    /// std `Mutex`: only ever held across an append or a `String` clone.
+    pub streaming: std::sync::Mutex<StreamingText>,
 }
 
 impl Session {
@@ -63,6 +129,7 @@ impl Session {
             hook_settings_path,
             account_id,
             last_prompt: std::sync::Mutex::new(String::new()),
+            streaming: std::sync::Mutex::new(StreamingText::default()),
         })
     }
 }
@@ -86,5 +153,51 @@ mod tests {
     #[test]
     fn broadcast_capacity_constant() {
         assert!(BROADCAST_CAPACITY >= 256);
+    }
+
+    #[test]
+    fn streaming_text_accumulates_and_numbers_emits() {
+        let mut s = StreamingText::default();
+        assert_eq!(s.apply_chunk(1, "Hello"), 1);
+        assert_eq!(s.apply_chunk(1, " world"), 2);
+        assert_eq!(s.text, "Hello world");
+    }
+
+    #[test]
+    fn streaming_text_new_block_resets() {
+        let mut s = StreamingText::default();
+        s.apply_chunk(1, "first");
+        assert_eq!(s.apply_chunk(2, "second"), 1, "seq restarts per block");
+        assert_eq!(s.text, "second");
+        assert_eq!(s.block, 2);
+    }
+
+    #[test]
+    fn streaming_text_snapshot_events() {
+        let mut s = StreamingText::default();
+        assert!(s.snapshot_event().is_none(), "nothing streaming -> no resync frame");
+        assert!(s.legacy_snapshot_event().is_none());
+        s.apply_chunk(3, "partial tex");
+        match s.snapshot_event() {
+            Some(ChatEvent::AssistantDelta { text, block, seq, snapshot, .. }) => {
+                assert_eq!(text, "partial tex");
+                assert_eq!(block, 3);
+                assert_eq!(seq, 1);
+                assert!(snapshot);
+            }
+            other => panic!("expected snapshot AssistantDelta, got {:?}", other),
+        }
+        match s.legacy_snapshot_event() {
+            Some(ChatEvent::AssistantMessage { content, streaming, .. }) => {
+                assert!(streaming);
+                match &content[0] {
+                    crate::types::chat::ContentBlock::Text { text } => assert_eq!(text, "partial tex"),
+                    _ => panic!("expected text block"),
+                }
+            }
+            other => panic!("expected legacy AssistantMessage, got {:?}", other),
+        }
+        s.clear();
+        assert!(s.snapshot_event().is_none(), "cleared at turn end -> no stale resync");
     }
 }
