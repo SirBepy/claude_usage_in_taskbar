@@ -13,6 +13,15 @@ import type {
   Recurrence,
   Instance,
 } from "../../types/ipc.generated";
+import {
+  pad,
+  dayKeyOf,
+  localTime,
+  gridRange,
+  buildOccurrences,
+  type DotStatus,
+  type Occurrence,
+} from "./schedule-recurrence";
 
 // ── Calendar Schedule view ───────────────────────────────────────────────────
 //
@@ -23,22 +32,6 @@ import type {
 // agenda item navigates to the chat it targets (open_chats_for_session, which
 // resumes a closed chat). Rendered both as a route in the dashboard and, more
 // usefully, standalone in the `session-schedule` window.
-
-type DotStatus = "upcoming" | "firing" | "sent" | "failed" | "missed" | "external";
-
-/** One placement of an item on a specific calendar day. */
-interface Occurrence {
-  /** yyyy-mm-dd local key for the day this lands on. */
-  dayKey: string;
-  /** epoch millis of the exact local instant (for sorting within a day). */
-  time: number;
-  status: DotStatus;
-  /** Underlying scheduled item, or null for an external Task-Scheduler job. */
-  item: ScheduledItem | null;
-  external?: ExternalScheduledJob;
-  /** True when this occurrence is a projected future repeat (hollow ring). */
-  recurring: boolean;
-}
 
 interface ScheduleState {
   mountId: number;
@@ -98,157 +91,6 @@ async function fetchAll(): Promise<void> {
   }
 }
 
-// ── date helpers ─────────────────────────────────────────────────────────────
-
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-function dayKeyOf(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function localTime(d: Date): string {
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-/** `schedule_list_external`'s `humanTime` is a local "yyyy-MM-dd HH:mm:ss"
- * string (not RFC3339) - reparse as a local wall-clock Date. */
-function dateFromHumanTime(humanTime: string): Date | null {
-  const d = new Date(humanTime.replace(" ", "T"));
-  return isNaN(d.getTime()) ? null : d;
-}
-
-// ── recurrence expansion (mirror of scheduled_items.rs next_occurrence) ───────
-
-function parseHhmm(s: string): [number, number] {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
-  if (!m) return [0, 0];
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (h > 23 || mi > 59) return [0, 0];
-  return [h, mi];
-}
-
-/** Next local occurrence strictly after `after`, per rule. Mirrors the Rust. */
-function nextOccurrence(after: Date, rec: Recurrence): Date {
-  const [hour, minute] = parseHhmm(rec.time);
-  const atTime = (base: Date): Date => new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, minute, 0, 0);
-
-  if (rec.rule.type === "daily") {
-    const today = atTime(after);
-    if (today > after) return today;
-    const t = new Date(after);
-    t.setDate(t.getDate() + 1);
-    return atTime(t);
-  }
-  if (rec.rule.type === "weekly") {
-    const weekdays = rec.rule.weekdays; // 0=Mon..6=Sun
-    if (!weekdays.length) {
-      const t = new Date(after);
-      t.setDate(t.getDate() + 1);
-      return atTime(t);
-    }
-    for (let offset = 0; offset <= 7; offset++) {
-      const d = new Date(after);
-      d.setDate(d.getDate() + offset);
-      const dow = (d.getDay() + 6) % 7; // JS Sun=0 -> Mon=0
-      if (!weekdays.includes(dow)) continue;
-      const cand = atTime(d);
-      if (cand > after) return cand;
-    }
-    const t = new Date(after);
-    t.setDate(t.getDate() + 7);
-    return atTime(t);
-  }
-  // every_n_days
-  const n = Math.max(1, rec.rule.n);
-  const today = atTime(after);
-  if (today > after) return today;
-  const t = new Date(after);
-  t.setDate(t.getDate() + n);
-  return atTime(t);
-}
-
-/** All occurrence instants of a recurring item within [start, end] (inclusive
- * day range), starting from its stored next fire_at. Capped to avoid runaway. */
-function expandRecurrence(fireAt: Date, rec: Recurrence, end: Date): Date[] {
-  const out: Date[] = [];
-  let cur = fireAt;
-  let guard = 0;
-  while (cur <= end && guard < 500) {
-    out.push(new Date(cur));
-    cur = nextOccurrence(cur, rec);
-    guard++;
-  }
-  return out;
-}
-
-// ── build occurrences for the visible grid ───────────────────────────────────
-
-/** The 6-week grid range (Mon-start) covering the visible month. */
-function gridRange(year: number, month: number): { start: Date; end: Date; cells: Date[] } {
-  const first = new Date(year, month, 1);
-  const lead = (first.getDay() + 6) % 7; // Mon=0
-  const start = new Date(year, month, 1 - lead);
-  const cells: Date[] = [];
-  for (let i = 0; i < 42; i++) {
-    cells.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
-  }
-  const last = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 41);
-  const end = new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59);
-  return { start, end, cells };
-}
-
-function isPastStatus(t: ScheduledItem["status"]["type"]): boolean {
-  return t === "sent" || t === "failed" || t === "missed";
-}
-
-function buildOccurrences(rangeEnd: Date): Map<string, Occurrence[]> {
-  const byDay = new Map<string, Occurrence[]>();
-  const push = (occ: Occurrence) => {
-    const arr = byDay.get(occ.dayKey);
-    if (arr) arr.push(occ);
-    else byDay.set(occ.dayKey, [occ]);
-  };
-
-  for (const item of state.items) {
-    const st = item.status.type;
-    if (isPastStatus(st)) {
-      // Past: place on when it actually fired (fall back to fire_at).
-      const when = new Date(item.last_fired_at || item.fire_at);
-      if (isNaN(when.getTime())) continue;
-      push({ dayKey: dayKeyOf(when), time: when.getTime(), status: st as DotStatus, item, recurring: false });
-      continue;
-    }
-    // Pending / firing (upcoming).
-    const base = new Date(item.fire_at);
-    if (isNaN(base.getTime())) continue;
-    const instants = item.recurrence
-      ? expandRecurrence(base, item.recurrence, rangeEnd)
-      : [base];
-    for (const inst of instants) {
-      const isBase = inst.getTime() === base.getTime();
-      push({
-        dayKey: dayKeyOf(inst),
-        time: inst.getTime(),
-        // Only the concrete next fire can be mid-"firing"; projected repeats are upcoming.
-        status: st === "firing" && isBase ? "firing" : "upcoming",
-        item,
-        recurring: !!item.recurrence,
-      });
-    }
-  }
-
-  for (const job of state.external) {
-    const d = job.fire_at ? dateFromHumanTime(job.fire_at) : null;
-    if (!d) continue;
-    push({ dayKey: dayKeyOf(d), time: d.getTime(), status: "external", item: null, external: job, recurring: false });
-  }
-
-  return byDay;
-}
-
 // ── labels ───────────────────────────────────────────────────────────────────
 
 function truncate(s: string, n: number): string {
@@ -300,7 +142,7 @@ function navTarget(item: ScheduledItem): { sessionId: string; mode: string } | n
   return { sessionId, mode };
 }
 
-function statusPill(status: DotStatus, item: ScheduledItem | null): string {
+function statusPill(status: DotStatus): string {
   const map: Record<DotStatus, [string, string]> = {
     upcoming: ["pending", "Upcoming"],
     firing: ["firing", "Firing…"],
@@ -312,7 +154,6 @@ function statusPill(status: DotStatus, item: ScheduledItem | null): string {
   // A projected recurring upcoming keeps the "Upcoming" label; a concrete
   // pending item is also "Upcoming" here (calendar doesn't split the two).
   const [cls, label] = map[status];
-  void item;
   return `<span class="schedule-status-pill schedule-status-pill--${cls}">${label}</span>`;
 }
 
@@ -361,7 +202,7 @@ function agendaRowHtml(occ: Occurrence): string {
       <i class="ph ph-clock-countdown agenda-icon"></i>
       <div class="agenda-main">
         <div class="agenda-name">${escapeHtml(job.label)}${job.cwd ? ` &mdash; ${escapeHtml(cwdToProjectName(job.cwd))}` : ""}</div>
-        <div class="agenda-meta">${statusPill("external", null)}</div>
+        <div class="agenda-meta">${statusPill("external")}</div>
       </div>
     </li>`;
   }
@@ -380,7 +221,7 @@ function agendaRowHtml(occ: Occurrence): string {
     <div class="agenda-main">
       <div class="agenda-name">${escapeHtml(targetLabel(item))}</div>
       <div class="agenda-meta">
-        ${statusPill(occ.status, item)}
+        ${statusPill(occ.status)}
         ${recurrenceBadge(item.recurrence)}
         ${reason ? `<span class="schedule-reason">${escapeHtml(reason)}</span>` : ""}
       </div>
@@ -419,7 +260,7 @@ function renderBody(): string {
   }
 
   const { end, cells } = gridRange(state.viewYear, state.viewMonth);
-  const byDay = buildOccurrences(end);
+  const byDay = buildOccurrences(state.items, state.external, end);
 
   const selectedOccs = state.selectedKey
     ? (byDay.get(state.selectedKey) || []).slice().sort((a, b) => a.time - b.time)
