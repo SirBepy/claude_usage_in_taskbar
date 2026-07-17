@@ -421,14 +421,8 @@ pub async fn add_account_finalize(
     // without one. Leaving it unset would make a single-account install fail
     // those flows with an error about accounts it plainly has.
     if was_first_account {
-        let settings_path = paths::settings_file().map_err(|e| e.to_string())?;
-        let snapshot = {
-            let mut settings = state.settings.lock().unwrap();
-            settings.default_account_id = Some(account.id.clone());
-            settings.clone()
-        };
-        crate::settings::save(&settings_path, &snapshot).map_err(|e| e.to_string())?;
-        crate::daemon_link::push_settings_to_daemon(&state, &snapshot).await;
+        crate::ipc::accounts::set_default_account(Some(account.id.clone()), state.clone(), app.clone())
+            .await?;
     }
 
     // Tray only re-renders on "settings-changed"/"usage-updated" - without
