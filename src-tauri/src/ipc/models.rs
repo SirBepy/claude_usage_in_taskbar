@@ -147,6 +147,18 @@ pub async fn probe_models_availability(models: Vec<String>) -> serde_json::Value
 
 /// Single count_tokens probe. Returns (available, optional API message). On any
 /// transport error we fail open (available=true) so we never block on a blip.
+///
+/// Only a 404 not_found_error is treated as "Anthropic disabled this model" —
+/// that's the documented signal (see module doc comment above). Any other
+/// non-success status (401/403 from a stale OAuth access token — e.g. after
+/// the PC sleeps for longer than the token's TTL, since this app never
+/// refreshes `.credentials.json` itself; 429 rate limit; 5xx) is OUR side
+/// misbehaving, not the model being unavailable, so it also fails open. Before
+/// this distinction, a post-sleep 401 got misread as "every model disabled"
+/// and stayed that way until an app restart happened to coincide with the
+/// `claude` CLI refreshing the token elsewhere — restarting the app never
+/// refreshed the token itself, so the dialog just kept re-probing into the
+/// same false negative every time it was opened.
 async fn probe_one_model(
     client: &reqwest::Client,
     token: &str,
@@ -170,6 +182,9 @@ async fn probe_one_model(
         Err(_) => return (true, None),
     };
     if resp.status().is_success() {
+        return (true, None);
+    }
+    if resp.status() != reqwest::StatusCode::NOT_FOUND {
         return (true, None);
     }
     let message = resp
