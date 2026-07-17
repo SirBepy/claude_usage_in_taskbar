@@ -8,30 +8,30 @@
 import { invoke } from "../ipc";
 import { escapeHtml } from "../escape-html";
 import { basename } from "../path-utils";
-import { base64ToUtf8 } from "./chat-transforms";
 import { createFileSurface, type FileSurfaceHandle, type SurfaceFile } from "./file-surface";
+import {
+  resetPrReviewData,
+  getCwd,
+  getCommits,
+  getCommitStat,
+  getAllFiles,
+  wholeRangeScope,
+  commitScope,
+  toSurfaceFile,
+  loadCommitStats,
+  loadAllFiles,
+  setPrReviewCwdProvider,
+  type Scope,
+} from "./pr-review-data";
 import type { PrFileChange } from "../../types/ipc.generated";
 
-interface PrCommit {
-  sha: string;
-  msg: string;
-}
-
-interface Scope {
-  from: string | null;
-  to: string;
-}
+export { setPrReviewCwdProvider };
 
 interface OpenTab {
   path: string;
   pinned: boolean;
   file: PrFileChange;
   scope: Scope;
-}
-
-interface CommitStat {
-  files: PrFileChange[] | null; // null while loading
-  error: string | null;
 }
 
 interface ModalEls {
@@ -43,26 +43,10 @@ interface ModalEls {
   fileHostEl: HTMLDivElement;
 }
 
-// ── cwd provider (mirrors setFileEditsProvider in file-viewer.ts) ─────────
-// Registered by whichever host currently knows the session's working
-// directory (active-session.ts, history.ts, pending-pane.ts). Without a
-// registration - or a git call rejecting - the sidebar/pane fall back to a
-// muted unavailable state; the Description tab is unaffected either way.
-let cwdProvider: (() => string | null) | null = null;
-export function setPrReviewCwdProvider(fn: (() => string | null) | null): void {
-  cwdProvider = fn;
-}
-
 let overlay: HTMLDivElement | null = null;
 let surface: FileSurfaceHandle | null = null;
 let els: ModalEls | null = null;
 
-let mToken = 0;
-let mCwd: string | null = null;
-let mCommits: PrCommit[] = [];
-let mCommitStats: Map<string, CommitStat> = new Map();
-let mAllFiles: PrFileChange[] | null = null;
-let mAllFilesError: string | null = null;
 let mSidebarTab: "commits" | "files" = "commits";
 let mDrillSha: string | null = null;
 let mTabs: OpenTab[] = [];
@@ -75,7 +59,7 @@ export function closePrModal(): void {
   surface?.destroy();
   surface = null;
   els = null;
-  mToken++;
+  resetPrReviewData(null);
   document.removeEventListener("keydown", onModalKeydown);
 }
 
@@ -137,20 +121,6 @@ function applyContentEnhancements(content: HTMLElement): void {
   });
 }
 
-// ── data parsing ────────────────────────────────────────────────────────
-
-function parseCommits(card: HTMLElement): PrCommit[] {
-  try {
-    const parsed = JSON.parse(base64ToUtf8(card.dataset.prCommits ?? "")) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (c): c is PrCommit => !!c && typeof c.sha === "string" && typeof c.msg === "string",
-    );
-  } catch {
-    return [];
-  }
-}
-
 function statusChar(status: string): string {
   return (status || "M").charAt(0).toUpperCase();
 }
@@ -174,24 +144,13 @@ function fileDir(path: string): string {
 // matches the approved mockup's sidebarFiles() helper.
 
 function currentFileScope(): Scope | null {
-  if (mDrillSha) return { from: null, to: mDrillSha };
-  if (mCommits.length === 0) return null;
-  if (mCommits.length === 1) return { from: null, to: mCommits[0]!.sha };
-  return { from: mCommits[mCommits.length - 1]!.sha, to: mCommits[0]!.sha };
+  if (mDrillSha) return commitScope(mDrillSha);
+  return wholeRangeScope();
 }
 
 function currentFileList(): PrFileChange[] {
-  if (mDrillSha) return mCommitStats.get(mDrillSha)?.files ?? [];
-  return mAllFiles ?? [];
-}
-
-function toSurfaceFile(f: PrFileChange, scope: Scope): SurfaceFile {
-  return {
-    path: f.path,
-    added: f.added,
-    removed: f.removed,
-    gitDiff: () => invoke<string>("get_file_diff", { cwd: mCwd, from: scope.from, to: scope.to, path: f.path }),
-  };
+  if (mDrillSha) return getCommitStat(mDrillSha)?.files ?? [];
+  return getAllFiles().files ?? [];
 }
 
 function navList(): SurfaceFile[] {
@@ -303,15 +262,16 @@ function updateTabCounts(): void {
   if (!els) return;
   const commitsCount = els.sidebarTabsEl.querySelector<HTMLElement>('[data-sbtab="commits"] .pr-count');
   const filesCount = els.sidebarTabsEl.querySelector<HTMLElement>('[data-sbtab="files"] .pr-count');
-  if (commitsCount) commitsCount.textContent = String(mCommits.length);
-  if (filesCount) filesCount.textContent = mAllFiles ? String(mAllFiles.length) : mAllFilesError ? "?" : "…";
+  const all = getAllFiles();
+  if (commitsCount) commitsCount.textContent = String(getCommits().length);
+  if (filesCount) filesCount.textContent = all.files ? String(all.files.length) : all.error ? "?" : "…";
 }
 
 function renderSidebar(): void {
   if (!els) return;
   updateTabCounts();
 
-  if (!mCwd) {
+  if (!getCwd()) {
     els.sidebarTabsEl.classList.remove("pr-hidden");
     els.commitHeadEl.classList.add("pr-hidden");
     els.sbBodyEl.innerHTML = `<div class="pr-sb-empty">Files unavailable outside a project session.</div>`;
@@ -322,7 +282,7 @@ function renderSidebar(): void {
     els.sidebarTabsEl.classList.add("pr-hidden");
     els.commitHeadEl.classList.remove("pr-hidden");
     renderCommitHead();
-    renderFileRows(mCommitStats.get(mDrillSha) ?? { files: null, error: null });
+    renderFileRows(getCommitStat(mDrillSha) ?? { files: null, error: null });
     return;
   }
 
@@ -335,14 +295,14 @@ function renderSidebar(): void {
   if (mSidebarTab === "commits") {
     renderCommitRows();
   } else {
-    renderFileRows({ files: mAllFiles, error: mAllFilesError });
+    renderFileRows(getAllFiles());
   }
 }
 
 function renderCommitHead(): void {
   if (!els || !mDrillSha) return;
-  const c = mCommits.find((x) => x.sha === mDrillSha);
-  const stat = mCommitStats.get(mDrillSha);
+  const c = getCommits().find((x) => x.sha === mDrillSha);
+  const stat = getCommitStat(mDrillSha);
   const msgEl = els.commitHeadEl.querySelector<HTMLElement>(".pr-ch-msg")!;
   const shaEl = els.commitHeadEl.querySelector<HTMLElement>(".pr-ch-sha")!;
   const filesEl = els.commitHeadEl.querySelector<HTMLElement>(".pr-ch-files")!;
@@ -370,13 +330,14 @@ function renderCommitHead(): void {
 
 function renderCommitRows(): void {
   if (!els) return;
-  if (mCommits.length === 0) {
+  const commits = getCommits();
+  if (commits.length === 0) {
     els.sbBodyEl.innerHTML = `<div class="pr-sb-empty">No commits</div>`;
     return;
   }
-  const rows = mCommits
+  const rows = commits
     .map((c) => {
-      const stat = mCommitStats.get(c.sha);
+      const stat = getCommitStat(c.sha);
       let statHtml: string;
       if (!stat || stat.files === null) statHtml = `<span class="pr-sb-muted">…</span>`;
       else if (stat.error) statHtml = `<span class="pr-sb-muted">?</span>`;
@@ -438,42 +399,6 @@ function renderFileRows(stat: { files: PrFileChange[] | null; error: string | nu
     r.addEventListener("click", () => openFile(f, scope, false));
     r.addEventListener("dblclick", () => openFile(f, scope, true));
   });
-}
-
-// ── async loads ─────────────────────────────────────────────────────────
-
-async function loadCommitStats(token: number): Promise<void> {
-  if (!mCwd) return;
-  await Promise.all(
-    mCommits.map(async (c) => {
-      try {
-        const files = await invoke<PrFileChange[]>("get_range_files", { cwd: mCwd, from: null, to: c.sha });
-        if (token !== mToken) return;
-        mCommitStats.set(c.sha, { files, error: null });
-      } catch (err) {
-        if (token !== mToken) return;
-        mCommitStats.set(c.sha, { files: null, error: String(err) });
-      }
-      if (token === mToken) renderSidebar();
-    }),
-  );
-}
-
-async function loadAllFiles(token: number): Promise<void> {
-  if (!mCwd || mCommits.length === 0) return;
-  const from = mCommits.length > 1 ? mCommits[mCommits.length - 1]!.sha : null;
-  const to = mCommits[0]!.sha;
-  try {
-    const files = await invoke<PrFileChange[]>("get_range_files", { cwd: mCwd, from, to });
-    if (token !== mToken) return;
-    mAllFiles = files;
-    mAllFilesError = null;
-  } catch (err) {
-    if (token !== mToken) return;
-    mAllFiles = null;
-    mAllFilesError = String(err);
-  }
-  if (token === mToken) renderSidebar();
 }
 
 // ── shell construction ─────────────────────────────────────────────────
@@ -553,14 +478,7 @@ export function openPrPreviewModal(card: HTMLElement): void {
   if (!tmpl) return;
 
   closePrModal();
-  mToken++;
-  const myToken = mToken;
-
-  mCwd = cwdProvider?.() ?? null;
-  mCommits = parseCommits(card);
-  mCommitStats = new Map();
-  mAllFiles = null;
-  mAllFilesError = null;
+  resetPrReviewData(card);
   mSidebarTab = "commits";
   mDrillSha = null;
   mTabs = [];
@@ -633,8 +551,8 @@ export function openPrPreviewModal(card: HTMLElement): void {
 
   renderAll();
 
-  if (mCwd) {
-    void loadCommitStats(myToken);
-    void loadAllFiles(myToken);
+  if (getCwd()) {
+    void loadCommitStats(renderSidebar);
+    void loadAllFiles(renderSidebar);
   }
 }
