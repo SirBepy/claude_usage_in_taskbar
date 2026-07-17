@@ -475,21 +475,28 @@ impl PersistentClient {
     }
 }
 
-/// Address the app uses to reach the daemon: a named-pipe name on Windows, a
-/// Unix-domain-socket path on mac/Linux. Must match the daemon's bind address.
-pub fn daemon_addr_for_current_user() -> String {
+/// Address for a given instance suffix directly (bypassing `instance_suffix()`
+/// so callers can probe a DIFFERENT identity than the one this process would
+/// otherwise use - see `ensure_daemon`'s production-attach probe).
+fn daemon_addr_for_suffix(suffix: &str) -> String {
     #[cfg(windows)]
     {
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-        let inst = crate::daemon::instance::instance_suffix();
-        format!(r"\\.\pipe\cc-conductor-daemon-{user}{inst}")
+        format!(r"\\.\pipe\cc-conductor-daemon-{user}{suffix}")
     }
     #[cfg(unix)]
     {
-        crate::daemon::transport_unix::socket_path_for_user()
-            .to_string_lossy()
-            .into_owned()
+        let mut p = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+        p.push("claude-conductor");
+        p.push(format!("cc-conductor-daemon{suffix}.sock"));
+        p.to_string_lossy().into_owned()
     }
+}
+
+/// Address the app uses to reach the daemon: a named-pipe name on Windows, a
+/// Unix-domain-socket path on mac/Linux. Must match the daemon's bind address.
+pub fn daemon_addr_for_current_user() -> String {
+    daemon_addr_for_suffix(&crate::daemon::instance::instance_suffix())
 }
 
 /// Try to connect to the daemon; if none is listening, spawn one detached
@@ -503,6 +510,25 @@ pub fn daemon_addr_for_current_user() -> String {
 /// startup. The pre-spawn poll skips the redundant spawn if the original daemon
 /// becomes ready within 2s.
 pub async fn ensure_daemon() -> Result<PersistentClient, ClientError> {
+    // Debug builds default to ATTACHING to whichever daemon is already
+    // running (almost always the user's real installed app) instead of
+    // spawning an isolated one. Most dev work never touches the daemon's own
+    // Rust code - it's UI/app-side only - so this gives real live data with
+    // zero duplication. `CC_DEV_OWN_DAEMON` opts back into an isolated `-dev`
+    // daemon on purpose (testing an actual daemon-side change);
+    // `CC_DAEMON_INSTANCE` (the test harness) always skips this attempt so a
+    // test never accidentally attaches to a real running daemon.
+    let want_own_daemon = std::env::var("CC_DEV_OWN_DAEMON").is_ok()
+        || std::env::var("CC_DAEMON_INSTANCE").is_ok();
+    if cfg!(debug_assertions) && !want_own_daemon {
+        let prod_addr = daemon_addr_for_suffix("");
+        if let Ok(c) = PersistentClient::connect(&prod_addr).await {
+            crate::daemon::instance::mark_attached_to_existing();
+            log::info!("dev: attached to the already-running daemon instead of spawning its own");
+            return Ok(c);
+        }
+    }
+
     let addr = daemon_addr_for_current_user();
     if let Ok(c) = PersistentClient::connect(&addr).await {
         return Ok(c);
@@ -551,18 +577,33 @@ mod tests {
             let _ = std::fs::remove_file(&lock);
         }
 
-        let build = Command::new("cargo")
-            .args(["build", "--bin", "cc-conductor-daemon"])
-            .current_dir(std::env::current_dir().unwrap())
-            .status()
-            .expect("cargo build");
-        assert!(build.success());
+        // Retry the build: a just-killed prior test daemon (or a concurrently
+        // rebuilding `cargo tauri dev` watcher) can hold the old
+        // cc-conductor-daemon.exe's file handle open for a brief moment after
+        // exit, making cargo's file-replace step fail with a transient
+        // "Access is denied" (os error 5) rather than a real build error.
+        let mut build_ok = false;
+        for attempt in 0..3 {
+            let build = Command::new("cargo")
+                .args(["build", "--bin", "cc-conductor-daemon"])
+                .current_dir(std::env::current_dir().unwrap())
+                .status()
+                .expect("cargo build");
+            if build.success() {
+                build_ok = true;
+                break;
+            }
+            if attempt < 2 {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }
+        assert!(build_ok, "cargo build --bin cc-conductor-daemon failed after retries");
 
         let mut exe = std::env::current_dir().unwrap();
         exe.push("target");
         exe.push("debug");
         exe.push("cc-conductor-daemon.exe");
-        let mut child = Command::new(&exe)
+        let child = Command::new(&exe)
             .env("CC_DAEMON_INSTANCE", INSTANCE)
             // Don't launch real automation channels from a test daemon.
             .env("CC_DAEMON_NO_AUTOSTART", "1")
@@ -570,17 +611,40 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn daemon");
+        // Kills the spawned daemon on drop - including when a panic unwinds
+        // out of an assertion below. Without this, a single failed run (health
+        // check fails, connect times out, etc.) leaks this process forever: it
+        // keeps holding cc-conductor-daemon.exe open, so EVERY subsequent run
+        // of this test fails cargo's build step with "Access is denied"
+        // (os error 5) until someone notices and kills it by hand (as happened
+        // 2026-07-17 - a run failed hours earlier and the orphan silently
+        // broke every re-run after it).
+        let _child = KillOnDrop(child);
 
-        // Wait for the pipe to bind.
-        tokio::time::sleep(Duration::from_millis(800)).await;
-
-        let client = PersistentClient::connect(&pipe_name)
-            .await.expect("connect");
+        // Poll for the pipe to bind rather than a single fixed-delay attempt:
+        // under system load (e.g. a concurrent `cargo tauri dev` rebuild) the
+        // daemon can take longer than any one fixed sleep to come up, and a
+        // single connect attempt afterward has no way to recover from that.
+        // Mirrors `ensure_daemon`'s own post-spawn poll.
+        let mut client = None;
+        for _ in 0..25 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if let Ok(c) = PersistentClient::connect(&pipe_name).await {
+                client = Some(c);
+                break;
+            }
+        }
+        let client = client.expect("connect (daemon never bound its pipe)");
         let result = client.health().await.expect("health call");
         assert!(result["daemon_version"].is_string());
         assert_eq!(result["protocol_version"], json!(PROTOCOL_VERSION));
+    }
 
-        let _ = child.kill();
-        let _ = child.wait();
+    struct KillOnDrop(std::process::Child);
+    impl Drop for KillOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
     }
 }

@@ -17,7 +17,7 @@ pub fn setup(app: &AppHandle) -> Result<()> {
     let initial_update = app.state::<AppState>().update_state.lock().unwrap().clone();
     let menu = build_menu(app, initial_mute, &initial_update)?;
 
-    let idle_bytes = icon::render(&IconCtx { updating: false, in_meeting: false });
+    let idle_bytes = icon::render(&IconCtx { updating: false, in_meeting: false, dev: cfg!(debug_assertions) });
     let idle_icon = Image::from_bytes(&idle_bytes)?;
 
     TrayIconBuilder::with_id(TRAY_ID)
@@ -177,7 +177,7 @@ pub fn render_tray_now(app: &AppHandle) {
         matches!(s.get("state").and_then(|v| v.as_str()), Some("downloading") | Some("downloaded"))
     };
     let in_meeting = state.meeting_active.load(Ordering::Relaxed);
-    let ctx = IconCtx { updating, in_meeting };
+    let ctx = IconCtx { updating, in_meeting, dev: cfg!(debug_assertions) };
 
     let bytes = icon::render(&ctx);
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return; };

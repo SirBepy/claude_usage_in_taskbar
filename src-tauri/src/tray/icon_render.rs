@@ -21,6 +21,10 @@ fn app_icon() -> &'static RgbaImage {
 pub struct IconCtx {
     pub updating: bool,
     pub in_meeting: bool,
+    /// True for a debug (`cargo tauri dev`) build. Paints a small dot so a
+    /// dev instance is visually distinguishable from the installed app when
+    /// both run at once (2026-07-16 incident).
+    pub dev: bool,
 }
 
 /// Paints an alpha-blended filled circle centered at `(cx, cy)` with radius
@@ -68,10 +72,18 @@ fn paint_meeting_dot(img: &mut RgbaImage) {
     paint_dot(img, SIZE as f32 - 6.0, 6.0, 4.0, MEETING_COLOR);
 }
 
+/// Bottom-left dot: always shown on a debug (`cargo tauri dev`) build, so it
+/// never gets confused with the installed app in the tray or taskbar preview.
+fn paint_dev_dot(img: &mut RgbaImage) {
+    const DEV_COLOR: [u8; 3] = [255, 140, 0];
+    paint_dot(img, 6.0, SIZE as f32 - 6.0, 4.0, DEV_COLOR);
+}
+
 pub fn render(ctx: &IconCtx) -> Vec<u8> {
     let mut img = app_icon().clone();
     if ctx.in_meeting { paint_meeting_dot(&mut img); }
     if ctx.updating { paint_update_badge(&mut img); }
+    if ctx.dev { paint_dev_dot(&mut img); }
     encode_png(&img)
 }
 

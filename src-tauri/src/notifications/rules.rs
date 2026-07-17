@@ -95,6 +95,14 @@ pub fn fire(
     session_id: Option<&str>,
     cwd_key: Option<&str>,
 ) {
+    // A debug (`cargo tauri dev`) build never fires sound/voice notifications.
+    // It shares the same machine (and often the same live moment) as the
+    // installed production app, which already pings for the same events -
+    // without this, every real notification plays twice.
+    if cfg!(debug_assertions) {
+        log::debug!("notification suppressed: debug build");
+        return;
+    }
     let state = app.state::<AppState>();
     let settings_snapshot = state.settings.lock().unwrap().clone();
     // Meeting gate: while a meeting is detected (camera/mic in use or a meeting
