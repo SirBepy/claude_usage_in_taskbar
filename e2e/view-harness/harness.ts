@@ -20,9 +20,9 @@
 // up as a red test, never a false-green pass. That throw is what surfaces a
 // missing boot-seed command, so keep it.
 //
-// Events: `mockListen` registers callbacks; a test pushes a payload mid-run via
-// `page.evaluate(() => window.__ccFireEvent(event, payload))`. `mockEmit`
-// captures emitted events to `window.__ccEmitted` for AUQ-relay-style asserts.
+// Events: `mockListen` registers callbacks so app code can subscribe without
+// crashing; nothing currently drives them (no spec pushes a backend event
+// mid-run yet).
 
 import type { Page } from "@playwright/test";
 
@@ -70,7 +70,6 @@ function installMockTauri(seed: { invokeMap: InvokeMap }): void {
   const listeners = new Map<string, Set<(e: { payload: unknown }) => void>>();
 
   const w = window as unknown as Record<string, unknown>;
-  w.__ccEmitted = [];
   w.__ccInvokeCalls = [];
 
   (window as { __TAURI__?: unknown }).__TAURI__ = {
@@ -95,20 +94,7 @@ function installMockTauri(seed: { invokeMap: InvokeMap }): void {
         set.add(cb);
         return Promise.resolve(() => set!.delete(cb));
       },
-      emit: (event: string, payload?: unknown) => {
-        (w.__ccEmitted as unknown[]).push({ event, payload });
-        return Promise.resolve();
-      },
     },
-  };
-
-  // Push a backend event to every registered listener. Callbacks expect the
-  // Tauri `{ payload }` envelope (both TauriTransport.listen and api.ts's
-  // listenEvent unwrap `e.payload`), so wrap here to match.
-  w.__ccFireEvent = (event: string, payload: unknown): void => {
-    const set = listeners.get(event);
-    if (!set) return;
-    for (const cb of set) cb({ payload });
   };
 
   // Belt-and-suspenders: if a future refactor moves the boot gate off
@@ -143,24 +129,9 @@ export async function mountView(page: Page, opts: MountOptions = {}): Promise<vo
   await page.goto(`${HARNESS_ORIGIN}/${entry}.html${hash}`);
 }
 
-/** Fire a backend event into the running page (chat stream chunk, etc.). */
-export async function fireEvent(page: Page, event: string, payload: unknown): Promise<void> {
-  await page.evaluate(
-    ([e, p]) => (window as unknown as { __ccFireEvent: (e: string, p: unknown) => void }).__ccFireEvent(e, p),
-    [event, payload] as const,
-  );
-}
-
 /** Read the commands the page has invoked so far (for call-shape asserts). */
 export async function invokeCalls(page: Page): Promise<Array<{ cmd: string; args?: unknown }>> {
   return page.evaluate(
     () => (window as unknown as { __ccInvokeCalls: Array<{ cmd: string; args?: unknown }> }).__ccInvokeCalls,
-  );
-}
-
-/** Read the events the page has emitted (AUQ-relay-style asserts). */
-export async function emittedEvents(page: Page): Promise<Array<{ event: string; payload?: unknown }>> {
-  return page.evaluate(
-    () => (window as unknown as { __ccEmitted: Array<{ event: string; payload?: unknown }> }).__ccEmitted,
   );
 }
