@@ -7,6 +7,7 @@
 
 import { escapeHtml } from "../escape-html";
 import type { Recurrence, RecurrenceRule } from "../../types/ipc.generated";
+import { openAnchoredPopover } from "./anchored-popover";
 import "./schedule-picker.css";
 
 export interface SchedulePickerResult {
@@ -145,37 +146,13 @@ export function openSchedulePicker(opts: SchedulePickerOptions): void {
     dtValue = toLocalInputValue(new Date(Date.now() + 60000));
   }
 
-  function close(): void {
-    document.removeEventListener("mousedown", onOutside, true);
-    document.removeEventListener("keydown", onKey, true);
-    pop.remove();
-  }
-
-  function onOutside(e: MouseEvent): void {
-    if (!pop.contains(e.target as Node) && !opts.anchor.contains(e.target as Node)) close();
-  }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    }
-  }
-
-  function reposition(): void {
-    const rect = opts.anchor.getBoundingClientRect();
-    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
-    pop.style.left = `${Math.max(8, Math.min(rect.right - pop.offsetWidth, maxLeft))}px`;
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    if (spaceAbove >= pop.offsetHeight + 8 || spaceAbove >= spaceBelow) {
-      pop.style.bottom = `${window.innerHeight - rect.top + 6}px`;
-      pop.style.top = "";
-    } else {
-      pop.style.top = `${rect.bottom + 6}px`;
-      pop.style.bottom = "";
-    }
-  }
+  const popover = openAnchoredPopover({
+    anchor: opts.anchor,
+    el: pop,
+    onClose: () => pop.remove(),
+  });
+  const close = popover.close;
+  const reposition = popover.reposition;
 
   function fireAtDate(): Date {
     return dtValue ? new Date(dtValue) : new Date();
@@ -308,9 +285,4 @@ export function openSchedulePicker(opts: SchedulePickerOptions): void {
 
   if (view === "presets") renderPresets();
   else renderCustom();
-
-  setTimeout(() => {
-    document.addEventListener("mousedown", onOutside, true);
-    document.addEventListener("keydown", onKey, true);
-  }, 0);
 }

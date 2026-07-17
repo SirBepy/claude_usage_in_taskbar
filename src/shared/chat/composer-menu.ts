@@ -1,6 +1,7 @@
 // Small action menu popped from the composer's split-send chevron. Body-appended,
 // position:fixed, anchored off the chevron - mirrors the openSchedulePicker
 // popover idiom and reuses its popover/row styles so there's no new chrome.
+import { openAnchoredPopover } from "./anchored-popover";
 import "./schedule-picker.css";
 
 export interface ComposerMenuItem {
@@ -29,49 +30,19 @@ export function openComposerMenu(anchor: HTMLElement, items: ComposerMenuItem[])
   `;
   document.body.appendChild(pop);
 
-  function close(): void {
-    document.removeEventListener("mousedown", onOutside, true);
-    document.removeEventListener("keydown", onKey, true);
-    pop.remove();
-  }
-
-  function onOutside(e: MouseEvent): void {
-    if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
-  }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    }
-  }
-
-  function reposition(): void {
-    const rect = anchor.getBoundingClientRect();
-    const maxLeft = window.innerWidth - pop.offsetWidth - 8;
-    pop.style.left = `${Math.max(8, Math.min(rect.right - pop.offsetWidth, maxLeft))}px`;
-    const spaceAbove = rect.top;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    if (spaceAbove >= pop.offsetHeight + 8 || spaceAbove >= spaceBelow) {
-      pop.style.bottom = `${window.innerHeight - rect.top + 6}px`;
-      pop.style.top = "";
-    } else {
-      pop.style.top = `${rect.bottom + 6}px`;
-      pop.style.bottom = "";
-    }
-  }
+  const popover = openAnchoredPopover({
+    anchor,
+    el: pop,
+    onClose: () => pop.remove(),
+  });
 
   pop.querySelectorAll<HTMLButtonElement>("[data-idx]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const item = items[Number(btn.dataset.idx)];
-      close();
+      popover.close();
       item?.run();
     });
   });
 
-  reposition();
-  setTimeout(() => {
-    document.addEventListener("mousedown", onOutside, true);
-    document.addEventListener("keydown", onKey, true);
-  }, 0);
+  popover.reposition();
 }
