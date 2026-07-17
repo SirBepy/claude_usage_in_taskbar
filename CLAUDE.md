@@ -24,4 +24,4 @@ Deploy: GitHub Releases (NSIS / DMG / DEB + AppImage via CI)
 - Chat hub is subscription-only. `check_metered_billing` in `chat/billing.rs` refuses to spawn if `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, Bedrock, or Vertex env vars are set.
 - No auto-restart on channel exit - would register a fresh bridge with Claude desktop each time, creating duplicate entries in the Code sidebar. Spawn once, stay dead until manual Restart.
 - Linux: chat hub works but channel automation (Plan C) unavailable (`SpawnError::NonWindows`).
-- New IPC command requires a matching entry in `src-tauri/capabilities/default.json` or it silently fails.
+- Custom IPC commands need only `generate_handler!` registration - no `capabilities/default.json` entry. Capabilities entries ARE required for plugin permissions and new window labels (window labels must match `src-tauri/capabilities/default.json`, e.g. the `session-*` pattern).
