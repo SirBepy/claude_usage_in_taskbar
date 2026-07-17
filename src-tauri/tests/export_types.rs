@@ -12,7 +12,8 @@ use claude_conductor_lib::ipc::accounts::{
 };
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::servers::ServerInfo;
-use claude_conductor_lib::ipc::git::{GitInfo, PrFileChange};
+use claude_conductor_lib::ipc::git::GitInfo;
+use claude_conductor_lib::ipc::git_diff::PrFileChange;
 use claude_conductor_lib::ipc::files::TextFileData;
 use claude_conductor_lib::ipc::schedule::ExternalScheduledJob;
 use claude_conductor_lib::notifications::piper::{PiperStatus, VoiceEntry};
