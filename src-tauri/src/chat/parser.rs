@@ -765,6 +765,27 @@ mod tests {
     }
 
     #[test]
+    fn tool_result_image_block_surfaces_as_image_output() {
+        // A Read on a .png / an MCP screenshot returns the array-of-blocks form
+        // with an image (real transcript shape: source.type=base64, media_type, data).
+        // Regression for todo 261: the parser used to read content as a string only
+        // and silently drop the image, so screenshots never rendered in chat.
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_img","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}]},"timestamp":9}"#;
+        let evs = parse_line(line);
+        let output = evs.iter().find_map(|e| match e {
+            ChatEvent::ToolResult { tool_use_id, output, .. } if tool_use_id == "toolu_img" => Some(output),
+            _ => None,
+        });
+        match output {
+            Some(ContentBlock::Image { mime, data }) => {
+                assert_eq!(mime, "image/png");
+                assert_eq!(data, "iVBORw0KGgo=");
+            }
+            other => panic!("expected image output, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parses_user_message() {
         let mut ctx = ParserContext::new();
         let line = r#"{"type":"user","message":{"role":"user","content":"hello"},"timestamp":1700000000}"#;
