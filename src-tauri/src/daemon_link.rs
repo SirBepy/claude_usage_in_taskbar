@@ -280,6 +280,13 @@ async fn handle_daemon_notification(app: &tauri::AppHandle, method: &str, params
         "scheduled_item_fired" => {
             let _ = app.emit("scheduled-item-fired", params);
         }
+        // In-app HTML preview push (daemon::preview via POST /hooks/preview).
+        // Pure forward: the docked preview panel re-reads via `list_previews`
+        // on open/focus, so this is just the fast live-update nudge. Payload
+        // carries { snapshot: PreviewMeta }.
+        "preview" => {
+            let _ = app.emit("preview", params);
+        }
         // "permission_request" and "question_request" are intentionally NOT handled
         // here. Both are delivered via the reliable `list_pending_prompts` poll (see
         // `spawn_pending_prompt_poll`) because the broadcast can silently drop frames

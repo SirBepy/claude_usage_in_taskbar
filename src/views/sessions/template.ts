@@ -54,6 +54,13 @@ export function template() {
         >
           <i class="ph ph-clock-counter-clockwise"></i>History
         </button>
+        <button
+          class="smore-item"
+          id="previewToggleBtn"
+          title="Toggle HTML preview panel"
+        >
+          <i class="ph ph-monitor-play"></i>Preview
+        </button>
       </div>
       <div id="rate-limit-banner-host" class="rate-limit-banner-host" hidden></div>
       <div class="view-body sessions-layout">
@@ -72,6 +79,7 @@ export function template() {
         <main class="session-pane" id="session-pane">
           <div class="session-empty session-empty--setup"><i class="ph ph-spinner"></i><span>Setting up...</span></div>
         </main>
+        <div id="preview-panel-host" hidden></div>
       </div>
     </div>
   `;

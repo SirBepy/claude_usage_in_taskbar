@@ -11,6 +11,8 @@ import "./session-statusbar.css";
 import "./project-picker.css";
 import "./model-effort-modal.css";
 import "./new-project-modal.css";
+import "./preview-panel.css";
+import { renderPreview, type PreviewController } from "./preview-panel";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
 import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
@@ -170,6 +172,11 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   }
 
   setPaneRef(pane);
+  // Docked HTML preview panel (ai_todo 138): a global snapshot store rendered
+  // as a right-rail sibling of the pane, hidden until toggled from the more menu.
+  const previewRoot = root.querySelector<HTMLElement>("#preview-panel-host");
+  let previewController: PreviewController | null =
+    previewRoot ? renderPreview(previewRoot, { mode: "panel" }) : null;
   state.launchNewChatCallback = (project, config) => { void launchNewSession(pane, project, config); };
   initThinkingBar(pane);
 
@@ -228,6 +235,14 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     viewMoreBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleViewMoreMenu(viewMoreBtn);
+    });
+  }
+
+  const previewToggleBtn = root.querySelector<HTMLButtonElement>("#previewToggleBtn");
+  if (previewToggleBtn) {
+    previewToggleBtn.addEventListener("click", () => {
+      closeViewMoreMenu();
+      previewController?.toggle();
     });
   }
 
@@ -661,6 +676,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     unlistenWhenDone();
     if (unlistenDaemonStatus) { try { unlistenDaemonStatus(); } catch { /* ignore */ } unlistenDaemonStatus = null; }
     if (unlistenSettingsChanged) { try { unlistenSettingsChanged(); } catch { /* ignore */ } unlistenSettingsChanged = null; }
+    previewController?.destroy();
+    previewController = null;
     disarmSetupStallTimer();
     teardownState();
   };
