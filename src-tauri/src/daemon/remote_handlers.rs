@@ -93,6 +93,13 @@ const SAFE_METHODS: &[&str] = &[
     // the mutators (schedule_create/_update/_delete/_fire_now) are deliberately
     // NOT here - phone-side scheduling writes need a separate reviewed decision.
     "schedule_list",
+    // Read-only HTML preview store (ai_todo 138), phone-ready per the design's
+    // "RPC-mirrored like read_attachment" decision. The WRITE path
+    // (`push_preview`) is deliberately NOT here: pushes go through the
+    // unauthenticated `/hooks/preview` hook-server endpoint instead, mirroring
+    // the existing push(hook server)/read(remote RPC) split for this feature.
+    "list_previews",
+    "get_preview",
 ];
 
 // ── Push notifications (ai_todo 119) ─────────────────────────────────────────
@@ -644,7 +651,7 @@ mod tests {
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
             "list_accounts", "list_slash_commands", "ensure_session_character",
-            "schedule_list",
+            "schedule_list", "list_previews", "get_preview",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }

@@ -10,6 +10,7 @@ use claude_conductor_lib::context_status::ContextStatus;
 use claude_conductor_lib::ipc::accounts::{
     AccountIdentity, AccountsSetupPromptState, AddAccountSession, LoginCheckOutcome,
 };
+use claude_conductor_lib::daemon::preview::{PreviewMeta, PreviewSnapshot};
 use claude_conductor_lib::ipc::ai_todos::AiTodoEntry;
 use claude_conductor_lib::ipc::servers::ServerInfo;
 use claude_conductor_lib::ipc::git::GitInfo;
@@ -150,6 +151,10 @@ fn emit_ipc_types() {
     out.push_str(&decl::<ScheduledStatus>());
     out.push_str(&decl::<ScheduledItem>());
     out.push_str(&decl::<ExternalScheduledJob>());
+
+    // HTML preview window (ai_todo 138)
+    out.push_str(&decl::<PreviewSnapshot>());
+    out.push_str(&decl::<PreviewMeta>());
 
     let path = output_path();
     if let Some(parent) = path.parent() {

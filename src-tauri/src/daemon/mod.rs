@@ -19,6 +19,7 @@ pub mod lifecycle;
 pub mod lockfile;
 pub mod methods;
 pub mod notifier;
+pub mod preview;
 pub mod push;
 pub mod rate_limit;
 mod remote_handlers;

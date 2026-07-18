@@ -12,6 +12,7 @@
 mod context;
 mod lifecycle;
 mod permission;
+mod preview;
 mod relay;
 mod stop;
 
@@ -134,6 +135,7 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16, HookBindError> {
         .route("/hooks/session-start", post(lifecycle::on_session_start))
         .route("/hooks/session-end", post(lifecycle::on_session_end))
         .route("/hooks/stop", post(stop::on_stop))
+        .route("/hooks/preview", post(preview::on_preview_push))
         .route("/permissions/request", post(permission::on_permission_request))
         .route("/questions/request", post(permission::on_question_request))
         .route("/hooks/ask-question", post(permission::on_ask_question_hook))
