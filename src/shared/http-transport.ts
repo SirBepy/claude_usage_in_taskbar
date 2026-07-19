@@ -407,6 +407,13 @@ export class HttpTransport implements Transport {
       // desktop-only until a deliberate write-parity decision is made.
       case "schedule_list":
         return this.rpc<T>("schedule_list", null);
+      // Read-only HTML preview store (ai_todo 138), phone-ready by design: same
+      // allowlisted RPCs the desktop panel already calls, just routed through
+      // /api/rpc instead of Tauri invoke.
+      case "list_previews":
+        return this.rpc<T>("list_previews", null);
+      case "get_preview":
+        return this.rpc<T>("get_preview", { id: args.id });
       // No remote path: poll_now (a CDP scrape needing Chrome), takeover,
       // editor/window/local-FS commands, and file watchers. Degrade clearly.
       default:

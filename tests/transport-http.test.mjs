@@ -187,6 +187,18 @@ describe("HttpTransport.call mapping", () => {
     expect(body()).toEqual({ method: "get_active_sessions", params: null });
   });
 
+  it("forwards list_previews to the rpc with a null param", async () => {
+    await new HttpTransport().call("list_previews");
+    expect(url()).toBe("/api/rpc");
+    expect(body()).toEqual({ method: "list_previews", params: null });
+  });
+
+  it("forwards get_preview with the snapshot id", async () => {
+    await new HttpTransport().call("get_preview", { id: "prev-1" });
+    expect(url()).toBe("/api/rpc");
+    expect(body()).toEqual({ method: "get_preview", params: { id: "prev-1" } });
+  });
+
   it("throws on a non-ok HTTP response", async () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 403 });
     await expect(new HttpTransport().call("list_instances")).rejects.toThrow("403");
