@@ -7,6 +7,7 @@ import { setSelectedSessionId } from "./permission-modal";
 import type { SessionStatusbar } from "./session-statusbar";
 import type { SessionConfig } from "./model-effort-modal";
 import type { ChangesPanel } from "./changes-panel";
+import type { PreviewController } from "./preview-panel";
 
 export interface ParkedDraft {
   placeholderId: string;
@@ -87,6 +88,10 @@ export interface SessionsState {
    * pane mounts; cleared on unmount. Allows the view-more-menu and sidebar ctx-menu to
    * invoke "View changes" for the currently-selected session without importing active-session. */
   activeChatActions: { viewChanges: () => void } | null;
+  /** Set by sessions.ts on mount, cleared on unmount. Lets setActiveSession
+   *  (below) scope the docked preview panel to whichever chat is active,
+   *  without active-session.ts importing preview-panel.ts directly. */
+  previewController: PreviewController | null;
 }
 
 export function createInitialState(mountId: number): SessionsState {
@@ -112,6 +117,7 @@ export function createInitialState(mountId: number): SessionsState {
     daemonSetupStalled: false,
     launchNewChatCallback: null,
     activeChatActions: null,
+    previewController: null,
   };
 }
 
@@ -158,6 +164,7 @@ const LS_LAST_SELECTED = "cc_last_selected_session";
 export function setActiveSession(id: string | null): void {
   state.selectedId = id;
   setSelectedSessionId(id);
+  state.previewController?.setSessionScope(id);
   if (id && !id.startsWith("pending-")) {
     try {
       localStorage.setItem(LS_LAST_SELECTED, id);

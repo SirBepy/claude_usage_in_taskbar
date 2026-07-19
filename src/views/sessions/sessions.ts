@@ -172,11 +172,14 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   }
 
   setPaneRef(pane);
-  // Docked HTML preview panel (ai_todo 138): a global snapshot store rendered
-  // as a right-rail sibling of the pane, hidden until toggled from the more menu.
+  // Docked HTML preview panel (ai_todo 138): a snapshot store rendered as a
+  // right-rail sibling of the pane, scoped to whichever chat is active (see
+  // state.ts's setActiveSession -> previewController.setSessionScope).
   const previewRoot = root.querySelector<HTMLElement>("#preview-panel-host");
   let previewController: PreviewController | null =
     previewRoot ? renderPreview(previewRoot, { mode: "panel" }) : null;
+  state.previewController = previewController;
+  previewController?.setSessionScope(state.selectedId);
   state.launchNewChatCallback = (project, config) => { void launchNewSession(pane, project, config); };
   initThinkingBar(pane);
 
@@ -678,6 +681,7 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     if (unlistenSettingsChanged) { try { unlistenSettingsChanged(); } catch { /* ignore */ } unlistenSettingsChanged = null; }
     previewController?.destroy();
     previewController = null;
+    state.previewController = null;
     disarmSetupStallTimer();
     teardownState();
   };

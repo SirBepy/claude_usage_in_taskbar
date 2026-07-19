@@ -21,8 +21,9 @@
 .preview-panel {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  width: 100%;
   height: 100%;
+  min-width: 0;
 }
 
 .pv-resize-handle {
@@ -78,47 +79,6 @@
   flex-shrink: 0;
 }
 
-.pv-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--color-surface-alt);
-  border: 1px solid var(--color-border);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-}
-
-.pv-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--chat-state-done);
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.pv-pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--chat-state-done);
-}
-
-.pv-live.pv-just-pushed .pv-pulse {
-  animation: pv-pulse 1.6s ease-out 3;
-}
-
-@keyframes pv-pulse {
-  0% { box-shadow: 0 0 0 0 var(--chat-state-done-glow, rgba(74, 222, 128, 0.5)); }
-  70% { box-shadow: 0 0 0 7px rgba(74, 222, 128, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
-}
-
 .pv-grow {
   flex: 1;
   min-width: 4px;
@@ -148,53 +108,100 @@
   cursor: default;
 }
 
-/* ── Sub-bar ────────────────────────────────────────────────────────────── */
-
-.pv-sub {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--color-border);
+.pv-icon-btn.on {
+  background: var(--color-surface-alt);
+  color: var(--color-primary);
 }
 
-.pv-seg {
+/* ── "More options" menu (refresh, open-in-browser, device-size toggle) ──── */
+
+.pv-more-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.pv-more-menu {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 20;
+  min-width: 170px;
+  padding: 6px;
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* `display: flex` above would otherwise beat the UA `[hidden]` rule (same
+   gotcha as #preview-panel-host below) - without this, the menu renders
+   permanently visible regardless of moreMenuOpen. */
+.pv-more-menu[hidden] {
+  display: none;
+}
+
+.pv-more-item.on {
+  color: var(--color-primary);
+}
+
+.pv-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.pv-more-item:hover {
   background: var(--color-surface-alt);
-  border-radius: 7px;
-  padding: 2px;
+}
+
+.pv-more-sep {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 2px;
+}
+
+.pv-more-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  padding: 2px 8px 4px;
 }
 
 .pv-seg-btn {
+  width: 100%;
   border: 0;
   background: transparent;
   color: var(--color-text-muted);
-  padding: 4px 9px;
-  border-radius: 5px;
+  padding: 6px 8px;
+  border-radius: 6px;
   cursor: pointer;
   font: inherit;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 12px;
   display: inline-flex;
-  gap: 5px;
+  gap: 8px;
   align-items: center;
+}
+
+.pv-seg-btn:hover {
+  background: var(--color-surface-alt);
 }
 
 .pv-seg-btn.on {
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.pv-autorefresh {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text-muted);
-  font-weight: 600;
-  font-size: 11px;
-  cursor: pointer;
+  color: var(--color-primary);
 }
 
 /* ── Body: history rail + canvas ───────────────────────────────────────── */
@@ -214,6 +221,11 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
+}
+
+/* Same [hidden]-vs-`display:flex` gotcha as .pv-more-menu above. */
+.pv-rail[hidden] {
+  display: none;
 }
 
 .pv-rail-lbl {
@@ -278,31 +290,37 @@
   background: var(--color-primary);
 }
 
+/* Fills edge-to-edge by default (Joe, 2026-07-20: "I want my view split into
+   2 ... why the fuck is the preview not fullscreened in there" - no padding,
+   no checkerboard "device mockup" staging). The checkerboard/padding/frame
+   chrome only reappears for the Tablet/Phone size simulation below, where a
+   visual boundary actually communicates something (this is narrower than the
+   real canvas), not for the Desktop default. */
 .pv-canvas {
   flex: 1;
   min-width: 0;
-  padding: 14px;
+  min-height: 0;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
   overflow: auto;
   background-color: var(--color-background);
-  background-image:
-    linear-gradient(45deg, var(--color-surface-alt) 25%, transparent 25%),
-    linear-gradient(-45deg, var(--color-surface-alt) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, var(--color-surface-alt) 75%),
-    linear-gradient(-45deg, transparent 75%, var(--color-surface-alt) 75%);
-  background-size: 18px 18px;
-  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
 }
 
 .pv-frame {
+  width: 100%;
+  height: 100%;
+}
+
+.pv-frame[data-w="tablet"],
+.pv-frame[data-w="phone"] {
+  flex: none;
+  align-self: flex-start;
+  margin: 14px auto;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   transition: width 0.25s ease;
-  width: 100%;
+  height: auto;
 }
 
 .pv-frame[data-w="tablet"] {
@@ -316,9 +334,13 @@
 .pv-iframe {
   width: 100%;
   height: 100%;
-  min-height: 420px;
   border: 0;
   display: block;
+}
+
+.pv-frame[data-w="tablet"] .pv-iframe,
+.pv-frame[data-w="phone"] .pv-iframe {
+  height: 420px;
 }
 
 .pv-empty {
@@ -342,48 +364,6 @@
   background: var(--color-surface-alt);
   border-radius: 4px;
   padding: 1px 5px;
-}
-
-/* ── "Preview pushed" badge (lighter-weight substitute for an in-chat chip;
-   shown while the panel is closed, click opens it — see preview-panel.ts) ── */
-
-.pv-push-badge {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--color-surface-alt);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  font: inherit;
-  font-weight: 600;
-  font-size: 12px;
-  cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  opacity: 0;
-  transform: translateY(8px);
-  pointer-events: none;
-  transition: opacity 160ms, transform 160ms;
-}
-
-.pv-push-badge.show {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.pv-push-badge i {
-  color: var(--color-primary);
-}
-
-.pv-push-badge small {
-  color: var(--color-text-muted);
-  font-weight: 500;
 }
 
 @media (max-width: 860px) {

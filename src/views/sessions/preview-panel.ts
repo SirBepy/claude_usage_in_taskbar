@@ -1,10 +1,15 @@
 // Docked HTML preview panel (ai_todo 138, frontend chunk).
 //
 // The daemon owns one global preview timeline: terminal Claude (curl to
-// `/hooks/preview`) and the in-app chat AI both push HTML snapshots to it. A
-// same-slug push replaces the live entry in place (version++, same id); a
-// new/absent slug appends a new snapshot. This module renders that store —
-// live latest + a history rail — as a dockable panel.
+// `/hooks/preview`) and the in-app chat AI both push HTML snapshots to it,
+// each snapshot tagged with the pushing session's `session_id`. This module
+// renders that store — live latest + a history rail — as a dockable panel,
+// but only for whichever chat is currently active: `setSessionScope` is
+// called on every session switch (see state.ts's `setActiveSession`) and
+// re-filters the fetched list client-side. A snapshot pushed with no
+// session_id (e.g. an ad-hoc curl outside any chat) simply never matches any
+// scope and won't appear — that's an accepted, unrequested-workaround-free
+// consequence of scoping being per-chat now, not a bug.
 //
 // `renderPreview(root, { mode })` takes a `mode` so a future pop-out OS
 // window can reuse this exact renderer (ai_todo 138's deferred follow-up);
@@ -29,19 +34,20 @@ export interface PreviewController {
   open(snapshotId?: string): void;
   close(): void;
   isOpen(): boolean;
+  /** Scopes the panel to one chat's previews; call on every active-session
+   *  switch (see state.ts). Clears and re-fetches when the id changes. */
+  setSessionScope(sessionId: string | null): void;
   destroy(): void;
 }
 
 // ── Persistence (dock-open + panel width only — the real cross-reopen
-// behavior per the spec; device-width and auto-refresh stay in-memory). Same
-// localStorage + try/catch shape as state.ts's LS_LAST_SELECTED. ──────────
+// behavior per the spec; device-width and history-rail-open stay in-memory,
+// same as the removed auto-refresh toggle used to). Same localStorage +
+// try/catch shape as state.ts's LS_LAST_SELECTED. ──────────────────────────
 const LS_OPEN_KEY = "cc_preview_panel_open";
 const LS_WIDTH_KEY = "cc_preview_panel_width";
-const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 320;
-const MAX_WIDTH = 720;
-const LIVE_PULSE_MS = 5000;
-const PUSH_BADGE_MS = 8000;
+const MAX_WIDTH = 2000;
 
 function loadOpen(): boolean {
   try {
@@ -59,7 +65,12 @@ function saveOpen(open: boolean): void {
   }
 }
 
-function loadWidth(): number {
+/** Explicit px width from a past manual drag, or null if the dev has never
+ *  resized it - in which case the panel takes an even 50/50 flex split with
+ *  the chat pane (Joe, 2026-07-20: "I want my view to be split into 2"), not
+ *  a narrow fixed-px sidebar. Dragging the handle commits a fixed px width
+ *  from then on, same as any split-pane. */
+function loadWidth(): number | null {
   try {
     const raw = localStorage.getItem(LS_WIDTH_KEY);
     const n = raw ? parseInt(raw, 10) : NaN;
@@ -67,7 +78,7 @@ function loadWidth(): number {
   } catch {
     /* ignore */
   }
-  return DEFAULT_WIDTH;
+  return null;
 }
 
 function saveWidth(px: number): void {
@@ -124,13 +135,20 @@ class PreviewPanel implements PreviewController {
   private snapshots: PreviewMeta[] = [];
   private selected: PreviewSnapshot | null = null;
   private deviceWidth: DeviceWidth = "desktop";
-  private autoRefresh = true;
   private openState: boolean;
-  private width: number;
+  /** Explicit manually-dragged px width, or null for the default 50/50 flex
+   *  split with the chat pane - see loadWidth's doc. */
+  private width: number | null;
+  /** Only previews pushed with this session_id are shown. Set by
+   *  state.ts's setActiveSession on every chat switch; null before any
+   *  chat is selected. */
+  private currentSessionId: string | null = null;
+  /** History rail visibility — in-memory only, defaults closed (Joe,
+   *  2026-07-20: "for now let's make it so history tab can also be toggled
+   *  on/off and by default its off"). */
+  private historyOpen = false;
+  private moreMenuOpen = false;
   private unlistenPreview: Unlisten | null = null;
-  private pulseTimer: ReturnType<typeof setTimeout> | null = null;
-  private badgeTimer: ReturnType<typeof setTimeout> | null = null;
-  private badgeEl: HTMLButtonElement | null = null;
   private focusHandler: (() => void) | null = null;
   private resizeCleanup: (() => void) | null = null;
 
@@ -140,11 +158,13 @@ class PreviewPanel implements PreviewController {
     this.width = loadWidth();
     this.openState = loadOpen();
 
+    this.applyWidth();
     this.renderShell();
     this.wireEvents();
     this.resizeCleanup = wireResizeHandle(this.root, (px) => {
       this.width = px;
       saveWidth(px);
+      this.applyWidth();
     });
     void this.subscribeLive();
 
@@ -161,6 +181,16 @@ class PreviewPanel implements PreviewController {
       this.renderHeaderEmpty();
       this.renderCanvasEmpty();
     }
+  }
+
+  /** Sets the flex sizing on the host element (`this.root`, the actual flex
+   *  item inside `.sessions-layout`, sibling to `.session-pane`): an even
+   *  50/50 split by default (`flex: 1 1 0%`, matching `.session-pane`'s own
+   *  `flex: 1`), or a fixed px width once the dev has dragged the resize
+   *  handle (`flex: 0 0 <px>px`). The inner `.preview-panel` div just fills
+   *  whatever width this resolves to (width/height 100%). */
+  private applyWidth(): void {
+    this.root.style.flex = this.width === null ? "1 1 0%" : `0 0 ${this.width}px`;
   }
 
   // ── Public controller API ────────────────────────────────────────────────
@@ -187,20 +217,29 @@ class PreviewPanel implements PreviewController {
     return this.openState;
   }
 
+  setSessionScope(sessionId: string | null): void {
+    if (this.currentSessionId === sessionId) return;
+    this.currentSessionId = sessionId;
+    if (this.openState) {
+      void this.refreshList();
+    } else {
+      // Drop the stale cross-chat cache so a later open() never flashes the
+      // previous chat's snapshots before the fresh fetch lands.
+      this.snapshots = [];
+      this.selected = null;
+    }
+  }
+
   destroy(): void {
     if (this.unlistenPreview) {
       try { this.unlistenPreview(); } catch { /* ignore */ }
       this.unlistenPreview = null;
     }
-    if (this.pulseTimer) { clearTimeout(this.pulseTimer); this.pulseTimer = null; }
-    if (this.badgeTimer) { clearTimeout(this.badgeTimer); this.badgeTimer = null; }
     if (this.focusHandler) {
       window.removeEventListener("focus", this.focusHandler);
       this.focusHandler = null;
     }
     if (this.resizeCleanup) { this.resizeCleanup(); this.resizeCleanup = null; }
-    this.badgeEl?.remove();
-    this.badgeEl = null;
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
@@ -208,7 +247,8 @@ class PreviewPanel implements PreviewController {
   private async refreshList(opts: { selectId?: string } = {}): Promise<void> {
     try {
       const list = await invoke<PreviewMeta[]>("list_previews");
-      this.snapshots = Array.isArray(list) ? list : [];
+      const all = Array.isArray(list) ? list : [];
+      this.snapshots = all.filter((m) => m.session_id === this.currentSessionId);
     } catch (err) {
       console.error("[preview-panel] list_previews failed", err);
     }
@@ -226,7 +266,7 @@ class PreviewPanel implements PreviewController {
     await this.selectSnapshot(stillExists ? targetId : first.id);
   }
 
-  private async selectSnapshot(id: string, opts: { pulse?: boolean } = {}): Promise<void> {
+  private async selectSnapshot(id: string): Promise<void> {
     try {
       this.selected = await invoke<PreviewSnapshot>("get_preview", { id });
     } catch (err) {
@@ -236,29 +276,28 @@ class PreviewPanel implements PreviewController {
     this.renderHeader();
     this.renderIframe();
     this.renderRail();
-    if (opts.pulse) this.pulseLive();
   }
 
-  /** `preview` notifier broadcast handler — the fast path. Always keeps the
-   * rail metadata current; only moves the visible iframe when auto-refresh is
-   * on, nothing is selected yet, or the push landed on the snapshot already
-   * being viewed (so a manual look at an older history entry isn't yanked out
-   * from under the user). While the panel is closed, surfaces the lighter-
-   * weight "preview pushed" badge instead (see class docs on why not the
-   * transcript tool-chip path). */
+  /** `preview` notifier broadcast handler — the fast path. Ignores pushes for
+   * any chat other than the one currently in scope (see class docs). Always
+   * follows the live push (Joe, 2026-07-20: "we always want auto refresh" —
+   * no opt-out) and always opens the panel if it's closed, so the dev never
+   * has to manually opt in to seeing something Claude just produced;
+   * minimizing afterward is the escape hatch, not the default. */
   private onLivePush(meta: PreviewMeta | undefined): void {
     if (!meta) return;
+    if (meta.session_id !== this.currentSessionId) return;
+
     const idx = this.snapshots.findIndex((s) => s.id === meta.id);
     if (idx >= 0) this.snapshots[idx] = meta;
     else this.snapshots.unshift(meta);
 
     if (!this.openState) {
-      this.showPushBadge(meta);
+      this.open(meta.id);
       return;
     }
     this.renderRail();
-    const shouldFollow = this.autoRefresh || !this.selected || this.selected.id === meta.id;
-    if (shouldFollow) void this.selectSnapshot(meta.id, { pulse: true });
+    void this.selectSnapshot(meta.id);
   }
 
   private async subscribeLive(): Promise<void> {
@@ -270,35 +309,6 @@ class PreviewPanel implements PreviewController {
     } catch (err) {
       console.warn("[preview-panel] listen(preview) failed", err);
     }
-  }
-
-  // ── "Preview pushed" badge (lighter-weight substitute for the in-chat tool
-  // chip — see class docs). Clicking it opens the panel on that snapshot. ──
-
-  private showPushBadge(meta: PreviewMeta): void {
-    if (!this.badgeEl) {
-      const el = document.createElement("button");
-      el.type = "button";
-      el.className = "pv-push-badge";
-      el.addEventListener("click", () => {
-        const id = el.dataset.snapId;
-        this.dismissBadge();
-        this.open(id);
-      });
-      document.body.appendChild(el);
-      this.badgeEl = el;
-    }
-    this.badgeEl.dataset.snapId = meta.id;
-    this.badgeEl.innerHTML =
-      `<i class="ph-fill ph-monitor-play"></i> Preview pushed: <b>${escapeHtml(meta.slug)}</b> <small>· v${meta.version}</small>`;
-    this.badgeEl.classList.add("show");
-    if (this.badgeTimer) clearTimeout(this.badgeTimer);
-    this.badgeTimer = setTimeout(() => this.dismissBadge(), PUSH_BADGE_MS);
-  }
-
-  private dismissBadge(): void {
-    this.badgeEl?.classList.remove("show");
-    if (this.badgeTimer) { clearTimeout(this.badgeTimer); this.badgeTimer = null; }
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────
@@ -315,13 +325,6 @@ class PreviewPanel implements PreviewController {
     );
   }
 
-  private copyHtml(): void {
-    if (!this.selected) return;
-    void navigator.clipboard.writeText(this.selected.html).catch((err) =>
-      console.error("[preview-panel] clipboard write failed", err),
-    );
-  }
-
   private setDeviceWidth(w: DeviceWidth): void {
     this.deviceWidth = w;
     this.root.querySelectorAll<HTMLElement>(".pv-seg-btn").forEach((b) => {
@@ -331,41 +334,58 @@ class PreviewPanel implements PreviewController {
     if (frame) frame.dataset.w = w;
   }
 
-  private pulseLive(): void {
-    const liveEl = this.root.querySelector<HTMLElement>(".pv-live");
-    if (!liveEl) return;
-    liveEl.classList.add("pv-just-pushed");
-    if (this.pulseTimer) clearTimeout(this.pulseTimer);
-    this.pulseTimer = setTimeout(() => liveEl.classList.remove("pv-just-pushed"), LIVE_PULSE_MS);
+  private toggleHistory(): void {
+    this.historyOpen = !this.historyOpen;
+    const rail = this.root.querySelector<HTMLElement>("[data-rail]");
+    if (rail) rail.hidden = !this.historyOpen;
+    const item = this.root.querySelector<HTMLElement>('.pv-more-item[data-act="history"]');
+    if (item) item.classList.toggle("on", this.historyOpen);
+  }
+
+  private toggleMoreMenu(): void {
+    this.moreMenuOpen = !this.moreMenuOpen;
+    this.renderMoreMenuState();
+  }
+
+  private closeMoreMenu(): void {
+    if (!this.moreMenuOpen) return;
+    this.moreMenuOpen = false;
+    this.renderMoreMenuState();
+  }
+
+  private renderMoreMenuState(): void {
+    const menu = this.root.querySelector<HTMLElement>(".pv-more-menu");
+    if (menu) menu.hidden = !this.moreMenuOpen;
   }
 
   // ── Rendering ────────────────────────────────────────────────────────────
 
   private renderShell(): void {
     this.root.innerHTML = `
-      <div class="preview-panel" data-mode="${this.mode}" style="width:${this.width}px">
+      <div class="preview-panel" data-mode="${this.mode}">
         <div class="pv-resize-handle" data-resize title="Drag to resize"></div>
         <header class="pv-head">
           <span class="pv-title"><i class="ph ph-monitor-play"></i><span class="pv-name">No previews yet</span><span class="pv-ver"></span></span>
-          <span class="pv-badge" hidden></span>
-          <span class="pv-live" hidden><span class="pv-pulse"></span>LIVE</span>
           <span class="pv-grow"></span>
-          <button type="button" class="pv-icon-btn" data-act="refresh" title="Refresh"><i class="ph ph-arrow-clockwise"></i></button>
-          <button type="button" class="pv-icon-btn" data-act="open-browser" title="Open in browser"><i class="ph ph-arrow-square-out"></i></button>
-          <button type="button" class="pv-icon-btn" data-act="copy" title="Copy HTML"><i class="ph ph-copy"></i></button>
-          <button type="button" class="pv-icon-btn" data-act="popout" title="Pop-out window (coming soon)" disabled><i class="ph ph-arrows-out-simple"></i></button>
+          <div class="pv-more-wrap">
+            <button type="button" class="pv-icon-btn" data-act="more" title="More options"><i class="ph ph-dots-three-vertical"></i></button>
+            <div class="pv-more-menu" hidden>
+              <button type="button" class="pv-more-item" data-act="refresh"><i class="ph ph-arrow-clockwise"></i>Refresh</button>
+              <button type="button" class="pv-more-item" data-act="open-browser"><i class="ph ph-arrow-square-out"></i>Open in browser</button>
+              <button type="button" class="pv-more-item" data-act="history"><i class="ph ph-clock-counter-clockwise"></i>Show history</button>
+              <div class="pv-more-sep"></div>
+              <div class="pv-more-label">Toggle size</div>
+              <button type="button" class="pv-seg-btn on" data-w="desktop"><i class="ph ph-monitor"></i>Desktop</button>
+              <button type="button" class="pv-seg-btn" data-w="tablet"><i class="ph ph-device-tablet"></i>Tablet</button>
+              <button type="button" class="pv-seg-btn" data-w="phone"><i class="ph ph-device-mobile"></i>Phone</button>
+              <div class="pv-more-sep"></div>
+              <button type="button" class="pv-more-item" data-act="popout" disabled><i class="ph ph-arrows-out-simple"></i>Pop-out window (coming soon)</button>
+            </div>
+          </div>
           <button type="button" class="pv-icon-btn" data-act="close" title="Close panel"><i class="ph ph-x"></i></button>
         </header>
-        <div class="pv-sub">
-          <div class="pv-seg">
-            <button type="button" class="pv-seg-btn on" data-w="desktop"><i class="ph ph-monitor"></i>Desktop</button>
-            <button type="button" class="pv-seg-btn" data-w="tablet"><i class="ph ph-device-tablet"></i>Tablet</button>
-            <button type="button" class="pv-seg-btn" data-w="phone"><i class="ph ph-device-mobile"></i>Phone</button>
-          </div>
-          <label class="pv-autorefresh"><input type="checkbox" checked><span>Auto-refresh</span></label>
-        </div>
         <div class="pv-body">
-          <div class="pv-rail" data-rail><div class="pv-rail-lbl">History</div></div>
+          <div class="pv-rail" data-rail hidden><div class="pv-rail-lbl">History</div></div>
           <div class="pv-canvas"></div>
         </div>
       </div>
@@ -377,28 +397,15 @@ class PreviewPanel implements PreviewController {
     if (!this.selected) return;
     const nameEl = this.root.querySelector<HTMLElement>(".pv-name");
     const verEl = this.root.querySelector<HTMLElement>(".pv-ver");
-    const badgeEl = this.root.querySelector<HTMLElement>(".pv-badge");
-    const liveEl = this.root.querySelector<HTMLElement>(".pv-live");
-    const liveId = this.snapshots[0]?.id;
-
     if (nameEl) nameEl.textContent = this.selected.slug;
     if (verEl) verEl.textContent = ` · v${this.selected.version}`;
-    if (badgeEl) {
-      badgeEl.hidden = false;
-      badgeEl.innerHTML = `<span class="pv-dot ${sourceDotClass(this.selected.source)}"></span>${escapeHtml(this.selected.source)}`;
-    }
-    if (liveEl) liveEl.hidden = liveId !== this.selected.id;
   }
 
   private renderHeaderEmpty(): void {
     const nameEl = this.root.querySelector<HTMLElement>(".pv-name");
     const verEl = this.root.querySelector<HTMLElement>(".pv-ver");
-    const badgeEl = this.root.querySelector<HTMLElement>(".pv-badge");
-    const liveEl = this.root.querySelector<HTMLElement>(".pv-live");
     if (nameEl) nameEl.textContent = "No previews yet";
     if (verEl) verEl.textContent = "";
-    if (badgeEl) badgeEl.hidden = true;
-    if (liveEl) liveEl.hidden = true;
   }
 
   private renderIframe(): void {
@@ -445,12 +452,6 @@ class PreviewPanel implements PreviewController {
 
   private wireEvents(): void {
     this.root.addEventListener("click", (e) => this.onClick(e));
-    this.root.addEventListener("change", (e) => {
-      const target = e.target as HTMLElement;
-      if (target.matches(".pv-autorefresh input")) {
-        this.autoRefresh = (target as HTMLInputElement).checked;
-      }
-    });
   }
 
   private onClick(e: MouseEvent): void {
@@ -459,9 +460,10 @@ class PreviewPanel implements PreviewController {
     const actBtn = target.closest<HTMLElement>("[data-act]");
     if (actBtn) {
       switch (actBtn.dataset.act) {
-        case "refresh": void this.refreshList(); return;
-        case "open-browser": this.openInBrowser(); return;
-        case "copy": this.copyHtml(); return;
+        case "refresh": void this.refreshList(); this.closeMoreMenu(); return;
+        case "open-browser": this.openInBrowser(); this.closeMoreMenu(); return;
+        case "history": this.toggleHistory(); this.closeMoreMenu(); return;
+        case "more": this.toggleMoreMenu(); return;
         case "close": this.close(); return;
         default: return; // "popout" is disabled (deferred pop-out window)
       }
@@ -470,47 +472,51 @@ class PreviewPanel implements PreviewController {
     const segBtn = target.closest<HTMLElement>(".pv-seg-btn");
     if (segBtn?.dataset.w) {
       this.setDeviceWidth(segBtn.dataset.w as DeviceWidth);
+      this.closeMoreMenu();
       return;
     }
 
     const snap = target.closest<HTMLElement>(".pv-snap");
     if (snap?.dataset.id) {
       void this.selectSnapshot(snap.dataset.id);
+      return;
     }
+
+    if (!target.closest(".pv-more-wrap")) this.closeMoreMenu();
   }
 }
 
 // Resize-drag wiring is kept out of the class body above as a free function
-// bound in the constructor, mirroring the rest of the panel's DOM-query style
-// (queries `.preview-panel` / `[data-resize]` fresh, no cached refs needed
-// beyond the drag's own closure).
+// bound in the constructor. Resizes `root` itself (the actual flex item
+// inside `.sessions-layout`, not the inner `.preview-panel` div) since
+// sizing now lives on the host's `flex` (see applyWidth's doc).
 function wireResizeHandle(root: HTMLElement, onCommit: (px: number) => void): () => void {
   const handle = root.querySelector<HTMLElement>("[data-resize]");
-  const panel = root.querySelector<HTMLElement>(".preview-panel");
-  if (!handle || !panel) return () => {};
+  if (!handle) return () => {};
 
   let dragging = false;
   let startX = 0;
   let startWidth = 0;
+  let liveWidth = 0;
 
   const onMove = (e: MouseEvent) => {
     if (!dragging) return;
     const delta = startX - e.clientX; // dragging left (toward the chat) grows the panel
-    const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
-    panel.style.width = `${next}px`;
+    liveWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+    root.style.flex = `0 0 ${liveWidth}px`;
   };
   const onUp = () => {
     if (!dragging) return;
     dragging = false;
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
-    const finalWidth = parseInt(panel.style.width, 10);
-    if (Number.isFinite(finalWidth)) onCommit(finalWidth);
+    onCommit(liveWidth);
   };
   const onDown = (e: MouseEvent) => {
     dragging = true;
     startX = e.clientX;
-    startWidth = panel.getBoundingClientRect().width;
+    startWidth = root.getBoundingClientRect().width;
+    liveWidth = startWidth;
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
     e.preventDefault();
