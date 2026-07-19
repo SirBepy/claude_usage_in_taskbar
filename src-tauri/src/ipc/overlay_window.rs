@@ -80,7 +80,7 @@ fn build_overlay_window(app: &AppHandle, icon_rect: tauri::Rect) -> Result<(), S
         OVERLAY_LABEL,
         tauri::WebviewUrl::App("overlay.html".into()),
     )
-    .title("Claude usage")
+    .title(crate::ipc::window::test_title("Claude usage"))
     .inner_size(OVERLAY_WIDTH, OVERLAY_HEIGHT)
     .position(x, y)
     // Not user-resizable — the frontend sizes it to hug its content

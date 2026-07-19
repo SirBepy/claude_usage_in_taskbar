@@ -50,6 +50,28 @@ import { openModelEffortModal } from "./views/sessions/model-effort-modal";
 import { askConfirm } from "./shared/confirm";
 import type { ChatEvent, NewsPost, ScheduledItem } from "./types/ipc.generated";
 
+// Test-build banner: in dev (`cargo tauri dev` / the vite dev server) paint a
+// slim marker strip at the top so a test build is never mistaken for a real
+// install. `import.meta.env.DEV` is false under `vite build`, so this block is
+// stripped from production bundles.
+if (import.meta.env.DEV) {
+  const paintTestBanner = (): void => {
+    if (document.getElementById("test-build-banner")) return;
+    const bar = document.createElement("div");
+    bar.id = "test-build-banner";
+    bar.textContent = "TEST BUILD";
+    bar.style.cssText = [
+      "position:fixed", "top:0", "left:0", "right:0", "height:16px",
+      "text-align:center", "font:600 10px/16px 'DM Sans',sans-serif",
+      "letter-spacing:1.5px", "color:#1a1400", "background:#f5b301",
+      "z-index:2147483647", "pointer-events:none", "user-select:none",
+    ].join(";");
+    document.body.appendChild(bar);
+  };
+  if (document.body) paintTestBanner();
+  else document.addEventListener("DOMContentLoaded", paintTestBanner);
+}
+
 // Test seam (ai_todo 53 e2e): in dev only, expose a helper that injects a
 // synthetic file-edit tool_use into a mounted session so the wdio harness can
 // exercise the inline edit-window + changes panel + activity bar WITHOUT a real

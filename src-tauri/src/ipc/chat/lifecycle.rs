@@ -46,10 +46,10 @@ pub async fn detach_window(session_id: String, app: AppHandle) -> Result<(), Str
         &label,
         tauri::WebviewUrl::App(url.into()),
     )
-    .title(format!(
+    .title(crate::ipc::window::test_title(&format!(
         "Session {}",
         &session_id[..session_id.len().min(8)]
-    ))
+    )))
     .inner_size(800.0, 600.0)
     .visible(false)
     .on_page_load(move |w, payload| {

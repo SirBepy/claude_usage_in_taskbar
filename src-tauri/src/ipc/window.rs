@@ -6,6 +6,17 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// In debug builds (`cargo tauri dev`) prefix a window title with "Test - " so
+/// the dev/test build is unmistakable next to a real install. Release builds
+/// (`cargo tauri build`) return the title unchanged.
+pub(crate) fn test_title(base: &str) -> String {
+    if cfg!(debug_assertions) {
+        format!("Test - {base}")
+    } else {
+        base.to_string()
+    }
+}
+
 /// Show + focus an already-built main window.
 pub fn surface_main(w: &tauri::WebviewWindow) {
     let _ = w.show();
@@ -184,7 +195,7 @@ pub fn build_main_window(app: &AppHandle, nav: Option<&str>) -> Result<(), Strin
     let shown = Arc::new(AtomicBool::new(false));
     let window =
         tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
-            .title("Claude Conductor")
+            .title(test_title("Claude Conductor"))
             .inner_size(520.0, 720.0)
             // Config used minWidth only (no min height); 200 is a harmless floor
             // well below the 720 default. The builder needs both dimensions.
@@ -223,7 +234,7 @@ fn build_chats_window(app: &AppHandle) -> Result<(), String> {
         "session-chats",
         tauri::WebviewUrl::App("index.html?chatswindow=1#sessions".into()),
     )
-    .title("Claude Chats")
+    .title(test_title("Claude Chats"))
     .inner_size(1280.0, 860.0)
     .min_inner_size(600.0, 400.0)
     .resizable(true)
