@@ -511,14 +511,22 @@ export class Composer {
 
   private async onPaste(e: ClipboardEvent): Promise<void> {
     if (!e.clipboardData) return;
-    const hasFileItem = Array.from(e.clipboardData.items).some((item) => item.kind === "file");
-    if (hasFileItem) {
+    // Snapshot the browser blobs SYNCHRONOUSLY, before any await: WebView2
+    // neuters e.clipboardData the moment this handler yields, so getAsFile()
+    // returns null afterwards. This is the fallback for pastes with no native
+    // file list (e.g. a Win+Shift+S snip, which lands as a raw bitmap on the
+    // clipboard with no CF_HDROP paths). Capturing here keeps that path alive.
+    const blobs = Array.from(e.clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => ({ blob: item.getAsFile(), type: item.type }))
+      .filter((b): b is { blob: File; type: string } => b.blob !== null);
+    if (blobs.length > 0) {
       e.preventDefault();
       // The browser's DataTransfer only ever exposes one file when multiple
       // files are copied from Explorer (a WebView2 limitation), so read the
       // native clipboard file list directly when available. Falls back to
-      // the blob(s) the browser did expose when the plugin call fails (e.g.
-      // non-Windows, or the browser view-harness where it's never wired up).
+      // the blob(s) snapshotted above when the plugin call fails or finds no
+      // file list (non-Windows, view-harness, or a bitmap snip with no paths).
       let usedNativeFiles = false;
       try {
         if (await hasFiles()) {
@@ -532,11 +540,8 @@ export class Composer {
         console.warn("[Composer] clipboard readFiles failed, falling back to blob paste:", err);
       }
       if (usedNativeFiles) return;
-      for (const item of Array.from(e.clipboardData.items)) {
-        if (item.kind !== "file") continue;
-        const blob = item.getAsFile();
-        if (!blob) continue;
-        await this.attachBlob(blob, blob.name || `paste.${item.type.split("/")[1] ?? "bin"}`);
+      for (const { blob, type } of blobs) {
+        await this.attachBlob(blob, blob.name || `paste.${type.split("/")[1] ?? "bin"}`);
       }
       return;
     }
