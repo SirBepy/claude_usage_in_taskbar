@@ -422,6 +422,222 @@ async fn end_to_end_no_duplicate_events() {
     );
 }
 
+/// Reassemble delta frames the way the frontend store does (event-store.ts
+/// `applyDelta`): snapshot frames replace unless already covered; a new block
+/// or `seq == 1` restarts; `seq` at or below the accumulator is dropped.
+fn assemble_deltas(chunks: &[(u64, u64, bool, String)]) -> String {
+    let mut block = 0u64;
+    let mut seq = 0u64;
+    let mut text = String::new();
+    for (b, s, snapshot, t) in chunks {
+        if *snapshot {
+            if !(*b == block && *s <= seq) {
+                block = *b;
+                seq = *s;
+                text = t.clone();
+            }
+        } else if *b != block || *s == 1 {
+            block = *b;
+            seq = *s;
+            text = t.clone();
+        } else if *s <= seq {
+            continue;
+        } else {
+            seq = *s;
+            text.push_str(t);
+        }
+    }
+    text
+}
+
+/// Live verify of the O(delta) stream protocol (ai_todo 186) over the real
+/// wire: a real `claude` turn must stream `assistant_delta` chunks (not
+/// cumulative snapshots) whose reassembly equals the finalized text, with
+/// contiguous per-block `seq` numbering - and a second client attaching
+/// MID-turn must be resynced via a `snapshot: true` frame and converge to
+/// the same transcript. Spawns a real `claude` turn (subscription-billed,
+/// tiny, haiku/low).
+#[tokio::test(flavor = "current_thread")]
+#[ignore]
+async fn delta_stream_reassembles_and_midturn_attach_resyncs() {
+    let (mut child, client, _hook_port) = spawn_daemon_and_connect().await;
+
+    let cwd = std::env::temp_dir().to_string_lossy().to_string();
+    let start = client
+        .call(
+            "start_session",
+            json!({ "cwd": cwd, "model": "haiku", "effort": "low", "resume_id": null }),
+        )
+        .await
+        .expect("start_session");
+    let session_id = start["session_id"].as_str().expect("session_id").to_string();
+
+    let pipe_name = {
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
+        format!(r"\\.\pipe\cc-conductor-daemon-{user}-test-chat")
+    };
+
+    let mut rx_a = client.attach_session(&session_id).await.expect("attach A");
+    client
+        .call(
+            "send_message",
+            json!({
+                "session_id": session_id,
+                "text": "Count from 1 to 80 as plain numbers separated by spaces. No other text."
+            }),
+        )
+        .await
+        .expect("send_message");
+
+    // Client A: attached before the turn - must see raw (non-snapshot) deltas.
+    let mut a_chunks: Vec<(u64, u64, bool, String)> = Vec::new();
+    let mut a_final: Option<String> = None;
+    let mut client_b: Option<PersistentClient> = None;
+    let mut rx_b = None;
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    let mut saw_turn_usage = false;
+    while std::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_secs(5), rx_a.recv()).await {
+            Ok(Some(notif)) => {
+                let ev = notif.pointer("/params/event").cloned().unwrap_or(Value::Null);
+                match ev.get("type").and_then(Value::as_str) {
+                    Some("assistant_delta") => {
+                        a_chunks.push((
+                            ev["block"].as_u64().unwrap_or(0),
+                            ev["seq"].as_u64().unwrap_or(0),
+                            ev["snapshot"].as_bool().unwrap_or(false),
+                            ev["text"].as_str().unwrap_or("").to_string(),
+                        ));
+                        // First streamed text: attach client B MID-turn.
+                        if client_b.is_none() {
+                            let b = PersistentClient::connect(&pipe_name).await.expect("connect B");
+                            rx_b = Some(b.attach_session(&session_id).await.expect("attach B"));
+                            client_b = Some(b);
+                        }
+                    }
+                    Some("assistant_message") => {
+                        let streaming = ev["streaming"].as_bool().unwrap_or(false);
+                        if !streaming {
+                            a_final = ev
+                                .pointer("/content/0/text")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                        }
+                    }
+                    Some("turn_usage") => {
+                        saw_turn_usage = true;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(None) => break,
+            Err(_) => {
+                if saw_turn_usage {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Client B attached mid-turn: drain what it buffered.
+    let mut b_frames: Vec<(u64, u64, bool, String)> = Vec::new();
+    let mut b_final: Option<String> = None;
+    if let Some(mut rx) = rx_b {
+        let b_deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while std::time::Instant::now() < b_deadline {
+            match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+                Ok(Some(notif)) => {
+                    let ev = notif.pointer("/params/event").cloned().unwrap_or(Value::Null);
+                    match ev.get("type").and_then(Value::as_str) {
+                        Some("assistant_delta") => b_frames.push((
+                            ev["block"].as_u64().unwrap_or(0),
+                            ev["seq"].as_u64().unwrap_or(0),
+                            ev["snapshot"].as_bool().unwrap_or(false),
+                            ev["text"].as_str().unwrap_or("").to_string(),
+                        )),
+                        Some("assistant_message") => {
+                            if !ev["streaming"].as_bool().unwrap_or(false) {
+                                b_final = ev
+                                    .pointer("/content/0/text")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string);
+                            }
+                        }
+                        Some("turn_usage") => break,
+                        _ => {}
+                    }
+                }
+                _ => break,
+            }
+        }
+    }
+
+    let _ = client.call("end_session", json!({ "session_id": session_id })).await;
+    drop(client_b);
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    eprintln!("A: {} delta chunks; final={:?}", a_chunks.len(), a_final);
+    eprintln!("B: {} delta frames (first snapshot={:?}); final={:?}",
+        b_frames.len(), b_frames.first().map(|f| f.2), b_final);
+
+    let a_final = a_final.expect("A must receive the finalized assistant_message");
+    assert!(saw_turn_usage, "turn must complete with a turn_usage");
+    assert!(
+        a_chunks.len() >= 2,
+        "an 80-number reply must stream in multiple coalesced delta chunks (got {})",
+        a_chunks.len()
+    );
+    assert!(
+        a_chunks.iter().all(|c| !c.2),
+        "A attached before the turn: no snapshot resync frames expected"
+    );
+    // Contiguous per-block numbering from the pump.
+    let mut expect_seq = 0u64;
+    let mut cur_block = 0u64;
+    for (b, s, _, _) in &a_chunks {
+        if *b != cur_block {
+            cur_block = *b;
+            expect_seq = 0;
+        }
+        expect_seq += 1;
+        assert_eq!(*s, expect_seq, "delta seq must be contiguous per block");
+    }
+    // O(delta) on the wire: every frame carries only new characters, never the
+    // whole accumulated text.
+    let longest = a_chunks.iter().map(|c| c.3.len()).max().unwrap_or(0);
+    assert!(
+        longest < a_final.len(),
+        "each delta frame must be smaller than the final text (longest={longest}, final={})",
+        a_final.len()
+    );
+    assert_eq!(
+        assemble_deltas(&a_chunks).trim(),
+        a_final.trim(),
+        "reassembled A deltas must equal the finalized text"
+    );
+
+    // Mid-turn attach: B's first streamed frame must be the snapshot resync,
+    // and its reassembly must converge to the same final text.
+    let first_b = b_frames.first().expect("B must receive delta frames after mid-turn attach");
+    assert!(
+        first_b.2,
+        "B attached mid-turn: first delta frame must be a snapshot resync (got {first_b:?})"
+    );
+    assert_eq!(
+        assemble_deltas(&b_frames).trim(),
+        a_final.trim(),
+        "B's snapshot + tail deltas must reassemble to the same final text"
+    );
+    assert_eq!(
+        b_final.as_deref().map(str::trim),
+        Some(a_final.trim()),
+        "B must also receive the identical finalized assistant_message"
+    );
+}
+
 /// The "test-chat" instance's interactive-session snapshot file. Instance-scoped
 /// (`interactive-sessions-test-chat.json`) so these tests never touch the real
 /// daemon's snapshot.
