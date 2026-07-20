@@ -111,10 +111,24 @@ pub async fn send_message(
             .find(|i| i.session_id == session_id)
             .cloned();
         match inst {
-            Some(i) if !i.model.is_empty() && !i.effort.is_empty() => {
-                (i.model.clone(), i.effort.clone(), i.account_id.clone())
+            // Model/effort fall back to defaults when unset (e.g. a
+            // `register_historical_session` entry never had them recorded),
+            // but account_id must NOT ride on that same guard - a historical
+            // session's account was just explicitly picked in the "Continue
+            // this chat" flow and lives on the instance regardless of
+            // whether model/effort are empty. Coupling the two silently
+            // dropped account_id to None, which then resolved to
+            // `Settings.default_account_id` (often unset) instead of the
+            // account the user chose.
+            Some(i) => {
+                let (model, effort) = if !i.model.is_empty() && !i.effort.is_empty() {
+                    (i.model.clone(), i.effort.clone())
+                } else {
+                    ("opus".to_string(), "high".to_string())
+                };
+                (model, effort, i.account_id.clone())
             }
-            _ => ("opus".to_string(), "high".to_string(), None),
+            None => ("opus".to_string(), "high".to_string(), None),
         }
     };
 
