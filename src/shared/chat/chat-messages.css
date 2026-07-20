@@ -81,7 +81,7 @@
   word-break: break-word;
 }
 
-.msg[data-ts]:hover::after {
+.msg[data-ts]:hover:not(.streaming)::after {
   content: attr(data-ts);
   position: absolute;
   bottom: calc(100% + 3px);
