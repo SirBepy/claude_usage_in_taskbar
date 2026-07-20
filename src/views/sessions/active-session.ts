@@ -21,7 +21,7 @@ import { api } from "../../shared/api";
 import { askConfirm } from "../../shared/confirm";
 import { openChangeCharacterModal } from "../../shared/change-character-modal";
 import { openChangeAccountModal } from "../../shared/change-account-modal";
-import { isAutoAccept, replayPendingPrompt, pendingPromptSessionIds } from "./permission-modal";
+import { isAutoAccept, setAutoAccept, replayPendingPrompt, pendingPromptSessionIds } from "./permission-modal";
 import { snapshotActiveCardDraft } from "./permission-modal/question-ui";
 import { savePendingPromptDraft } from "./permission-modal/gating";
 import { SessionHeader } from "./session-header";
@@ -120,6 +120,23 @@ export async function changeCharacterForSession(sessionId: string): Promise<void
 }
 
 /**
+ * Carry client-side per-chat state onto the fresh session id a
+ * `moveSessionToAccount` fork produces. The daemon already ports
+ * model/effort/account_id (and, for auto-accept, the persisted chat-config
+ * flag) onto the new id itself - see `move_session_to_account` in
+ * `daemon/methods/lifecycle.rs`. What's left is state that only exists in
+ * THIS running client and has no daemon-side mirror: the in-memory
+ * auto-accept gate (the runtime source of truth for the permission modal,
+ * only rehydrated from disk at app launch) and any staged-but-unsent held
+ * messages. Shared by both `moveSessionToAccount` callers (this module's
+ * "Change account" flow and the rate-limit banner's "Continue on <Other>").
+ */
+export function carrySessionSettings(oldId: string, newId: string): void {
+  if (isAutoAccept(oldId)) setAutoAccept(newId, true);
+  state.heldMessages?.renameSession(oldId, newId);
+}
+
+/**
  * Move a session to a different Claude account: opens the account picker,
  * forks the transcript onto a fresh session id under the picked account
  * (via `moveSessionToAccount`, the same mechanism the rate-limit banner's
@@ -134,6 +151,7 @@ export async function changeAccountForSession(sessionId: string): Promise<void> 
   if (!picked || picked === sess.account_id) return;
   try {
     const newId = await api.moveSessionToAccount(sessionId, picked);
+    carrySessionSettings(sessionId, newId);
     const label = capitalize(getCachedAccount(picked)?.label ?? "the other account");
     showToast(`Moved to ${label}, continuing there.`);
     await refreshSessions();

@@ -89,6 +89,17 @@ impl SettingsCache {
         let is_new = pick.is_some();
         (pick, is_new)
     }
+
+    /// Directly assign `character_id` to `session_id`, bypassing the
+    /// whitelist/pick logic. Used by `move_session_to_account` to carry an
+    /// already-assigned avatar onto the forked session id instead of letting
+    /// the next `ensure_session_character` call roll a fresh random one. The
+    /// caller is responsible for publishing `session_character_assigned` so
+    /// the app process persists the same assignment to settings.json.
+    pub fn set_session_character(&self, session_id: &str, character_id: &str) {
+        let mut g = self.inner.lock().unwrap();
+        g.session_characters.insert(session_id.to_string(), character_id.to_string());
+    }
 }
 
 #[cfg(test)]

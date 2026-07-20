@@ -233,6 +233,14 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let cwd = old.cwd.clone();
                 let model = if old.model.is_empty() { "opus".to_string() } else { old.model.clone() };
                 let effort = if old.effort.is_empty() { "high".to_string() } else { old.effort.clone() };
+                // Snapshot settings the fresh session id won't otherwise inherit:
+                // the persisted auto-accept flag (chat_config is keyed by
+                // session_id, so a new id starts back at "off") and the assigned
+                // character avatar (session_characters is likewise keyed by id).
+                let auto_accept = crate::sessions::chat_config::get(&p.session_id)
+                    .map(|c| c.auto_accept)
+                    .unwrap_or(false);
+                let character_id = state.settings.snapshot().session_characters.get(&p.session_id).cloned();
 
                 // Reclaim the pending rate-limit resume queued for the old session,
                 // if any - its prompt is what should continue on the new account.
@@ -260,6 +268,15 @@ pub fn register(router: &mut Router, state: Arc<DaemonState>) {
                 let account_id = session.account_id.clone();
                 let now = chrono::Utc::now().to_rfc3339();
                 register_new_session(&state, &new_id, &cwd, &model, &effort, &account_id, &now);
+                if auto_accept {
+                    crate::sessions::chat_config::set_auto_accept(&new_id, true);
+                }
+                if let Some(character_id) = character_id {
+                    state.settings.set_session_character(&new_id, &character_id);
+                    state.notifier.publish("session_character_assigned", json!({
+                        "session_id": new_id, "character_id": character_id,
+                    }));
+                }
 
                 lifecycle::send_message(&session, &prompt).await.map_err(err_to_rpc)?;
                 state.registry.set_busy(&new_id, true);

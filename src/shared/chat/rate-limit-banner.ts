@@ -78,7 +78,7 @@ export class RateLimitBanner {
   private timer: ReturnType<typeof setInterval> | null = null;
   private now: () => number;
   private getSelectedSessionId: () => string | null = () => null;
-  private onMoved: (newSessionId: string) => void = () => {};
+  private onMoved: (newSessionId: string, oldSessionId: string) => void = () => {};
 
   constructor(deps?: RateLimitBannerDeps) {
     this.now = deps?.now ?? (() => Date.now());
@@ -99,8 +99,9 @@ export class RateLimitBanner {
   }
 
   /** Wired by the chat pane to select the freshly-forked session once a move
-   * completes. */
-  setOnMoved(fn: (newSessionId: string) => void): void {
+   * completes. Receives both ids so the caller can carry over per-chat
+   * client state (auto-accept, held messages) onto the new id. */
+  setOnMoved(fn: (newSessionId: string, oldSessionId: string) => void): void {
     this.onMoved = fn;
   }
 
@@ -233,7 +234,7 @@ export class RateLimitBanner {
       const newId = await api.moveSessionToAccount(source.session_id, targetAccountId);
       const targetLabel = capitalize(getCachedAccount(targetAccountId)?.label ?? "the other account");
       showToast(`Moved to ${targetLabel}, continuing there.`);
-      this.onMoved(newId);
+      this.onMoved(newId, source.session_id);
     } catch (err) {
       console.error("[rate-limit-banner] moveSessionToAccount failed", err);
     }

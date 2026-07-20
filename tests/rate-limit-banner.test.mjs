@@ -178,7 +178,7 @@ describe("RateLimitBanner", () => {
 
     expect(moveSessionToAccount).toHaveBeenCalledWith("s2", PERSONAL.id);
     expect(showToast).toHaveBeenCalledWith("Moved to Personal, continuing there.");
-    expect(onMoved).toHaveBeenCalledWith("new-session-id");
+    expect(onMoved).toHaveBeenCalledWith("new-session-id", "s2");
   });
 
   it("falls back to the most-recently-started blocked session when none is selected", async () => {

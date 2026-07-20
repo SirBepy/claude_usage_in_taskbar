@@ -15,7 +15,7 @@ import "./preview-panel.css";
 import { renderPreview, type PreviewController } from "./preview-panel";
 import { startNewSession, launchNewSession, discardDraft, resumeDraft, loadAndRestorePendingSession } from "./pending-flow";
 import { discardComposerDraft, moveComposerDraft } from "../../shared/chat/composer";
-import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus } from "./active-session";
+import { selectSession, unwatchCurrentExternalSession, updateHeaderAvatarStatus, carrySessionSettings } from "./active-session";
 import { state, resetState, setActiveSession, loadLastSelectedSession, clearLastSelectedSession } from "./state";
 import { initThinkingBar, updateThinkingBar } from "./session-thinking-bar";
 import { sessionSubtitle, paneEmptyStateHtml } from "./sessions-helpers";
@@ -203,7 +203,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
   const rlHost = root.querySelector<HTMLElement>("#rate-limit-banner-host");
   if (rlHost) rateLimitBanner.mount(rlHost);
   rateLimitBanner.setSelectedSessionGetter(() => state.selectedId);
-  rateLimitBanner.setOnMoved((newId) => {
+  rateLimitBanner.setOnMoved((newId, oldId) => {
+    carrySessionSettings(oldId, newId);
     void (async () => {
       await refreshSessions();
       if (state.mountId !== myMount) return;
