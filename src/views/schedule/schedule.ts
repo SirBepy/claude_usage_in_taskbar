@@ -4,7 +4,6 @@ import { showView } from "../../shared/navigation";
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import { askConfirm } from "../../shared/confirm";
-import { isRemote } from "../../shared/transport";
 import { cwdToProjectName } from "../sessions/sessions-helpers";
 import "./schedule.css";
 import type {
@@ -227,14 +226,12 @@ function agendaRowHtml(occ: Occurrence): string {
       </div>
     </div>
     <div class="agenda-actions">
-      ${isRemote() ? "" : `
       ${canFire ? `<button class="icon-btn" data-action="fire-now" data-id="${escapeHtml(item.id)}" title="${isFailed ? "Retry" : "Fire now"}"><i class="ph ${isFailed ? "ph-arrow-clockwise" : "ph-play"}"></i></button>` : ""}
       ${occ.status === "upcoming" ? `<button class="icon-btn" data-action="reschedule-toggle" data-id="${escapeHtml(item.id)}" title="Reschedule"><i class="ph ph-calendar-plus"></i></button>` : ""}
       ${showDelete ? `<button class="icon-btn" data-action="delete" data-id="${escapeHtml(item.id)}" title="Delete"><i class="ph ph-trash"></i></button>` : ""}
-      `}
       ${nav ? `<i class="ph ph-caret-right agenda-chevron"></i>` : ""}
     </div>
-    ${rescheduleOpen && !isRemote() ? `
+    ${rescheduleOpen ? `
       <div class="schedule-reschedule-inline">
         <input type="datetime-local" data-reschedule-input="${escapeHtml(item.id)}" value="${datetimeLocalValue(item.fire_at)}">
         <button class="btn-primary" data-action="reschedule-confirm" data-id="${escapeHtml(item.id)}">Set</button>

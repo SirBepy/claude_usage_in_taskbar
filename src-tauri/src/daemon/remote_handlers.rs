@@ -88,11 +88,21 @@ const SAFE_METHODS: &[&str] = &[
     // Read-only filesystem scan of the slash-command/skill dirs so the phone's
     // `/` autocomplete popup populates like desktop's (was always empty otherwise).
     "list_slash_commands",
-    // Read-only scheduled-items list (ai_todo 257) so the phone's scheduled-chip
-    // and Schedule view show the same pending/sent items as desktop. Read-only:
-    // the mutators (schedule_create/_update/_delete/_fire_now) are deliberately
-    // NOT here - phone-side scheduling writes need a separate reviewed decision.
+    // Scheduled-items list + mutators (ai_todo 257 shipped the read; ai_todo 259
+    // added the writes). Rationale for exposing the mutators remotely: a paired
+    // client can already `start_session` + `send_message` (spawn and drive an
+    // arbitrary `claude` run) and `respond_permission`, so every schedule
+    // mutator is strictly WEAKER than the remote surface already granted -
+    // `schedule_fire_now` just fires a pre-composed message `send_message`
+    // could already send, and create/update/delete only manage a queue of
+    // future sends. The trust boundary is the same pairing token for all of
+    // them. `schedule_list_external` stays desktop-only (it's a Windows Task
+    // Scheduler read, not a daemon RPC).
     "schedule_list",
+    "schedule_create",
+    "schedule_update",
+    "schedule_delete",
+    "schedule_fire_now",
     // Read-only HTML preview store (ai_todo 138), phone-ready per the design's
     // "RPC-mirrored like read_attachment" decision. The WRITE path
     // (`push_preview`) is deliberately NOT here: pushes go through the
@@ -629,10 +639,11 @@ mod tests {
             "restart_channel", "show_channel", "hide_channel", "end_session",
             "attach_session", "detach_session", "subscribe_global",
             "externalize_session", "takeover_manual",
-            // ai_todo 257: schedule_list is a deliberate read-only exception;
-            // the mutators must stay desktop-only pending an [ARCH] decision.
-            "schedule_create", "schedule_update", "schedule_delete",
-            "schedule_fire_now", "schedule_list_external",
+            // schedule mutators became remote-callable in ai_todo 259 (they are
+            // strictly weaker than start_session/send_message, which remote
+            // already grants). schedule_list_external stays desktop-only: it's a
+            // Windows Task Scheduler filesystem read with no daemon RPC at all.
+            "schedule_list_external",
         ] {
             assert!(
                 !SAFE_METHODS.contains(&m),
@@ -651,7 +662,8 @@ mod tests {
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
             "list_accounts", "list_slash_commands", "ensure_session_character",
-            "schedule_list", "list_previews", "get_preview",
+            "schedule_list", "schedule_create", "schedule_update",
+            "schedule_delete", "schedule_fire_now", "list_previews", "get_preview",
         ] {
             assert!(SAFE_METHODS.contains(&m), "{m} should be remotely callable");
         }

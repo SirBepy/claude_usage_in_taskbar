@@ -401,12 +401,29 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("list_slash_commands", {
           project_dir: args.projectDir ?? args.project_dir,
         });
-      // Read-only scheduled-items list (ai_todo 257) so the scheduled-chip and
-      // Schedule view populate on remote/phone. The mutators (schedule_create/
-      // _update/_delete/_fire_now) have no case here on purpose - they stay
-      // desktop-only until a deliberate write-parity decision is made.
+      // Scheduled-items list (ai_todo 257) + mutators (ai_todo 259). The
+      // mutators are exposed on remote because they're strictly weaker than
+      // start_session/send_message, which the phone already has - see the
+      // SAFE_METHODS comment in remote_handlers.rs. Param shapes mirror the
+      // daemon RPC handlers in daemon/methods/schedule.rs (camelCase fireAt
+      // from the composer is normalized to the fire_at the RPC expects).
       case "schedule_list":
         return this.rpc<T>("schedule_list", null);
+      case "schedule_create":
+        return this.rpc<T>("schedule_create", {
+          kind: args.kind,
+          prompt: args.prompt,
+          fire_at: args.fireAt ?? args.fire_at,
+          recurrence: args.recurrence ?? null,
+        });
+      case "schedule_update":
+        // Daemon RPC deserializes the params directly as a ScheduledItem (no
+        // { item } envelope, unlike the desktop Tauri command).
+        return this.rpc<T>("schedule_update", args.item);
+      case "schedule_delete":
+        return this.rpc<T>("schedule_delete", { id: args.id });
+      case "schedule_fire_now":
+        return this.rpc<T>("schedule_fire_now", { id: args.id });
       // Read-only HTML preview store (ai_todo 138), phone-ready by design: same
       // allowlisted RPCs the desktop panel already calls, just routed through
       // /api/rpc instead of Tauri invoke.
