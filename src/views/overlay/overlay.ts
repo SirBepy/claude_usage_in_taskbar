@@ -22,6 +22,10 @@ import { initOverlayDrag, resizeOverlayToContent } from "./overlay-drag";
 
 const DEFAULT_OVERLAY_OPACITY = 0.72;
 const REFRESH_INTERVAL_MS = 30_000;
+// Local IPC refreshes are usually near-instant; only show the spinner if one
+// runs long enough to actually be worth signalling, so a normal 30s tick
+// doesn't flash the icon for a frame.
+const REFRESH_SPINNER_DELAY_MS = 150;
 
 // Dial geometry — ported 1:1 from the mockup's arc()/seg()/ring()/dial() so
 // the rendered result matches it exactly (viewBox 0 0 44 44, centre 22,22).
@@ -128,7 +132,12 @@ function dialHtml(row: OverlayRow, settings: ValueColorSettings, showDisc: boole
   // row card is the backing instead — see .oc-dial-row.oc-card in overlay.css).
   const disc = showDisc ? `<circle class="oc-disc" cx="22" cy="22" r="${DISC_R}"/>` : "";
   const { viewBox, sizeCss } = dialGeometry(showDisc);
-  return `<div class="oc-dial" style="${sizeCss}"><svg viewBox="${viewBox}" style="${sizeCss}">${disc}${outer}${inner}</svg><div class="oc-ic"${iconColor}><i class="ph ph-${icon}"></i></div></div>`;
+  // Spinner glyph sits alongside the account icon at all times, hidden by
+  // default — #ocRows.oc-refreshing (set by refresh() while a fetch is in
+  // flight) swaps which one is visible, so a background refresh reads as the
+  // dial "working" instead of the icon just silently updating.
+  const icons = `<i class="ph ph-${icon} oc-ic-glyph"></i><i class="ph ph-spinner oc-ic-spin"></i>`;
+  return `<div class="oc-dial" style="${sizeCss}"><svg viewBox="${viewBox}" style="${sizeCss}">${disc}${outer}${inner}</svg><div class="oc-ic"${iconColor}>${icons}</div></div>`;
 }
 
 /** One `<cur>%/<safe>%` line inside the hover info circle, the current %
@@ -225,7 +234,15 @@ export async function renderOverlay(root: HTMLElement): Promise<() => void> {
     applyOverlayTheme(settings);
     document.documentElement.style.setProperty("--overlay-opacity", `${readOverlayOpacity(settings) * 100}%`);
     if (!rowsEl) return;
+    // Only spin existing dials — the very first load already shows the
+    // "Loading…" placeholder text, which the spinner would be redundant with.
+    const hasDials = !!rowsEl.querySelector(".oc-cell");
+    const spinnerTimer = hasDials
+      ? window.setTimeout(() => rowsEl.classList.add("oc-refreshing"), REFRESH_SPINNER_DELAY_MS)
+      : undefined;
     const [accounts, usageMap] = await Promise.all([api.listAccounts(), api.getUsageMap()]);
+    if (spinnerTimer != null) window.clearTimeout(spinnerTimer);
+    rowsEl.classList.remove("oc-refreshing");
     if (!accounts.length) {
       rowsEl.innerHTML = `<div class="oc-empty">No accounts yet</div>`;
       syncSize();
