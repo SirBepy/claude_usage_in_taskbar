@@ -482,7 +482,14 @@ export class SessionStatusbar {
   private renderCommits(mode: "ahead" | "behind" | "both"): string {
     const a = this.gitInfo.ahead ?? null, b = this.gitInfo.behind ?? null;
     if (a === null && b === null) {
-      return this.gitInfoLoaded ? "" : this.skeletonChip("commits", "sb-commits", "ph-arrows-down-up", "44px");
+      if (!this.gitInfoLoaded) return this.skeletonChip("commits", "sb-commits", "ph-arrows-down-up", "44px");
+      // No upstream tracking branch (as opposed to 0 ahead/0 behind, which is
+      // Some(0)/Some(0)). Mirrors VS Code's "Publish Branch" cloud icon rather
+      // than hiding the chip, so an unpushed branch reads as expected-empty.
+      if (mode === "both" && this.gitInfo.branch) {
+        return `<span class="sb-chip sb-commits" title="No upstream tracking branch"><i class="ph ph-cloud-arrow-up"></i></span>`;
+      }
+      return "";
     }
     let txt = "", icon = "ph-arrows-down-up";
     if (mode === "ahead") { txt = `↑${a ?? 0}`; icon = "ph-arrow-up"; }
