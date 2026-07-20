@@ -20,8 +20,10 @@ import { invoke } from "../../../shared/ipc";
 import { getTransport } from "../../../shared/transport";
 import { state } from "../state";
 import { reconcilePendingPrompts } from "./remote-prompt-poll";
-import { extractQuestions, isQuestionAnswered, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
+import { extractQuestions, formatAnswersAsMessage, isQuestionAnswered, renderQuestionUI, snapshotActiveCardDraft } from "./question-ui";
 import { showPermissionCard } from "./permission-card";
+import { AUQ_ANSWER_SENTINEL } from "../../../shared/chat/chat-transforms";
+import type { ContentBlock } from "../../../types/ipc.generated";
 import { clearQuestionDraft, loadQuestionDraft, saveQuestionDraft } from "./draft-persistence";
 import {
   allowPermission,
@@ -30,6 +32,7 @@ import {
   isAutoAccept,
   isForSelectedSession,
   gateDiag,
+  resolveCwdForSession,
   storePendingPrompt,
   takePendingPrompt,
   clearPendingPromptById,
@@ -116,34 +119,43 @@ function showQuestionCard(payload: QuestionRequestedPayload, restoredDraft?: Que
     },
     onSubmit: async (answers) => {
       clearQuestionDraft(payload.id);
+      const sid = payload.session_id;
+      // Settle the daemon card FIRST: drop the durable fire-and-forget prompt
+      // record + clear "Input Needed". There's no blocking hook to resolve
+      // anymore (the asking turn already ended), so `respond_question` is pure
+      // teardown here - the answer itself travels separately, as a normal
+      // message below (settle_prompt tolerates the missing waiter).
       try {
         await invoke("respond_question", { id: payload.id, answers });
       } catch (e) {
-        console.warn("respond_question failed:", e);
-        // Daemon no longer holds this prompt (turn ended before poll caught it).
-        // Clear the park so the phantom doesn't re-surface on switch-back.
+        console.warn("respond_question (settle) failed:", e);
         clearPendingPromptById(payload.id);
         rerenderSidebar();
       }
+      if (!sid) return;
+      // Inject the answer as an ordinary follow-up so it resumes the work in a
+      // fresh turn. `<auq-answer/>` renders it as an "answer" chip; the framed
+      // body ("User answered…") is what the model reads. Routing through the
+      // held-flush path folds any queued (held) messages into the same send.
+      const answerText = formatAnswersAsMessage(questions, answers);
+      const answerBlock: ContentBlock = { type: "text", text: `${AUQ_ANSWER_SENTINEL}${answerText}` };
+      if (state.selectedId === sid && state.heldMessages) {
+        await state.heldMessages.flushHeldWithDraft([answerBlock]);
+      } else {
+        const cwd = resolveCwdForSession(sid) ?? ".";
+        await invoke("send_message", { sessionId: sid, cwd, blocks: [answerBlock] });
+      }
     },
     onCancel: async () => {
-      // Skip is a TRUE INTERRUPT, not an answer: route it through the same
-      // cancel_turn path the Stop-turn button uses instead of resolving the
-      // hook with a deny-message. The daemon's cancel_turn handler sends the
-      // stream-json interrupt AND settles this prompt (expire_prompts_for_session
-      // - see daemon/methods/lifecycle.rs), so no "skipped"/"timed out" message
-      // ever reaches the agent and no waiter is left dangling. Falls back to the
-      // old respond_question({}) only if this prompt somehow has no session (a
-      // session-less prompt can't be interrupted at all).
+      // Fire-and-forget skip: the asking turn already ended, so there is nothing
+      // to interrupt. Just settle the card (drop the durable prompt + clear
+      // "Input Needed"). No message is sent - skip means "no answer, move on",
+      // and with no blocking waiter the model never even sees a skip signal.
       clearQuestionDraft(payload.id);
       try {
-        if (payload.session_id) {
-          await invoke("cancel_turn", { sessionId: payload.session_id });
-        } else {
-          await invoke("respond_question", { id: payload.id, answers: {} });
-        }
-      } catch {
-        // Same: backend already cleaned up. Clear the park ourselves.
+        await invoke("respond_question", { id: payload.id, answers: {} });
+      } catch (e) {
+        console.warn("respond_question (skip settle) failed:", e);
         clearPendingPromptById(payload.id);
         rerenderSidebar();
       }

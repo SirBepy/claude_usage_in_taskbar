@@ -71,6 +71,14 @@ const PASTED_LOG_RE = /<pasted-log id="([^"]+)" name="([^"]*)">\n?([\s\S]*?)\n?<
 // sees "this was voice" without raw markup (the model still receives the tag).
 const VOICE_INPUT_RE = /<voice-input\s*\/>/g;
 
+// Sentinel prefixing a message that is the user's answer to a fire-and-forget
+// AskUserQuestion card (see permission-modal/index.ts). Content-free like the
+// voice tag: the model still reads the framed "User answered…" body inline, but
+// the chat peels the marker into a small "answer" chip so the turn is visibly an
+// answer, not an out-of-the-blue user message.
+export const AUQ_ANSWER_SENTINEL = "<auq-answer/>";
+const AUQ_ANSWER_RE = /<auq-answer\s*\/>/g;
+
 function renderTextBlock(rawText: string, breaks = false, fileChips = false): string {
   const stripped = stripStatusToken(rawText);
   // Only user messages legitimately carry the composer's user-only sentinels
@@ -80,12 +88,20 @@ function renderTextBlock(rawText: string, breaks = false, fileChips = false): st
   if (!fileChips) {
     return `<div class="block text">${renderMarkdown(stripped, breaks)}</div>`;
   }
-  // Peel off the voice-input sentinel into a leading mic chip.
+  // Peel off content-free user sentinels (voice dictation, AUQ answer) into
+  // leading chips. The model still receives the raw tags; the user just sees a
+  // small chip instead of markup.
   VOICE_INPUT_RE.lastIndex = 0;
   const hasVoice = VOICE_INPUT_RE.test(stripped);
   VOICE_INPUT_RE.lastIndex = 0;
-  const text = hasVoice ? stripped.replace(VOICE_INPUT_RE, "").trim() : stripped;
-  const prefix = hasVoice ? voiceInputChipHtml() : "";
+  AUQ_ANSWER_RE.lastIndex = 0;
+  const hasAuqAnswer = AUQ_ANSWER_RE.test(stripped);
+  AUQ_ANSWER_RE.lastIndex = 0;
+  let text = stripped;
+  if (hasVoice) text = text.replace(VOICE_INPUT_RE, "");
+  if (hasAuqAnswer) text = text.replace(AUQ_ANSWER_RE, "");
+  if (hasVoice || hasAuqAnswer) text = text.trim();
+  const prefix = (hasAuqAnswer ? auqAnswerChipHtml() : "") + (hasVoice ? voiceInputChipHtml() : "");
   // First peel off any <pasted-log> blocks into chips; render the surrounding
   // text (which may still carry <file:> tokens) through the file-token path.
   PASTED_LOG_RE.lastIndex = 0;
@@ -116,6 +132,12 @@ function renderTextBlock(rawText: string, breaks = false, fileChips = false): st
 // dictated. Mirrors the attachment-chip shape.
 function voiceInputChipHtml(): string {
   return `<div class="attachment-chip voice-input-chip" title="Dictated by voice"><i class="ph ph-microphone"></i><span class="chip-name">voice</span></div>`;
+}
+
+// An AUQ-answer chip: a reply glyph + "answer" label, signalling this message is
+// the user's answer to a question card. Mirrors the attachment-chip shape.
+function auqAnswerChipHtml(): string {
+  return `<div class="attachment-chip auq-answer-chip" title="Your answer to Claude's question"><i class="ph ph-arrow-bend-up-left"></i><span class="chip-name">answer</span></div>`;
 }
 
 // Renders a text segment, turning any <file:> tokens into attachment chips and

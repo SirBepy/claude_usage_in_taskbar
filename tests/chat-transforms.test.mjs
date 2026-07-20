@@ -360,3 +360,32 @@ describe("eventToRenderedMessage — isMeta user turns", () => {
     expect(msg.kind).toBe("user");
   });
 });
+
+describe("renderBlocks — AUQ answer chip", () => {
+  it("peels the <auq-answer/> marker into an answer chip and keeps the framed body", () => {
+    const html = userBlocks([
+      { type: "text", text: "<auq-answer/>User answered the question(s):\nQ: Tabs or spaces?\nA: Tabs" },
+    ]);
+    expect(html).toContain("auq-answer-chip");
+    expect(html).not.toContain("&lt;auq-answer");
+    expect(html).not.toContain("<auq-answer/>");
+    expect(html).toContain("Tabs");
+  });
+
+  it("does not chip-convert an <auq-answer/> marker an assistant wrote as example text", () => {
+    const html = renderMessage({
+      kind: "assistant",
+      content: [{ type: "text", text: "emit <auq-answer/> to mark it" }],
+      ts: 0,
+    });
+    expect(html).not.toContain("auq-answer-chip");
+  });
+
+  it("renders both a voice and an answer chip when both markers are present", () => {
+    const html = userBlocks([
+      { type: "text", text: "<voice-input/><auq-answer/>User answered the question(s):\nQ: x\nA: y" },
+    ]);
+    expect(html).toContain("auq-answer-chip");
+    expect(html).toContain("voice-input-chip");
+  });
+});

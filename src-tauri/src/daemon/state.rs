@@ -115,10 +115,18 @@ impl DaemonState {
     /// Record an open prompt for reliable poll-based delivery to the app.
     /// `event` is the Tauri event name the app should emit (e.g.
     /// `"question-requested"`); `payload` is its body.
-    pub async fn add_prompt(&self, id: &str, event: &str, payload: Value) {
+    ///
+    /// `durable` marks a fire-and-forget AskUserQuestion prompt: the asking
+    /// turn ENDS the instant the card is posted (the hook returns immediately
+    /// instead of blocking), so the `claude -p` child EOFs and the pump loop's
+    /// `expire_prompts_for_session` would otherwise wipe the card before the
+    /// user ever answered. Durable prompts are skipped by that expiry and are
+    /// cleared ONLY by an explicit answer/skip (`respond_question` -> the
+    /// ghost-tolerant `settle_prompt`).
+    pub async fn add_prompt(&self, id: &str, event: &str, payload: Value, durable: bool) {
         self.pending_prompts.lock().await.insert(
             id.to_string(),
-            serde_json::json!({ "id": id, "event": event, "payload": payload }),
+            serde_json::json!({ "id": id, "event": event, "payload": payload, "durable": durable }),
         );
     }
 
@@ -158,7 +166,16 @@ impl DaemonState {
             let mut prompts = self.pending_prompts.lock().await;
             let ids: Vec<(String, bool)> = prompts
                 .iter()
-                .filter(|(_, v)| v["payload"]["session_id"].as_str() == Some(session_id))
+                // Skip durable (fire-and-forget AskUserQuestion) prompts: their
+                // asking turn ends on purpose the moment the card is posted, so
+                // the EOF that triggers this expiry is NORMAL, not a crash. They
+                // outlive the turn and are cleared only by an explicit answer or
+                // skip. Non-durable prompts (blocking permission/MCP-question
+                // relays) still expire as before.
+                .filter(|(_, v)| {
+                    v["payload"]["session_id"].as_str() == Some(session_id)
+                        && v["durable"].as_bool() != Some(true)
+                })
                 .map(|(id, v)| (id.clone(), v["event"].as_str() == Some("question-requested")))
                 .collect();
             for (id, _) in &ids {
