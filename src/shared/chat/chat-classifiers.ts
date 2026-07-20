@@ -79,30 +79,6 @@ export function detectPrPreviewToken(text: string): { title: string; bodyB64: st
   };
 }
 
-// Close-lifecycle markers emitted by the `/close` skill itself (see
-// ~/.claude/skills/close/SKILL.md), not guessed from the user's typed text.
-// `<cc-close:starting>` is the literal first thing the skill outputs, so the
-// app can mark a session "closing" only once the skill is genuinely running
-// instead of pattern-matching the outgoing message (which used to false-fire
-// on any text containing the substring "/close", e.g. "//close" in prose).
-// `<cc-close:done>` is emitted right before Phase 6 kills the terminal, and
-// ONLY when Phase 6 actually proceeds (never on `--dont-close`, a failed
-// chained command, or active background work) - its absence when the turn
-// settles means the session must NOT be torn down. See close-finalize.ts.
-const CLOSE_START_TOKEN_RE = /<cc-close:starting>/gi;
-const CLOSE_DONE_TOKEN_RE = /<cc-close:done>/gi;
-const CLOSE_TAIL_RE = /<c(?:c(?:-(?:c(?:l(?:o(?:s(?:e(?::(?:(?:s(?:t(?:a(?:r(?:t(?:i(?:n(?:g)?)?)?)?)?)?)?|d(?:o(?:n(?:e)?)?)?)?)?)?)?)?)?)?)?)?)?>?\s*$/i;
-
-/** True when `text` contains the `<cc-close:starting>` sentinel. */
-export function detectCloseStartToken(text: string): boolean {
-  return /<cc-close:starting>/i.test(text);
-}
-
-/** True when `text` contains the `<cc-close:done>` sentinel. */
-export function detectCloseDoneToken(text: string): boolean {
-  return /<cc-close:done>/i.test(text);
-}
-
 // Handoff-ready sentinel. The app injects a prompt asking Claude to write a
 // session handoff file; Claude ends the turn with `<HANDOFF_READY/>` to signal
 // completion. The app opens a new chat automatically on detection. Never shown.
@@ -127,8 +103,6 @@ export function stripStatusToken(text: string): string {
     .replace(PR_TITLE_TOKEN_RE, "")
     .replace(PR_BODY_TOKEN_RE, "")
     .replace(PR_COMMITS_TOKEN_RE, "")
-    .replace(CLOSE_START_TOKEN_RE, "")
-    .replace(CLOSE_DONE_TOKEN_RE, "")
     .replace(STATUS_TAIL_RE, "")
     .replace(STATUS_XML_TAIL_RE, "")
     .replace(STATUS_HYBRID_TAIL_RE, "")
@@ -140,7 +114,6 @@ export function stripStatusToken(text: string): string {
     .replace(PR_TITLE_TAIL_RE, "")
     .replace(PR_BODY_TAIL_RE, "")
     .replace(PR_COMMITS_TAIL_RE, "")
-    .replace(CLOSE_TAIL_RE, "")
     .replace(/\s+$/, "");
 }
 

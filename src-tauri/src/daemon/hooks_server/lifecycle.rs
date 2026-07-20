@@ -30,6 +30,27 @@ pub(super) struct SessionEndPayload {
     pub reason: Option<String>,
 }
 
+#[derive(Deserialize, Debug, Default)]
+pub(super) struct CloseConfirmPayload {
+    pub session_id: String,
+}
+
+/// `/sessions/close-confirm`: the `cc_conductor` `close_session` MCP tool -
+/// fired by the `/close` skill's final phase - POSTs here to confirm the chat
+/// really is being torn down (never on `--dont-close` or a failed chain). Sets
+/// the registry's one-shot `close_requested` flag; the session's stdout pump
+/// consumes it at turn end to mark_ended + kill the process tree. This is the
+/// deterministic replacement for parsing a `<cc-close:done>` text marker: a
+/// tool call either lands or doesn't, with no prose to mangle.
+pub(super) async fn on_close_confirm(
+    AxState(ctx): AxState<Arc<HookCtx>>,
+    Json(payload): Json<CloseConfirmPayload>,
+) -> impl IntoResponse {
+    log::info!("hook /sessions/close-confirm: session={}", payload.session_id);
+    ctx.state.registry.set_close_requested(&payload.session_id);
+    (StatusCode::OK, Json(json!({"ok": true})))
+}
+
 pub(super) async fn on_session_start(
     AxState(ctx): AxState<Arc<HookCtx>>,
     Json(payload): Json<SessionStartPayload>,

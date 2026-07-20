@@ -48,7 +48,6 @@ export function setAutoAccept(sessionId: string, value: boolean): void {
 // ── Session-ID gating ──────────────────────────────────────────────────────
 
 let _selectedSessionId: string | null = null;
-const _backgroundSessionIds = new Set<string>();
 
 export function setSelectedSessionId(id: string | null): void {
   _selectedSessionId = id;
@@ -58,18 +57,15 @@ export function getSelectedSessionId(): string | null {
   return _selectedSessionId;
 }
 
-export function addBackgroundSession(id: string): void {
-  _backgroundSessionIds.add(id);
-}
-
-export function removeBackgroundSession(id: string): void {
-  _backgroundSessionIds.delete(id);
-}
-
 export function isForSelectedSession(eventSessionId: string | undefined): boolean {
   if (!eventSessionId) return false;
   if (_selectedSessionId === eventSessionId) return true;
-  if (_backgroundSessionIds.has(eventSessionId)) return true;
+  // A session mid-/close surfaces its prompts inline even when the user has
+  // switched away: the close skill's Phase-0 AskUserQuestion and chained-command
+  // permission prompts must reach the user, not sit parked. Driven by the
+  // daemon-authoritative `closing` flag (was a manually-maintained
+  // `_backgroundSessionIds` set the old frontend close-watcher populated).
+  if (state.sessions.some((s) => s.session_id === eventSessionId && s.closing)) return true;
   // During a brand-new session's first turn, selectedId is still the placeholder
   // while the active pane already shows the real session (the renderer swapped
   // its subscription on SessionStarted but setActiveSession lags until
@@ -89,8 +85,8 @@ export function isForSelectedSession(eventSessionId: string | undefined): boolea
 // respond_question, so a dropped event hangs that chat's turn forever. Instead
 // we stash the payload keyed by session_id and replay it when the user selects
 // that chat. While a prompt is parked the sidebar marks the row as needing
-// attention so the user knows to switch back. (The `/close` background path
-// still surfaces inline via `_backgroundSessionIds` and is not parked here.)
+// attention so the user knows to switch back. (A session mid-`/close` surfaces
+// inline instead - see the `closing`-flag check in `isForSelectedSession`.)
 
 export type PendingPrompt =
   | { kind: "permission"; payload: PermissionRequestedPayload }
@@ -149,7 +145,7 @@ export function gateDiag(): {
 } {
   return {
     selected: _selectedSessionId,
-    background: [..._backgroundSessionIds],
+    background: state.sessions.filter((s) => s.closing).map((s) => s.session_id),
     pendingRealId: state.pendingNewSession?.realId ?? null,
     pendingPlaceholder: state.pendingNewSession?.placeholderId ?? null,
   };

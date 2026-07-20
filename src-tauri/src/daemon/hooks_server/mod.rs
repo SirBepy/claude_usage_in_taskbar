@@ -134,6 +134,7 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16, HookBindError> {
         .route("/quit", post(relay::on_quit))
         .route("/hooks/session-start", post(lifecycle::on_session_start))
         .route("/hooks/session-end", post(lifecycle::on_session_end))
+        .route("/sessions/close-confirm", post(lifecycle::on_close_confirm))
         .route("/hooks/stop", post(stop::on_stop))
         .route("/hooks/preview", post(preview::on_preview_push))
         .route("/permissions/request", post(permission::on_permission_request))

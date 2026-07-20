@@ -1,8 +1,10 @@
 //! stdio MCP server mode. Entered when the binary is spawned with
 //! `--mcp-permission`. Implements MCP JSON-RPC 2.0 over stdin/stdout
-//! (one JSON object per line). Exposes two tools:
+//! (one JSON object per line). Exposes three tools:
 //!   - `approval_prompt`: used as `--permission-prompt-tool` by the runner
 //!   - `ask_user_question`: lets claude ask the user a question mid-turn
+//!   - `close_session`: the `/close` skill confirms teardown; the daemon ends
+//!     the session + kills the process at turn end
 //!
 //! HTTP coordination piggybacks on the existing hooks server.
 
@@ -11,6 +13,7 @@ use std::io::{BufRead, Write};
 
 const TOOL_APPROVAL: &str = "approval_prompt";
 const TOOL_QUESTION: &str = "ask_user_question";
+const TOOL_CLOSE: &str = "close_session";
 
 /// Read the hooks port from <app-data>/hooks_port.txt.
 fn read_port() -> Option<u16> {
@@ -117,6 +120,14 @@ fn tool_list_response(id: &Value) -> Value {
                             }
                         },
                         "required": ["questions"]
+                    }
+                },
+                {
+                    "name": TOOL_CLOSE,
+                    "description": "Confirm this chat's /close teardown so the host app ends the session and kills the process at turn end. Call ONLY from the /close skill's final close step, and never on --dont-close or a failed chain.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
                     }
                 }
             ]
@@ -251,6 +262,17 @@ pub fn run_stdio() {
                                 Err(e) => tool_error_result(&id, &format!("relay error: {e}")),
                             }
                         }
+                        TOOL_CLOSE => {
+                            // Fire-and-confirm: the daemon records the close and
+                            // tears down at turn end (session_id comes from the
+                            // per-session CC_SESSION_ID env, not tool args).
+                            let url = format!("http://127.0.0.1:{port}/sessions/close-confirm");
+                            let body = json!({ "session_id": session_id });
+                            match http_post(&rt, &url, body) {
+                                Ok(_) => tool_result(&id, "close confirmed; session will end at turn completion"),
+                                Err(e) => tool_error_result(&id, &format!("relay error: {e}")),
+                            }
+                        }
                         _ => mcp_error(&id, -32601, "unknown tool"),
                     }
                 }
@@ -324,19 +346,20 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_returns_two_tools() {
+    fn tools_list_returns_three_tools() {
         let resp = dispatch(
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
             27182,
             "",
         );
         let tools = resp["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
         let names: Vec<&str> = tools.iter()
             .filter_map(|t| t["name"].as_str())
             .collect();
         assert!(names.contains(&"approval_prompt"));
         assert!(names.contains(&"ask_user_question"));
+        assert!(names.contains(&"close_session"));
     }
 
     #[test]

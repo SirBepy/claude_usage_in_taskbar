@@ -18,7 +18,7 @@ import {
   detectPrPreviewToken,
 } from "./chat-classifiers";
 export type { RenderedMessage } from "./chat-classifiers";
-export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, detectHandoffToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, metaTurnLabel, noiseAssistantLabel, isNoiseAssistantText, detectPrPreviewToken, detectCloseStartToken, detectCloseDoneToken } from "./chat-classifiers";
+export { isBoundaryMessage, stripStatusToken, detectStatusToken, detectProgressToken, detectHandoffToken, normalizeUserMessageText, isCompactUserMessage, cleanUserBlocks, isSilentSystemUserMessage, isResumeContinuationUserMessage, metaTurnLabel, noiseAssistantLabel, isNoiseAssistantText, detectPrPreviewToken } from "./chat-classifiers";
 
 const md = new MarkdownIt({
   html: false,

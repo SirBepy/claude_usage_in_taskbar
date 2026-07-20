@@ -109,11 +109,13 @@ pub struct Instance {
     #[serde(default)]
     pub autopilot: bool,
     /// True while a `/close` skill run is in flight for this session (the pump
-    /// observed `<cc-close:starting>` and the close has neither confirmed nor
-    /// stood down yet). Daemon-authoritative so EVERY window's sidebar can
-    /// render the "Closing" segment - the old signal was a per-window
-    /// in-memory Set that only the window whose composer sent the /close ever
-    /// populated. Cleared at any turn boundary that did not confirm the close.
+    /// saw the turn's first live output and the user opened it with `/close`,
+    /// and the close has neither confirmed nor stood down yet). Daemon-
+    /// authoritative so EVERY window's sidebar can render the "Closing" segment
+    /// - the old signal was a per-window in-memory Set that only the window
+    /// whose composer sent the /close ever populated. Cleared at any turn
+    /// boundary that did not confirm the close (teardown is driven separately by
+    /// the `close_session` MCP tool's `close_requested` flag).
     #[serde(default)]
     pub closing: bool,
     /// Monotonically increasing counter bumped each time `busy` is set to true

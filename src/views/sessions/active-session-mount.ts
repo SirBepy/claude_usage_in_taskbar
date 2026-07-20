@@ -2,7 +2,7 @@
 // the statusbar, renderer, and composer each get their own focused mount
 // function so `selectSession` stays a thin orchestrator. No behavior change -
 // pure move, callbacks injected where the original code reached back into
-// active-session.ts (e.g. change-account, dismount) to avoid an import cycle.
+// active-session.ts (e.g. change-account) to avoid an import cycle.
 
 import { invoke } from "../../shared/ipc";
 import { ChatRenderer } from "../../shared/chat/chat-renderer";
@@ -22,13 +22,6 @@ import { SessionStatusbar, loadStatuslineRows, loadStatuslineHideZero } from "./
 import { readLastChoice, readPresets } from "../../shared/effort-presets";
 import { renderSidebar } from "./sidebar";
 import { api } from "../../shared/api";
-import {
-  addBackgroundSession,
-  removeBackgroundSession,
-} from "./permission-modal";
-import { markSessionExiting } from "./sidebar-anim";
-import { markSessionClosing, unmarkSessionClosing } from "./closing-sessions";
-import { watchCloseLifecycle } from "./close-finalize";
 import { ChangesPanel, dedupeByPath } from "./changes-panel";
 import type { SessionHeader } from "./session-header";
 import { setThinkingActivity, setThinkingProgress, isCurrentSessionBusy, updateThinkingBar } from "./session-thinking-bar";
@@ -218,15 +211,12 @@ export async function mountRenderer(
 }
 
 /** Attach the composer + held-messages controller, including the `sendBundle`
- * closure that both use to actually send to the daemon and the `/close`
- * lifecycle watch. `dismountActivePane` is injected rather than imported to
- * avoid a cycle back into active-session.ts (which imports this module). */
+ * closure both use to actually send to the daemon. */
 export function mountComposer(
   pane: HTMLElement,
   sess: Instance,
   sessionId: string,
   readOnly: boolean,
-  dismountActivePane: (opts?: { rerenderSidebar?: boolean }) => void,
 ): void {
   const composerEl = pane.querySelector<HTMLElement>(".session-composer");
   if (!composerEl) return;
@@ -243,63 +233,16 @@ export function mountComposer(
     } as ChatEvent;
     sessionEvents.pushSynthetic(sessionId, optimisticEvent);
 
-    // Watch this turn for the /close skill's own lifecycle markers - never
-    // guess from the user's typed text (a "/close" substring anywhere in
-    // the message, even inside unrelated prose, used to mark the row
-    // "closing" before the skill had even started running). The row is
-    // promoted to "closing" only once <cc-close:starting> confirms the
-    // skill is genuinely running, and torn down only once <cc-close:done>
-    // confirms Phase 6 is actually killing the terminal - a settled turn
-    // without it (e.g. `/close --dont-close`) reverts the row to normal
-    // instead of ripping the chat away. See close-finalize.ts.
+    // The daemon owns the close lifecycle: it sets Instance.closing itself the
+    // moment a /close turn starts (broadcast via instances_changed, read by
+    // the sidebar) and tears the session down (mark_ended + kill process) on
+    // an explicit signal. The frontend no longer watches this turn for it.
     const cwd = String(sess.cwd ?? ".");
-    let sawBusy = false;
-    const cancelCloseWatch = watchCloseLifecycle({
-      subscribe: (onEvent) => sessionEvents.subscribe(sessionId, onEvent),
-      pollSettled: async () => {
-        const all = await invoke<Instance[]>("list_instances");
-        const inst = (all || []).find((i) => i.session_id === sessionId);
-        if (!inst || inst.ended_at) return "settled"; // already gone / ended
-        if (inst.busy) { sawBusy = true; return "running"; }
-        // Not busy: settled once we've seen the turn run, or the daemon
-        // recorded a turn verdict (awaiting). Otherwise we're still pre-start.
-        return sawBusy || inst.awaiting ? "settled" : "running";
-      },
-      onStarting: () => {
-        addBackgroundSession(sessionId);
-        markSessionClosing(sessionId);
-        const listEl = document.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) renderSidebar(listEl);
-      },
-      onStandDown: () => {
-        removeBackgroundSession(sessionId);
-        unmarkSessionClosing(sessionId);
-        const listEl = document.querySelector<HTMLElement>("#sessions-list");
-        if (listEl) renderSidebar(listEl);
-      },
-      finalize: () => {
-        removeBackgroundSession(sessionId);
-        unmarkSessionClosing(sessionId);
-        const exitListEl = document.querySelector<HTMLElement>("#sessions-list");
-        if (exitListEl) markSessionExiting(exitListEl, sessionId);
-        invoke<void>("clear_session", { sessionId })
-          .catch(() => {})
-          .finally(() => {
-            if (state.selectedId === sessionId) {
-              dismountActivePane({ rerenderSidebar: true });
-            } else {
-              const el = document.querySelector<HTMLElement>("#sessions-list");
-              if (el) renderSidebar(el);
-            }
-          });
-      },
-    });
 
     try {
       await invoke<void>("send_message", { sessionId, cwd, blocks });
     } catch (err) {
       console.error("[sessions] send_message failed", err);
-      cancelCloseWatch();
       // The optimistic bubble above claimed the send succeeded; roll it back
       // so a genuinely failed send doesn't keep looking like it went through.
       sessionEvents.removeSynthetic(sessionId, optimisticEvent);

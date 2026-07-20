@@ -1,7 +1,6 @@
 import { escapeHtml } from "../../shared/escape-html";
 import { invoke } from "../../shared/ipc";
 import type { Instance, DrainBoard, ScheduledItem } from "../../types/ipc.generated";
-import { getClosingSet } from "./closing-sessions";
 import {
   projectName,
   sessionSubtitle,
@@ -284,14 +283,10 @@ export function renderSidebar(listEl: HTMLElement): void {
     sessionSubtitle(s).toLowerCase().includes(filter)
   );
 
-  // Union of both closing sources: the per-window set (instant same-window
-  // UX the moment the composer sends /close) and the daemon-broadcast
-  // Instance.closing flag (armed by <cc-close:starting>, so every OTHER
-  // window shows the Closing segment too).
-  const closing = new Set([
-    ...getClosingSet(),
-    ...state.sessions.filter((s) => s.closing).map((s) => s.session_id),
-  ]);
+  // Rendered purely off the daemon-broadcast Instance.closing flag: the
+  // daemon sets it itself the moment a /close turn starts, so every window
+  // shows the Closing segment.
+  const closing = new Set(state.sessions.filter((s) => s.closing).map((s) => s.session_id));
   // Only fetch token-drain data when the user is actually sorting by it. Fire
   // the (debounced) async refresh in the background; render now with whatever
   // drainMap already holds so render never blocks on the IPC.
@@ -379,14 +374,11 @@ export function renderSidebar(listEl: HTMLElement): void {
   }
 
   let sessionIndex = 0;
-  // "Waiting" (5, parked on an external process) renders right after
-  // "In Progress" (2) so the blocked-on-a-script chats sit next to the
-  // actively-running ones without disturbing the other groups' order.
-  for (const seg of [0, 1, 2, 5, 3, 4]) {
+  const renderSeg = (seg: number) => {
     const group = segmented.get(seg)!;
     if (group.length === 0) {
       resetSegCollapse(seg);
-      continue;
+      return;
     }
     const segCollapsed = isSegCollapsed(seg);
     const chevronCls = segCollapsed ? "ph-caret-right" : "ph-caret-down";
@@ -425,9 +417,19 @@ export function renderSidebar(listEl: HTMLElement): void {
         });
       }
     }
+  };
+
+  // "Waiting" (5, parked on an external process) renders right after
+  // "In Progress" (2) so the blocked-on-a-script chats sit next to the
+  // actively-running ones without disturbing the other groups' order.
+  // "Closing" (3) is deferred past Hidden below - it renders dead last so a
+  // chat mid-close never sits above the Hidden group and the disappearing
+  // section is always the true bottom of the list.
+  for (const seg of [0, 1, 2, 5, 4]) {
+    renderSeg(seg);
   }
 
-  if (entries.length === 0 && state.daemonConnected === true) {
+  if (entries.length === 0 && segmented.get(3)!.length === 0 && state.daemonConnected === true) {
     // While the daemon is NOT connected the pane shows the centered
     // "Setting up..." / stalled state (paneEmptyStateHtml); the sidebar
     // stays blank rather than duplicating it in a cramped row.
@@ -467,6 +469,10 @@ export function renderSidebar(listEl: HTMLElement): void {
       }
     }
   }
+
+  // Closing renders last, below Hidden - it's a transient, self-clearing
+  // section, so it should never sit above a section that outlives it.
+  renderSeg(3);
 
   reconcileList(listEl, entries, loadAnimEnabled());
   // Resolve hero avatar images to data URLs (idempotent per character id).

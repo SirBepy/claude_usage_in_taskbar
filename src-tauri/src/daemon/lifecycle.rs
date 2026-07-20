@@ -225,21 +225,17 @@ pub async fn spawn_session(
 
 /// Flush the pump's held delta buffer (ai_todo 186): fold it into the
 /// session's shared `StreamingText` accumulator (which assigns the emit
-/// `seq` and lets attach paths resync a mid-turn client), feed the
-/// accumulated text to the /close marker watcher, and broadcast the
+/// `seq` and lets attach paths resync a mid-turn client), and broadcast the
 /// O(delta) wire event carrying only the new characters. No-op when
 /// nothing is pending.
 fn flush_pending_delta(
     session: &Session,
-    close_watch: &mut crate::daemon::close_watch::CloseWatch,
     pending: &mut Option<(u64, String, i64)>,
 ) {
     let Some((block, chunk, ts)) = pending.take() else { return };
     let seq = {
         let mut s = session.streaming.lock().unwrap();
-        let seq = s.apply_chunk(block, &chunk);
-        close_watch.observe_text(&s.text);
-        seq
+        s.apply_chunk(block, &chunk)
     };
     broadcast::publish(session, ChatEvent::AssistantDelta {
         text: chunk,
@@ -248,6 +244,35 @@ fn flush_pending_delta(
         snapshot: false,
         timestamp: ts,
     });
+}
+
+/// True when the turn currently running was opened by the user typing `/close`.
+/// Drives the daemon-authoritative `closing` row state (no text marker). The
+/// actual teardown still waits for the explicit `close_session` MCP tool, so a
+/// `/close --dont-close` shows "Closing" mid-run then stands back down.
+fn turn_is_close(session: &Session) -> bool {
+    session
+        .last_prompt
+        .lock()
+        .ok()
+        .map(|p| p.trim_start().starts_with("/close"))
+        .unwrap_or(false)
+}
+
+/// Daemon-authoritative `/close` teardown: mark the session ended and force the
+/// `claude` process tree down. Fired when the `close_session` MCP tool's
+/// `close_requested` flag is observed at turn end. Idempotent - `mark_ended`
+/// no-ops after the first call and `kill_tree` on an already-dead pid is
+/// harmless - so the result-line and EOF handlers can both call it safely.
+fn finalize_close(state: &Arc<DaemonState>, session: &Session) {
+    let now = chrono::Utc::now().to_rfc3339();
+    if state.registry.mark_ended(&session.session_id, crate::types::EndReason::Manual, &now) {
+        log::info!(
+            "daemon: session {} /close confirmed via close_session tool; marked ended, killing process tree",
+            session.session_id
+        );
+    }
+    crate::channels::kill::kill_tree(session.pid);
 }
 
 /// The stdout-pump task for one session's `claude` subprocess: reads and
@@ -283,13 +308,12 @@ async fn run_stdout_pump(
     // a stale result line from an interrupted turn from clearing the
     // busy=true that a new send_message set in the meantime.
     let mut pump_turn_gen: u64 = 0;
-    // Daemon-side /close teardown detector. The webview used to be the ONLY
-    // thing that acted on the /close skill's sentinels; an app reload while
-    // the close turn ran meant the session was never marked ended and got
-    // resurrected from the snapshot on the next start. See close_watch.rs.
-    let mut close_watch = crate::daemon::close_watch::CloseWatch::new();
     // True while the daemon-authoritative `closing` registry flag is set for
-    // the current turn (armed by <cc-close:starting>, cleared at turn end).
+    // the current turn: armed at the turn's first live output when the user
+    // opened it with `/close` (no text marker involved), cleared at turn end
+    // unless the close actually confirmed (then the row is `ended`, not just
+    // `closing`). Teardown itself is driven by the `close_requested` flag the
+    // `close_session` MCP tool sets - see the result-line/EOF handlers below.
     let mut closing_flagged = false;
     // Delta coalescing (ai_todo 186, evolving the earlier O(n^2) frequency
     // fix): the parser now emits O(delta) `AssistantDelta` chunks instead of
@@ -310,7 +334,7 @@ async fn run_stdout_pump(
             result = buf_reader.read_until(b'\n', &mut line_buf) => {
                 match result {
                     Ok(0) => {
-                        flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
+                        flush_pending_delta(&pump_session, &mut pending_delta);
                         break;
                     }
                     Ok(_) => {
@@ -335,29 +359,6 @@ async fn run_stdout_pump(
                             if matches!(ev, ChatEvent::SessionStarted { .. }) {
                                 continue;
                             }
-                            // Feed finalized assistant/result text to the /close
-                            // detector. (Live streamed text reaches it via the
-                            // accumulated `StreamingText` inside flush_pending_delta.)
-                            if let ChatEvent::AssistantMessage { ref content, .. } = ev {
-                                for block in content {
-                                    if let crate::types::chat::ContentBlock::Text { text } = block {
-                                        close_watch.observe_text(text);
-                                    }
-                                }
-                            }
-                            // <cc-close:starting> seen this turn: set the broadcast
-                            // `closing` flag once so EVERY window's sidebar can show
-                            // the "Closing" segment (it used to be per-window frontend
-                            // memory, visible only where the composer sent /close).
-                            if close_watch.armed() && !closing_flagged {
-                                closing_flagged = true;
-                                if state_for_pump.registry.set_closing(&pump_session.session_id, true) {
-                                    state_for_pump.notifier.publish(
-                                        "instances_changed",
-                                        serde_json::json!({"instances": state_for_pump.registry.list()}),
-                                    );
-                                }
-                            }
                             // A streamed text delta marks the current turn as live
                             // (not a replayed history line from --resume). On the
                             // FIRST one per turn, snapshot the registry's turn_gen
@@ -372,6 +373,21 @@ async fn run_stdout_pump(
                                         pump_turn_gen = state_for_pump
                                             .registry
                                             .current_turn_gen(&pump_session.session_id);
+                                        // First live output of a turn the user opened
+                                        // with `/close`: mark the row "Closing" now, so
+                                        // EVERY window's sidebar shows it (daemon-
+                                        // authoritative, no `<cc-close:starting>` marker).
+                                        // Teardown is separate - the `close_session` MCP
+                                        // tool sets `close_requested`, honored at turn end.
+                                        if !closing_flagged && turn_is_close(&pump_session) {
+                                            closing_flagged = true;
+                                            if state_for_pump.registry.set_closing(&pump_session.session_id, true) {
+                                                state_for_pump.notifier.publish(
+                                                    "instances_changed",
+                                                    serde_json::json!({"instances": state_for_pump.registry.list()}),
+                                                );
+                                            }
+                                        }
                                     }
                                     saw_stream_turn = true;
                                     match pending_delta {
@@ -379,7 +395,7 @@ async fn run_stdout_pump(
                                         _ => {
                                             // A different block is still buffered:
                                             // flush it first so order stays exact.
-                                            flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
+                                            flush_pending_delta(&pump_session, &mut pending_delta);
                                             pending_delta = Some((block, text, timestamp));
                                         }
                                     }
@@ -396,7 +412,7 @@ async fn run_stdout_pump(
                             // one, preserving the parser's original event order exactly.
                             if pending_delta.is_some() {
                                 flush_deadline = None;
-                                flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
+                                flush_pending_delta(&pump_session, &mut pending_delta);
                             }
                             // A `result` line parses to TurnUsage and marks the turn
                             // complete: update awaiting status, clear busy, and
@@ -496,41 +512,24 @@ async fn run_stdout_pump(
                                 if let Some(active) = turn_autopilot_changed {
                                     state_for_pump.registry.set_autopilot(&pump_session.session_id, active);
                                 }
-                                // /close teardown, daemon-authoritative: both sentinels
-                                // seen within this turn means the skill confirmed the
-                                // close. Mark ended here so the teardown survives any
-                                // webview reload; the frontend's clear_session finalize
-                                // is now belt-and-suspenders (mark_ended is idempotent).
-                                // Hint: if the turn's prompt literally started with
-                                // /close, <cc-close:done> alone confirms - the model
-                                // sometimes skips/mangles the first-line `starting`
-                                // marker, which used to silently disarm teardown.
-                                let user_typed_close = pump_session
-                                    .last_prompt
-                                    .lock()
-                                    .ok()
-                                    .map(|p| p.trim_start().starts_with("/close"))
-                                    .unwrap_or(false);
-                                let close_confirmed = close_watch.close_confirmed_with_hint(user_typed_close);
+                                // /close teardown, daemon-authoritative: the `/close`
+                                // skill's Phase 6 fires the `close_session` MCP tool,
+                                // which sets `close_requested` on the registry before
+                                // this result line. That explicit signal - not a parsed
+                                // `<cc-close:done>` text marker - confirms the close, so
+                                // tear the session down here (mark_ended + kill). Ordering
+                                // is safe: the tool call is a tool_use the model awaits, so
+                                // it always lands before the turn's final result line.
+                                let close_confirmed =
+                                    state_for_pump.registry.take_close_requested(&pump_session.session_id);
                                 if close_confirmed {
-                                    let now = chrono::Utc::now().to_rfc3339();
-                                    if state_for_pump.registry.mark_ended(
-                                        &pump_session.session_id,
-                                        crate::types::EndReason::Manual,
-                                        &now,
-                                    ) {
-                                        log::info!(
-                                            "daemon: session {} /close confirmed by markers; marked ended",
-                                            pump_session.session_id
-                                        );
-                                    }
+                                    finalize_close(&state_for_pump, &pump_session);
                                 }
-                                close_watch.reset();
                                 // Stand-down/hygiene: the turn ended, so the closing
-                                // segment either resolved into `ended` (mark_ended
-                                // above) or the close was aborted - clear the flag
-                                // BEFORE the snapshot below so it never persists
-                                // `closing: true`.
+                                // segment either resolved into `ended` (finalize_close
+                                // above) or the close stood down (--dont-close / a failed
+                                // chain never fires the tool) - clear the flag BEFORE the
+                                // snapshot below so it never persists `closing: true`.
                                 if closing_flagged {
                                     closing_flagged = false;
                                     state_for_pump.registry.set_closing(&pump_session.session_id, false);
@@ -550,7 +549,7 @@ async fn run_stdout_pump(
                         line_buf.clear();
                     }
                     Err(e) => {
-                        flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
+                        flush_pending_delta(&pump_session, &mut pending_delta);
                         log::warn!(
                             "daemon: session {} stdout read failed: {}",
                             pump_session.session_id,
@@ -568,7 +567,7 @@ async fn run_stdout_pump(
             // throwaway `now` when None; the guard still prevents this branch
             // from ever firing unless a real deadline is set.
             _ = tokio::time::sleep_until(flush_deadline.unwrap_or_else(tokio::time::Instant::now)), if flush_deadline.is_some() => {
-                flush_pending_delta(&pump_session, &mut close_watch, &mut pending_delta);
+                flush_pending_delta(&pump_session, &mut pending_delta);
                 flush_deadline = None;
             }
         }
@@ -611,28 +610,13 @@ async fn run_stdout_pump(
         if closing_flagged {
             state_for_pump.registry.set_closing(&pump_session.session_id, false);
         }
-        // /close's Phase 6 kills the terminal tree ~800ms after emitting
-        // <cc-close:done>, which can take the `claude -p` child down BEFORE
-        // its result line flushes - so the confirmed close must also be
-        // honored on EOF, not just at TurnUsage.
-        let user_typed_close = pump_session
-            .last_prompt
-            .lock()
-            .ok()
-            .map(|p| p.trim_start().starts_with("/close"))
-            .unwrap_or(false);
-        if close_watch.close_confirmed_with_hint(user_typed_close) {
-            let now = chrono::Utc::now().to_rfc3339();
-            if state_for_pump.registry.mark_ended(
-                &pump_session.session_id,
-                crate::types::EndReason::Manual,
-                &now,
-            ) {
-                log::info!(
-                    "daemon: session {} /close confirmed by markers (EOF, no result line); marked ended",
-                    pump_session.session_id
-                );
-            }
+        // /close's Phase 6 script also kills the `claude -p` child, which can
+        // take the process down BEFORE its result line flushes - so a close the
+        // `close_session` MCP tool confirmed must also be honored on EOF, not
+        // just at TurnUsage. Idempotent with the result-line path: whichever
+        // consumes `close_requested` first tears down; the other is a no-op.
+        if state_for_pump.registry.take_close_requested(&pump_session.session_id) {
+            finalize_close(&state_for_pump, &pump_session);
             crate::sessions::persistence::save_snapshot_default(&state_for_pump.registry);
         }
     } else {

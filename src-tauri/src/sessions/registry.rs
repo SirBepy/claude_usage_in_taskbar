@@ -39,6 +39,13 @@ pub struct Registry {
     /// the frontend. Consumed by the pump's result-line handler to override a
     /// marker that claims "done" while the CLI says tasks are still running.
     background_tasks: Mutex<HashMap<String, usize>>,
+    /// `session_id`s whose `/close` run has explicitly confirmed teardown via
+    /// the `cc_conductor` `close_session` MCP tool (POSTed to
+    /// `/sessions/close-confirm`). Set mid-turn by the tool call; consumed by
+    /// the pump at turn end to mark_ended + kill the process. A side map, not
+    /// an `Instance` field: it's a transient one-shot signal, never serialized.
+    /// Deterministic replacement for parsing a `<cc-close:done>` text marker.
+    close_requested: Mutex<std::collections::HashSet<String>>,
 }
 
 impl Registry {
@@ -47,7 +54,20 @@ impl Registry {
             inner: Mutex::new(HashMap::new()),
             rate_limits: Mutex::new(HashMap::new()),
             background_tasks: Mutex::new(HashMap::new()),
+            close_requested: Mutex::new(std::collections::HashSet::new()),
         }
+    }
+
+    /// Record that the `/close` skill confirmed teardown for this session (the
+    /// `close_session` MCP tool fired). The pump consumes it at turn end.
+    pub fn set_close_requested(&self, session_id: &str) {
+        self.close_requested.lock().unwrap().insert(session_id.to_string());
+    }
+
+    /// Consume the close-confirmed flag: returns true once, then clears it, so
+    /// a stale flag can never re-tear-down a resumed session on a later turn.
+    pub fn take_close_requested(&self, session_id: &str) -> bool {
+        self.close_requested.lock().unwrap().remove(session_id)
     }
 
     /// Record the live background-task count the Stop hook reported for this

@@ -41,8 +41,6 @@ export {
   setAutoAccept,
   setSelectedSessionId,
   getSelectedSessionId,
-  addBackgroundSession,
-  removeBackgroundSession,
   clearPendingPrompt,
   pendingPromptSessionIds,
 } from "./gating";

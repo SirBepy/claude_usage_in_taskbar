@@ -294,7 +294,7 @@ export async function selectSession(sessionId: string, pane: HTMLElement): Promi
   if (!rendererMounted) return;
 
   // Attach composer + held-messages controller.
-  mountComposer(pane, sess, sessionId, readOnly, dismountActivePane);
+  mountComposer(pane, sess, sessionId, readOnly);
 
   // Start real-time file watcher for all sessions. External sessions get new
   // messages this way; Interactive sessions also need it so that turns

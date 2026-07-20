@@ -241,3 +241,17 @@
   0%, 100% { box-shadow: inset 3px 0 0 var(--chat-state-closing-glow); }
   50% { box-shadow: inset 3px 0 0 var(--chat-state-closing); }
 }
+
+/* `.closing` (2 classes + element) outranks `.row-entering`/`.row-exiting`
+   (2 classes) in specificity, so the lone `animation` shorthand on `.closing`
+   silently wins and drops the slide entirely - a Closing row popped in/out
+   instead of sliding like every other row. These combined selectors win over
+   both and list both animations (comma-separated `animation` values), so the
+   slide still plays alongside the pulse; the finite slide's own `animationend`
+   fires the removal/class-cleanup regardless of the infinite pulse. */
+.sessions-list li.closing.row-entering {
+  animation: slideInLeft 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, closing-pulse 1.2s ease-in-out infinite;
+}
+.sessions-list li.closing.row-exiting {
+  animation: slideOutLeft 0.28s cubic-bezier(0.4, 0, 1, 1) forwards, closing-pulse 1.2s ease-in-out infinite;
+}
