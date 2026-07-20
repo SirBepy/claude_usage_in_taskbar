@@ -290,7 +290,7 @@ describe("HttpTransport.listen — instances-changed poll", () => {
     unlisten();
   });
 
-  it("polls again after 3500ms and invokes cb each tick", async () => {
+  it("does not poll again while the global WS is still fresh", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
 
     const received = [];
@@ -301,8 +301,31 @@ describe("HttpTransport.listen — instances-changed poll", () => {
     const afterImmediate = received.length;
     expect(afterImmediate).toBe(1);
 
-    // Advance 3500ms for the first interval tick.
-    await vi.advanceTimersByTimeAsync(3500);
+    // Advance short of the watchdog's staleness threshold (GLOBAL_STALE_MS,
+    // checked every GLOBAL_WATCHDOG_INTERVAL_MS) — the degrade poll never
+    // starts, so no further tick fires.
+    await vi.advanceTimersByTimeAsync(9000);
+
+    expect(received.length).toBe(afterImmediate);
+
+    unlisten();
+  });
+
+  it("degrade-polls and invokes cb once the global WS goes stale", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+
+    const received = [];
+    const unlisten = await new HttpTransport().listen("instances-changed", () => received.push(1));
+
+    // Flush the immediate call.
+    await vi.advanceTimersByTimeAsync(0);
+    const afterImmediate = received.length;
+    expect(afterImmediate).toBe(1);
+
+    // The mock WS never opens/frames, so the watchdog (ticking every 5s)
+    // eventually finds the last-frame timestamp older than the 10s staleness
+    // threshold, starts the degrade poll, and that poll's first 3.5s tick fires.
+    await vi.advanceTimersByTimeAsync(19000);
 
     expect(received.length).toBeGreaterThan(afterImmediate);
 
