@@ -407,7 +407,7 @@ export function renderSidebar(listEl: HTMLElement): void {
           html: `<li data-session-id="${escapeHtml(s.session_id)}"${kbdHint} class="${isActive ? "active" : ""} ${s.kind === "external" ? "is-external" : ""} ${needsAttention ? "needs-attention" : ""} ${isClosing ? "closing" : ""} ${rateLimited.has(s.session_id) ? "is-rate-limited" : ""}">
             ${leadingVisual(s, indicator, unread, attention, question, rateLimited)}
             <div class="session-row-text">
-              <span class="session-row-project">${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}${scheduledBadgeHtml(scheduledCountMap.get(s.session_id))}</span>
+              <span class="session-row-project">${scheduledBadgeHtml(scheduledCountMap.get(s.session_id))}${escapeHtml(sessionSubtitle(s))}${s.is_remote ? `<i class="ph ph-device-mobile session-remote-badge" title="Remote chat"></i>` : ""}${s.autopilot ? `<span class="autopilot-badge" title="Autopilot active">autopilot</span>` : ""}</span>
               <span class="session-row-subtitle">${escapeHtml(projectName(s))}${sort === "drain" ? drainChipHtml(drainMap.get(s.session_id)) : ""}</span>
             </div>
             <button class="session-row-menu-btn icon-btn" title="More options" data-session-id="${escapeHtml(s.session_id)}">

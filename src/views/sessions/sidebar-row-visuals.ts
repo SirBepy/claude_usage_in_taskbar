@@ -19,14 +19,15 @@ export function projBadgeHtml(cwd: string | null, cls: string): string {
   return `<span class="${cls}"><span class="proj-face" data-proj-face="${escapeHtml(cwd)}"><i class="ph ph-folder"></i></span></span>`;
 }
 
-/** Sidebar row's "has pending scheduled message(s)" marker: a clock icon next
- *  to the session title, with a count badge ONLY when more than one is
- *  pending (a single scheduled item shows just the marker, per Joe's ask).
- *  Purely visual - no effect on statusPriority/sort. Mirrors the per-chat
- *  scheduled-chip's icon + count-span pattern (scheduled-chip.ts) so the two
- *  read as the same affordance. Persists unchanged while an item is "firing"
- *  (no distinct in-flight look for v1 - counts already include firing, same
- *  as scheduled-chip's filter). */
+/** Sidebar row's "has pending scheduled message(s)" marker: a clock icon
+ *  prefixed before the session title (never clipped by the title's own
+ *  ellipsis truncation, unlike a trailing badge), with a count badge ONLY
+ *  when more than one is pending (a single scheduled item shows just the
+ *  marker, per Joe's ask). Purely visual - no effect on statusPriority/sort.
+ *  Mirrors the per-chat scheduled-chip's icon + count-span pattern
+ *  (scheduled-chip.ts) so the two read as the same affordance. Persists
+ *  unchanged while an item is "firing" (no distinct in-flight look for v1 -
+ *  counts already include firing, same as scheduled-chip's filter). */
 export function scheduledBadgeHtml(count: number | undefined): string {
   if (!count) return "";
   const title = escapeHtml(scheduledTooltip(count));
