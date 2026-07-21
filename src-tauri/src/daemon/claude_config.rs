@@ -40,10 +40,13 @@ pub(crate) fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathB
     Some(path)
 }
 
-/// Write a per-session settings.json that registers a `PreToolUse` hook for the
-/// builtin `AskUserQuestion` tool. The hook `curl`s the payload to the daemon's
-/// `/hooks/ask-question` endpoint. Returns None if the app-data dir is
-/// unavailable (non-fatal; AskUserQuestion just won't be answerable this session).
+/// Write a per-session settings.json that registers: a `PreToolUse` hook for
+/// the builtin `AskUserQuestion` tool, and a `PreToolUse`/`PostToolUse` pair on
+/// `Bash` enforcing the cross-session commit mutex (`hooks_server::commit_lock`
+/// - two concurrent sessions in the same project must never `git commit` at
+/// the same time). The hooks `curl` their payload to the daemon. Returns None
+/// if the app-data dir is unavailable (non-fatal; the affected hooks just
+/// won't fire this session).
 ///
 /// Why a hook and not the permission relay: current `claude` no longer routes
 /// the builtin `AskUserQuestion` through `--permission-prompt-tool`, so the
@@ -55,6 +58,17 @@ pub(crate) fn write_mcp_config(turn_id: &str, tracking_id: &str) -> Option<PathB
 /// existing Stop hook. Scoped via `--settings` so it never touches the project's
 /// own `.claude/settings.json`; `--permission-prompt-tool` stays for real
 /// permission gates (Bash/Edit/etc.).
+///
+/// The commit-lock hooks use the `if` field (permission-rule syntax, e.g.
+/// `"Bash(git *)"`) to filter on command content BEFORE Claude Code even runs
+/// the hook command - `matcher` alone only keys on tool name, but `if` matches
+/// tool name + arguments together. So a non-git Bash call (the overwhelming
+/// majority: edits, npm/cargo, ls, etc.) never spawns curl or reaches the
+/// daemon at all. Anything starting with `git` still does (status, add, the
+/// project's own `git -C <path> commit` form, ...) - `commit_lock::is_git_commit`
+/// is the precise "is this actually `commit`" check once inside the daemon,
+/// since `if`'s prefix matching alone can't safely narrow past the `-C <path>`
+/// form. The 2-minute poll budget only ever applies to an actual `git commit`.
 pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
     let dir = crate::settings::paths::mcp_temp_dir().ok()?;
     // Both --max-time AND the hook's `timeout` field MUST out-wait the daemon's
@@ -66,8 +80,20 @@ pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
     // Claude Code caps a PreToolUse `command` hook at its 600s default and kills
     // curl at 10min regardless of --max-time, truncating the intended window.
     // --connect-timeout fails fast if the daemon isn't up.
-    let command = format!(
+    let ask_question_command = format!(
         "curl -s --connect-timeout 10 --max-time 3660 --retry 2 --retry-delay 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/ask-question",
+        daemon_hook_port()
+    );
+    // Same out-wait rule as above, sized to commit_lock::COMMIT_LOCK_POLL_BUDGET
+    // (120s) instead of PROMPT_TIMEOUT: --max-time/timeout give it slack past
+    // the server's own poll ceiling so the daemon's response always lands first.
+    let commit_lock_request_command = format!(
+        "curl -s --connect-timeout 10 --max-time 130 --retry 1 --retry-delay 1 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/commit-lock-request",
+        daemon_hook_port()
+    );
+    // Release is a fast fire-and-forget check-and-clear - no poll, small timeout.
+    let commit_lock_release_command = format!(
+        "curl -s --connect-timeout 10 --max-time 10 -X POST -H \"Content-Type: application/json\" --data-binary @- http://127.0.0.1:{}/hooks/commit-lock-release",
         daemon_hook_port()
     );
     let config = serde_json::json!({
@@ -75,7 +101,27 @@ pub(crate) fn write_hook_settings(turn_id: &str) -> Option<PathBuf> {
             "PreToolUse": [
                 {
                     "matcher": "AskUserQuestion",
-                    "hooks": [ { "type": "command", "command": command, "timeout": 3660 } ]
+                    "hooks": [ { "type": "command", "command": ask_question_command, "timeout": 3660 } ]
+                },
+                {
+                    "matcher": "Bash",
+                    "hooks": [ {
+                        "type": "command",
+                        "if": "Bash(git *)",
+                        "command": commit_lock_request_command,
+                        "timeout": 140
+                    } ]
+                }
+            ],
+            "PostToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [ {
+                        "type": "command",
+                        "if": "Bash(git *)",
+                        "command": commit_lock_release_command,
+                        "timeout": 15
+                    } ]
                 }
             ]
         }

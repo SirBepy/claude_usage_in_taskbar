@@ -9,6 +9,7 @@
 //! boot scaffolding (HookCtx, HOOK_PORT, health, spawn) and the route table,
 //! the only place that "sees" every category at once.
 
+mod commit_lock;
 mod context;
 mod lifecycle;
 mod permission;
@@ -140,6 +141,8 @@ pub async fn spawn(state: Arc<DaemonState>) -> Result<u16, HookBindError> {
         .route("/permissions/request", post(permission::on_permission_request))
         .route("/questions/request", post(permission::on_question_request))
         .route("/hooks/ask-question", post(permission::on_ask_question_hook))
+        .route("/hooks/commit-lock-request", post(commit_lock::on_commit_lock_request))
+        .route("/hooks/commit-lock-release", post(commit_lock::on_commit_lock_release))
         .with_state(ctx);
 
     tokio::spawn(async move {
