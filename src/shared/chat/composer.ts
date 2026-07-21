@@ -741,12 +741,15 @@ export class Composer {
       if (empty) return;
       this.sending = true;
       const blocks = this.buildBlocks(text);
+      const savedBlockedAttachments = this.attachments;
+      const savedBlockedPastedBlocks = this.pastedBlocks;
       this.clearComposer();
       try {
         await this.opts.onSchedule?.(blocks, blocked.resetsAtIso, null);
         this.showNotice(`Scheduled for ${blocked.resetsAtLabel}.`);
       } catch (err) {
         console.error("[Composer] blocked-schedule failed", err);
+        this.restoreDraft(text, savedBlockedAttachments, savedBlockedPastedBlocks);
       } finally {
         this.sending = false;
       }
@@ -774,11 +777,14 @@ export class Composer {
     if (empty) return;
     this.sending = true;
     const blocks = this.buildBlocks(text);
+    const savedAttachments = this.attachments;
+    const savedPastedBlocks = this.pastedBlocks;
     this.clearComposer();
     try {
       await this.opts.onSend(blocks);
     } catch (err) {
       console.error("[Composer] onSend failed", err);
+      this.restoreDraft(text, savedAttachments, savedPastedBlocks);
     } finally {
       this.sending = false;
     }
@@ -826,6 +832,22 @@ export class Composer {
     // Reset voice state; stop an in-flight recording so a send mid-dictation
     // doesn't leave the controller running against stale anchor positions.
     this.cv.reset();
+    this.renderAttachments();
+    this.persistDraft();
+    this.persistAttachments();
+  }
+
+  /** Undo a `clearComposer()` after a failed send: puts the text, attachments
+   * and pasted blocks back so the user doesn't lose what they typed. */
+  private restoreDraft(text: string, attachments: Attachment[], pastedBlocks: PastedBlock[]): void {
+    if (this.textarea) {
+      this.textarea.value = text;
+      this.textarea.focus();
+    }
+    this.attachments = attachments;
+    this.pastedBlocks = pastedBlocks;
+    this.autoResize();
+    this.updateHighlight();
     this.renderAttachments();
     this.persistDraft();
     this.persistAttachments();
