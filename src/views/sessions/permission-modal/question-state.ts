@@ -20,6 +20,32 @@ export function isQuestionAnswered(q: Question | undefined, freeText: string, se
 }
 
 /**
+ * Pure "what did the user answer" computation, shared between the floating
+ * card's answerFor/answerPreview (question-ui.ts) so the combine rule has one
+ * implementation. multiSelect always returns an array (checked boxes + typed
+ * text appended); single-select returns the typed text ALONE only if nothing
+ * was picked, the picked label ALONE only if nothing was typed, or both
+ * combined as a 2-item array when the user did both - a bare radio pick no
+ * longer gets silently discarded just because they also wrote something.
+ */
+export function computeAnswer(
+  q: Question | undefined,
+  freeText: string,
+  selection: Selection | undefined,
+): string | string[] | null {
+  const typed = freeText.trim();
+  if (q?.multiSelect) {
+    const set = Array.from((selection instanceof Set ? selection : new Set<string>()));
+    if (typed) set.push(typed);
+    return set;
+  }
+  if (typeof selection === "string" && typed) return [selection, typed];
+  if (typed) return typed;
+  if (typeof selection === "string") return selection;
+  return null;
+}
+
+/**
  * Format answers as plain text so claude can read them in the permission
  * tool's `deny.message` field. Headless `claude -p` has no native way to
  * receive structured answers from the built-in `AskUserQuestion` tool, but

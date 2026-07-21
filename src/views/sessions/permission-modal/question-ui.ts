@@ -4,6 +4,7 @@ import { clearHost, ensureHost, renderCardShell } from "./host";
 import type { Answers, Question, QuestionDraft, QuestionUIOpts, Selection } from "./types";
 import {
   isQuestionAnswered,
+  computeAnswer,
   setActiveCard,
   clearActiveCardIfCurrent,
 } from "./question-state";
@@ -11,7 +12,7 @@ import {
 // Payload normalization, the active-card draft registry, and the pure
 // answer-completeness check now live in ./question-state.ts; re-exported here
 // so existing importers of this file keep working unchanged.
-export { isQuestionAnswered, formatAnswersAsMessage, extractQuestions, dismissQuestionCard, snapshotActiveCardDraft } from "./question-state";
+export { isQuestionAnswered, computeAnswer, formatAnswersAsMessage, extractQuestions, dismissQuestionCard, snapshotActiveCardDraft } from "./question-state";
 
 // Synthetic option appended to every multiSelect question so "nothing
 // applies" is an explicit, selectable answer instead of an implicit
@@ -98,20 +99,10 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
   document.addEventListener("keydown", keydownHandler);
 
   // Per-question answer, normalized: multiSelect -> string[] (possibly empty,
-  // always present), single-select/free-text -> string or null if unanswered.
-  const answerFor = (qi: number): string | string[] | null => {
-    const q = questions[qi];
-    const typed = (freeText.get(qi) ?? "").trim();
-    const s = selections.get(qi);
-    if (q?.multiSelect) {
-      const set = Array.from((s as Set<string> | undefined) ?? []);
-      if (typed) set.push(typed);
-      return set;
-    }
-    if (typed) return typed;
-    if (typeof s === "string") return s;
-    return null;
-  };
+  // always present), single-select/free-text -> string, string[] (pick +
+  // typed combined), or null if unanswered. See computeAnswer for the rule.
+  const answerFor = (qi: number): string | string[] | null =>
+    computeAnswer(questions[qi], freeText.get(qi) ?? "", selections.get(qi));
 
   const submit = () => {
     const answers: Answers = {};
@@ -141,9 +132,8 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
     isQuestionAnswered(questions[qi], freeText.get(qi) ?? "", selections.get(qi));
 
   const answerPreview = (qi: number): string => {
-    const q = questions[qi];
     const a = answerFor(qi);
-    if (q?.multiSelect) return (a as string[]).length ? (a as string[]).join(", ") : "Not answered";
+    if (Array.isArray(a)) return a.length ? a.join(", ") : "Not answered";
     return typeof a === "string" && a ? a : "Not answered";
   };
 
@@ -260,7 +250,7 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
           <div class="prompt-q__text">${escapeHtml(q?.question ?? "")}</div>
           <div class="prompt-q__opts">${rows}</div>
           <label class="prompt-q__other">
-            <span class="prompt-q__other-label">Or write something:</span>
+            <span class="prompt-q__other-label">Add your own (combines with a pick above):</span>
             <textarea class="prompt-q__other-input" rows="1" placeholder="Type your own answer...">${escapeHtml(typedValue)}</textarea>
           </label>
         </div>
