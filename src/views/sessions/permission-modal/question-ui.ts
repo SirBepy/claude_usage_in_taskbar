@@ -362,6 +362,20 @@ export function renderQuestionUI(opts: QuestionUIOpts): void {
       });
     });
 
+    // Radios don't fire "change" when re-clicking the option that's already
+    // checked (no state change to report), so re-selecting the current answer
+    // is a native no-op. Listen on "click" instead to detect that specific
+    // case and clear the answer, letting a re-click deselect it.
+    host.querySelectorAll<HTMLInputElement>('.prompt-opt input[type="radio"]').forEach((input) => {
+      input.addEventListener("click", () => {
+        const qi = activeTab;
+        const label = input.dataset.label ?? "";
+        if (selections.get(qi) !== label) return;
+        selections.delete(qi);
+        render();
+      });
+    });
+
     const otherEl = host.querySelector<HTMLTextAreaElement>(".prompt-q__other-input");
     if (otherEl) {
       const autoSize = () => {
