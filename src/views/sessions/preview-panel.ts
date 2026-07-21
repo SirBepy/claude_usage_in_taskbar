@@ -134,6 +134,12 @@ class PreviewPanel implements PreviewController {
   private mode: PreviewMode;
   private snapshots: PreviewMeta[] = [];
   private selected: PreviewSnapshot | null = null;
+  /** Full-html snapshots already fetched this session, keyed by id, so
+   *  revisiting a chat (or a window-focus refetch) never re-invokes
+   *  get_preview or rebuilds the iframe for content already seen. Pruned in
+   *  refreshList to whatever ids the daemon's list still reports, so it can
+   *  never outgrow the daemon-side MAX_HISTORY cap. */
+  private snapshotCache = new Map<string, PreviewSnapshot>();
   private deviceWidth: DeviceWidth = "desktop";
   private openState: boolean;
   /** Explicit manually-dragged px width, or null for the default 50/50 flex
@@ -249,6 +255,10 @@ class PreviewPanel implements PreviewController {
       const list = await invoke<PreviewMeta[]>("list_previews");
       const all = Array.isArray(list) ? list : [];
       this.snapshots = all.filter((m) => m.session_id === this.currentSessionId);
+      const validIds = new Set(all.map((m) => m.id));
+      for (const id of this.snapshotCache.keys()) {
+        if (!validIds.has(id)) this.snapshotCache.delete(id);
+      }
     } catch (err) {
       console.error("[preview-panel] list_previews failed", err);
     }
@@ -267,11 +277,25 @@ class PreviewPanel implements PreviewController {
   }
 
   private async selectSnapshot(id: string): Promise<void> {
-    try {
-      this.selected = await invoke<PreviewSnapshot>("get_preview", { id });
-    } catch (err) {
-      console.error("[preview-panel] get_preview failed", err);
+    // Already the exact snapshot on screen (same id + version) — a
+    // window-focus refetch or a re-scope back to a chat whose top snapshot
+    // hasn't changed. Skip the round-trip and the iframe rebuild entirely so
+    // switching chats doesn't re-execute the previewed HTML's scripts.
+    const meta = this.snapshots.find((s) => s.id === id);
+    if (this.selected?.id === id && (!meta || meta.version === this.selected.version)) {
       return;
+    }
+    const cached = this.snapshotCache.get(id);
+    if (cached && meta && cached.version === meta.version) {
+      this.selected = cached;
+    } else {
+      try {
+        this.selected = await invoke<PreviewSnapshot>("get_preview", { id });
+      } catch (err) {
+        console.error("[preview-panel] get_preview failed", err);
+        return;
+      }
+      this.snapshotCache.set(id, this.selected);
     }
     this.renderHeader();
     this.renderIframe();
