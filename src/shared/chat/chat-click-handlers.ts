@@ -56,6 +56,14 @@ export function handlePastedLogClick(e: MouseEvent): void {
   openLightbox({ type: "text", content: text, filename: name });
 }
 
+export function handleAuqAnswerClick(e: MouseEvent): void {
+  const chip = (e.target as Element).closest<HTMLElement>(".auq-answer-chip");
+  if (!chip) return;
+  const text = base64ToUtf8(chip.dataset.auqAnswerText || "");
+  if (!text) return;
+  openLightbox({ type: "text", content: text, filename: "answer.txt" });
+}
+
 export function handleSlashClick(e: MouseEvent): void {
   const span = (e.target as Element).closest<HTMLElement>(".slash-mention[data-skill-target]");
   if (!span) return;

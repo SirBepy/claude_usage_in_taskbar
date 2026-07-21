@@ -101,7 +101,14 @@ function renderTextBlock(rawText: string, breaks = false, fileChips = false): st
   if (hasVoice) text = text.replace(VOICE_INPUT_RE, "");
   if (hasAuqAnswer) text = text.replace(AUQ_ANSWER_RE, "");
   if (hasVoice || hasAuqAnswer) text = text.trim();
-  const prefix = (hasAuqAnswer ? auqAnswerChipHtml() : "") + (hasVoice ? voiceInputChipHtml() : "");
+  // The AUQ-answer block is always exactly the sentinel + the machine-formatted
+  // "User answered…" framing (see permission-modal/index.ts onSubmit) - never
+  // mixed with free-typed user text in the same content block. The resolved
+  // question card rendered just above already shows the same Q/A nicely, so
+  // fold the raw framing text entirely into the chip (click to reveal) instead
+  // of dumping a second, unstyled copy underneath it.
+  if (hasAuqAnswer) return auqAnswerChipHtml(text) + (hasVoice ? voiceInputChipHtml() : "");
+  const prefix = hasVoice ? voiceInputChipHtml() : "";
   // First peel off any <pasted-log> blocks into chips; render the surrounding
   // text (which may still carry <file:> tokens) through the file-token path.
   PASTED_LOG_RE.lastIndex = 0;
@@ -135,9 +142,11 @@ function voiceInputChipHtml(): string {
 }
 
 // An AUQ-answer chip: a reply glyph + "answer" label, signalling this message is
-// the user's answer to a question card. Mirrors the attachment-chip shape.
-function auqAnswerChipHtml(): string {
-  return `<div class="attachment-chip auq-answer-chip" title="Your answer to Claude's question"><i class="ph ph-arrow-bend-up-left"></i><span class="chip-name">answer</span></div>`;
+// the user's answer to a question card. The full "Q: … A: …" framing rides
+// along as a data attribute (like the pasted-log chip) so clicking it reveals
+// the raw text without dumping it into the transcript by default.
+function auqAnswerChipHtml(rawText: string): string {
+  return `<div class="attachment-chip auq-answer-chip previewable" data-auq-answer-text="${utf8ToBase64(rawText)}" title="Your answer to Claude's question - click to view"><i class="ph ph-arrow-bend-up-left"></i><span class="chip-name">answer</span></div>`;
 }
 
 // Renders a text segment, turning any <file:> tokens into attachment chips and

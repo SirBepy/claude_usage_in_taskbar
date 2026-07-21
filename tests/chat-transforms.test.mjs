@@ -362,14 +362,24 @@ describe("eventToRenderedMessage — isMeta user turns", () => {
 });
 
 describe("renderBlocks — AUQ answer chip", () => {
-  it("peels the <auq-answer/> marker into an answer chip and keeps the framed body", () => {
+  it("peels the <auq-answer/> marker into an answer chip and hides the framed body (already shown by the resolved question card)", () => {
     const html = userBlocks([
       { type: "text", text: "<auq-answer/>User answered the question(s):\nQ: Tabs or spaces?\nA: Tabs" },
     ]);
     expect(html).toContain("auq-answer-chip");
     expect(html).not.toContain("&lt;auq-answer");
     expect(html).not.toContain("<auq-answer/>");
-    expect(html).toContain("Tabs");
+    // the framed Q/A text must NOT render as visible text - it's stashed for the chip's lightbox
+    expect(html).not.toContain("Tabs or spaces");
+  });
+
+  it("stashes the full framed body (base64, utf8-safe) for the lightbox", () => {
+    const html = userBlocks([
+      { type: "text", text: "<auq-answer/>User answered the question(s):\nQ: Tabs or spaces?\nA: Tabs" },
+    ]);
+    const m = html.match(/data-auq-answer-text="([^"]*)"/);
+    expect(m).toBeTruthy();
+    expect(base64ToUtf8(m[1])).toBe("User answered the question(s):\nQ: Tabs or spaces?\nA: Tabs");
   });
 
   it("does not chip-convert an <auq-answer/> marker an assistant wrote as example text", () => {
