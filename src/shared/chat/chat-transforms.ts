@@ -73,11 +73,28 @@ const VOICE_INPUT_RE = /<voice-input\s*\/>/g;
 
 // Sentinel prefixing a message that is the user's answer to a fire-and-forget
 // AskUserQuestion card (see permission-modal/index.ts). Content-free like the
-// voice tag: the model still reads the framed "User answered…" body inline, but
-// the chat peels the marker into a small "answer" chip so the turn is visibly an
-// answer, not an out-of-the-blue user message.
+// voice tag: the model still reads the framed "User answered…" body inline.
+// chat-event-handler folds it back into the question card it answers (so the
+// card shows the real answers instead of "awaiting answer") rather than
+// rendering a separate bubble; the "answer" chip below is only the fallback
+// for the rare case where no matching pending card is found (e.g. it queued
+// alongside other held messages in the same send).
 export const AUQ_ANSWER_SENTINEL = "<auq-answer/>";
 const AUQ_ANSWER_RE = /<auq-answer\s*\/>/g;
+
+/** The raw "User answered…" framing text of a `<auq-answer/>`-tagged user
+ *  message (sentinel stripped), or null if `blocks` isn't exactly that: one
+ *  text block carrying the sentinel and nothing else. */
+export function extractAuqAnswerText(blocks: ContentBlock[]): string | null {
+  if (blocks.length !== 1) return null;
+  const b = blocks[0];
+  if (!b || b.type !== "text") return null;
+  AUQ_ANSWER_RE.lastIndex = 0;
+  const has = AUQ_ANSWER_RE.test(b.text);
+  AUQ_ANSWER_RE.lastIndex = 0;
+  if (!has) return null;
+  return b.text.replace(AUQ_ANSWER_RE, "").trim();
+}
 
 function renderTextBlock(rawText: string, breaks = false, fileChips = false): string {
   const stripped = stripStatusToken(rawText);

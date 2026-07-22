@@ -127,6 +127,28 @@ describe("custom chip-panel views", () => {
     r.detach();
   });
 
+  it("a <auq-answer/> user message resolves the question card in place instead of a separate answer bubble (Joe's request, 2026-07-22)", () => {
+    const { r, container } = makeRenderer();
+    r.handleEvent(toolUseEvent("AskUserQuestion", { questions: [{ question: "Pick one?", header: "Choice" }] }, "q1"));
+    let qa = container.querySelector(".tool-qa");
+    expect(qa.querySelector(".tool-qa-a").textContent).toContain("awaiting answer");
+
+    r.handleEvent(userEvent("<auq-answer/>User answered the question(s):\nQ: Pick one?\nA: Option A"));
+
+    qa = container.querySelector(".tool-qa");
+    expect(qa.querySelector(".tool-qa-a").textContent).toContain("Option A");
+    // No separate "answer" chip bubble - the resolved card above is the only trace.
+    expect(container.querySelector(".auq-answer-chip")).toBeNull();
+    r.detach();
+  });
+
+  it("falls back to a normal bubble+chip when a <auq-answer/> message has no pending question card to resolve", () => {
+    const { r, container } = makeRenderer();
+    r.handleEvent(userEvent("<auq-answer/>User answered the question(s):\nQ: Pick one?\nA: Option A"));
+    expect(container.querySelector(".auq-answer-chip")).not.toBeNull();
+    r.detach();
+  });
+
   it("updateQuestionProgress mirrors the floating card's live per-question progress (Joe's request, 2026-07-16)", () => {
     const { r, container } = makeRenderer();
     r.handleEvent(toolUseEvent("AskUserQuestion", {

@@ -16,6 +16,7 @@ import {
   isResumeContinuationUserMessage,
   metaTurnLabel,
   noiseAssistantLabel,
+  extractAuqAnswerText,
   RenderedMessage,
 } from "./chat-transforms";
 import { parseFileEdit } from "./file-edits";
@@ -40,6 +41,25 @@ export interface HandleEventOpts {
   silent?: boolean;
   /** Skip auto-scroll-to-bottom. */
   skipScroll?: boolean;
+}
+
+/** Fold a fire-and-forget AUQ answer message back into the question card it
+ *  answers (see permission-modal/index.ts onSubmit), so the transcript shows
+ *  the card resolved with the real answers instead of stuck on "awaiting
+ *  answer" plus a separate answer bubble. Only one AUQ can be in flight per
+ *  session at a time, so the most recent still-unresolved question card is
+ *  always the right match. Returns false if none is found (caller falls back
+ *  to rendering a normal bubble, same as before this existed). */
+function resolvePendingQuestionCard(r: ChatRenderer, answerText: string): boolean {
+  for (let i = r.messages.length - 1; i >= 0; i--) {
+    const m = r.messages[i]!;
+    if (m.kind === "question" && m.text === undefined) {
+      r.messages[i] = { ...m, text: answerText };
+      r.dirtyIndices.add(i);
+      return true;
+    }
+  }
+  return false;
 }
 
 export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEventOpts = {}): void {
@@ -88,6 +108,8 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
       // (a fired ScheduleWakeup prompt, an autopilot loop tick, etc.) rather
       // than something the human typed - must never look like a real message.
       const isMeta = !isCompact && !isSilent && ev.is_meta;
+      const auqAnswerText = !isCompact && !isSilent && !isMeta ? extractAuqAnswerText(cleaned) : null;
+      const resolvedQuestionCard = auqAnswerText !== null && resolvePendingQuestionCard(r, auqAnswerText);
       enqueueTurnClose(r);
       r.setActivity(null);
       r.setTurnStatus(null);
@@ -106,6 +128,8 @@ export function handleChatEvent(r: ChatRenderer, ev: ChatEvent, opts: HandleEven
         r.messages.push({ kind: "system", text: "Continuing session…", ts });
       } else if (isMeta) {
         r.messages.push({ kind: "system", text: metaTurnLabel(cleaned), ts });
+      } else if (resolvedQuestionCard) {
+        // Folded into the question card above instead of a separate bubble.
       } else {
         r.messages.push({ kind: "user", content: cleaned, ts });
       }
