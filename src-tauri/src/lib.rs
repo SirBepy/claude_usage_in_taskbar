@@ -19,6 +19,7 @@ pub mod scheduler;
 pub mod scraping;
 pub mod sessions;
 pub mod settings;
+pub mod shutdown_guard;
 pub mod skill_usage;
 pub mod slash;
 pub mod state;
@@ -605,6 +606,11 @@ pub fn run() {
             }
             // (Main-window hide-to-tray lives in `build_main_window`; the window
             // is built lazily on first open, so there is nothing to wire here.)
+
+            // Windows session-end guard. Owns its own hidden window + message
+            // pump on a dedicated thread so a PC shutdown is never left waiting
+            // on a wedged event loop. See `shutdown_guard` for the full why.
+            crate::shutdown_guard::arm(app.handle().clone());
 
             // Webview boot watchdog. If `frontend_ready` IPC never fires
             // within ~6s, force-navigate the main window back to the start
