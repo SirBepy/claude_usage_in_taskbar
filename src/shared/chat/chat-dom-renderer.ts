@@ -278,8 +278,18 @@ export function applyRunningHighlight(r: ChatRenderer): void {
     (c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains("tool-strip"),
   );
   if (!strip) return;
-  for (const node of strip.children) {
-    if (!(node instanceof HTMLElement) || !node.classList.contains("tool-chip")) continue;
+  // Top-level chips can live in either the strip itself OR (for a tool with
+  // image results) a screenshot-block's header, where turn-collapse.ts's
+  // mountScreenshotBlock relocates the chip - still "top-level" for pulsing.
+  const topChips = [...strip.children].filter(
+    (c): c is HTMLElement => c instanceof HTMLElement && c.classList.contains("tool-chip"),
+  );
+  for (const block of footer.children) {
+    if (!(block instanceof HTMLElement) || !block.classList.contains("screenshot-block")) continue;
+    const header = block.querySelector<HTMLElement>(":scope > .screenshot-block-header > .tool-chip");
+    if (header) topChips.push(header);
+  }
+  for (const node of topChips) {
     const tool = node.dataset.tool;
     const running = !!tool && tool === r.activityToolCanon;
     node.classList.toggle("tool-chip--running", running);

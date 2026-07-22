@@ -3,6 +3,8 @@ import { openLightbox } from "./lightbox";
 import { chipToLightboxContent } from "./attachment-hydrator";
 import { showView } from "../navigation";
 import { openPrPreviewModal } from "./pr-review-modal";
+import { getScreenshotRowShots } from "./turn-collapse";
+import { openScreenshotGallery } from "./screenshot-gallery";
 
 let tableOverlay: HTMLDivElement | null = null;
 
@@ -101,6 +103,23 @@ export function handleBlockImageClick(e: MouseEvent): void {
   const base64 = match?.[2];
   if (!mime || !base64) return;
   openLightbox({ type: "image", mime, base64 });
+}
+
+/** Tapping a screenshot-row thumbnail (turn-collapse.ts's screenshot-block)
+ *  opens the multi-image gallery, starting at the clicked shot. Same
+ *  delegated-container pattern as handleBlockImageClick, but the full shot
+ *  list (for prev/next) is looked up via turn-collapse.ts's WeakMap rather
+ *  than re-parsed from the DOM. */
+export function handleScreenshotThumbClick(e: MouseEvent): void {
+  const thumb = (e.target as Element).closest<HTMLElement>(".screenshot-thumb");
+  if (!thumb) return;
+  const row = thumb.closest<HTMLElement>(".screenshot-row");
+  if (!row) return;
+  const shots = getScreenshotRowShots(row);
+  if (!shots) return;
+  const idx = Number(thumb.dataset.shotIndex);
+  if (!Number.isFinite(idx)) return;
+  openScreenshotGallery(shots, idx);
 }
 
 export function handleCopyClick(e: MouseEvent): void {
