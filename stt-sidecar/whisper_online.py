@@ -386,21 +386,28 @@ class HypothesisBuffer:
 
         if len(self.new) >= 1:
             a,b,t = self.new[0]
-            if abs(a - self.last_commited_time) < 1:
-                if self.commited_in_buffer:
-                    # it's going to search for 1, 2, ..., 5 consecutive words (n-grams) that are identical in commited and new. If they are, they're dropped.
-                    cn = len(self.commited_in_buffer)
-                    nn = len(self.new)
-                    for i in range(1,min(min(cn,nn),5)+1):  # 5 is the maximum 
-                        c = " ".join([self.commited_in_buffer[-j][2] for j in range(1,i+1)][::-1])
-                        tail = " ".join(self.new[j-1][2] for j in range(1,i+1))
-                        if c == tail:
-                            words = []
-                            for j in range(i):
-                                words.append(repr(self.new.pop(0)))
-                            words_msg = " ".join(words)
-                            logger.debug(f"removing last {i} words: {words_msg}")
-                            break
+            # NOTE: previously gated on `abs(a - self.last_commited_time) < 1`, which
+            # skipped this anti-echo dedup entirely whenever the speaker paused for
+            # more than ~1s before continuing. Whisper is prompt-conditioned on
+            # committed text (condition_on_previous_text=True), so it can echo
+            # already-committed words back out as a "new" hypothesis regardless of
+            # how long the pause was, causing duplicated text on the client. The
+            # dedup below only ever drops words that literally match the tail of
+            # commited_in_buffer, so it's safe to run unconditionally on timing.
+            if self.commited_in_buffer:
+                # it's going to search for 1, 2, ..., 5 consecutive words (n-grams) that are identical in commited and new. If they are, they're dropped.
+                cn = len(self.commited_in_buffer)
+                nn = len(self.new)
+                for i in range(1,min(min(cn,nn),5)+1):  # 5 is the maximum
+                    c = " ".join([self.commited_in_buffer[-j][2] for j in range(1,i+1)][::-1])
+                    tail = " ".join(self.new[j-1][2] for j in range(1,i+1))
+                    if c == tail:
+                        words = []
+                        for j in range(i):
+                            words.append(repr(self.new.pop(0)))
+                        words_msg = " ".join(words)
+                        logger.debug(f"removing last {i} words: {words_msg}")
+                        break
 
     def flush(self):
         # returns commited chunk = the longest common prefix of 2 last inserts. 
