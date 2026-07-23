@@ -24,7 +24,7 @@ import { loadSessionCharacters } from "./session-characters";
 import { api } from "../../shared/api";
 import { rateLimitBanner, isBlocked } from "../../shared/chat/rate-limit-banner";
 import { sessionEvents } from "../../shared/chat/event-store";
-import { getTransport } from "../../shared/transport";
+import { getTransport, isRemote } from "../../shared/transport";
 import {
   initWhenDone,
   subscribeWhenDone,
@@ -319,10 +319,13 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
       if (sid && state.sessions.find(s => s.session_id === sid)) {
         await selectSession(sid, pane);
         updateThinkingBar();
-      } else if (!state.pendingNewSession && !state.selectedId) {
+      } else if (!state.pendingNewSession && !state.selectedId && !isRemote()) {
         // Restore the last-viewed session across reloads. Skipped when a pending
         // draft was just restored (it owns the active pane) or when history-resume
-        // already picked one above.
+        // already picked one above. Desktop-only: on the remote/phone client a
+        // refresh must land on the chat list, not jump back into the last-open
+        // chat's detail pane (mobile is single-pane; this restore exists for
+        // desktop's split-pane layout).
         const lastId = loadLastSelectedSession();
         if (lastId && state.sessions.find(s => s.session_id === lastId)) {
           await selectSession(lastId, pane);
@@ -365,8 +368,9 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
           updateThinkingBar();
           rateLimitBanner.update(state.sessions);
           // If the initial mount's session restore failed (cached_instances was empty
-          // at that point), try again now that the daemon is connected.
-          if (!state.selectedId && !state.pendingNewSession) {
+          // at that point), try again now that the daemon is connected. Desktop-only
+          // (see the initial-mount restore above for why mobile skips this).
+          if (!state.selectedId && !state.pendingNewSession && !isRemote()) {
             const lastId = loadLastSelectedSession();
             if (lastId && state.sessions.find(s => s.session_id === lastId)) {
               await selectSession(lastId, pane);
@@ -411,7 +415,8 @@ export async function renderSessionsView(root: HTMLElement): Promise<() => void>
     rateLimitBanner.update(state.sessions);
     // If the initial mount's session restore failed (daemon not yet connected),
     // restore now on the first instances-changed that populates the list.
-    if (!state.selectedId && !state.pendingNewSession) {
+    // Desktop-only (see the initial-mount restore above for why mobile skips this).
+    if (!state.selectedId && !state.pendingNewSession && !isRemote()) {
       const lastId = loadLastSelectedSession();
       if (lastId && state.sessions.find(s => s.session_id === lastId)) {
         await selectSession(lastId, pane);
