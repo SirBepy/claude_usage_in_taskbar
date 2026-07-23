@@ -1309,6 +1309,9 @@
   .view-sessions[data-mobile-pane="chat"] .sessions-back {
     display: inline-flex;
   }
+  .view-sessions[data-mobile-pane="chat"] .icon-btn.burger {
+    display: none;
+  }
 
   /* Touch has no hover, so the per-row ⋮ menu (revealed on hover at desktop)
      would never appear. Keep it always visible on mobile. */
