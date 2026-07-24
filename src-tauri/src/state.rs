@@ -68,8 +68,9 @@ pub struct AppState {
     /// A pending "start a new chat in the chats window" request, set when the
     /// chats window is created fresh from the project-detail "+" button.
     /// The chats window drains it on boot via `take_pending_new_chat`. Holds
-    /// `(project_path, project_name, model, effort)`.
-    pub pending_new_chat: Mutex<Option<(String, String, String, String)>>,
+    /// the full `ipc::window::PendingNewChat` (model/effort plus
+    /// account_id/auto_accept/remote/character_id - ai_todo 163).
+    pub pending_new_chat: Mutex<Option<crate::ipc::window::PendingNewChat>>,
     /// A pending main-window navigation queued while `frontend_alive` was false
     /// (webview still loading). Drained by `frontend_ready` once JS is running.
     /// Value is "dashboard" or "project:{cwd}".

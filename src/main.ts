@@ -288,8 +288,8 @@ if (!await ensureRemoteToken()) {
     void invoke<[string, string] | null>("take_pending_chat_open").then((p) => {
       if (p) applyChatOpenRequest(p[0], p[1]);
     }).catch(() => {});
-    void invoke<[string, string, string, string] | null>("take_pending_new_chat").then((p) => {
-      if (p) applyChatNewRequest(p[0], p[1], p[2], p[3]);
+    void invoke<PendingNewChatPayload | null>("take_pending_new_chat").then((p) => {
+      if (p) applyChatNewRequest(p);
     }).catch(() => {});
     const ev = window.__TAURI__?.event;
     if (ev?.listen) {
@@ -297,9 +297,9 @@ if (!await ensureRemoteToken()) {
         "chats-open-session",
         (e) => applyChatOpenRequest(e.payload?.sessionId, e.payload?.mode),
       );
-      void ev.listen<{ projectPath: string; projectName: string; model: string; effort: string }>(
+      void ev.listen<PendingNewChatPayload>(
         "chats-new-chat",
-        (e) => applyChatNewRequest(e.payload?.projectPath, e.payload?.projectName, e.payload?.model, e.payload?.effort),
+        (e) => applyChatNewRequest(e.payload),
       );
     }
   }
@@ -363,16 +363,34 @@ function applyChatOpenRequest(sessionId: string | undefined, mode: string | unde
   }
 }
 
-function applyChatNewRequest(
-  projectPath: string | undefined,
-  projectName: string | undefined,
-  model: string | undefined,
-  effort: string | undefined,
-): void {
-  if (!projectPath) return;
+/** Shape of the `open_chats_new_chat`/`take_pending_new_chat` IPC payload
+ * (Rust's `ipc::window::PendingNewChat`, serde camelCase). Carries the full
+ * model/effort modal `SessionConfig` - not just model/effort - so account,
+ * auto-accept, and character picks survive the Chats-window "+" round trip
+ * (ai_todo 163). */
+interface PendingNewChatPayload {
+  projectPath?: string;
+  projectName?: string;
+  model?: string;
+  effort?: string;
+  accountId?: string | null;
+  autoAccept?: boolean;
+  remote?: boolean;
+  characterId?: string | null;
+}
+
+function applyChatNewRequest(payload: PendingNewChatPayload | undefined): void {
+  if (!payload?.projectPath) return;
   queueNewChat(
-    { path: projectPath, name: projectName ?? projectPath },
-    { model: model ?? "", effort: effort ?? "" },
+    { path: payload.projectPath, name: payload.projectName ?? payload.projectPath },
+    {
+      model: payload.model ?? "",
+      effort: payload.effort ?? "",
+      accountId: payload.accountId ?? null,
+      autoAccept: payload.autoAccept,
+      remote: payload.remote,
+      characterId: payload.characterId ?? null,
+    },
   );
   showView("sessions");
 }
