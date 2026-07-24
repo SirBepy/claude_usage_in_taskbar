@@ -4,6 +4,8 @@
 //   GENERAL  (greyed label)
 //     New chat        (relocated from #view-more-host)
 //     History         (relocated from #view-more-host)
+//     Preview         (relocated from #view-more-host; toggles the HTML preview panel)
+//     Scheduled       (opens the standalone `session-schedule` window)
 //     When done ▸     (Sleep / Shutdown submenu; amber chip on parent when armed)
 //   ──────
 //   THIS CHAT  (greyed label; only when a session or draft is selected)
@@ -47,11 +49,13 @@ export function closeViewMoreMenu(): void {
   closeActiveChatSubmenu();
   const host = document.getElementById("view-more-host");
   if (_viewMenu && host) {
-    // Move only the New chat + History buttons back (sort no longer relocated).
+    // Move the New chat + History + Preview-toggle buttons back (sort no longer relocated).
     const newBtn = _viewMenu.querySelector("#newSessionBtn");
     const histBtn = _viewMenu.querySelector("#historyBtn");
+    const previewBtn = _viewMenu.querySelector("#previewToggleBtn");
     if (newBtn) host.appendChild(newBtn);
     if (histBtn) host.appendChild(histBtn);
+    if (previewBtn) host.appendChild(previewBtn);
   }
   _viewMenu?.remove();
   _viewMenu = null;
@@ -113,12 +117,14 @@ function openViewMoreMenu(btn: HTMLButtonElement): void {
   genLabel.textContent = "General";
   menu.appendChild(genLabel);
 
-  // Relocate New chat + History buttons (but NOT the sort select).
+  // Relocate New chat + History + Preview-toggle buttons (but NOT the sort select).
   if (host) {
     const newBtn = host.querySelector("#newSessionBtn");
     const histBtn = host.querySelector("#historyBtn");
+    const previewBtn = host.querySelector("#previewToggleBtn");
     if (newBtn) menu.appendChild(newBtn);
     if (histBtn) menu.appendChild(histBtn);
+    if (previewBtn) menu.appendChild(previewBtn);
   }
 
   // Scheduled: opens the standalone calendar window (open_schedule_window
@@ -238,7 +244,7 @@ function openViewMoreMenu(btn: HTMLButtonElement): void {
   // Close the menu when New chat or History is clicked (their own listeners fire first).
   menu.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest("#newSessionBtn") || target.closest("#historyBtn")) {
+    if (target.closest("#newSessionBtn") || target.closest("#historyBtn") || target.closest("#previewToggleBtn")) {
       closeViewMoreMenu();
     }
   });
