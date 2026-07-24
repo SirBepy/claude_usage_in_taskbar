@@ -33,6 +33,44 @@ export { closeCtxMenu, openDraftCtxMenu, openCtxMenu } from "./sidebar-ctx-menu"
 
 let sidebarListEl: HTMLElement | null = null;
 
+// ── Shared debounced-refresh shape ───────────────────────────────────────────
+//
+// Both drain-map and scheduled-count refreshes solve the same problem:
+// renderSidebar runs often and synchronously and must never block on an IPC
+// call, so each optional per-row data source is fetched in the background,
+// debounced, and only triggers a re-render if `fetchAndApply` says the fetch
+// actually changed something worth showing.
+/** Creates a `refresh(force?)` function that owns an in-flight guard and a
+ *  debounce window around `fetchAndApply`. `fetchAndApply` performs the IPC
+ *  call plus any map mutation and returns whether a re-render is warranted;
+ *  errors are caught and logged with `label`, and the in-flight flag is
+ *  always cleared in a `finally`. */
+function createDebouncedRefresher(
+  label: string,
+  fetchAndApply: () => Promise<boolean>,
+  debounceMs: number,
+): (force?: boolean) => void {
+  let inFlight = false;
+  let lastFetchMs = 0;
+  return (force = false): void => {
+    if (inFlight) return;
+    if (!force && Date.now() - lastFetchMs < debounceMs) return;
+    inFlight = true;
+    void (async () => {
+      try {
+        const shouldRerender = await fetchAndApply();
+        lastFetchMs = Date.now();
+        // Re-render with the fresh data. Guard on a still-mounted list element.
+        if (shouldRerender && sidebarListEl) renderSidebar(sidebarListEl);
+      } catch (err) {
+        console.error(`[sidebar] ${label} failed`, err);
+      } finally {
+        inFlight = false;
+      }
+    })();
+  };
+}
+
 // ── Token-drain data (for the "Token drain" sort) ────────────────────────────
 //
 // sessionId -> fiveHourPct (this chat's share of the current 5h session). Filled
@@ -41,35 +79,26 @@ let sidebarListEl: HTMLElement | null = null;
 // block on (or unconditionally fire) the chat_drains IPC — it reads whatever
 // drainMap already has and triggers an async, debounced background refresh.
 const drainMap = new Map<string, number>();
-let drainFetchInFlight = false;
-let drainLastFetchMs = 0;
 const DRAIN_REFRESH_DEBOUNCE_MS = 3000;
+let pendingDrainSessionIds: string[] = [];
+
+const runDrainRefresh = createDebouncedRefresher("chat_drains", async () => {
+  const board = await invoke<DrainBoard>("chat_drains", { sessionIds: pendingDrainSessionIds });
+  for (const id of pendingDrainSessionIds) {
+    const chat = board.chats[id];
+    // null share = no usage snapshot yet; leave it out so the row keeps the
+    // "—% of 5h" placeholder rather than rendering a misleading 0%.
+    if (chat && chat.fiveHourPct !== null) drainMap.set(id, chat.fiveHourPct);
+  }
+  return true;
+}, DRAIN_REFRESH_DEBOUNCE_MS);
 
 /** Lazily refresh the per-session drain percentages, then re-render ONCE.
  *  Debounced: skips if a fetch is in flight or one ran within the last ~3s. */
 function refreshDrainMap(sessionIds: string[]): void {
-  if (drainFetchInFlight) return;
-  if (Date.now() - drainLastFetchMs < DRAIN_REFRESH_DEBOUNCE_MS) return;
   if (sessionIds.length === 0) return;
-  drainFetchInFlight = true;
-  void (async () => {
-    try {
-      const board = await invoke<DrainBoard>("chat_drains", { sessionIds });
-      for (const id of sessionIds) {
-        const chat = board.chats[id];
-        // null share = no usage snapshot yet; leave it out so the row keeps the
-        // "—% of 5h" placeholder rather than rendering a misleading 0%.
-        if (chat && chat.fiveHourPct !== null) drainMap.set(id, chat.fiveHourPct);
-      }
-      drainLastFetchMs = Date.now();
-      // Re-render with the fresh data. Guard on a still-mounted list element.
-      if (sidebarListEl) renderSidebar(sidebarListEl);
-    } catch (err) {
-      console.error("[sidebar] chat_drains failed", err);
-    } finally {
-      drainFetchInFlight = false;
-    }
-  })();
+  pendingDrainSessionIds = sessionIds;
+  runDrainRefresh();
 }
 
 // ── Scheduled-message counts (sidebar marker + count badge) ─────────────────
@@ -83,8 +112,6 @@ function refreshDrainMap(sessionIds: string[]): void {
 // (wired in sessions.ts via forceRefreshScheduledCounts) so the badge doesn't
 // lag behind a schedule/cancel action taken in the open chat.
 const scheduledCountMap = new Map<string, number>();
-let scheduledFetchInFlight = false;
-let scheduledLastFetchMs = 0;
 const SCHEDULED_REFRESH_DEBOUNCE_MS = 3000;
 
 function scheduledCountMapsEqual(a: Map<string, number>, b: Map<string, number>): boolean {
@@ -95,34 +122,25 @@ function scheduledCountMapsEqual(a: Map<string, number>, b: Map<string, number>)
   return true;
 }
 
+const runScheduledRefresh = createDebouncedRefresher("schedule_list", async () => {
+  const all = await invoke<ScheduledItem[]>("schedule_list");
+  // Defensive: schedule_list is contracted to return an array, but never
+  // trust an IPC response shape blindly (a mocked/misbehaving transport
+  // returning e.g. {} would make the grouping loop below throw).
+  const next = scheduledCountsBySession(Array.isArray(all) ? all : []);
+  // Only re-render if the counts actually changed - the common case on every
+  // poll tick is "nothing scheduled changed", and re-rendering unconditionally
+  // would fire a full sidebar re-render (and its own recursive
+  // refreshScheduledCounts + avatar/icon hydrate passes) on every single
+  // refresh cycle for no visible difference.
+  if (scheduledCountMapsEqual(scheduledCountMap, next)) return false;
+  scheduledCountMap.clear();
+  for (const [sid, n] of next) scheduledCountMap.set(sid, n);
+  return true;
+}, SCHEDULED_REFRESH_DEBOUNCE_MS);
+
 function refreshScheduledCounts(force = false): void {
-  if (scheduledFetchInFlight) return;
-  if (!force && Date.now() - scheduledLastFetchMs < SCHEDULED_REFRESH_DEBOUNCE_MS) return;
-  scheduledFetchInFlight = true;
-  void (async () => {
-    try {
-      const all = await invoke<ScheduledItem[]>("schedule_list");
-      // Defensive: schedule_list is contracted to return an array, but never
-      // trust an IPC response shape blindly (a mocked/misbehaving transport
-      // returning e.g. {} would make the grouping loop below throw).
-      const next = scheduledCountsBySession(Array.isArray(all) ? all : []);
-      scheduledLastFetchMs = Date.now();
-      // Only re-render if the counts actually changed - the common case on
-      // every poll tick is "nothing scheduled changed", and re-rendering
-      // unconditionally would fire a full sidebar re-render (and its own
-      // recursive refreshScheduledCounts + avatar/icon hydrate passes) on
-      // every single refresh cycle for no visible difference.
-      if (!scheduledCountMapsEqual(scheduledCountMap, next)) {
-        scheduledCountMap.clear();
-        for (const [sid, n] of next) scheduledCountMap.set(sid, n);
-        if (sidebarListEl) renderSidebar(sidebarListEl);
-      }
-    } catch (err) {
-      console.error("[sidebar] schedule_list failed", err);
-    } finally {
-      scheduledFetchInFlight = false;
-    }
-  })();
+  runScheduledRefresh(force);
 }
 
 /** Recount immediately, bypassing the debounce - called on the
