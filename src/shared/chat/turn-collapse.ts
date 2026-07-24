@@ -1,4 +1,5 @@
 import type { RenderedMessage } from "./chat-transforms";
+import { extractAttachedFilePaths } from "./chat-transforms";
 import { toolSummary, canonicalTool, toolLabel } from "./tool-meta";
 import { CUSTOM_VIEW_TOOLS, renderCustomToolView } from "./tool-views";
 import { escapeHtml } from "../escape-html";
@@ -173,6 +174,15 @@ function collectScreenshotShots(
     }
   }
 
+  // The turn's opening user message (activeTurnStart is set right after it's
+  // pushed, so it lives one slot before `start`) - files the user attached
+  // there whose Claude then Read back shouldn't resurface as a "screenshot":
+  // it's the same image they just sent, not a new artifact Claude produced.
+  const opener = messages[start - 1];
+  const attachedPaths = opener && opener.kind === "user"
+    ? extractAttachedFilePaths(opener.content ?? [])
+    : new Set<string>();
+
   const shotsByKey = new Map<string, ScreenshotShot[]>();
   for (let i = start; i < end; i++) {
     const m = messages[i];
@@ -182,6 +192,11 @@ function collectScreenshotShots(
     const tid = m.tool_use_id;
     const tool = tid ? idTool.get(tid) : undefined;
     if (!tid || !tool) continue;
+    if (tool === "Read" && attachedPaths.size > 0) {
+      const input = idInput.get(tid) as { file_path?: unknown } | undefined;
+      const readPath = typeof input?.file_path === "string" ? input.file_path : "";
+      if (readPath && attachedPaths.has(readPath.toLowerCase().replace(/\\/g, "/"))) continue;
+    }
 
     const key = canonicalTool(tool);
     const parentId = idParent.get(tid) ?? null;

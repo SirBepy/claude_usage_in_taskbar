@@ -82,6 +82,26 @@ const VOICE_INPUT_RE = /<voice-input\s*\/>/g;
 export const AUQ_ANSWER_SENTINEL = "<auq-answer/>";
 const AUQ_ANSWER_RE = /<auq-answer\s*\/>/g;
 
+/** Every `<file:PATH...>` path the user attached in a message's text blocks,
+ *  normalized (lowercased, backslashes to slashes) so Read tool_use inputs
+ *  can be matched against it despite slash/case differences. Used to keep
+ *  Claude's own Read of a just-sent attachment from resurfacing as a
+ *  duplicate "screenshot" (see turn-collapse.ts's collectScreenshotShots). */
+export function extractAttachedFilePaths(blocks: ContentBlock[]): Set<string> {
+  const paths = new Set<string>();
+  for (const b of blocks) {
+    if (b.type !== "text") continue;
+    FILE_TOKEN_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = FILE_TOKEN_RE.exec(b.text)) !== null) {
+      const path = match[1];
+      if (path) paths.add(path.toLowerCase().replace(/\\/g, "/"));
+    }
+    FILE_TOKEN_RE.lastIndex = 0;
+  }
+  return paths;
+}
+
 /** The raw "User answered…" framing text of a `<auq-answer/>`-tagged user
  *  message (sentinel stripped), or null if `blocks` isn't exactly that: one
  *  text block carrying the sentinel and nothing else. */
