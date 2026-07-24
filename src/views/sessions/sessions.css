@@ -175,6 +175,9 @@
      always scroll out from under it. */
   padding: 0 0 84px;
   overflow-y: auto;
+  /* Keep scroll momentum inside the chat list; don't chain to the page
+     (pulling down past the top row was triggering the browser's refresh). */
+  overscroll-behavior: contain;
   flex: 1;
   /* Positioning context for exiting rows, which are pinned position:absolute
      and slid out of flow so survivors reflow up (see sidebar-anim.ts). */
@@ -734,6 +737,31 @@
 }
 
 /* View-level overflow menu: reuses .session-more-menu look. */
+/* Usage%/safe% chip in the Chats header - see usage-chip.ts. */
+.usage-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.usage-chip i {
+  font-size: 0.9rem;
+}
+
+.usage-chip .uc-cur {
+  font-weight: 600;
+}
+
+.usage-chip .uc-safe {
+  color: var(--color-text-muted);
+}
+
 .view-more-menu .view-more-sort-label {
   display: block;
   padding: 6px 10px 2px;

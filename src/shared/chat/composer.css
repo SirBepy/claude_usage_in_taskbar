@@ -183,6 +183,14 @@
   cursor: not-allowed;
 }
 
+@media (max-width: 768px) {
+  /* The chevron sub-button stays narrower than Send (it's a secondary
+     action), but 16px was well under any usable touch target. */
+  .composer-send-split .composer-send-chevron {
+    width: 28px;
+  }
+}
+
 /* Post-send attachment chips (inside user messages) */
 
 .attachment-chip {

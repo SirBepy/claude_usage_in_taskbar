@@ -4,6 +4,13 @@
     padding: 0;
 }
 
+html {
+    /* Some Android WebViews key the native pull-to-refresh gesture off the
+       root element's overscroll-behavior rather than body's - belt-and-
+       suspenders alongside the body rule below. */
+    overscroll-behavior: none;
+}
+
 body {
     font-family: 'DM Sans', system-ui, sans-serif;
     background-color: var(--color-background);
@@ -74,6 +81,24 @@ body {
 .icon-btn:hover {
     background: var(--color-surface-alt);
     color: var(--color-text);
+}
+
+/* Immediate press feedback so a tap reads as registered before whatever it
+   triggered (e.g. a sent message landing in the transcript) shows up. */
+.icon-btn:active {
+    background: var(--color-surface-alt);
+    color: var(--color-text);
+    transform: scale(0.92);
+}
+
+@media (max-width: 768px) {
+    /* Bring every icon button up to the ~44px touch-target minimum on phones;
+       desktop keeps the tighter 32px sizing. */
+    .icon-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 1.25rem;
+    }
 }
 
 .icon-btn.spinning i {
