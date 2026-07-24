@@ -6,6 +6,8 @@ import "../../shared/chat/chat.css";
 import "./sessions.css";
 import "./project-rail.css";
 import "./changes-rail.css";
+import "./session-list.css";
+import "./session-ctx-menu.css";
 import "./session-avatar.css";
 import "./session-statusbar.css";
 import "./project-picker.css";
