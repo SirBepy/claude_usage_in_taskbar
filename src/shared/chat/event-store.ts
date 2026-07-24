@@ -16,6 +16,7 @@ import type { ChatEvent, HistoryPage } from "../../types/ipc.generated";
 import { invoke } from "../ipc";
 import { getTransport } from "../transport";
 import { normalizeUserMessageText } from "./chat-transforms";
+import { EvictionPolicy, touchAccess } from "./event-store-eviction";
 
 type Unlisten = () => void;
 type EventListener = (ev: ChatEvent) => void;
@@ -39,20 +40,6 @@ const DEDUP_WINDOW_MS = 10_000;
 // user_message case in sigOf for why.
 const FILE_TOKEN_SIG_RE = /<file:[^>]*>/g;
 
-// Eviction (ai_todo perf fix): a session ever opened stays cached forever
-// (see file header) unless reclaimed. An entry is eligible once it has both
-// (a) no subscribers - nothing is currently rendering it in a pane, on this
-// window/webview - and (b) gone idle for IDLE_TTL_MS. "Idle" is driven by
-// lastAccess, which every genuine read/render touches AND every accepted live
-// event (deliver()) refreshes - so a background session with an active turn
-// (tool calls, streaming chunks, anything) keeps pushing lastAccess forward
-// and never goes idle long enough to be swept mid-turn. Reopening after
-// eviction is safe: loadInitial/subscribe rebuild a fresh entry and re-fetch
-// from disk via load_history_page, same as a session touched for the first
-// time.
-const IDLE_TTL_MS = 30 * 60_000;
-const SWEEP_INTERVAL_MS = 60_000;
-
 interface RecentSig {
   /** Dedup key: type + content/id. */
   sig: string;
@@ -65,7 +52,7 @@ interface RecentSig {
   ts: number;
 }
 
-interface CacheEntry {
+export interface CacheEntry {
   events: ChatEvent[];
   oldestSeq: number | null;
   hasMore: boolean;
@@ -77,7 +64,8 @@ interface CacheEntry {
   /** Recently-delivered live event signatures, for cross-source dedup. */
   recent: RecentSig[];
   /** Wall-clock ms of the last genuine access (load/read/subscribe) or
-   * accepted live event. Drives the TTL sweep - see IDLE_TTL_MS above. */
+   * accepted live event, touched via touchAccess(). Drives the TTL sweep -
+   * see event-store-eviction.ts's IDLE_TTL_MS (ai_todo 196). */
   lastAccess: number;
   /** True once an `instances-changed` snapshot reported this session's
    * `ended_at` set. An ended session will never produce another event, so
@@ -97,20 +85,15 @@ type AssistantDeltaEvent = Extract<ChatEvent, { type: "assistant_delta" }>;
 
 class SessionEventStore {
   private cache = new Map<string, CacheEntry>();
+  /** Idle-eviction/TTL lifecycle policy, extracted from this store (ai_todo
+   * 196) - see event-store-eviction.ts. Composed over the same cache map so
+   * teardown/evictEnded/unmarkEnded/sweep all see the store's live entries. */
+  private eviction = new EvictionPolicy(this.cache);
   /** Routes rate-limit rejections to the global banner instead of the transcript. */
   private rateLimitHandler: ((sessionId: string, body: string) => void) | null = null;
 
   constructor() {
-    // Single module-level sweep (ai_todo perf fix): reclaims cache entries -
-    // events array, dedup ring, and both live listeners - for sessions nobody
-    // has viewed and that have gone quiet for IDLE_TTL_MS. Pure in-memory scan,
-    // no IPC, safe to run unconditionally on both the desktop and remote
-    // transports. unref() (Node-only) is best-effort so a test process that
-    // imports this module doesn't hang on an open timer handle; the browser's
-    // numeric interval id has no unref and is left alone.
-    const timer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
-    const maybeUnref = (timer as unknown as { unref?: () => void })?.unref;
-    if (typeof maybeUnref === "function") maybeUnref.call(timer);
+    this.eviction.startSweepTimer();
   }
 
   /** Register the global rate-limit-rejection sink (the banner controller). */
@@ -120,7 +103,7 @@ class SessionEventStore {
 
   events(sessionId: string): ChatEvent[] {
     const entry = this.cache.get(sessionId);
-    if (entry) entry.lastAccess = Date.now();
+    if (entry) touchAccess(entry);
     return entry?.events.slice() ?? [];
   }
 
@@ -140,7 +123,7 @@ class SessionEventStore {
   async loadInitial(sessionId: string, cwd?: string): Promise<ChatEvent[]> {
     let entry = this.cache.get(sessionId);
     if (entry?.initialLoaded) {
-      entry.lastAccess = Date.now();
+      touchAccess(entry);
       await this.ensureListener(sessionId);
       return entry.events;
     }
@@ -148,7 +131,7 @@ class SessionEventStore {
       entry = this.makeEntry();
       this.cache.set(sessionId, entry);
     }
-    entry.lastAccess = Date.now();
+    touchAccess(entry);
     await this.ensureListener(sessionId);
     try {
       const args: { sessionId: string; cwd?: string; messageLimit: number } = {
@@ -201,7 +184,7 @@ class SessionEventStore {
   async reconcileLatest(sessionId: string, cwd?: string): Promise<void> {
     const entry = this.cache.get(sessionId);
     if (!entry || !entry.initialLoaded) return;
-    entry.lastAccess = Date.now();
+    touchAccess(entry);
     let page: HistoryPage;
     try {
       const args: { sessionId: string; cwd?: string; messageLimit: number } = {
@@ -248,7 +231,7 @@ class SessionEventStore {
   async loadOlder(sessionId: string, cwd?: string): Promise<ChatEvent[] | null> {
     const entry = this.cache.get(sessionId);
     if (!entry || !entry.initialLoaded) return null;
-    entry.lastAccess = Date.now();
+    touchAccess(entry);
     if (!entry.hasMore || entry.loadingOlder) return null;
     if (entry.oldestSeq == null) return null;
     entry.loadingOlder = true;
@@ -282,18 +265,18 @@ class SessionEventStore {
       this.cache.set(sessionId, entry);
     }
     entry.subscribers.add(fn);
-    entry.lastAccess = Date.now();
+    touchAccess(entry);
     void this.ensureListener(sessionId);
     return () => {
       const e = this.cache.get(sessionId);
       if (!e) return;
       e.subscribers.delete(fn);
       if (e.subscribers.size === 0) {
-        e.lastAccess = Date.now();
+        touchAccess(e);
         // The session already ended while we were the last viewer - it will
         // never produce another event, so tear down now instead of waiting
         // out the TTL (see evictEnded).
-        if (e.ended) this.teardown(sessionId, e);
+        if (e.ended) this.eviction.teardown(sessionId, e);
       }
     };
   }
@@ -302,20 +285,29 @@ class SessionEventStore {
     if (fromId === toId) return;
     const fromEntry = this.cache.get(fromId);
     if (!fromEntry) return;
-    if (fromEntry.unlisten) {
-      try { fromEntry.unlisten(); } catch { /* ignore */ }
-      fromEntry.unlisten = null;
-    }
-    this.cache.delete(fromId);
     const existing = this.cache.get(toId);
     if (existing) {
+      // Merge: fromEntry's data folds into `existing` and fromEntry itself is
+      // discarded, so both its live listeners must be retired here or the
+      // losing entry's chat-watch listener (ai_todo 189) leaks forever - the
+      // rename branch below skips this because fromEntry survives as toId's
+      // entry and keeps its unlistenWatch alive.
       for (const ev of fromEntry.events) existing.events.push(ev);
       for (const sub of fromEntry.subscribers) existing.subscribers.add(sub);
       for (const r of fromEntry.recent) existing.recent.push(r);
       existing.initialLoaded = existing.initialLoaded || fromEntry.initialLoaded;
       existing.oldestSeq = existing.oldestSeq ?? fromEntry.oldestSeq;
       existing.hasMore = existing.hasMore && fromEntry.hasMore;
+      this.eviction.teardown(fromId, fromEntry);
     } else {
+      // Plain rename: fromEntry itself becomes toId's entry, so only retire
+      // the runner listener bound to the old `chat:<fromId>` channel name;
+      // unlistenWatch is left untouched and carries over with the entry.
+      if (fromEntry.unlisten) {
+        try { fromEntry.unlisten(); } catch { /* ignore */ }
+        fromEntry.unlisten = null;
+      }
+      this.cache.delete(fromId);
       this.cache.set(toId, fromEntry);
     }
     await this.ensureListener(toId);
@@ -391,7 +383,7 @@ class SessionEventStore {
     // Any accepted live event (tool call, streaming chunk, notification, ...)
     // counts as activity, keeping a background session with a turn in flight
     // from ever going idle long enough for the TTL sweep to evict it mid-turn.
-    entry.lastAccess = Date.now();
+    touchAccess(entry);
     entry.subscribers.forEach((fn) => {
       try { fn(ev); } catch { /* ignore */ }
     });
@@ -447,7 +439,7 @@ class SessionEventStore {
       entry.events.push(synth);
     }
     cur.evRef = synth;
-    entry.lastAccess = Date.now();
+    touchAccess(entry);
     entry.subscribers.forEach((fn) => {
       try { fn(synth); } catch { /* ignore */ }
     });
@@ -537,21 +529,6 @@ class SessionEventStore {
     };
   }
 
-  /** Full teardown: stop both live listeners (runner + file-watcher) and drop
-   * the entry entirely. The single choke point every eviction path routes
-   * through, so a session that gets re-touched later goes through the normal
-   * "no entry yet" cold path (loadInitial/subscribe rebuild it and re-fetch
-   * from disk) rather than resurrecting stale state. */
-  private teardown(sessionId: string, entry: CacheEntry): void {
-    if (entry.unlisten) {
-      try { entry.unlisten(); } catch { /* ignore */ }
-    }
-    if (entry.unlistenWatch) {
-      try { entry.unlistenWatch(); } catch { /* ignore */ }
-    }
-    this.cache.delete(sessionId);
-  }
-
   /**
    * Mark a session as ended (its `ended_at` is now set) and evict it if
    * nothing is currently viewing it. Called from the sessions/detached-window
@@ -562,13 +539,11 @@ class SessionEventStore {
    * If the session IS currently open in a pane (subscribers present), eviction
    * is deferred: `ended` is recorded so `subscribe()`'s returned unsubscribe
    * finishes the teardown the moment the pane stops viewing it, instead of
-   * blanking a transcript the user is looking at.
+   * blanking a transcript the user is looking at. Delegates to the
+   * EvictionPolicy companion module (ai_todo 196).
    */
   evictEnded(sessionId: string): void {
-    const entry = this.cache.get(sessionId);
-    if (!entry) return;
-    entry.ended = true;
-    if (entry.subscribers.size === 0) this.teardown(sessionId, entry);
+    this.eviction.evictEnded(sessionId);
   }
 
   /**
@@ -579,23 +554,10 @@ class SessionEventStore {
    * a SUCCESSFUL fetch, see setActiveSession's doc in sessions/state.ts) would
    * keep `ended: true` forever, and closing the pane later would wrongly tear
    * down a live session's cache and listeners. No-op when not cached.
+   * Delegates to the EvictionPolicy companion module (ai_todo 196).
    */
   unmarkEnded(sessionId: string): void {
-    const entry = this.cache.get(sessionId);
-    if (entry) entry.ended = false;
-  }
-
-  /** Module-level TTL sweep (every SWEEP_INTERVAL_MS): reclaims entries that
-   * are both unviewed (no subscribers) and idle past IDLE_TTL_MS. Skips
-   * anything with a subscriber (visible in some pane right now) regardless of
-   * how stale lastAccess looks. */
-  private sweep(): void {
-    const now = Date.now();
-    for (const [sessionId, entry] of this.cache) {
-      if (entry.subscribers.size > 0) continue;
-      if (now - entry.lastAccess < IDLE_TTL_MS) continue;
-      this.teardown(sessionId, entry);
-    }
+    this.eviction.unmarkEnded(sessionId);
   }
 
   private async ensureListener(sessionId: string): Promise<void> {
