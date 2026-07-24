@@ -149,6 +149,11 @@ class PreviewPanel implements PreviewController {
    *  state.ts's setActiveSession on every chat switch; null before any
    *  chat is selected. */
   private currentSessionId: string | null = null;
+  /** Ids already shown (or baselined) this window session - see
+   *  `checkForUnseen`'s doc for why this exists. In-memory only, same
+   *  don't-resurface-what-was-already-surfaced shape as main.ts's
+   *  `seenMissedIds`. */
+  private seenIds = new Set<string>();
   /** History rail visibility — in-memory only, defaults closed (Joe,
    *  2026-07-20: "for now let's make it so history tab can also be toggled
    *  on/off and by default its off"). */
@@ -176,6 +181,7 @@ class PreviewPanel implements PreviewController {
 
     this.focusHandler = () => {
       if (this.openState) void this.refreshList();
+      else void this.checkForUnseen();
     };
     window.addEventListener("focus", this.focusHandler);
 
@@ -186,6 +192,9 @@ class PreviewPanel implements PreviewController {
       this.root.hidden = true;
       this.renderHeaderEmpty();
       this.renderCanvasEmpty();
+      // Baseline only - mark whatever already exists as seen so mount never
+      // pops the panel open for pre-existing history (see checkForUnseen doc).
+      void this.checkForUnseen({ allowOpen: false });
     }
   }
 
@@ -233,6 +242,10 @@ class PreviewPanel implements PreviewController {
       // previous chat's snapshots before the fresh fetch lands.
       this.snapshots = [];
       this.selected = null;
+      // Baseline only - the chat just switched into may already have older
+      // previews; those shouldn't force-open the panel, only a push that
+      // arrives *after* this baseline should (see checkForUnseen doc).
+      void this.checkForUnseen({ allowOpen: false });
     }
   }
 
@@ -250,11 +263,39 @@ class PreviewPanel implements PreviewController {
 
   // ── Data ─────────────────────────────────────────────────────────────────
 
+  /** Authoritative fallback for the lossy `preview` notifier broadcast (see
+   *  class docs): `onLivePush` is the fast path, but a dropped broadcast
+   *  packet must never silently swallow a preview Claude just pushed for the
+   *  active chat. Called on every window focus while the panel is closed
+   *  (and once at mount / on every session-scope change, with `allowOpen:
+   *  false`, purely to baseline `seenIds` so pre-existing history never
+   *  spuriously pops the panel). Finds any snapshot in the current chat's
+   *  scope not yet in `seenIds` and, if allowed, opens the panel on it -
+   *  exactly what `onLivePush` does for the fast path. */
+  private async checkForUnseen(opts: { allowOpen: boolean } = { allowOpen: true }): Promise<void> {
+    if (!this.currentSessionId) return;
+    let all: PreviewMeta[];
+    try {
+      all = await invoke<PreviewMeta[]>("list_previews");
+    } catch (err) {
+      console.error("[preview-panel] checkForUnseen failed", err);
+      return;
+    }
+    const scoped = (Array.isArray(all) ? all : []).filter((m) => m.session_id === this.currentSessionId);
+    const unseen = scoped.filter((m) => !this.seenIds.has(m.id));
+    scoped.forEach((m) => this.seenIds.add(m.id));
+    const mostRecentUnseen = unseen[unseen.length - 1];
+    if (opts.allowOpen && mostRecentUnseen && !this.openState) {
+      this.open(mostRecentUnseen.id);
+    }
+  }
+
   private async refreshList(opts: { selectId?: string } = {}): Promise<void> {
     try {
       const list = await invoke<PreviewMeta[]>("list_previews");
       const all = Array.isArray(list) ? list : [];
       this.snapshots = all.filter((m) => m.session_id === this.currentSessionId);
+      this.snapshots.forEach((s) => this.seenIds.add(s.id));
       const validIds = new Set(all.map((m) => m.id));
       for (const id of this.snapshotCache.keys()) {
         if (!validIds.has(id)) this.snapshotCache.delete(id);
@@ -311,6 +352,7 @@ class PreviewPanel implements PreviewController {
   private onLivePush(meta: PreviewMeta | undefined): void {
     if (!meta) return;
     if (meta.session_id !== this.currentSessionId) return;
+    this.seenIds.add(meta.id);
 
     const idx = this.snapshots.findIndex((s) => s.id === meta.id);
     if (idx >= 0) this.snapshots[idx] = meta;
