@@ -401,6 +401,14 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("get_usage_map", null);
       case "get_auth_state_map":
         return this.rpc<T>("get_auth_state_map", null);
+      // Transcript-derived context-window status (mirrors desktop's
+      // `context_status` Tauri command). Without this the phone had no way to
+      // reach the daemon's authoritative computation and silently fell back
+      // to a frontend heuristic - see session-statusbar.ts's renderContext.
+      case "context_status":
+        return this.rpc<T>("context_status", {
+          session_id: args.sessionId ?? args.session_id,
+        });
       case "get_settings":
         return this.rpc<T>("get_settings", null);
       case "list_slash_commands":

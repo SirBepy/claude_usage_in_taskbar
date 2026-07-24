@@ -83,6 +83,12 @@ const SAFE_METHODS: &[&str] = &[
     // the cross-process derivation notes.
     "get_usage_map",
     "get_auth_state_map",
+    // Read-only, transcript-derived context-window status for a session
+    // (mirrors desktop's `context_status` Tauri command). Without this the
+    // phone had no daemon RPC for it at all - it silently fell back to a
+    // frontend heuristic using a possibly-stale cached model, which could
+    // show a wildly different % than desktop for the same session.
+    "context_status",
     // Read-only account registry so the phone's new-chat picker lists the same
     // accounts as desktop (ai_todo 241). Read-only: no add/remove/logout/default
     // mutators are exposed - the phone can pick an account to spawn under, not
@@ -667,7 +673,7 @@ mod tests {
             "character_asset_url", "resolve_whitelist_characters", "list_projects",
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
-            "get_usage_map", "get_auth_state_map",
+            "get_usage_map", "get_auth_state_map", "context_status",
             "list_accounts", "list_slash_commands", "ensure_session_character",
             "schedule_list", "schedule_create", "schedule_update",
             "schedule_delete", "schedule_fire_now", "list_previews", "get_preview",

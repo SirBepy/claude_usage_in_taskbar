@@ -466,7 +466,10 @@ export class SessionStatusbar {
       const body = asTokens ? `${formatTokenCount(Number(c.occupancy), { decimals: 0 })} / ${formatTokenCount(Number(c.window), { decimals: 0 })}` : `${pctStr}%`;
       return `<span class="sb-chip sb-context${cls}${this.animClass(key)}" title="${occ} / ${win} tokens (conversation + system prompt + tools)${note}"><i class="ph ph-stack"></i>${body}</span>`;
     } else if (this.meta.inputTokens > 0) {
-      const window = modelContextWindow(this.sessionModel || this.meta.model);
+      // meta.model updates live on every turn_usage event; sessionModel is set
+      // once at spawn and never refreshed, so it wins here only when meta.model
+      // hasn't arrived yet (e.g. right after setSessionId, before any usage).
+      const window = modelContextWindow(this.meta.model || this.sessionModel);
       const raw = (this.meta.inputTokens / window) * 100;
       if (raw >= 100) console.warn("[ctx-100] context pinned at 100%", { inputTokens: this.meta.inputTokens, window, sessionModel: this.sessionModel, metaModel: this.meta.model });
       const cls = raw >= 80 ? " danger" : raw >= 50 ? " warn" : "";
