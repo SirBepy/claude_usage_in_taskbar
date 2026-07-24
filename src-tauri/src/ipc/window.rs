@@ -1,6 +1,24 @@
 //! Window and chat-window-opening commands. Extracted from `misc.rs`
 //! (ai_todo 101). Owns the `session-chats` window lifecycle plus the
 //! dashboard-surfacing and pending-open handoff commands.
+//!
+//! # Every command that can reach a `build_*_window` MUST be `#[tauri::command(async)]`
+//!
+//! Tauri runs a plain `#[tauri::command] fn` on the main/event-loop thread -
+//! for a webview-initiated call, that means *inside* the calling window's
+//! WebView2 IPC callback. `WebviewWindowBuilder::build()` blocks until the
+//! event loop has created the new webview, so building from there deadlocks
+//! the event loop against itself: no window ever appears and the entire app
+//! (tray, dashboard, chats) is permanently frozen, only killable.
+//!
+//! `#[tauri::command(async)]` on a sync fn runs the body on the async runtime
+//! instead ("sync_threadpool"), so `build()` dispatches to a *free* event loop
+//! and returns normally. It keeps the plain-fn signature, so the direct Rust
+//! call sites (`lib.rs`'s setup, `tray::menu`) are unaffected - those already
+//! run outside a webview callback and were never at risk.
+//!
+//! `ipc::chat::lifecycle::detach_window` is the same rule expressed as a true
+//! `async fn`; it has always worked for exactly this reason.
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -71,7 +89,8 @@ fn attach_hide_to_tray(window: &tauri::WebviewWindow) {
     });
 }
 
-#[tauri::command]
+// `(async)`: lazily builds `main` - see the module doc's deadlock rule.
+#[tauri::command(async)]
 pub fn open_dashboard(app: AppHandle) {
     use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
@@ -99,7 +118,8 @@ pub fn open_dashboard(app: AppHandle) {
 /// project's detail page. Called from the chats window's per-chat menu so the
 /// user can jump to a project's dashboard view without leaving the chat
 /// window's process (it stays open in the background).
-#[tauri::command]
+// `(async)`: lazily builds `main` - see the module doc's deadlock rule.
+#[tauri::command(async)]
 pub fn open_dashboard_project(app: AppHandle, cwd: String) {
     use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
@@ -126,7 +146,8 @@ pub fn open_dashboard_project(app: AppHandle, cwd: String) {
 /// (model-effort-modal) so the account picker never routes the settings view
 /// into the chats window's own router - that trapped users there with no way
 /// back to the chat view (regression introduced in 0.2.6/0.2.7).
-#[tauri::command]
+// `(async)`: lazily builds `main` - see the module doc's deadlock rule.
+#[tauri::command(async)]
 pub fn open_dashboard_settings_accounts(app: AppHandle) {
     use tauri::Emitter;
     if let Some(w) = app.get_webview_window("main") {
@@ -152,7 +173,10 @@ pub fn open_dashboard_settings_accounts(app: AppHandle) {
 /// floating overlay jumps straight to that account's dashboard view. Mirrors
 /// `open_dashboard_project`: emit `navigate-to-account` if the webview is live,
 /// else queue `account:<id>` for `frontend_ready` to drain on cold boot.
-#[tauri::command]
+// `(async)`: lazily builds `main` - see the module doc's deadlock rule. Called
+// from the overlay webview, so this one is a live deadlock path whenever the
+// dashboard window hasn't been built yet.
+#[tauri::command(async)]
 pub fn open_dashboard_account(app: AppHandle, account_id: String) {
     if let Some(w) = app.get_webview_window("main") {
         surface_main_if_ready(&app, &w);
@@ -281,7 +305,13 @@ fn build_schedule_window(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+// `(async)` is load-bearing here, not a style choice: this command is reachable
+// ONLY from a webview (the sidemenu's Schedule item and the chat view-more
+// menu's "Scheduled"), and `session-schedule` is never pre-built at startup, so
+// the `build_schedule_window` branch below runs on the very first open. As a
+// plain sync command that build deadlocked the event loop and hard-froze the
+// whole app - see the module doc.
+#[tauri::command(async)]
 pub fn open_schedule_window(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("session-schedule") {
         let _ = existing.show();
@@ -292,7 +322,10 @@ pub fn open_schedule_window(app: AppHandle) -> Result<(), String> {
     build_schedule_window(&app)
 }
 
-#[tauri::command]
+// `(async)`: can build `session-chats` - see the module doc's deadlock rule.
+// Masked in practice because `lib.rs`'s setup builds that window at startup and
+// hide-to-tray keeps it alive, so the build branch below rarely runs.
+#[tauri::command(async)]
 pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("session-chats") {
         let _ = existing.show();
@@ -310,7 +343,8 @@ pub fn open_chats_window(app: AppHandle) -> Result<(), String> {
 /// stash the request in `AppState.pending_chat_open` for the window to drain on
 /// boot (the freshly-built webview can't reliably catch an event emitted before
 /// its listener mounts).
-#[tauri::command]
+// `(async)`: can build `session-chats` - see the module doc's deadlock rule.
+#[tauri::command(async)]
 pub fn open_chats_for_session(app: AppHandle, session_id: String, mode: String) -> Result<(), String> {
     use tauri::Emitter;
     if let Some(existing) = app.get_webview_window("session-chats") {
@@ -345,7 +379,8 @@ pub fn take_pending_chat_open(app: AppHandle) -> Option<(String, String)> {
 /// `chats-new-chat` for its live listener; when it must be created fresh we
 /// stash the request in `AppState.pending_new_chat` for the window to drain on
 /// boot.
-#[tauri::command]
+// `(async)`: can build `session-chats` - see the module doc's deadlock rule.
+#[tauri::command(async)]
 pub fn open_chats_new_chat(
     app: AppHandle,
     project_path: String,
@@ -384,5 +419,49 @@ pub fn take_pending_new_chat(app: AppHandle) -> Option<(String, String, String, 
     let state = app.try_state::<crate::state::AppState>()?;
     let mut pending = state.pending_new_chat.lock().ok()?;
     pending.take()
+}
+
+#[cfg(test)]
+mod tests {
+    /// Guards the module doc's deadlock rule. A plain `#[tauri::command]` that
+    /// reaches `WebviewWindowBuilder::build()` runs on the event-loop thread
+    /// inside the calling window's WebView2 IPC callback and hard-freezes the
+    /// entire app - `open_schedule_window` shipped that way and the Schedule
+    /// window could never be opened at all. Nothing in a normal build, clippy
+    /// run, or unit test observes that (it's a runtime deadlock, and only on a
+    /// webview-initiated call), so assert the annotation itself: every
+    /// `open_*` command in this file must be `#[tauri::command(async)]`.
+    ///
+    /// Scoped to `open_*` because that is exactly the set that surfaces or
+    /// builds a window here; the `take_pending_*` drains touch no window and
+    /// stay sync.
+    #[test]
+    fn every_open_command_runs_off_the_event_loop_thread() {
+        let src = include_str!("window.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let prefix = "pub fn open_";
+        let mut checked = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if !line.starts_with(prefix) {
+                continue;
+            }
+            let name = line.trim_end_matches(" {");
+            let attr = lines[..i]
+                .iter()
+                .rev()
+                .find(|l| l.starts_with("#[tauri::command"))
+                .copied()
+                .unwrap_or("<none>");
+            assert_eq!(
+                attr, "#[tauri::command(async)]",
+                "`{name}` can surface or build a window, so it must be \
+                 #[tauri::command(async)] - a plain sync command deadlocks the \
+                 event loop and freezes the whole app (see the module doc). \
+                 Found: {attr}"
+            );
+            checked += 1;
+        }
+        assert!(checked >= 8, "expected to check every open_* command, only saw {checked}");
+    }
 }
 
