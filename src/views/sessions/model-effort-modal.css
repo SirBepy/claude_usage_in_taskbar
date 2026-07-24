@@ -341,3 +341,16 @@
   background: color-mix(in srgb, var(--color-danger, #ff6b6b) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-danger, #ff6b6b) 35%, transparent);
 }
+
+/* ── Mobile: stack columns, character pane moves below the form ─────────── */
+@media (max-width: 768px) {
+  .model-effort-modal-card .me-columns {
+    flex-direction: column;
+  }
+
+  .model-effort-modal-card .me-char-pane {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--color-border, #2a2a36);
+  }
+}
