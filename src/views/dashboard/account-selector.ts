@@ -7,7 +7,7 @@
 
 import { escapeHtml } from "../../shared/escape-html";
 import { accountIconBadgeHtml } from "../../shared/account-chip";
-import { fmtResetDisplay, valueColor, computeSafePacePct } from "../../shared/formatters";
+import { fmtResetDisplay, valueColor, computeSafePacePct, formatRelativeMinutes } from "../../shared/formatters";
 import type { ValueColorSettings } from "../../shared/formatters";
 import type { Account, UsageRecord } from "../../shared/api";
 
@@ -63,18 +63,16 @@ function fmtCountdown(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function fmtDurationCompact(ms: number): string {
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
 /** The bare duration/countdown text + near/hot state for a reset - shared by
  * the initial render and the live tick so both compute it identically. */
 function timeBigText(diffMs: number): { text: string; near: boolean; hot: boolean } {
   const near = diffMs <= NEAR_THRESHOLD_MS;
   const hot = diffMs <= HOT_THRESHOLD_MS;
-  return { text: near ? fmtCountdown(diffMs) : fmtDurationCompact(diffMs), near, hot };
+  // Ring time-stack shows bare "4h 30m" / "12m" with no "resets in" prose, so
+  // strip the shared formatter's "in " prefix (same pattern as
+  // sessions/preview-panel.ts's relative-time formatting).
+  const text = near ? fmtCountdown(diffMs) : formatRelativeMinutes(diffMs).replace(/^in /, "");
+  return { text, near, hot };
 }
 
 function ringHtml(
