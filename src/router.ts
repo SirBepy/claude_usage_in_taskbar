@@ -1,6 +1,7 @@
 import { html, render } from "lit-html";
 import { setActiveView } from "./shared/navigation";
 import { noteNavigation } from "./shared/back-button";
+import { isRemote } from "./shared/transport";
 
 type RenderFn = (
   root: HTMLElement,
@@ -28,7 +29,9 @@ export function mountRouter(root: HTMLElement): void {
   (window as unknown as {
     isMigratedView: (name: string) => boolean;
   }).isMigratedView = isMigrated;
-  const initial = window.location.hash.replace(/^#/, "") || "dashboard";
+  // Chats is the only screen phone users open regularly, so the remote/phone
+  // PWA lands there directly instead of the desktop's Dashboard default.
+  const initial = window.location.hash.replace(/^#/, "") || (isRemote() ? "sessions" : "dashboard");
   void navigateTo(initial);
 }
 
