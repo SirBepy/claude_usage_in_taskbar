@@ -393,6 +393,14 @@ export class HttpTransport implements Transport {
         return this.rpc<T>("get_token_history", null);
       case "get_active_sessions":
         return this.rpc<T>("get_active_sessions", null);
+      // Per-account current-usage-percentage + login-state maps for the phone
+      // Dashboard (mirrors desktop's `get_usage_map` / `get_auth_state_map`
+      // Tauri commands). No params. See the daemon RPC handlers in
+      // daemon/methods/registry.rs for how each is derived cross-process.
+      case "get_usage_map":
+        return this.rpc<T>("get_usage_map", null);
+      case "get_auth_state_map":
+        return this.rpc<T>("get_auth_state_map", null);
       case "get_settings":
         return this.rpc<T>("get_settings", null);
       case "list_slash_commands":

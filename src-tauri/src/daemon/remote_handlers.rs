@@ -77,6 +77,12 @@ const SAFE_METHODS: &[&str] = &[
     "get_history",
     "get_token_history",
     "get_active_sessions",
+    // Read-only current-usage-percentage + per-account login-state maps for the
+    // phone Dashboard (mirrors desktop's `get_usage_map` / `get_auth_state_map`
+    // Tauri commands). See their handlers in `daemon/methods/registry.rs` for
+    // the cross-process derivation notes.
+    "get_usage_map",
+    "get_auth_state_map",
     // Read-only account registry so the phone's new-chat picker lists the same
     // accounts as desktop (ai_todo 241). Read-only: no add/remove/logout/default
     // mutators are exposed - the phone can pick an account to spawn under, not
@@ -661,6 +667,7 @@ mod tests {
             "character_asset_url", "resolve_whitelist_characters", "list_projects",
             "project_last_activity_at", "get_project_tech", "get_project_icon",
             "get_history", "get_token_history", "get_active_sessions",
+            "get_usage_map", "get_auth_state_map",
             "list_accounts", "list_slash_commands", "ensure_session_character",
             "schedule_list", "schedule_create", "schedule_update",
             "schedule_delete", "schedule_fire_now", "list_previews", "get_preview",
